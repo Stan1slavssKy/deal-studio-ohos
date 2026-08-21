@@ -52,6 +52,9 @@ sys.exit(1)
 PY
 }
 
+# Verified from a screenshot on this 1280x2832 panel.
+declare -A FALLBACK=( [tictactoe]="338 1453" [dashboard]="915 1453" )
+
 mkdir -p "$(dirname "$OUT")"
 : > "$OUT"
 
@@ -65,6 +68,7 @@ for page in tictactoe dashboard; do
     sleep 4                                        # let the ArkUI page settle
 
     xy="${!var:-}"
+    [[ -n "$xy" ]] || xy="${FALLBACK[$page]}"
     [[ -n "$xy" ]] || xy=$(locate "Bench $page") || {
       echo "could not find the 'Bench $page' button." >&2
       echo "Screenshot the device and set ${var}=\"<x> <y>\"." >&2
@@ -74,8 +78,8 @@ for page in tictactoe dashboard; do
     sleep 6
 
     log=$(hdc shell "hilog -x" 2>/dev/null | tr -d '\r')
-    run=$(grep -o 'VERA_PROBE {.*}' <<<"$log" | tail -1)
-    ui=$(grep -o 'VERA_PROBE_UI {.*}' <<<"$log" | tail -1)
+    run=$(grep -oE 'VERA_PROBE \{.*\}' <<<"$log" | tail -1)
+    ui=$(grep -oE 'VERA_PROBE_UI \{.*\}' <<<"$log" | tail -1)
     echo "${run#VERA_PROBE } ${ui:+// ${ui#VERA_PROBE_UI }}" | tee -a "$OUT"
   done
 done

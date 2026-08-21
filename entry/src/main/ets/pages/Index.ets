@@ -25,7 +25,7 @@ function nowNs(): number {
 
 interface Sample {
   label: string
-  bytes: number
+  vbc1Units: number
   parseUs: number
   bootUs: number
   renderUs: number
@@ -34,6 +34,7 @@ interface Sample {
   warmTotalUs: number
   pssBaselineKb: number
   pssDeltaKb: number
+  pssAfterWarmKb: number
   nodes: number
 }
 
@@ -71,6 +72,11 @@ struct Index {
     const ui: VeraUiNode = decodeVeraUi(runtime)
     const t4: number = nowNs()
 
+    // PSS for ONE program, read before the warm loop. Reading it afterwards
+    // charges the 100 discarded VMs to a single program and overstates the
+    // cost by an order of magnitude.
+    const pssCold: number = Number(hidebug.getPss())
+
     // Warm, iterated pass so a per-run figure survives clock granularity.
     const w0: number = nowNs()
     for (let i: number = 0; i < REPS; i++) {
@@ -81,11 +87,11 @@ struct Index {
     }
     const w1: number = nowNs()
 
-    const pss1: number = Number(hidebug.getPss())
+    const pssWarm: number = Number(hidebug.getPss())
     const us: number = 1000.0
     const sample: Sample = {
       label: label,
-      bytes: vbc1.length,
+      vbc1Units: vbc1.length,   // UTF-16 units; 6555 here vs 6557 UTF-8 bytes
       parseUs: (t1 - t0) / us,
       bootUs: (t2 - t1) / us,
       renderUs: (t3 - t2) / us,
@@ -93,19 +99,21 @@ struct Index {
       coldTotalUs: (t4 - t0) / us,
       warmTotalUs: (w1 - w0) / us / REPS,
       pssBaselineKb: pss0,
-      pssDeltaKb: pss1 - pss0,
+      pssDeltaKb: pssCold - pss0,
+      pssAfterWarmKb: pssWarm - pss0,
       nodes: this.countNodes(ui)
     }
 
     this.log =
-      `program:      ${sample.label}  (${sample.bytes} B vbc1, ${sample.nodes} nodes)\n` +
+      `program:      ${sample.label}  (${sample.vbc1Units} vbc1 units, ${sample.nodes} nodes)\n` +
       `parse vbc1:   ${sample.parseUs.toFixed(1)} us\n` +
       `vm boot:      ${sample.bootUs.toFixed(1)} us\n` +
       `render():     ${sample.renderUs.toFixed(1)} us\n` +
       `decode+check: ${sample.decodeUs.toFixed(1)} us\n` +
       `cold total:   ${sample.coldTotalUs.toFixed(1)} us\n` +
       `warm total:   ${sample.warmTotalUs.toFixed(1)} us  (mean of ${REPS})\n` +
-      `PSS delta:    ${(sample.pssDeltaKb / 1024).toFixed(2)} MB\n` +
+      `PSS delta:    ${(sample.pssDeltaKb / 1024).toFixed(2)} MB  (one program)\n` +
+      `after ${REPS} runs: ${(sample.pssAfterWarmKb / 1024).toFixed(2)} MB\n` +
       `baseline PSS: ${(sample.pssBaselineKb / 1024).toFixed(1)} MB`
     console.info('VERA_PROBE ' + JSON.stringify(sample))
 
@@ -143,8 +151,9 @@ struct Index {
           }
           .width('100%')
           .onAppear(() => {
-            // Fires once the ArkUI subtree for this program exists, so the
-            // delta from the state write is the construction cost itself.
+            // Fires once the ArkUI subtree exists. This lands on a frame
+            // boundary, so it bounds construction from above rather than
+            // isolating it -- part of the figure is waiting for vsync.
             if (!this.uiBuildLogged) {
               this.uiBuildLogged = true
               const buildUs: number = (nowNs() - this.uiBuildStart) / 1000.0
