@@ -1,235 +1,165 @@
-import hidebug from '@ohos.hidebug'
-import { systemDateTime } from '@kit.BasicServicesKit'
-import { RuntimeResult, VeraVM, parseBytecodeAssembly } from '../vera/VeraInterpreter'
-import { VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
-import { DASHBOARD_VBC1, TICTACTOE_VBC1 } from '../vera/VeraPrograms'
+import router from '@ohos.router'
+import { Project, store } from '../vera/ProjectStore'
 
-/**
- * Times the whole VERA path on device: the paired half of webview-probe, which
- * loads the same two prompts as HTML into a WebView on the same phone.
- *
- * Phases are microsecond-scale -- parse + boot measured 435 us on an x86 host --
- * so timing uses nanosecond uptime. Millisecond resolution would floor every
- * phase to zero. The cold pass is reported separately from a warm iterated
- * average because the cold number is what a user actually pays when opening a
- * freshly generated program.
- *
- * uiBuildUs is the ArkUI construction term, from the state write to onAppear.
- * It is the number the host benchmark could only proxy from Blink.
- */
-
-/** Nanoseconds since boot; monotonic, and fine enough for these phases. */
-function nowNs(): number {
-  return systemDateTime.getUptime(systemDateTime.TimeType.STARTUP, true)
-}
-
-interface Sample {
-  label: string
-  vbc1Units: number
-  parseUs: number
-  bootUs: number
-  renderUs: number
-  decodeUs: number
-  coldTotalUs: number
-  warmTotalUs: number
-  pssBaselineKb: number
-  pssDeltaKb: number
-  pssAfterWarmKb: number
-  nodes: number
-}
-
-const REPS: number = 100
+const ICONS: string[] = ['📱', '🎮', '📊', '🧮', '🎯', '📝', '🔧', '🎨', '🌍', '⚡']
 
 @Entry
 @Component
 struct Index {
-  @State log: string = 'Ready. Tap a program to measure it cold.'
-  @State uiRoot: VeraUiNode | null = null
-  @State revision: number = 0
-  private uiBuildStart: number = 0
-  private uiBuildLogged: boolean = true
+  @State projects: Project[] = []
+  @State showCreate: boolean = false
+  @State newName: string = ''
+  @State selectedIcon: string = '📱'
 
-  private countNodes(node: VeraUiNode): number {
-    let n: number = 1
-    for (const child of node.children) {
-      n += this.countNodes(child)
-    }
-    return n
+  aboutToAppear(): void {
+    store.init(getContext(this).filesDir)
+    this.reload()
   }
 
-  private benchmark(label: string, vbc1: string): void {
-    // bigint -> number outside the timed region; getPss() returns KB.
-    const pss0: number = Number(hidebug.getPss())
+  onPageShow(): void {
+    this.reload()
+  }
 
-    const t0: number = nowNs()
-    const program = parseBytecodeAssembly(vbc1)
-    const t1: number = nowNs()
-    const vm = new VeraVM(program)
-    vm.run()
-    const t2: number = nowNs()
-    const runtime: RuntimeResult = vm.invokeFunction('render', [])
-    const t3: number = nowNs()
-    const ui: VeraUiNode = decodeVeraUi(runtime)
-    const t4: number = nowNs()
-
-    // PSS for ONE program, read before the warm loop. Reading it afterwards
-    // charges the 100 discarded VMs to a single program and overstates the
-    // cost by an order of magnitude.
-    const pssCold: number = Number(hidebug.getPss())
-
-    // Warm, iterated pass so a per-run figure survives clock granularity.
-    const w0: number = nowNs()
-    for (let i: number = 0; i < REPS; i++) {
-      const p2 = parseBytecodeAssembly(vbc1)
-      const v2 = new VeraVM(p2)
-      v2.run()
-      decodeVeraUi(v2.invokeFunction('render', []))
-    }
-    const w1: number = nowNs()
-
-    const pssWarm: number = Number(hidebug.getPss())
-    const us: number = 1000.0
-    const sample: Sample = {
-      label: label,
-      vbc1Units: vbc1.length,   // UTF-16 units; 6555 here vs 6557 UTF-8 bytes
-      parseUs: (t1 - t0) / us,
-      bootUs: (t2 - t1) / us,
-      renderUs: (t3 - t2) / us,
-      decodeUs: (t4 - t3) / us,
-      coldTotalUs: (t4 - t0) / us,
-      warmTotalUs: (w1 - w0) / us / REPS,
-      pssBaselineKb: pss0,
-      pssDeltaKb: pssCold - pss0,
-      pssAfterWarmKb: pssWarm - pss0,
-      nodes: this.countNodes(ui)
-    }
-
-    this.log =
-      `program:      ${sample.label}  (${sample.vbc1Units} vbc1 units, ${sample.nodes} nodes)\n` +
-      `parse vbc1:   ${sample.parseUs.toFixed(1)} us\n` +
-      `vm boot:      ${sample.bootUs.toFixed(1)} us\n` +
-      `render():     ${sample.renderUs.toFixed(1)} us\n` +
-      `decode+check: ${sample.decodeUs.toFixed(1)} us\n` +
-      `cold total:   ${sample.coldTotalUs.toFixed(1)} us\n` +
-      `warm total:   ${sample.warmTotalUs.toFixed(1)} us  (mean of ${REPS})\n` +
-      `PSS delta:    ${(sample.pssDeltaKb / 1024).toFixed(2)} MB  (one program)\n` +
-      `after ${REPS} runs: ${(sample.pssAfterWarmKb / 1024).toFixed(2)} MB\n` +
-      `baseline PSS: ${(sample.pssBaselineKb / 1024).toFixed(1)} MB`
-    console.info('VERA_PROBE ' + JSON.stringify(sample))
-
-    this.uiBuildLogged = false
-    this.uiRoot = ui
-    this.revision += 1
-    this.uiBuildStart = nowNs()
+  private reload(): void {
+    this.projects = store.listProjects()
   }
 
   build() {
-    Scroll() {
-      Column({ space: 10 }) {
-        Text('VERA probe').fontSize(24).fontWeight(FontWeight.Bold)
-        Text('Measures the VERA runtime on device. Restart between runs for a cold measurement.')
-          .fontSize(13).opacity(0.7)
+    Navigation() {
+      if (this.projects.length === 0 && !this.showCreate) {
+        Column() {
+          Text('No projects yet').fontSize(18).fontColor('#999999').margin({ top: 120 })
+          Text('Tap + to create your first VERA app').fontSize(14).fontColor('#BBBBBB').margin({ top: 8 })
+        }.width('100%').alignItems(HorizontalAlign.Center)
+      } else {
+        List({ space: 12 }) {
+          ForEach(this.projects, (p: Project) => {
+            ListItem() {
+              Row() {
+                Text(p.icon).fontSize(36).margin({ right: 14 })
+                Column() {
+                  Text(p.name).fontSize(17).fontWeight(FontWeight.Medium)
+                  Text(new Date(p.createdAt).toLocaleDateString())
+                    .fontSize(13).fontColor('#999999').margin({ top: 2 })
+                }
+                .alignItems(HorizontalAlign.Start)
+                .layoutWeight(1)
 
-        Row({ space: 10 }) {
-          Button('Bench tictactoe')
-            .onClick(() => { this.benchmark('tictactoe', TICTACTOE_VBC1) })
-          Button('Bench dashboard')
-            .onClick(() => { this.benchmark('dashboard', DASHBOARD_VBC1) })
-        }
-
-        Text(this.log)
-          .fontSize(13)
-          .fontFamily('monospace')
-          .padding(12)
-          .width('100%')
-          .backgroundColor('#11000000')
-          .borderRadius(8)
-
-        if (this.uiRoot != null) {
-          Column() {
-            this.renderNode(this.uiRoot!, 'root')
-          }
-          .width('100%')
-          .onAppear(() => {
-            // Fires once the ArkUI subtree exists. This lands on a frame
-            // boundary, so it bounds construction from above rather than
-            // isolating it -- part of the figure is waiting for vsync.
-            if (!this.uiBuildLogged) {
-              this.uiBuildLogged = true
-              const buildUs: number = (nowNs() - this.uiBuildStart) / 1000.0
-              console.info('VERA_PROBE_UI {"buildUs":' + buildUs.toFixed(1) + '}')
+                Text('>').fontSize(18).fontColor('#CCCCCC')
+              }
+              .width('100%')
+              .padding(14)
+              .backgroundColor('#FFFFFF')
+              .borderRadius(12)
+              .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
+              .onClick(() => {
+                router.pushUrl({
+                  url: 'pages/ProjectPage',
+                  params: { projectId: p.id } as Record<string, string>
+                })
+              })
             }
-          })
+            .swipeAction({
+              end: {
+                builder: () => { this.deleteAction(p.id) }
+              }
+            })
+          }, (p: Project) => p.id)
         }
-      }
-      .width('100%')
-      .padding(16)
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  @Builder
-  renderChildren(node: VeraUiNode) {
-    ForEach(node.children, (child: VeraUiNode) => {
-      this.renderNode(child, node.kind)
-    }, (child: VeraUiNode) => child.id.toString() + '-' + this.revision.toString())
-  }
-
-  /**
-   * The same node kinds vera-static-hello renders, so the construction cost is
-   * representative rather than a toy.
-   */
-  @Builder
-  renderNode(node: VeraUiNode, parentKind: string) {
-    if (node.kind === 'column' || node.kind === 'scroll') {
-      Column() {
-        this.renderChildren(node)
-      }
-      .width('100%')
-      .alignItems(node.style === 'center' ? HorizontalAlign.Center : HorizontalAlign.Start)
-      .padding(node.style === 'compact' ? 6 : 10)
-    } else if (node.kind === 'row') {
-      Row() {
-        this.renderChildren(node)
-      }
-      .width('100%')
-      .justifyContent(node.style === 'split' ? FlexAlign.SpaceBetween : FlexAlign.Start)
-      .padding(6)
-    } else if (node.kind === 'card') {
-      Column() {
-        this.renderChildren(node)
-      }
-      .width(parentKind === 'row' ? undefined : '100%')
-      .layoutWeight(parentKind === 'row' ? 1 : 0)
-      .alignItems(HorizontalAlign.Start)
-      .padding(14)
-      .backgroundColor('#F3F6FA')
-      .border({ width: 1, color: '#D8E1ED' })
-      .borderRadius(14)
-    } else if (node.kind === 'text') {
-      Text(node.text)
-        .fontSize(node.style === 'title' ? 22 : node.style === 'caption' ? 12 : 15)
-        .fontWeight(node.style === 'title' ? FontWeight.Bold : FontWeight.Normal)
         .width('100%')
-    } else if (node.kind === 'button') {
-      Button(node.text.length === 0 ? ' ' : node.text)
-        .height(42)
-        .fontSize(15)
-    } else if (node.kind === 'cell') {
-      Column() {
-        Text(node.text).fontSize(20).fontWeight(FontWeight.Bold)
+        .padding({ left: 16, right: 16, top: 8 })
       }
-      .layoutWeight(1)
-      .height(64)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor('#FFFFFF')
-      .border({ width: 1, color: '#CBD6E4' })
-      .borderRadius(10)
-    } else if (node.kind === 'spacer') {
-      Blank().height(node.style === 'large' ? 32 : node.style === 'small' ? 8 : 18)
-    } else {
-      Text(node.text).fontSize(14).width('100%')
+
+      if (this.showCreate) {
+        Column() {
+          Column() {
+            Text('New Project').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 })
+
+            TextInput({ placeholder: 'Project name', text: this.newName })
+              .onChange((value: string) => { this.newName = value })
+              .width('100%')
+              .height(44)
+              .margin({ bottom: 16 })
+
+            Text('Icon').fontSize(14).fontColor('#666666').margin({ bottom: 8 })
+            Row() {
+              ForEach(ICONS, (icon: string) => {
+                Text(icon)
+                  .fontSize(28)
+                  .padding(6)
+                  .backgroundColor(this.selectedIcon === icon ? '#E0E8FF' : '#00000000')
+                  .borderRadius(8)
+                  .onClick(() => { this.selectedIcon = icon })
+              }, (icon: string) => icon)
+            }.width('100%').justifyContent(FlexAlign.SpaceAround)
+
+            Row({ space: 12 }) {
+              Button('Cancel')
+                .type(ButtonType.Normal)
+                .backgroundColor('#E0E0E0')
+                .fontColor('#333333')
+                .layoutWeight(1)
+                .onClick(() => { this.showCreate = false })
+              Button('Create')
+                .type(ButtonType.Normal)
+                .layoutWeight(1)
+                .enabled(this.newName.trim().length > 0)
+                .onClick(() => { this.doCreate() })
+            }
+            .width('100%')
+            .margin({ top: 20 })
+          }
+          .width('90%')
+          .padding(24)
+          .backgroundColor('#FFFFFF')
+          .borderRadius(16)
+          .shadow({ radius: 8, color: '#30000000' })
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor('#50000000')
+        .position({ x: 0, y: 0 })
+        .onClick(() => { this.showCreate = false })
+      }
     }
+    .title('VERA')
+    .titleMode(NavigationTitleMode.Full)
+    .menus([{
+      value: '',
+      icon: 'resources/base/media/startIcon.png',
+      action: () => { this.showCreate = true; this.newName = ''; this.selectedIcon = '📱' }
+    }])
+    .toolbarConfiguration([{
+      value: 'New Project',
+      status: ToolbarItemStatus.NORMAL,
+      action: () => { this.showCreate = true; this.newName = ''; this.selectedIcon = '📱' }
+    }])
+  }
+
+  @Builder
+  deleteAction(id: string) {
+    Row() {
+      Button('Delete')
+        .backgroundColor('#FF3B30')
+        .fontColor('#FFFFFF')
+        .height('100%')
+        .onClick(() => {
+          store.deleteProject(id)
+          this.reload()
+        })
+    }.height('100%').padding({ left: 8 })
+  }
+
+  private doCreate(): void {
+    let name = this.newName.trim()
+    if (name.length === 0) { return }
+    let project = store.createProject(name, this.selectedIcon)
+    this.showCreate = false
+    this.reload()
+    router.pushUrl({
+      url: 'pages/ProjectPage',
+      params: { projectId: project.id } as Record<string, string>
+    })
   }
 }
