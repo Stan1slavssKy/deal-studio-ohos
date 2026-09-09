@@ -142,6 +142,9 @@ export class VirtualMachine {
     }
   }
 
+  // Steps executed by the most recent execute() call (reset per call).
+  stepsExecuted(): number { return this.steps }
+
   execute(entry: string, args: RuntimeValue[] = []): RuntimeValue {
     let fn = this.functions.get(entry)
     if (fn == undefined) {

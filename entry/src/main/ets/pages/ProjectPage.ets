@@ -1,5 +1,6 @@
 import router from '@ohos.router'
 import { Project, Version, store } from '../vera/ProjectStore'
+import { refreshForms } from '../vera/FormUpdater'
 
 class RunVersionParams {
   projectId: string = ''
@@ -18,6 +19,7 @@ struct ProjectPage {
   @State project: Project | null = null
   @State versions: Version[] = []
   @State projectId: string = ''
+  @State viewedSource: string = ''
 
   aboutToAppear(): void {
     let params = router.getParams() as Record<string, string>
@@ -115,6 +117,13 @@ struct ProjectPage {
                       .backgroundColor('#E0E0E0')
                       .fontColor('#333333')
                       .onClick(() => { this.openGenerate(v.id) })
+                    Button('Src')
+                      .type(ButtonType.Normal)
+                      .height(32)
+                      .fontSize(13)
+                      .backgroundColor('#EEEEEE')
+                      .fontColor('#666666')
+                      .onClick(() => { this.viewSource(v) })
                   }
                 }
                 .width('100%')
@@ -130,6 +139,10 @@ struct ProjectPage {
           }
           .width('100%')
           .layoutWeight(1)
+        }
+
+        if (this.viewedSource.length > 0) {
+          this.sourceOverlay()
         }
       }.width('100%').height('100%')
     }
@@ -147,6 +160,7 @@ struct ProjectPage {
         .onClick(() => {
           store.deleteVersion(v.projectId, v.id)
           this.reload()
+          refreshForms()
         })
     }.height('100%').padding({ left: 8 })
   }
@@ -172,7 +186,46 @@ struct ProjectPage {
     router.pushUrl({ url: 'pages/GeneratePage', params: p })
   }
 
+  private viewSource(v: Version): void {
+    this.viewedSource = v.source
+  }
+
   private pinToHome(): void {
     console.info('Shortcut pinning requires system API — not available for non-system apps')
+  }
+
+  @Builder
+  sourceOverlay() {
+    if (this.viewedSource.length > 0) {
+      Column() {
+        Row() {
+          Text('Source').fontSize(18).fontWeight(FontWeight.Bold)
+          Blank()
+          Button('Close')
+            .height(36)
+            .fontSize(13)
+            .type(ButtonType.Normal)
+            .onClick(() => { this.viewedSource = '' })
+        }
+        .width('100%')
+        .margin({ bottom: 10 })
+
+        Scroll() {
+          Text(this.viewedSource)
+            .fontSize(12)
+            .fontColor('#333333')
+            .width('100%')
+        }
+        .layoutWeight(1)
+        .width('100%')
+      }
+      .width('90%')
+      .height('80%')
+      .padding(18)
+      .backgroundColor('#FFFFFF')
+      .borderRadius(14)
+      .shadow({ radius: 10, color: '#40000000' })
+      .position({ x: '5%', y: '10%' })
+    }
   }
 }

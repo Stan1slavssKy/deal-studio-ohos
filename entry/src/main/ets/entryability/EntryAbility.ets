@@ -4,6 +4,7 @@ import AbilityConstant from '@ohos.app.ability.AbilityConstant'
 import window from '@ohos.window'
 import hilog from '@ohos.hilog'
 import router from '@ohos.router'
+import { refreshForms } from '../vera/FormUpdater'
 
 const DOMAIN = 0x0000
 
@@ -75,6 +76,7 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onForeground')
+    refreshForms()
   }
 
   onBackground(): void {

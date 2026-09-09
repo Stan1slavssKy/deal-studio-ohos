@@ -1,7 +1,9 @@
 import router from '@ohos.router'
 import fs from '@ohos.file.fs'
 import http from '@ohos.net.http'
+import request from '@ohos.request'
 import { store } from '../vera/ProjectStore'
+import { refreshForms } from '../vera/FormUpdater'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
 
@@ -133,31 +135,56 @@ struct GeneratePage {
     }
   }
 
-  private checkModel(): void {
+  private async checkModel(): Promise<void> {
     let filesDir = getContext(this).filesDir
     let modelPath = LlamaEngine.defaultModelPath(filesDir)
+    if (!LlamaEngine.modelExists(filesDir)) {
+      // hdc file send is blocked on release-provisioned installs, so the
+      // model is fetched from the vera-server /models endpoint instead.
+      await this.downloadModel(modelPath)
+    }
+    this.modelReady = LlamaEngine.modelExists(filesDir)
+    if (!this.modelReady) {
+      this.status = 'Model not found'
+      return
+    }
+    this.status = 'Model ready'
+    if (!engine.isReady()) {
+      this.status = 'Loading model...'
+      let ok = engine.init({
+        modelPath: modelPath,
+        nCtx: 4096,
+        nThreads: 4,
+        nGpuLayers: 0
+      })
+      this.status = ok ? 'Model loaded' : 'Model load failed'
+      this.modelReady = ok
+    }
+  }
+
+  private async downloadModel(modelPath: string): Promise<void> {
+    let filesDir = getContext(this).filesDir
     try {
-      let stat = fs.statSync(modelPath)
-      this.modelReady = stat.size > 0
-      if (this.modelReady) {
-        this.status = 'Model ready'
-        if (!engine.isReady()) {
-          this.status = 'Loading model...'
-          let ok = engine.init({
-            modelPath: modelPath,
-            nCtx: 4096,
-            nThreads: 4,
-            nGpuLayers: 0
-          })
-          this.status = ok ? 'Model loaded' : 'Model load failed'
-          this.modelReady = ok
+      fs.mkdirSync(filesDir + '/models', true)
+    } catch (_e) {}
+    this.status = 'Downloading model (one-time, ~1.9GB)...'
+    try {
+      let task = await request.downloadFile(getContext(this), {
+        url: DEFAULT_SERVER_URL + '/models/qwen2.5-coder-3b-instruct-q4_k_m.gguf',
+        filePath: modelPath
+      })
+      task.on('progress', (received: number, total: number): void => {
+        if (total > 0) {
+          this.status = 'Downloading model ' + Math.floor(received * 100 / total).toString() + '%'
         }
-      } else {
-        this.status = 'Model not found'
-      }
-    } catch (_e) {
-      this.modelReady = false
-      this.status = 'Model not found at ' + modelPath
+      })
+      await new Promise<void>((resolve, reject) => {
+        task.on('complete', (): void => { resolve() })
+        task.on('fail', (err: number): void => { reject(new Error('download failed, code ' + err.toString())) })
+      })
+      this.status = 'Model downloaded'
+    } catch (e) {
+      this.status = 'Model download failed: ' + (e as Error).message
     }
   }
 
@@ -361,6 +388,7 @@ struct GeneratePage {
     }
     store.createVersion(this.projectId, this.generatedSource.trim(), vbc2, note)
     this.status = vbc2.length > 0 ? 'Saved with compiled bytecode' : 'Saved (source only — compile errors)'
+    refreshForms()
     router.back()
   }
 
@@ -515,12 +543,9 @@ struct GeneratePage {
 
         if (!this.useServer && !this.modelReady && !this.generating) {
           Column() {
-            Text('Model not found').fontSize(14).fontWeight(FontWeight.Medium)
-            Text('Place Qwen3-Coder-3B GGUF at:').fontSize(12).fontColor('#666666').margin({ top: 4 })
-            Text(LlamaEngine.defaultModelPath(getContext(this).filesDir))
-              .fontSize(11).fontColor('#999999').margin({ top: 2 })
-              .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text('hdc file send <model>.gguf <path above>').fontSize(11).fontColor('#007DFF').margin({ top: 4 })
+            Text('Model not downloaded').fontSize(14).fontWeight(FontWeight.Medium)
+            Text('Switch to Local mode to download the model automatically (one-time, ~1.9GB over WiFi).')
+              .fontSize(12).fontColor('#666666').margin({ top: 4 })
           }
           .width('100%')
           .padding(16)

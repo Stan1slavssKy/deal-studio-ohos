@@ -32,7 +32,11 @@ struct RunnerPage {
     try {
       let viewTree = this.vm!.execute('view', [this.currentState!])
       let nodes = decodeVeraUi(viewTree)
-      this.uiRoot = nodes.length > 0 ? nodes[0] : null
+      let root = nodes.length > 0 ? nodes[0] : null
+      console.info('VERA-VIEW rev=' + (this.revision + 1).toString() +
+        ' root=' + (root !== null ? root!.kind : 'null') +
+        ' children=' + (root !== null ? root!.children.length.toString() : '0'))
+      this.uiRoot = root
       this.revision += 1
     } catch (e) {
       this.error = 'View error: ' + (e as Error).message
@@ -40,11 +44,17 @@ struct RunnerPage {
   }
 
   private handleAction(action: string, value: number): void {
+    console.info('VERA-CLICK action=' + action + ' value=' + value.toString() + ' rev=' + this.revision.toString())
     if (this.vm === null || this.currentState === null) { return }
+    let t0 = Date.now()
     try {
       this.currentState = this.vm!.execute(action, [this.currentState!, new VeraIntValue(value)])
+      console.info('VERA-ACTION ' + action + ' steps=' + this.vm!.stepsExecuted().toString() +
+        ' ms=' + (Date.now() - t0).toString())
       this.renderView()
     } catch (e) {
+      console.error('VERA-ACTION ' + action + ' TRAP steps=' + this.vm!.stepsExecuted().toString() +
+        ' ms=' + (Date.now() - t0).toString() + ' err=' + (e as Error).message)
       this.error = 'Action error: ' + (e as Error).message
     }
   }
@@ -63,7 +73,9 @@ struct RunnerPage {
         if (this.uiRoot !== null) {
           Scroll() {
             Column() {
-              this.renderNode(this.uiRoot!, 'root')
+              ForEach([this.revision], (_: number) => {
+                this.renderNode(this.uiRoot!, 'root')
+              }, (r: number) => r.toString())
             }.width('100%')
           }
           .width('100%')

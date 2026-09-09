@@ -4,9 +4,10 @@
  * The native module is built from entry/src/main/cpp/ and loaded as libllama.so.
  * It exposes four functions: llamaInit, llamaGenerate, llamaStop, llamaFree.
  *
- * Model: Qwen3-Coder-3B-Q4_K_M.gguf (~2GB)
- * Place at: {filesDir}/models/qwen3-coder-3b-q4km.gguf
- * Transfer: hdc file send qwen3-coder-3b-q4km.gguf /data/app/el2/100/base/com.vera.probe.dyn/haps/entry/files/models/
+ * Model: qwen2.5-coder-3b-instruct-q4_k_m.gguf (~1.9GB)
+ * Place at: {filesDir}/models/qwen2.5-coder-3b-instruct-q4_k_m.gguf
+ * Transfer: downloaded from the vera-server /models endpoint (hdc file send is
+ * blocked on release-provisioned installs — see GeneratePage.checkModel()).
  */
 
 import resourceManager from '@ohos.resourceManager'
@@ -146,7 +147,7 @@ export class LlamaEngine {
   }
 
   static defaultModelPath(filesDir: string): string {
-    return filesDir + '/models/qwen3-coder-3b-q4km.gguf'
+    return filesDir + '/models/qwen2.5-coder-3b-instruct-q4_k_m.gguf'
   }
 
   static modelExists(filesDir: string): boolean {

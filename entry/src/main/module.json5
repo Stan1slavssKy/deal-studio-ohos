@@ -25,6 +25,19 @@
           { "entities": ["entity.system.home"], "actions": ["action.system.home"] }
         ]
       }
+    ],
+    "extensionAbilities": [
+      {
+        "name": "VeraFormAbility",
+        "srcEntry": "./ets/formability/VeraFormAbility.ets",
+        "type": "form",
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
+      }
     ]
   }
 }

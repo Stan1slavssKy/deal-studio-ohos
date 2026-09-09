@@ -1,5 +1,6 @@
 import router from '@ohos.router'
 import { Project, store } from '../vera/ProjectStore'
+import { refreshForms } from '../vera/FormUpdater'
 
 const ICONS: string[] = ['📱', '🎮', '📊', '🧮', '🎯', '📝', '🔧', '🎨', '🌍', '⚡']
 
@@ -150,6 +151,7 @@ struct Index {
         .onClick(() => {
           store.deleteProject(id)
           this.reload()
+          refreshForms()
         })
     }.height('100%').padding({ left: 8 })
   }
@@ -160,6 +162,7 @@ struct Index {
     let project = store.createProject(name, this.selectedIcon)
     this.showCreate = false
     this.reload()
+    refreshForms()
     let nav = new ProjectNavParams()
     nav.projectId = project.id
     router.pushUrl({ url: 'pages/ProjectPage', params: nav })
