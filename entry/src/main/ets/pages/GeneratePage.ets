@@ -1,10 +1,19 @@
 import router from '@ohos.router'
 import fs from '@ohos.file.fs'
 import { store } from '../vera/ProjectStore'
-import { engine, LlamaEngine, GenerateRequest, loadRawfileText } from '../vera/LlamaEngine'
+import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
 
 const MAX_RETRIES: number = 3
+
+class AttemptMetrics {
+  attempt: number = 0
+  genMs: number = 0
+  compileMs: number = 0
+  inputTokens: number = 0
+  outputTokens: number = 0
+  success: boolean = false
+}
 
 @Entry
 @Component
@@ -19,9 +28,14 @@ struct GeneratePage {
   @State attempt: number = 0
   @State compiled: boolean = false
   @State compileErrors: string = ''
+  @State showCode: boolean = false
+  @State showMetrics: boolean = false
+  @State attempts: AttemptMetrics[] = []
+  @State totalMs: number = 0
   private systemPrompt: string = ''
   private grammar: string = ''
   private previousSource: string = ''
+  private genStartTime: number = 0
 
   aboutToAppear(): void {
     let params = router.getParams() as Record<string, string>
@@ -83,12 +97,18 @@ struct GeneratePage {
     this.compiled = false
     this.compileErrors = ''
     this.attempt = 1
+    this.attempts = []
+    this.totalMs = 0
+    this.genStartTime = Date.now()
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
     this.runAttempt(this.prompt.trim(), '')
   }
 
   private runAttempt(userPrompt: string, errorFeedback: string): void {
     this.generatedSource = ''
+    let metrics = new AttemptMetrics()
+    metrics.attempt = this.attempt
+
     let request = new GenerateRequest()
     request.systemPrompt = this.systemPrompt
     request.grammar = this.grammar
@@ -105,28 +125,36 @@ struct GeneratePage {
       request.userPrompt = userPrompt
     }
 
+    let genStart = Date.now()
+    let genResult: GenerateResult
     try {
-      let result = engine.generate(request, (token: string) => {
+      genResult = engine.generate(request, (token: string) => {
         this.generatedSource += token
       })
-      if (result.length > 0) {
-        this.generatedSource = result
+      if (genResult.text.length > 0) {
+        this.generatedSource = genResult.text
       }
     } catch (e) {
       this.status = 'Generation failed: ' + (e as Error).message
       this.generating = false
       return
     }
+    metrics.genMs = Date.now() - genStart
+    metrics.inputTokens = genResult.inputTokens
+    metrics.outputTokens = genResult.outputTokens
 
     if (this.generatedSource.trim().length === 0) {
       this.status = 'Generation produced empty output'
       this.generating = false
+      this.attempts = [...this.attempts, metrics]
+      this.totalMs = Date.now() - this.genStartTime
       return
     }
 
     this.status = 'Compiling (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
     let vbc2 = ''
     let errors = ''
+    let compileStart = Date.now()
     try {
       let result = compileVeraSource(this.generatedSource.trim())
       vbc2 = result.vbc2
@@ -137,8 +165,12 @@ struct GeneratePage {
         errors = (e as Error).message
       }
     }
+    metrics.compileMs = Date.now() - compileStart
 
     if (errors.length === 0 && vbc2.length > 0) {
+      metrics.success = true
+      this.attempts = [...this.attempts, metrics]
+      this.totalMs = Date.now() - this.genStartTime
       this.compiled = true
       this.compileErrors = ''
       this.status = 'Compiled successfully on attempt ' + this.attempt
@@ -146,12 +178,14 @@ struct GeneratePage {
       return
     }
 
+    this.attempts = [...this.attempts, metrics]
     this.compileErrors = errors
     if (this.attempt < MAX_RETRIES) {
       this.attempt++
       this.status = 'Compile failed, retrying (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
       this.runAttempt(userPrompt, errors)
     } else {
+      this.totalMs = Date.now() - this.genStartTime
       this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
       this.generating = false
     }
@@ -171,6 +205,24 @@ struct GeneratePage {
     store.createVersion(this.projectId, this.generatedSource.trim(), vbc2, note)
     this.status = vbc2.length > 0 ? 'Saved with compiled bytecode' : 'Saved (source only — compile errors)'
     router.back()
+  }
+
+  private formatMs(ms: number): string {
+    if (ms < 1000) return ms + 'ms'
+    let secs = (ms / 1000).toFixed(1)
+    return secs + 's'
+  }
+
+  private totalInputTokens(): number {
+    let total = 0
+    for (let a of this.attempts) total += a.inputTokens
+    return total
+  }
+
+  private totalOutputTokens(): number {
+    let total = 0
+    for (let a of this.attempts) total += a.outputTokens
+    return total
   }
 
   build() {
@@ -196,6 +248,7 @@ struct GeneratePage {
               if (this.generating) {
                 engine.stop()
                 this.generating = false
+                this.totalMs = Date.now() - this.genStartTime
                 this.status = 'Stopped'
               } else {
                 this.doGenerate()
@@ -210,11 +263,28 @@ struct GeneratePage {
         .width('100%')
         .padding({ left: 16, right: 16 })
 
-        Text(this.status)
-          .fontSize(12)
-          .fontColor(this.compiled ? '#34C759' : '#999999')
-          .padding({ left: 16, top: 8, bottom: 4 })
-          .width('100%')
+        Row({ space: 8 }) {
+          Text(this.status)
+            .fontSize(12)
+            .fontColor(this.compiled ? '#34C759' : '#999999')
+            .layoutWeight(1)
+          Button(this.showCode ? 'Code ✓' : 'Code')
+            .type(ButtonType.Normal)
+            .fontSize(11)
+            .height(28)
+            .backgroundColor(this.showCode ? '#E8F0FE' : '#F0F0F0')
+            .fontColor(this.showCode ? '#007DFF' : '#666666')
+            .onClick(() => { this.showCode = !this.showCode })
+          Button(this.showMetrics ? 'Metrics ✓' : 'Metrics')
+            .type(ButtonType.Normal)
+            .fontSize(11)
+            .height(28)
+            .backgroundColor(this.showMetrics ? '#E8F0FE' : '#F0F0F0')
+            .fontColor(this.showMetrics ? '#007DFF' : '#666666')
+            .onClick(() => { this.showMetrics = !this.showMetrics })
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 8, bottom: 4 })
 
         if (this.compileErrors.length > 0) {
           Scroll() {
@@ -229,6 +299,34 @@ struct GeneratePage {
           .constraintSize({ maxHeight: 120 })
           .margin({ left: 16, right: 16 })
           .backgroundColor('#FFF0F0')
+          .borderRadius(8)
+        }
+
+        if (this.showMetrics && this.attempts.length > 0) {
+          Column({ space: 6 }) {
+            Row({ space: 16 }) {
+              Text('Total: ' + this.formatMs(this.totalMs)).fontSize(12).fontWeight(FontWeight.Medium)
+              Text('In: ' + this.totalInputTokens() + ' tok').fontSize(11).fontColor('#666666')
+              Text('Out: ' + this.totalOutputTokens() + ' tok').fontSize(11).fontColor('#666666')
+            }
+            .width('100%')
+            ForEach(this.attempts, (a: AttemptMetrics) => {
+              Row({ space: 8 }) {
+                Text('#' + a.attempt).fontSize(11).fontWeight(FontWeight.Medium).width(24)
+                Text('gen ' + this.formatMs(a.genMs)).fontSize(10).fontColor('#666666')
+                Text('compile ' + this.formatMs(a.compileMs)).fontSize(10).fontColor('#666666')
+                Text(a.inputTokens + '→' + a.outputTokens).fontSize(10).fontColor('#666666')
+                Text(a.success ? '✓' : '✗')
+                  .fontSize(12)
+                  .fontColor(a.success ? '#34C759' : '#FF3B30')
+              }
+              .width('100%')
+            })
+          }
+          .width('100%')
+          .padding(12)
+          .margin({ left: 16, right: 16, top: 4 })
+          .backgroundColor('#F5F7FA')
           .borderRadius(8)
         }
 
@@ -248,19 +346,21 @@ struct GeneratePage {
           .borderRadius(8)
         }
 
-        Scroll() {
-          Text(this.generatedSource.length > 0 ? this.generatedSource : '(generated source will appear here)')
-            .fontSize(12)
-            .fontFamily('monospace')
-            .fontColor(this.generatedSource.length > 0 ? '#333333' : '#CCCCCC')
-            .width('100%')
-            .padding(12)
+        if (this.showCode) {
+          Scroll() {
+            Text(this.generatedSource.length > 0 ? this.generatedSource : '(generated source will appear here)')
+              .fontSize(12)
+              .fontFamily('monospace')
+              .fontColor(this.generatedSource.length > 0 ? '#333333' : '#CCCCCC')
+              .width('100%')
+              .padding(12)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .margin({ left: 16, right: 16, top: 4, bottom: 16 })
+          .backgroundColor('#F5F7FA')
+          .borderRadius(8)
         }
-        .width('100%')
-        .layoutWeight(1)
-        .margin({ left: 16, right: 16, top: 8, bottom: 16 })
-        .backgroundColor('#F5F7FA')
-        .borderRadius(8)
       }
       .width('100%')
       .height('100%')

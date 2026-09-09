@@ -121,12 +121,18 @@ static napi_value LlamaInit(napi_env env, napi_callback_info info) {
 #endif
 }
 
-// llamaGenerate(paramsJson: string, callback: (token: string) => void): string
+// llamaGenerate(paramsJson: string, callback: (token: string) => void): {text, inputTokens, outputTokens}
 static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
-    napi_value result;
 #ifdef LLAMA_STUB
-    napi_create_string_utf8(env, "", 0, &result);
-    return result;
+    napi_value result_obj;
+    napi_create_object(env, &result_obj);
+    napi_value empty_str, zero_val;
+    napi_create_string_utf8(env, "", 0, &empty_str);
+    napi_create_int32(env, 0, &zero_val);
+    napi_set_named_property(env, result_obj, "text", empty_str);
+    napi_set_named_property(env, result_obj, "inputTokens", zero_val);
+    napi_set_named_property(env, result_obj, "outputTokens", zero_val);
+    return result_obj;
 #else
     size_t argc = 2;
     napi_value args[2];
@@ -153,8 +159,15 @@ static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
     napi_value callback = args[1];
 
     if (!g_model || !g_ctx) {
-        napi_create_string_utf8(env, "", 0, &result);
-        return result;
+        napi_value result_obj;
+        napi_create_object(env, &result_obj);
+        napi_value empty_str, zero_val;
+        napi_create_string_utf8(env, "", 0, &empty_str);
+        napi_create_int32(env, 0, &zero_val);
+        napi_set_named_property(env, result_obj, "text", empty_str);
+        napi_set_named_property(env, result_obj, "inputTokens", zero_val);
+        napi_set_named_property(env, result_obj, "outputTokens", zero_val);
+        return result_obj;
     }
 
     // Tokenize prompt
@@ -175,6 +188,7 @@ static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
     // Generate
     g_stop_flag.store(false);
     std::string full_output;
+    int output_token_count = 0;
 
     for (int i = 0; i < max_tokens && !g_stop_flag.load(); i++) {
         llama_token new_token;
@@ -190,6 +204,7 @@ static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
         if (n > 0) {
             std::string piece(buf, n);
             full_output += piece;
+            output_token_count++;
 
             // Stream token to callback
             napi_value token_str, cb_result;
@@ -206,8 +221,18 @@ static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
 
     if (grammar) llama_grammar_free_impl(grammar);
 
-    napi_create_string_utf8(env, full_output.c_str(), full_output.size(), &result);
-    return result;
+    napi_value result_obj;
+    napi_create_object(env, &result_obj);
+    napi_value text_val;
+    napi_create_string_utf8(env, full_output.c_str(), full_output.size(), &text_val);
+    napi_set_named_property(env, result_obj, "text", text_val);
+    napi_value input_tokens_val;
+    napi_create_int32(env, n_prompt, &input_tokens_val);
+    napi_set_named_property(env, result_obj, "inputTokens", input_tokens_val);
+    napi_value output_tokens_val;
+    napi_create_int32(env, output_token_count, &output_tokens_val);
+    napi_set_named_property(env, result_obj, "outputTokens", output_tokens_val);
+    return result_obj;
 #endif
 }
 

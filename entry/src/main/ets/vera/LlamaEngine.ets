@@ -31,9 +31,21 @@ export class GenerateRequest {
 
 export type TokenCallback = (token: string) => void
 
+export class GenerateResult {
+  text: string = ''
+  inputTokens: number = 0
+  outputTokens: number = 0
+}
+
+interface NativeGenerateResult {
+  text: string
+  inputTokens: number
+  outputTokens: number
+}
+
 interface NativeLlama {
   llamaInit(configJson: string): boolean
-  llamaGenerate(paramsJson: string, callback: (token: string) => void): string
+  llamaGenerate(paramsJson: string, callback: (token: string) => void): NativeGenerateResult
   llamaStop(): void
   llamaFree(): void
 }
@@ -70,8 +82,9 @@ export class LlamaEngine {
     }
   }
 
-  generate(request: GenerateRequest, onToken: TokenCallback): string {
-    if (!this.initialized) { return '' }
+  generate(request: GenerateRequest, onToken: TokenCallback): GenerateResult {
+    let gr = new GenerateResult()
+    if (!this.initialized) { return gr }
     this.generating = true
     try {
       let prompt = this.buildPrompt(request)
@@ -82,11 +95,14 @@ export class LlamaEngine {
       paramsObj['temperature'] = request.temperature
       paramsObj['top_p'] = request.topP
       paramsObj['seed'] = request.seed
-      let result = getNative().llamaGenerate(JSON.stringify(paramsObj), onToken)
-      return result
+      let native = getNative().llamaGenerate(JSON.stringify(paramsObj), onToken)
+      gr.text = native.text
+      gr.inputTokens = native.inputTokens
+      gr.outputTokens = native.outputTokens
+      return gr
     } catch (e) {
       console.error('LlamaEngine generate failed: ' + (e as Error).message)
-      return ''
+      return gr
     } finally {
       this.generating = false
     }
