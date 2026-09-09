@@ -7,6 +7,10 @@ import router from '@ohos.router'
 
 const DOMAIN = 0x0000
 
+class ProjectNavParams {
+  projectId: string = ''
+}
+
 export default class EntryAbility extends UIAbility {
   private pendingProjectId: string = ''
 
@@ -53,10 +57,9 @@ export default class EntryAbility extends UIAbility {
     let projectId = this.pendingProjectId
     this.pendingProjectId = ''
     try {
-      router.pushUrl({
-        url: 'pages/ProjectPage',
-        params: { projectId: projectId } as Record<string, string>
-      })
+      let p = new ProjectNavParams()
+      p.projectId = projectId
+      router.pushUrl({ url: 'pages/ProjectPage', params: p })
     } catch (e) {
       hilog.error(DOMAIN, 'VERA', 'Navigate to project failed: ' + (e as Error).message)
     }

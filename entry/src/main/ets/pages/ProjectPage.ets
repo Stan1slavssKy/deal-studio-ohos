@@ -1,7 +1,16 @@
 import router from '@ohos.router'
-import shortcutManager from '@ohos.bundle.shortcutManager'
-import Want from '@ohos.app.ability.Want'
 import { Project, Version, store } from '../vera/ProjectStore'
+
+class RunVersionParams {
+  projectId: string = ''
+  versionId: string = ''
+  vbc2: string = ''
+}
+
+class GenerateNavParams {
+  projectId: string = ''
+  baseVersionId: string = ''
+}
 
 @Entry
 @Component
@@ -149,47 +158,21 @@ struct ProjectPage {
 
   private runVersion(v: Version): void {
     if (v.vbc2.length === 0) { return }
-    router.pushUrl({
-      url: 'pages/RunnerPage',
-      params: {
-        projectId: v.projectId,
-        versionId: v.id,
-        vbc2: v.vbc2
-      } as Record<string, string>
-    })
+    let p = new RunVersionParams()
+    p.projectId = v.projectId
+    p.versionId = v.id
+    p.vbc2 = v.vbc2
+    router.pushUrl({ url: 'pages/RunnerPage', params: p })
   }
 
   private openGenerate(baseVersionId: string): void {
-    router.pushUrl({
-      url: 'pages/GeneratePage',
-      params: {
-        projectId: this.projectId,
-        baseVersionId: baseVersionId
-      } as Record<string, string>
-    })
+    let p = new GenerateNavParams()
+    p.projectId = this.projectId
+    p.baseVersionId = baseVersionId
+    router.pushUrl({ url: 'pages/GeneratePage', params: p })
   }
 
   private pinToHome(): void {
-    if (this.project === null) { return }
-    let p = this.project!
-    try {
-      let want: Want = {
-        bundleName: 'com.vera.probe.dyn',
-        abilityName: 'EntryAbility',
-        parameters: { projectId: p.id }
-      }
-      let info: shortcutManager.ShortcutInfo = {
-        id: 'vera_' + p.id,
-        bundleName: 'com.vera.probe.dyn',
-        moduleName: 'entry',
-        hostAbility: 'EntryAbility',
-        label: p.icon + ' ' + p.name,
-        wants: [want]
-      }
-      shortcutManager.addDynamicShortcuts([info])
-      console.info('Shortcut pinned for project ' + p.id)
-    } catch (e) {
-      console.error('Pin failed: ' + (e as Error).message)
-    }
+    console.info('Shortcut pinning requires system API — not available for non-system apps')
   }
 }

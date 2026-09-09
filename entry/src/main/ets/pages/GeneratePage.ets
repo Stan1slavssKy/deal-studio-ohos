@@ -1,10 +1,22 @@
 import router from '@ohos.router'
 import fs from '@ohos.file.fs'
+import http from '@ohos.net.http'
 import { store } from '../vera/ProjectStore'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
 
 const MAX_RETRIES: number = 3
+const DEFAULT_SERVER_URL: string = 'http://31.77.129.17:8787'
+
+class ServerDecodedResponse {
+  source: string = ''
+  bytecode: string = ''
+}
+
+class RefineRequest {
+  prompt: string = ''
+  previousSource: string = ''
+}
 
 class AttemptMetrics {
   attempt: number = 0
@@ -13,6 +25,36 @@ class AttemptMetrics {
   inputTokens: number = 0
   outputTokens: number = 0
   success: boolean = false
+}
+
+function decodeServerResponse(body: string): ServerDecodedResponse {
+  let lines = body.split('\n')
+  let sourceLines: string[] = []
+  let bytecodeLines: string[] = []
+  let inSource = false
+  let foundSource = false
+  for (let line of lines) {
+    if (line === ';vera-source-begin') {
+      inSource = true
+      foundSource = true
+      continue
+    }
+    if (line === ';vera-source-end' && inSource) {
+      inSource = false
+      continue
+    }
+    if (inSource) {
+      if (line.startsWith(';|')) {
+        sourceLines.push(line.substring(2))
+      }
+      continue
+    }
+    bytecodeLines.push(line)
+  }
+  let result = new ServerDecodedResponse()
+  result.source = foundSource ? sourceLines.join('\n') : ''
+  result.bytecode = bytecodeLines.join('\n')
+  return result
 }
 
 @Entry
@@ -25,6 +67,7 @@ struct GeneratePage {
   @State status: string = ''
   @State generating: boolean = false
   @State modelReady: boolean = false
+  @State useServer: boolean = true
   @State attempt: number = 0
   @State compiled: boolean = false
   @State compileErrors: string = ''
@@ -36,6 +79,7 @@ struct GeneratePage {
   private grammar: string = ''
   private previousSource: string = ''
   private genStartTime: number = 0
+  private serverBytecode: string = ''
 
   aboutToAppear(): void {
     let params = router.getParams() as Record<string, string>
@@ -59,7 +103,34 @@ struct GeneratePage {
     } catch (e) {
       this.status = 'Failed to load resources: ' + (e as Error).message
     }
-    this.checkModel()
+    if (this.useServer) {
+      this.checkServer()
+    } else {
+      this.checkModel()
+    }
+  }
+
+  private async checkServer(): Promise<void> {
+    this.status = 'Checking server...'
+    let client = http.createHttp()
+    try {
+      let resp = await client.request(DEFAULT_SERVER_URL + '/health', {
+        method: http.RequestMethod.GET,
+        connectTimeout: 5000,
+        readTimeout: 5000
+      })
+      if (resp.responseCode === 200) {
+        let body = resp.result as string
+        let health = JSON.parse(body) as Record<string, Object>
+        this.status = 'Server ready (' + (health['model'] as string) + ')'
+      } else {
+        this.status = 'Server error: HTTP ' + resp.responseCode
+      }
+    } catch (e) {
+      this.status = 'Server unreachable: ' + (e as Error).message
+    } finally {
+      client.destroy()
+    }
   }
 
   private checkModel(): void {
@@ -91,7 +162,12 @@ struct GeneratePage {
   }
 
   private doGenerate(): void {
-    if (!this.modelReady || this.prompt.trim().length === 0) { return }
+    if (this.prompt.trim().length === 0) { return }
+    if (this.useServer) {
+      this.doServerGenerate()
+      return
+    }
+    if (!this.modelReady) { return }
     this.generating = true
     this.generatedSource = ''
     this.compiled = false
@@ -99,9 +175,88 @@ struct GeneratePage {
     this.attempt = 1
     this.attempts = []
     this.totalMs = 0
+    this.serverBytecode = ''
     this.genStartTime = Date.now()
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
     this.runAttempt(this.prompt.trim(), '')
+  }
+
+  private async doServerGenerate(): Promise<void> {
+    this.generating = true
+    this.generatedSource = ''
+    this.compiled = false
+    this.compileErrors = ''
+    this.attempts = []
+    this.totalMs = 0
+    this.serverBytecode = ''
+    this.genStartTime = Date.now()
+    this.status = this.previousSource.length > 0 ? 'Server refining...' : 'Server generating...'
+
+    let metrics = new AttemptMetrics()
+    metrics.attempt = 1
+    let client = http.createHttp()
+    try {
+      let genStart = Date.now()
+      // Refinement: send the base version's source so the server can edit it
+      // instead of regenerating from scratch.
+      let requestBody: string = this.prompt.trim()
+      let contentType: string = 'text/plain; charset=utf-8'
+      if (this.previousSource.length > 0) {
+        let refine = new RefineRequest()
+        refine.prompt = this.prompt.trim()
+        refine.previousSource = this.previousSource
+        requestBody = JSON.stringify(refine)
+        contentType = 'application/json'
+      }
+      let resp = await client.request(DEFAULT_SERVER_URL + '/compile', {
+        method: http.RequestMethod.POST,
+        header: { 'Content-Type': contentType },
+        extraData: requestBody,
+        connectTimeout: 10000,
+        readTimeout: 180000
+      })
+      metrics.genMs = Date.now() - genStart
+
+      if (resp.responseCode === 200) {
+        let body = resp.result as string
+        let decoded = decodeServerResponse(body)
+        this.generatedSource = decoded.source
+        this.serverBytecode = decoded.bytecode
+        this.compiled = true
+        this.compileErrors = ''
+        metrics.success = true
+        this.status = 'Server compiled successfully'
+      } else {
+        let body = resp.result as string
+        try {
+          let errObj = JSON.parse(body) as Record<string, Object>
+          let diags = errObj['diagnostics'] as Object[]
+          if (diags !== null && diags !== undefined && diags.length > 0) {
+            let firstDiag = diags[0] as Record<string, Object>
+            let msg = (firstDiag['message'] as string) || ''
+            let generatedSrc = (firstDiag['generatedSource'] as string) || ''
+            if (generatedSrc.length > 0) {
+              this.generatedSource = generatedSrc
+            }
+            this.compileErrors = msg
+          } else {
+            this.compileErrors = 'Server error: HTTP ' + resp.responseCode
+          }
+        } catch (_e) {
+          this.compileErrors = 'Server error: HTTP ' + resp.responseCode + ' — ' + body.substring(0, 200)
+        }
+        this.status = 'Server generation failed'
+      }
+    } catch (e) {
+      this.compileErrors = 'Request failed: ' + (e as Error).message
+      this.status = 'Server unreachable'
+    } finally {
+      client.destroy()
+    }
+
+    this.attempts = [metrics]
+    this.totalMs = Date.now() - this.genStartTime
+    this.generating = false
   }
 
   private runAttempt(userPrompt: string, errorFeedback: string): void {
@@ -196,7 +351,9 @@ struct GeneratePage {
     let note = this.prompt.trim()
     if (note.length > 100) { note = note.substring(0, 100) + '...' }
     let vbc2 = ''
-    if (this.compiled) {
+    if (this.compiled && this.serverBytecode.length > 0) {
+      vbc2 = this.serverBytecode
+    } else if (this.compiled) {
       try {
         let result = compileVeraSource(this.generatedSource.trim())
         vbc2 = result.vbc2
@@ -233,6 +390,28 @@ struct GeneratePage {
             .fontSize(13).fontColor('#007DFF').padding({ left: 16, top: 8 })
         }
 
+        Row({ space: 8 }) {
+          Button(this.useServer ? 'Server' : 'Local')
+            .type(ButtonType.Normal)
+            .fontSize(12)
+            .height(30)
+            .backgroundColor(this.useServer ? '#E3F2FD' : '#FFF3E0')
+            .fontColor(this.useServer ? '#1565C0' : '#E65100')
+            .enabled(!this.generating)
+            .onClick(() => {
+              this.useServer = !this.useServer
+              if (this.useServer) {
+                this.checkServer()
+              } else {
+                this.checkModel()
+              }
+            })
+          Text(this.useServer ? DEFAULT_SERVER_URL : 'On-device Qwen3-Coder-3B')
+            .fontSize(11).fontColor('#999999').layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 8 })
+
         TextArea({ placeholder: 'Describe the app you want...', text: this.prompt })
           .onChange((value: string) => { this.prompt = value })
           .width('100%')
@@ -243,10 +422,10 @@ struct GeneratePage {
           Button(this.generating ? 'Stop' : 'Generate')
             .type(ButtonType.Normal)
             .layoutWeight(1)
-            .enabled(this.modelReady || this.generating)
+            .enabled((this.useServer || this.modelReady) || this.generating)
             .onClick(() => {
               if (this.generating) {
-                engine.stop()
+                if (!this.useServer) { engine.stop() }
                 this.generating = false
                 this.totalMs = Date.now() - this.genStartTime
                 this.status = 'Stopped'
@@ -306,16 +485,20 @@ struct GeneratePage {
           Column({ space: 6 }) {
             Row({ space: 16 }) {
               Text('Total: ' + this.formatMs(this.totalMs)).fontSize(12).fontWeight(FontWeight.Medium)
-              Text('In: ' + this.totalInputTokens() + ' tok').fontSize(11).fontColor('#666666')
-              Text('Out: ' + this.totalOutputTokens() + ' tok').fontSize(11).fontColor('#666666')
+              if (!this.useServer) {
+                Text('In: ' + this.totalInputTokens() + ' tok').fontSize(11).fontColor('#666666')
+                Text('Out: ' + this.totalOutputTokens() + ' tok').fontSize(11).fontColor('#666666')
+              }
             }
             .width('100%')
             ForEach(this.attempts, (a: AttemptMetrics) => {
               Row({ space: 8 }) {
                 Text('#' + a.attempt).fontSize(11).fontWeight(FontWeight.Medium).width(24)
                 Text('gen ' + this.formatMs(a.genMs)).fontSize(10).fontColor('#666666')
-                Text('compile ' + this.formatMs(a.compileMs)).fontSize(10).fontColor('#666666')
-                Text(a.inputTokens + '→' + a.outputTokens).fontSize(10).fontColor('#666666')
+                if (!this.useServer) {
+                  Text('compile ' + this.formatMs(a.compileMs)).fontSize(10).fontColor('#666666')
+                  Text(a.inputTokens + '→' + a.outputTokens).fontSize(10).fontColor('#666666')
+                }
                 Text(a.success ? '✓' : '✗')
                   .fontSize(12)
                   .fontColor(a.success ? '#34C759' : '#FF3B30')
@@ -330,7 +513,7 @@ struct GeneratePage {
           .borderRadius(8)
         }
 
-        if (!this.modelReady && !this.generating) {
+        if (!this.useServer && !this.modelReady && !this.generating) {
           Column() {
             Text('Model not found').fontSize(14).fontWeight(FontWeight.Medium)
             Text('Place Qwen3-Coder-3B GGUF at:').fontSize(12).fontColor('#666666').margin({ top: 4 })

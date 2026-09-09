@@ -10,6 +10,8 @@
  */
 
 import resourceManager from '@ohos.resourceManager'
+import fs from '@ohos.file.fs'
+import nativeLlama from 'libllama.so'
 
 export class LlamaConfig {
   modelPath: string = ''
@@ -54,8 +56,7 @@ let native: NativeLlama | null = null
 
 function getNative(): NativeLlama {
   if (native === null) {
-    // @ts-ignore dynamic native module loading
-    native = globalThis.requireNapi('llama') as NativeLlama
+    native = nativeLlama as NativeLlama
   }
   return native!
 }
@@ -150,7 +151,7 @@ export class LlamaEngine {
 
   static modelExists(filesDir: string): boolean {
     try {
-      let stat = globalThis.ohosFs.statSync(LlamaEngine.defaultModelPath(filesDir))
+      let stat = fs.statSync(LlamaEngine.defaultModelPath(filesDir))
       return stat.size > 0
     } catch (_e) {
       return false

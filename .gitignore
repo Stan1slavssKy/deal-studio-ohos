@@ -3,3 +3,5 @@ build/
 node_modules/
 oh_modules/
 /tmp/
+/entry/.cxx/
+local.properties

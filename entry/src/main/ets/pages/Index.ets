@@ -3,6 +3,10 @@ import { Project, store } from '../vera/ProjectStore'
 
 const ICONS: string[] = ['📱', '🎮', '📊', '🧮', '🎯', '📝', '🔧', '🎨', '🌍', '⚡']
 
+class ProjectNavParams {
+  projectId: string = ''
+}
+
 @Entry
 @Component
 struct Index {
@@ -53,10 +57,9 @@ struct Index {
               .borderRadius(12)
               .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
               .onClick(() => {
-                router.pushUrl({
-                  url: 'pages/ProjectPage',
-                  params: { projectId: p.id } as Record<string, string>
-                })
+                let nav = new ProjectNavParams()
+                nav.projectId = p.id
+                router.pushUrl({ url: 'pages/ProjectPage', params: nav })
               })
             }
             .swipeAction({
@@ -157,9 +160,8 @@ struct Index {
     let project = store.createProject(name, this.selectedIcon)
     this.showCreate = false
     this.reload()
-    router.pushUrl({
-      url: 'pages/ProjectPage',
-      params: { projectId: project.id } as Record<string, string>
-    })
+    let nav = new ProjectNavParams()
+    nav.projectId = project.id
+    router.pushUrl({ url: 'pages/ProjectPage', params: nav })
   }
 }
