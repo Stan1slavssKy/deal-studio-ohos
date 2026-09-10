@@ -12,6 +12,13 @@ Every program must define:
 State is immutable. Handlers return a new AppState, never mutate the old one.
 view is pure: reads state, calls ui.* constructors, no side effects.
 
+Syntax the compiler enforces. These differ from TypeScript and are the usual cause of a failed compile:
+- Equality is === and !== only. == and != are not operators and will not parse.
+- There is no ternary ?: operator. Use ui.When(condition, child) in a view, or if/else in a handler.
+- Every let needs a type annotation: let total: int = 0. A bare let total = 0 will not parse.
+- Assignment is = only. There is no +=, -=, ++ or --. Write total = total + 1.
+- The complete operator set is || && === !== < <= > >= + - * / % and unary - and !.
+
 UI constructors (all return ui.View):
   Containers: ui.Column(style, children), ui.Row(style, children), ui.Card(style, children), ui.Scroll(style, children)
   Display: ui.Text(style, text), ui.Spacer(style), ui.Image(style, src, alt)

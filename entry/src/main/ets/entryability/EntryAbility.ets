@@ -5,6 +5,7 @@ import window from '@ohos.window'
 import hilog from '@ohos.hilog'
 import router from '@ohos.router'
 import { refreshForms } from '../vera/FormUpdater'
+import { settings } from '../vera/SettingsStore'
 
 const DOMAIN = 0x0000
 
@@ -17,15 +18,38 @@ export default class EntryAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onCreate')
+    this.extractApiKey(want)
     this.extractProjectId(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onNewWant')
+    this.extractApiKey(want)
     this.extractProjectId(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
     }
+  }
+
+  /**
+   * Accepts the DeepSeek key as a launch parameter, so it never has to be typed
+   * on the phone:
+   *
+   *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn \
+   *     --ps deepseekKey sk-...
+   *
+   * The key itself is never logged -- only the fact that one arrived.
+   */
+  private extractApiKey(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let key = params['deepseekKey']
+    if (key === null || key === undefined || typeof key !== 'string') { return }
+    let text = (key as string).trim()
+    if (text.length === 0) { return }
+    settings.init(this.context.filesDir)
+    settings.setApiKey(text)
+    hilog.info(DOMAIN, 'VERA', 'DeepSeek API key updated from launch parameter')
   }
 
   private extractProjectId(want: Want): void {

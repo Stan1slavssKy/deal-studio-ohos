@@ -6,9 +6,17 @@ import { store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
+import { deepseek } from '../vera/DeepSeekEngine'
+import { settings } from '../vera/SettingsStore'
 
 const MAX_RETRIES: number = 3
 const DEFAULT_SERVER_URL: string = 'http://31.77.129.17:8787'
+
+// DeepSeek and Local both run the agent loop on the device and differ only in
+// which model writes the code; Server hands the whole job to vera-server.
+const MODE_DEEPSEEK: string = 'deepseek'
+const MODE_SERVER: string = 'server'
+const MODE_LOCAL: string = 'local'
 
 class ServerDecodedResponse {
   source: string = ''
@@ -26,6 +34,7 @@ class AttemptMetrics {
   compileMs: number = 0
   inputTokens: number = 0
   outputTokens: number = 0
+  cacheHitTokens: number = 0
   success: boolean = false
 }
 
@@ -69,7 +78,7 @@ struct GeneratePage {
   @State status: string = ''
   @State generating: boolean = false
   @State modelReady: boolean = false
-  @State useServer: boolean = true
+  @State mode: string = MODE_DEEPSEEK
   @State attempt: number = 0
   @State compiled: boolean = false
   @State compileErrors: string = ''
@@ -81,6 +90,7 @@ struct GeneratePage {
   private grammar: string = ''
   private previousSource: string = ''
   private genStartTime: number = 0
+  private cancelRequested: boolean = false
   private serverBytecode: string = ''
 
   aboutToAppear(): void {
@@ -93,7 +103,16 @@ struct GeneratePage {
       let v = store.getVersion(this.projectId, this.baseVersionId)
       if (v !== null) { this.previousSource = v!.source }
     }
+    settings.init(getContext(this).filesDir)
     this.loadResources()
+  }
+
+  // The key can arrive from a launch parameter while this page sits in the
+  // foreground, so re-read it whenever the page comes back into view.
+  onPageShow(): void {
+    if (this.mode === MODE_DEEPSEEK && !this.generating) {
+      this.checkDeepSeek()
+    }
   }
 
   private async loadResources(): Promise<void> {
@@ -105,10 +124,24 @@ struct GeneratePage {
     } catch (e) {
       this.status = 'Failed to load resources: ' + (e as Error).message
     }
-    if (this.useServer) {
+    this.checkProvider()
+  }
+
+  private checkProvider(): void {
+    if (this.mode === MODE_DEEPSEEK) {
+      this.checkDeepSeek()
+    } else if (this.mode === MODE_SERVER) {
       this.checkServer()
     } else {
       this.checkModel()
+    }
+  }
+
+  private checkDeepSeek(): void {
+    if (settings.hasApiKey()) {
+      this.status = 'DeepSeek ready (' + settings.getModel() + ', key ' + settings.maskedKey() + ')'
+    } else {
+      this.status = 'No API key. Send one with: aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key>'
     }
   }
 
@@ -190,11 +223,15 @@ struct GeneratePage {
 
   private doGenerate(): void {
     if (this.prompt.trim().length === 0) { return }
-    if (this.useServer) {
+    if (this.mode === MODE_SERVER) {
       this.doServerGenerate()
       return
     }
-    if (!this.modelReady) { return }
+    if (this.mode === MODE_DEEPSEEK && !settings.hasApiKey()) {
+      this.checkDeepSeek()
+      return
+    }
+    if (this.mode === MODE_LOCAL && !this.modelReady) { return }
     this.generating = true
     this.generatedSource = ''
     this.compiled = false
@@ -203,6 +240,7 @@ struct GeneratePage {
     this.attempts = []
     this.totalMs = 0
     this.serverBytecode = ''
+    this.cancelRequested = false
     this.genStartTime = Date.now()
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
     this.runAttempt(this.prompt.trim(), '')
@@ -286,7 +324,26 @@ struct GeneratePage {
     this.generating = false
   }
 
-  private runAttempt(userPrompt: string, errorFeedback: string): void {
+  /**
+   * The one place that knows which model is behind the loop. Everything after
+   * it -- compile, collect diagnostics, retry -- is identical for both.
+   */
+  private callModel(request: GenerateRequest, onToken: (token: string) => void): Promise<GenerateResult> {
+    if (this.mode === MODE_DEEPSEEK) {
+      // deepseek-flash thinks by default, and the reasoning comes out of the
+      // same token budget as the program: an 8K cap was being spent thinking
+      // and the program arrived truncated. A first attempt does not need it --
+      // the output format is fixed and the programs are short. A retry has
+      // compiler diagnostics to work through, so it gets both.
+      let retry = this.attempt > 1
+      deepseek.setThinking(retry)
+      request.maxTokens = retry ? 32768 : 8192
+      return deepseek.generate(request, onToken)
+    }
+    return Promise.resolve(engine.generate(request, onToken))
+  }
+
+  private async runAttempt(userPrompt: string, errorFeedback: string): Promise<void> {
     this.generatedSource = ''
     let metrics = new AttemptMetrics()
     metrics.attempt = this.attempt
@@ -310,7 +367,7 @@ struct GeneratePage {
     let genStart = Date.now()
     let genResult: GenerateResult
     try {
-      genResult = engine.generate(request, (token: string) => {
+      genResult = await this.callModel(request, (token: string) => {
         this.generatedSource += token
       })
       if (genResult.text.length > 0) {
@@ -322,8 +379,18 @@ struct GeneratePage {
       return
     }
     metrics.genMs = Date.now() - genStart
+    if (this.cancelRequested) {
+      this.attempts = [...this.attempts, metrics]
+      this.totalMs = Date.now() - this.genStartTime
+      this.status = 'Stopped'
+      this.generating = false
+      return
+    }
     metrics.inputTokens = genResult.inputTokens
     metrics.outputTokens = genResult.outputTokens
+    if (this.mode === MODE_DEEPSEEK) {
+      metrics.cacheHitTokens = deepseek.lastCacheHitTokens()
+    }
 
     if (this.generatedSource.trim().length === 0) {
       this.status = 'Generation produced empty output'
@@ -349,6 +416,13 @@ struct GeneratePage {
     }
     metrics.compileMs = Date.now() - compileStart
 
+    // A program cut off at the token ceiling fails to parse somewhere near its
+    // end. Saying so is worth more to the next attempt than the parse error,
+    // which describes the cut rather than the mistake.
+    if (errors.length > 0 && this.mode === MODE_DEEPSEEK && deepseek.lastFinishReason() === 'length') {
+      errors = 'The previous attempt was cut off at the output token limit before the program ended, so it did not parse. Write a shorter program.\n' + errors
+    }
+
     if (errors.length === 0 && vbc2.length > 0) {
       metrics.success = true
       this.attempts = [...this.attempts, metrics]
@@ -365,7 +439,7 @@ struct GeneratePage {
     if (this.attempt < MAX_RETRIES) {
       this.attempt++
       this.status = 'Compile failed, retrying (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
-      this.runAttempt(userPrompt, errors)
+      await this.runAttempt(userPrompt, errors)
     } else {
       this.totalMs = Date.now() - this.genStartTime
       this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
@@ -398,6 +472,48 @@ struct GeneratePage {
     return secs + 's'
   }
 
+  private modeLabel(): string {
+    if (this.mode === MODE_DEEPSEEK) { return 'DeepSeek' }
+    if (this.mode === MODE_SERVER) { return 'Server' }
+    return 'Local'
+  }
+
+  private modeSubtitle(): string {
+    if (this.mode === MODE_DEEPSEEK) { return settings.getModel() + ' - agent loop on device' }
+    if (this.mode === MODE_SERVER) { return DEFAULT_SERVER_URL }
+    return 'On-device Qwen3-Coder-3B'
+  }
+
+  private modeTint(): string {
+    if (this.mode === MODE_DEEPSEEK) { return '#E8F5E9' }
+    if (this.mode === MODE_SERVER) { return '#E3F2FD' }
+    return '#FFF3E0'
+  }
+
+  private modeInk(): string {
+    if (this.mode === MODE_DEEPSEEK) { return '#2E7D32' }
+    if (this.mode === MODE_SERVER) { return '#1565C0' }
+    return '#E65100'
+  }
+
+  private nextMode(): string {
+    if (this.mode === MODE_DEEPSEEK) { return MODE_SERVER }
+    if (this.mode === MODE_SERVER) { return MODE_LOCAL }
+    return MODE_DEEPSEEK
+  }
+
+  private canGenerate(): boolean {
+    if (this.mode === MODE_SERVER) { return true }
+    if (this.mode === MODE_DEEPSEEK) { return settings.hasApiKey() }
+    return this.modelReady
+  }
+
+  private totalCacheHitTokens(): number {
+    let total = 0
+    for (let a of this.attempts) total += a.cacheHitTokens
+    return total
+  }
+
   private totalInputTokens(): number {
     let total = 0
     for (let a of this.attempts) total += a.inputTokens
@@ -419,22 +535,18 @@ struct GeneratePage {
         }
 
         Row({ space: 8 }) {
-          Button(this.useServer ? 'Server' : 'Local')
+          Button(this.modeLabel())
             .type(ButtonType.Normal)
             .fontSize(12)
             .height(30)
-            .backgroundColor(this.useServer ? '#E3F2FD' : '#FFF3E0')
-            .fontColor(this.useServer ? '#1565C0' : '#E65100')
+            .backgroundColor(this.modeTint())
+            .fontColor(this.modeInk())
             .enabled(!this.generating)
             .onClick(() => {
-              this.useServer = !this.useServer
-              if (this.useServer) {
-                this.checkServer()
-              } else {
-                this.checkModel()
-              }
+              this.mode = this.nextMode()
+              this.checkProvider()
             })
-          Text(this.useServer ? DEFAULT_SERVER_URL : 'On-device Qwen3-Coder-3B')
+          Text(this.modeSubtitle())
             .fontSize(11).fontColor('#999999').layoutWeight(1)
         }
         .width('100%')
@@ -450,10 +562,12 @@ struct GeneratePage {
           Button(this.generating ? 'Stop' : 'Generate')
             .type(ButtonType.Normal)
             .layoutWeight(1)
-            .enabled((this.useServer || this.modelReady) || this.generating)
+            .enabled(this.canGenerate() || this.generating)
             .onClick(() => {
               if (this.generating) {
-                if (!this.useServer) { engine.stop() }
+                this.cancelRequested = true
+                if (this.mode === MODE_LOCAL) { engine.stop() }
+                if (this.mode === MODE_DEEPSEEK) { deepseek.stop() }
                 this.generating = false
                 this.totalMs = Date.now() - this.genStartTime
                 this.status = 'Stopped'
@@ -513,9 +627,12 @@ struct GeneratePage {
           Column({ space: 6 }) {
             Row({ space: 16 }) {
               Text('Total: ' + this.formatMs(this.totalMs)).fontSize(12).fontWeight(FontWeight.Medium)
-              if (!this.useServer) {
+              if (this.mode !== MODE_SERVER) {
                 Text('In: ' + this.totalInputTokens() + ' tok').fontSize(11).fontColor('#666666')
                 Text('Out: ' + this.totalOutputTokens() + ' tok').fontSize(11).fontColor('#666666')
+                if (this.totalCacheHitTokens() > 0) {
+                  Text('cached: ' + this.totalCacheHitTokens()).fontSize(11).fontColor('#666666')
+                }
               }
             }
             .width('100%')
@@ -523,7 +640,7 @@ struct GeneratePage {
               Row({ space: 8 }) {
                 Text('#' + a.attempt).fontSize(11).fontWeight(FontWeight.Medium).width(24)
                 Text('gen ' + this.formatMs(a.genMs)).fontSize(10).fontColor('#666666')
-                if (!this.useServer) {
+                if (this.mode !== MODE_SERVER) {
                   Text('compile ' + this.formatMs(a.compileMs)).fontSize(10).fontColor('#666666')
                   Text(a.inputTokens + '→' + a.outputTokens).fontSize(10).fontColor('#666666')
                 }
@@ -541,7 +658,7 @@ struct GeneratePage {
           .borderRadius(8)
         }
 
-        if (!this.useServer && !this.modelReady && !this.generating) {
+        if (this.mode === MODE_LOCAL && !this.modelReady && !this.generating) {
           Column() {
             Text('Model not downloaded').fontSize(14).fontWeight(FontWeight.Medium)
             Text('Switch to Local mode to download the model automatically (one-time, ~1.9GB over WiFi).')

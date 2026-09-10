@@ -60,6 +60,46 @@ on a device**, so its output has not been checked against the reference
 implementation. First run should confirm the rendered tree matches what
 `vera-bench` produces on the host before any timing is quoted.
 
+## Generation modes
+
+The Generate screen cycles through three ways to turn a prompt into a VERA-L
+program. The button top-left switches between them.
+
+| mode | model | who writes the code |
+|---|---|---|
+| `DeepSeek` | `deepseek-flash` over HTTPS | the device: generate, compile, feed diagnostics back, retry |
+| `Local` | Qwen2.5-Coder-3B in-process via llama.cpp | the device, same loop |
+| `Server` | whatever `vera-server` runs | the server, which returns finished vbc2 |
+
+DeepSeek and Local are the same agent loop — `compileVeraSource` runs on the
+phone, compiler diagnostics go back to the model, up to three attempts — and
+differ only in where the model lives. Server is the original path and is kept
+for comparison: there the phone only ships a prompt and receives bytecode.
+
+DeepSeek has no GBNF grammar to constrain decoding the way llama.cpp does, so
+`vera.gbnf` is unused in that mode; the reply is cleaned up by
+`extractVeraSource` in case the model wraps the program in a markdown fence.
+
+### The API key
+
+The key is not compiled in. It is sent as a launch parameter and stored in the
+app sandbox at `{filesDir}/vera/settings.json`:
+
+```bash
+hdc shell aa start -a EntryAbility -b com.vera.probe.dyn \
+  --ps deepseekKey sk-...
+```
+
+Once stored it survives restarts, and the app never logs it — the status line
+shows only `sk-...abcd`, enough to confirm it arrived. Storing it this way keeps
+it out of git and out of the HAP, but it is not a secret against someone holding
+the unlocked phone: on a debug-signed install `hdc` can read the sandbox. Use a
+key dedicated to this project and revoke it in the DeepSeek console if the phone
+leaves your hands.
+
+The same file holds `model` and `baseUrl`, so pointing the app at another
+OpenAI-compatible endpoint needs no rebuild.
+
 ## Running it
 
 ```bash
