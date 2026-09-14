@@ -1,4 +1,5 @@
 import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter'
+import { CATALOG, ComponentSpec, stylesFor, payloadKindFor } from './VeraUiCatalog'
 
 // ===== AST Nodes =====
 
@@ -1057,25 +1058,125 @@ class ModuleInterface {
   }
 }
 
+/**
+ * Generated from VeraUiCatalog, so the signatures the compiler accepts cannot
+ * drift from what the host decodes, the renderer draws, and the prompt tells
+ * the model about.
+ */
 function buildStdUiModule(): ModuleInterface {
   let viewType = new VeraClassType('std/ui:View', 'View')
   let viewArray = new VeraArrayType(viewType)
-  let fns: ExternalFunction[] = [
-    new ExternalFunction('Column', [STRING, viewArray], viewType, false),
-    new ExternalFunction('Row', [STRING, viewArray], viewType, false),
-    new ExternalFunction('Card', [STRING, viewArray], viewType, false),
-    new ExternalFunction('Scroll', [STRING, viewArray], viewType, false),
-    new ExternalFunction('Text', [STRING, STRING], viewType, false),
-    new ExternalFunction('Spacer', [STRING], viewType, false),
-    new ExternalFunction('Image', [STRING, STRING, STRING], viewType, false),
-    new ExternalFunction('Button', [STRING, STRING, STRING, INT, BOOLEAN], viewType, false),
-    new ExternalFunction('Cell', [STRING, STRING, STRING, INT, BOOLEAN], viewType, false),
-    new ExternalFunction('When', [BOOLEAN, viewType], viewType, false),
-    new ExternalFunction('intToString', [INT], STRING, false),
-    new ExternalFunction('numberToString', [NUMBER], STRING, false),
-    new ExternalFunction('booleanToString', [BOOLEAN], STRING, false),
-  ]
+  let fns: ExternalFunction[] = []
+  for (let spec of CATALOG) {
+    let params: VeraType[] = []
+    for (let p of spec.props) {
+      if (p.kind === 'int') params.push(INT)
+      else if (p.kind === 'boolean') params.push(BOOLEAN)
+      else if (p.kind === 'view') params.push(viewType)
+      else if (p.kind === 'view[]') params.push(viewArray)
+      else if (p.kind === 'string[]') params.push(new VeraArrayType(STRING))
+      else params.push(STRING)
+    }
+    fns.push(new ExternalFunction(spec.name, params, viewType, false))
+  }
+  fns.push(new ExternalFunction('When', [BOOLEAN, viewType], viewType, false))
+  fns.push(new ExternalFunction('intToString', [INT], STRING, false))
+  fns.push(new ExternalFunction('numberToString', [NUMBER], STRING, false))
+  fns.push(new ExternalFunction('booleanToString', [BOOLEAN], STRING, false))
   return new ModuleInterface('std/ui', fns, [new ExternalClass('View', viewType)])
+}
+
+/**
+ * The clock. Everything is an int, so nothing here needs the number type or a
+ * conversion that does not exist yet.
+ *
+ * nowSeconds is Unix seconds, which stays inside int32 until 2038 -- milliseconds
+ * would be ~1.8e12 and trap immediately on the VM's overflow check.
+ *
+ * Programs should read the clock in handlers, where the result is stored into
+ * state, rather than in view(): view is meant to be a pure function of state,
+ * and a clock call there makes the tree differ between two renders of the same
+ * state.
+ */
+/**
+ * Arithmetic the language cannot express.
+ *
+ * Everything is monomorphic, so int and number variants are separate entries --
+ * ExternalFunction carries concrete types and there are no generics. The two
+ * conversions matter most: without them an int radius and a fractional sine can
+ * never meet, which is what keeps parametric graphics and any decimal money out
+ * of reach.
+ */
+function buildStdMathModule(): ModuleInterface {
+  let fns: ExternalFunction[] = [
+    new ExternalFunction('intToNumber', [INT], NUMBER, false),
+    new ExternalFunction('numberToInt', [NUMBER], INT, false),
+    new ExternalFunction('pi', [], NUMBER, false),
+    new ExternalFunction('sqrt', [NUMBER], NUMBER, false),
+    new ExternalFunction('sin', [NUMBER], NUMBER, false),
+    new ExternalFunction('cos', [NUMBER], NUMBER, false),
+    new ExternalFunction('atan2', [NUMBER, NUMBER], NUMBER, false),
+    new ExternalFunction('pow', [NUMBER, NUMBER], NUMBER, false),
+    new ExternalFunction('floorToInt', [NUMBER], INT, false),
+    new ExternalFunction('roundToInt', [NUMBER], INT, false),
+    new ExternalFunction('absInt', [INT], INT, false),
+    new ExternalFunction('absNumber', [NUMBER], NUMBER, false),
+    new ExternalFunction('minInt', [INT, INT], INT, false),
+    new ExternalFunction('maxInt', [INT, INT], INT, false),
+    new ExternalFunction('minNumber', [NUMBER, NUMBER], NUMBER, false),
+    new ExternalFunction('maxNumber', [NUMBER, NUMBER], NUMBER, false),
+    // Deterministic and replayable: the seed lives in the program's state, so a
+    // saved game restores to the same sequence. A host random() would not.
+    new ExternalFunction('randomStep', [INT], INT, false),
+    new ExternalFunction('randomBelow', [INT, INT], INT, false),
+  ]
+  return new ModuleInterface('std/math', fns, [])
+}
+
+function buildStdTimeModule(): ModuleInterface {
+  let fns: ExternalFunction[] = [
+    new ExternalFunction('nowSeconds', [], INT, false),
+    new ExternalFunction('millisOfDay', [], INT, false),
+    new ExternalFunction('daysSinceEpoch', [], INT, false),
+    new ExternalFunction('hourOfDay', [], INT, false),
+    new ExternalFunction('minuteOfHour', [], INT, false),
+    new ExternalFunction('weekday', [], INT, false),
+    // The calendar fields. daysSinceEpoch answers "same day?" but cannot name a
+    // day, so anything a person reads back later -- a history row, a report
+    // shown to someone else -- had no way to say which date it was about.
+    new ExternalFunction('dayOfMonth', [], INT, false),
+    new ExternalFunction('monthOfYear', [], INT, false),
+    new ExternalFunction('year', [], INT, false),
+  ]
+  return new ModuleInterface('std/time', fns, [])
+}
+
+/**
+ * Text, as specified in VERA-L.md's `std/strings` library.
+ *
+ * The language itself gives a string only `+`, comparison, `.length()` and
+ * for-of over its characters, so until now a program could build text but never
+ * take it apart. These are the spec's eight functions, with the spec's
+ * semantics rather than ArkTS's -- notably positions are Unicode scalar values,
+ * not UTF-16 code units.
+ *
+ * Note the one inconsistency this introduces: the `.length()` intrinsic counts
+ * UTF-16 code units (VeraInterpreter's 'length' op), while for-of over a string
+ * and `strings.length` here both count scalar values. They agree on every
+ * character in the BMP and disagree on an emoji.
+ */
+function buildStdStringsModule(): ModuleInterface {
+  let fns: ExternalFunction[] = [
+    new ExternalFunction('length', [STRING], INT, false),
+    new ExternalFunction('substring', [STRING, INT, INT], STRING, false),
+    new ExternalFunction('contains', [STRING, STRING], BOOLEAN, false),
+    new ExternalFunction('startsWith', [STRING, STRING], BOOLEAN, false),
+    new ExternalFunction('endsWith', [STRING, STRING], BOOLEAN, false),
+    new ExternalFunction('replace', [STRING, STRING, STRING], STRING, false),
+    new ExternalFunction('split', [STRING, STRING], new VeraArrayType(STRING), false),
+    new ExternalFunction('trim', [STRING], STRING, false),
+  ]
+  return new ModuleInterface('std/strings', fns, [])
 }
 
 class Scope {
@@ -1153,11 +1254,18 @@ class Analyzer {
   }
 
   private collectImports(): void {
-    let stdUi = buildStdUiModule()
+    // A table rather than a chain of string compares, so a new std module is
+    // one entry here plus a host implementation -- nothing in the checker, the
+    // code generator, the bytecode format or the VM has to know about it.
+    let registry = new Map<string, ModuleInterface>()
+    registry.set('std/ui', buildStdUiModule())
+    registry.set('std/time', buildStdTimeModule())
+    registry.set('std/math', buildStdMathModule())
+    registry.set('std/strings', buildStdStringsModule())
     for (let decl of this.model.application.imports) {
       if (this.globals.find(decl.name) !== null) { this.addError('E2001', 'duplicate global ' + decl.name, decl.span); continue }
-      let resolved: ModuleInterface | null = null
-      if (decl.specifier === 'std/ui') resolved = stdUi
+      let found = registry.get(decl.specifier)
+      let resolved: ModuleInterface | null = found !== undefined ? found : null
       if (resolved === null) { this.addError('E2002', 'module not found: ' + decl.specifier, decl.span); continue }
       let members = new Map<string, VeraType>()
       for (let fn of resolved.functions) members.set(fn.name, new VeraFunctionType(fn.parameters, fn.result, fn.isAsync, 'external:' + resolved.specifier + ':' + fn.name))
@@ -1338,7 +1446,10 @@ class Analyzer {
     let result: VeraType = VOID
     if (expr instanceof IntExpression) {
       if (expr.value > 2147483647) this.addError('E2011', 'integer literal exceeds int32 range', expr.span)
-      result = INT
+      // `let x: number = 1` used to be a type error, because the lexer only
+      // emits a number token when a '.' is present. Writing 1.0 everywhere is a
+      // rule no one remembers, and it was a standing source of failed compiles.
+      result = (expected !== null && identical(expected, NUMBER)) ? NUMBER : INT
     }
     else if (expr instanceof NumberExpression) result = NUMBER
     else if (expr instanceof StringExpression) result = STRING
@@ -1457,6 +1568,21 @@ class Analyzer {
     if ((target instanceof VeraArrayType || identical(target, STRING)) && expr.field === 'length') {
       return new VeraFunctionType([], INT, false, 'intrinsic:length')
     }
+    // Array growth as intrinsics rather than a std module: the element type
+    // comes from the receiver, so these are polymorphic for free, whereas an
+    // ExternalFunction carries concrete types and would need one entry per
+    // element type -- unbounded, since element types include user classes.
+    if (target instanceof VeraArrayType) {
+      let element = (target as VeraArrayType).element
+      if (expr.field === 'push') {
+        // Returns the new length, as in JavaScript. It also has to leave one
+        // value behind: every expression statement emits a pop after it.
+        return new VeraFunctionType([element], INT, false, 'intrinsic:push')
+      }
+      if (expr.field === 'pop') {
+        return new VeraFunctionType([], element, false, 'intrinsic:pop')
+      }
+    }
     if (target instanceof VeraClassType) {
       let f = target.fields.get(expr.field)
       if (f === undefined) this.addError('E2031', 'class ' + target.name + ' has no field ' + expr.field, expr.span)
@@ -1476,7 +1602,70 @@ class Analyzer {
       let param = i < callee.parameters.length ? callee.parameters[i] : null
       this.checkExpression(expr.argumentsList[i], scope, param)
     }
+    this.checkStyleArguments(expr, callee)
     return callee.result
+  }
+
+  /**
+   * A style name the renderer does not know silently falls through to its
+   * default branch, so the program looks plausible and renders wrong. Catch it
+   * where every other mistake is caught.
+   *
+   * Only literal styles are checked: a computed style is legitimate and cannot
+   * be resolved here, so it passes.
+   */
+  private checkStyleArguments(expr: CallExpression, callee: VeraFunctionType): void {
+    const prefix = 'external:std/ui:'
+    if (!callee.identity.startsWith(prefix)) return
+    let name = callee.identity.substring(prefix.length)
+    for (let spec of CATALOG) {
+      if (spec.name !== name) continue
+      for (let i = 0; i < spec.props.length && i < expr.argumentsList.length; i++) {
+        let prop = spec.props[i]
+        if (prop.styleSet.length === 0) continue
+        let arg = expr.argumentsList[i]
+        if (!(arg instanceof StringExpression)) continue
+        let allowed = stylesFor(spec.nodeKind)
+        if (allowed.length === 0) continue
+        if (allowed.indexOf((arg as StringExpression).value) < 0) {
+          this.addError('E2105', 'unknown ' + spec.name + ' style "' + (arg as StringExpression).value +
+            '"; allowed: ' + allowed.join(' '), arg.span)
+        }
+      }
+      this.checkHandlerSignature(expr, spec)
+      return
+    }
+  }
+
+  /**
+   * A component that produces a value hands its handler that value, so the
+   * handler's second parameter has to match. Without this the mismatch surfaces
+   * as a runtime trap on the first keystroke, long after the program looked
+   * finished -- and the retry loop never sees it, because compilation passed.
+   *
+   * Only a literal handler name is checked; a computed one cannot be resolved
+   * here and is left alone.
+   */
+  private checkHandlerSignature(expr: CallExpression, spec: ComponentSpec): void {
+    let payload = payloadKindFor(spec.nodeKind)
+    if (payload.length === 0) return
+    for (let i = 0; i < spec.props.length && i < expr.argumentsList.length; i++) {
+      if (spec.props[i].name !== 'action') continue
+      let arg = expr.argumentsList[i]
+      if (!(arg instanceof StringExpression)) return
+      let handlerName = (arg as StringExpression).value
+      let fn = this.model.functions.get(handlerName)
+      if (fn === undefined) {
+        this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span)
+        return
+      }
+      let want: VeraType = payload === 'string' ? STRING : payload === 'boolean' ? BOOLEAN : INT
+      if (fn.parameters.length < 2 || !identical(fn.parameters[1], want)) {
+        this.addError('E2106', spec.name + ' hands its handler a ' + payload + ', so "' +
+          handlerName + '" must take (state, value: ' + payload + ')', arg.span)
+      }
+      return
+    }
   }
 
   private checkLambda(expr: LambdaExpression, parent: Scope): VeraType {
@@ -1789,7 +1978,12 @@ class BytecodeCompiler {
   }
 
   private expression(expr: Expression, b: FunctionBuilder): void {
-    if (expr instanceof IntExpression) b.emit(mkPushInt(expr.value.toString()))
+    if (expr instanceof IntExpression) {
+      // The analyzer recorded whether this literal sits in a number position.
+      let recorded = this.model.expressionTypes.get(expr)
+      if (recorded !== undefined && identical(recorded, NUMBER)) b.emit(mkPushNumber(expr.value))
+      else b.emit(mkPushInt(expr.value.toString()))
+    }
     else if (expr instanceof NumberExpression) b.emit(mkPushNumber(expr.value))
     else if (expr instanceof StringExpression) b.emit(mkPushString(expr.value))
     else if (expr instanceof BooleanExpression) b.emit(mkPushBoolean(expr.value))
@@ -1805,7 +1999,18 @@ class BytecodeCompiler {
     }
     else if (expr instanceof BinaryExpression) this.binary(expr, b)
     else if (expr instanceof CallExpression) {
-      if (expr.callee instanceof SelectExpression && expr.callee.field === 'length' && expr.argumentsList.length === 0) {
+      if (expr.callee instanceof SelectExpression && expr.callee.field === 'push' && expr.argumentsList.length === 1 &&
+        this.model.expressionTypes.get(expr.callee.target) instanceof VeraArrayType) {
+        this.expression(expr.callee.target, b)
+        this.expression(expr.argumentsList[0], b)
+        b.emit(mkInst('array-push'))
+      }
+      else if (expr.callee instanceof SelectExpression && expr.callee.field === 'pop' && expr.argumentsList.length === 0 &&
+        this.model.expressionTypes.get(expr.callee.target) instanceof VeraArrayType) {
+        this.expression(expr.callee.target, b)
+        b.emit(mkInst('array-pop'))
+      }
+      else if (expr.callee instanceof SelectExpression && expr.callee.field === 'length' && expr.argumentsList.length === 0) {
         this.expression(expr.callee.target, b)
         b.emit(mkInst('length'))
       } else {
@@ -1980,6 +2185,8 @@ function encodeInstruction(inst: Instruction): Object[] {
     case 'call': return [op, inst.count, inst.awaited]
     case 'return': return [op]
     case 'make-array': return [op, inst.count]
+    case 'array-push': return [op]
+    case 'array-pop': return [op]
     case 'length': return [op]
     case 'string-symbols': return [op]
     case 'ensure-not-null': return [op]

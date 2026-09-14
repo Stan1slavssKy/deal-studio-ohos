@@ -87,6 +87,12 @@ export class DeepSeekEngine {
   private cacheHitTokens: number = 0
   private finishReason: string = ''
   private thinking: boolean = false
+  // Reasoning arrives as its own delta field and is billed as output, so a
+  // thinking model looks like a long silence followed by an impossibly fast
+  // stream unless the two are timed apart.
+  private startedAt: number = 0
+  private firstAnyAt: number = 0
+  private firstContentAt: number = 0
 
   /**
    * Thinking is on by default for this model and is billed and capped as
@@ -99,6 +105,15 @@ export class DeepSeekEngine {
   isGenerating(): boolean { return this.generating }
   isReady(): boolean { return settings.hasApiKey() }
   lastCacheHitTokens(): number { return this.cacheHitTokens }
+  /** Time until the model said anything at all -- reading the prompt. */
+  lastPrefillMs(): number {
+    return this.firstAnyAt > 0 ? this.firstAnyAt - this.startedAt : 0
+  }
+  /** Time spent reasoning before the first line of the program appeared. */
+  lastThinkMs(): number {
+    if (this.firstContentAt === 0 || this.firstAnyAt === 0) { return 0 }
+    return this.firstContentAt - this.firstAnyAt
+  }
   lastFinishReason(): string { return this.finishReason }
 
   async generate(request: GenerateRequest, onToken: TokenCallback): Promise<GenerateResult> {
@@ -116,6 +131,9 @@ export class DeepSeekEngine {
     this.finishReason = ''
     this.cancelled = false
     this.generating = true
+    this.startedAt = Date.now()
+    this.firstAnyAt = 0
+    this.firstContentAt = 0
 
     let client = http.createHttp()
     this.client = client
@@ -248,10 +266,16 @@ export class DeepSeekEngine {
       let choice = choices[0] as Record<string, Object>
       let delta = choice['delta'] as Record<string, Object>
       if (delta !== null && delta !== undefined) {
+        let reasoning = delta['reasoning_content']
+        if (typeof reasoning === 'string' && (reasoning as string).length > 0) {
+          if (this.firstAnyAt === 0) { this.firstAnyAt = Date.now() }
+        }
         let content = delta['content']
         if (typeof content === 'string') {
           let token = content as string
           if (token.length > 0) {
+            if (this.firstAnyAt === 0) { this.firstAnyAt = Date.now() }
+            if (this.firstContentAt === 0) { this.firstContentAt = Date.now() }
             this.text += token
             onToken(token)
           }

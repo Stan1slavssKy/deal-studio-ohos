@@ -20,6 +20,9 @@ struct ProjectPage {
   @State versions: Version[] = []
   @State projectId: string = ''
   @State viewedSource: string = ''
+  // Shown beside the source: the request a version came from is the thing you
+  // actually need when deciding whether to refine it or start again.
+  @State viewedPrompt: string = ''
 
   aboutToAppear(): void {
     let params = router.getParams() as Record<string, string>
@@ -188,6 +191,7 @@ struct ProjectPage {
 
   private viewSource(v: Version): void {
     this.viewedSource = v.source
+    this.viewedPrompt = v.prompt
   }
 
   private pinToHome(): void {
@@ -199,16 +203,32 @@ struct ProjectPage {
     if (this.viewedSource.length > 0) {
       Column() {
         Row() {
-          Text('Source').fontSize(18).fontWeight(FontWeight.Bold)
+          Text('Version').fontSize(18).fontWeight(FontWeight.Bold)
           Blank()
           Button('Close')
             .height(36)
             .fontSize(13)
             .type(ButtonType.Normal)
-            .onClick(() => { this.viewedSource = '' })
+            .onClick(() => { this.viewedSource = ''; this.viewedPrompt = '' })
         }
         .width('100%')
         .margin({ bottom: 10 })
+
+        if (this.viewedPrompt.length > 0) {
+          Text('Prompt')
+            .fontSize(12).fontColor('#888888').width('100%').margin({ bottom: 4 })
+          Text(this.viewedPrompt)
+            .fontSize(14)
+            .fontColor('#222222')
+            .width('100%')
+            .padding(10)
+            .backgroundColor('#F3F6FA')
+            .borderRadius(8)
+            .margin({ bottom: 12 })
+            .copyOption(CopyOptions.LocalDevice)
+        }
+        Text('Source')
+          .fontSize(12).fontColor('#888888').width('100%').margin({ bottom: 4 })
 
         Scroll() {
           Text(this.viewedSource)

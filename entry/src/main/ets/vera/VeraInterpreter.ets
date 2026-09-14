@@ -238,6 +238,24 @@ export class VirtualMachine {
         case 'make-array':
           frame.stack.push(new VeraArrayValue(this.take(frame, inst.count)))
           break
+        case 'array-push': {
+          let v = this.pop(frame)
+          let arr = this.asArray(this.pop(frame))
+          if (arr.elements.length >= 4096) {
+            throw new RuntimeTrap('R0022', 'array length limit reached (4096)')
+          }
+          arr.elements.push(v)
+          frame.stack.push(new VeraIntValue(arr.elements.length))
+          break
+        }
+        case 'array-pop': {
+          let arr = this.asArray(this.pop(frame))
+          if (arr.elements.length === 0) {
+            throw new RuntimeTrap('R0023', 'pop from an empty array')
+          }
+          frame.stack.push(arr.elements.pop() as RuntimeValue)
+          break
+        }
         case 'length': {
           let v = this.pop(frame)
           if (v instanceof VeraArrayValue) {
@@ -448,6 +466,62 @@ export function formatRuntimeValue(value: RuntimeValue): string {
   return '<unknown>'
 }
 
+/**
+ * Program state, encoded so it survives a restart.
+ *
+ * Tagged rather than plain JSON for two reasons: plain JSON cannot tell an int
+ * from a number, which matters because arithmetic here refuses to mix them; and
+ * it would lose classIdentity, which make-object sets and which field access
+ * relies on.
+ *
+ * Functions are deliberately unrepresentable. A closure in state would be a
+ * captured environment that no longer exists after a restart, so it is better to
+ * fail loudly at save time than to restore something subtly wrong.
+ */
+export function encodeRuntimeValue(value: RuntimeValue): Object {
+  if (value instanceof VeraIntValue) { return ['i', (value as VeraIntValue).value] as Object }
+  if (value instanceof VeraNumberValue) { return ['n', (value as VeraNumberValue).value] as Object }
+  if (value instanceof VeraStringValue) { return ['s', (value as VeraStringValue).value] as Object }
+  if (value instanceof VeraBooleanValue) { return ['b', (value as VeraBooleanValue).value] as Object }
+  if (value instanceof VeraNullValue) { return ['z'] as Object }
+  if (value instanceof VeraArrayValue) {
+    let items: Object[] = []
+    for (let e of (value as VeraArrayValue).elements) { items.push(encodeRuntimeValue(e)) }
+    return ['a', items] as Object
+  }
+  if (value instanceof VeraObjectValue) {
+    let obj = value as VeraObjectValue
+    let entries: Object[] = []
+    for (let entry of obj.fields) { entries.push([entry[0], encodeRuntimeValue(entry[1])] as Object) }
+    return ['o', obj.classIdentity, entries] as Object
+  }
+  throw new RuntimeTrap('R0024', 'value cannot be saved: ' + formatRuntimeValue(value))
+}
+
+export function decodeRuntimeValue(raw: Object): RuntimeValue {
+  let parts = raw as Object[]
+  let tag = parts[0] as string
+  if (tag === 'i') { return new VeraIntValue(parts[1] as number) }
+  if (tag === 'n') { return new VeraNumberValue(parts[1] as number) }
+  if (tag === 's') { return new VeraStringValue(parts[1] as string) }
+  if (tag === 'b') { return new VeraBooleanValue(parts[1] as boolean) }
+  if (tag === 'z') { return NULL_VALUE }
+  if (tag === 'a') {
+    let items: RuntimeValue[] = []
+    for (let e of parts[1] as Object[]) { items.push(decodeRuntimeValue(e)) }
+    return new VeraArrayValue(items)
+  }
+  if (tag === 'o') {
+    let fields = new Map<string, RuntimeValue>()
+    for (let entry of parts[2] as Object[]) {
+      let pair = entry as Object[]
+      fields.set(pair[0] as string, decodeRuntimeValue(pair[1]))
+    }
+    return new VeraObjectValue(parts[1] as string, fields)
+  }
+  throw new RuntimeTrap('R0025', 'unknown saved value tag: ' + tag)
+}
+
 export function deserializeVbc2(source: string): BytecodeModule {
   let root = JSON.parse(source) as Object[]
   if (!Array.isArray(root) || root[0] !== 'VBC2') {
@@ -497,6 +571,8 @@ function decodeInstruction(raw: Object[]): Instruction {
     case 'call': inst.count = raw[1] as number; inst.awaited = raw[2] as boolean; break
     case 'return': break
     case 'make-array': inst.count = raw[1] as number; break
+    case 'array-push': break
+    case 'array-pop': break
     case 'length': break
     case 'string-symbols': break
     case 'ensure-not-null': break
