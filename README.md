@@ -111,6 +111,47 @@ Sign with `--mode debug` for API 22. On an API 26 device AppGallery installs a
 disposed rule against debug-signed sideloaded apps and AMS refuses the launch;
 `--mode release` yields `os_integration`, which its risk control leaves alone.
 
+### System signing, for std/intent
+
+`insightIntentDriver` is a system API, so a program that calls `std/intent`
+needs the app to be a system app. `build-hap.sh` cannot produce one:
+`arkui-sign` takes no profile argument and reads the kit's own template.
+
+```bash
+./build-hap.sh        # ignore the HAP it signs; we want the unsigned one
+./sign-system.sh      # signs with signing/UnsgnedReleasedProfileTemplate.json
+hdc install /tmp/vera-probe-dyn-hap/vera-probe-dyn-system-signed.hap
+```
+
+That profile differs from the kit's release template in exactly four fields:
+`apl: system_basic`, `app-feature: hos_system_app`, the four entries in
+`acls.allowed-acls`, and the bundle name. **Take the certificate from the kit's
+own template, not from another project's profile** — `appId` is derived from
+`distribution-certificate`, and a different one fails as
+`9568332 install sign info inconsistent`, which reads like a signing bug and is
+not one.
+
+The permissions in `module.json5` are granted by that profile or not at all, and
+the device decides at install time. A normal build declaring them is refused
+outright (`install failed due to grant request permissions failed`), so the
+install output is the test: `install bundle successfully` means the profile was
+accepted.
+
+An already-installed normal build cannot be updated into a system one —
+`9568294 install failed due to apptype not same`. It has to be uninstalled
+first, and `hdc uninstall` destroys `{filesDir}/vera`: every project, every
+saved program state, and the stored API key. The sandbox is not readable from
+`hdc shell` on a release-signed build, so there is no backup route. To test a
+profile without risking any of that, build under a throwaway `bundleName` and
+install alongside.
+
+To confirm afterwards:
+
+```bash
+hdc shell bm dump -n com.vera.probe.dyn      # isSystemApp, appPrivilegeLevel
+hdc shell atm dump -t <accessTokenId> -b com.vera.probe.dyn   # grantStatus 0
+```
+
 ## What it measures
 
 | metric | from |
