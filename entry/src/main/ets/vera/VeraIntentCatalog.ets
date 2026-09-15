@@ -129,6 +129,31 @@ export const INTENT_CATALOG: IntentSpec[] = [
       ['Drive', 'Walk', 'Cycle', 'Bus', 'Subway'], new Map<string, string>(),
       'how to travel')],
     'starts navigation to a named place', 'catalog', 'foreground'),
+
+  // The one target here that needs no account, which is why it exists.
+  //
+  // StartNavigate and PlayMusicList both fail on a device with no Huawei ID --
+  // Maps logs AuthorizationWithHuaweiID 1001502001, Music logs "token is null"
+  // -- and neither failure is about the intent framework. It is about the
+  // parameters: "home" is a place only a signed-in profile knows, and a
+  // playlist picked for a moment of the day is a server-side recommendation.
+  //
+  // ViewSearchPageLocal asks for none of that. Its one parameter is the text to
+  // search for, the specification marks it mandatory, and searching a map is
+  // anonymous.
+  //
+  // Contract: the standard-intent catalogue, which documents `query` as a
+  // required string and nothing else.
+  // Target: the device's own intent record --
+  //   uiAbility { ability: "EntryAbility", executeMode: ["foreground"] }
+  // Foreground because the point is to look at the results. The same intent
+  // name is also declared by com.huawei.hmsapp.music on phone/MainAbility; that
+  // would be its own row, since a row is a target and not just an intent.
+  new IntentSpec('searchOnMap', 'MapSearchParams',
+    'com.huawei.hmos.maps.app', 'entry', 'EntryAbility', 'ViewSearchPageLocal',
+    [new IntentParam('query', 'string', 'query', [], new Map<string, string>(),
+      'what to look for')],
+    'opens the map search page for a place', 'catalog', 'foreground'),
 ]
 
 /** The spec behind intent.<name>, or null when there is none. */
