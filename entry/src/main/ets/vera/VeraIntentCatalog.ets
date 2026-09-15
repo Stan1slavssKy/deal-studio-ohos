@@ -146,14 +146,48 @@ export const INTENT_CATALOG: IntentSpec[] = [
   // required string and nothing else.
   // Target: the device's own intent record --
   //   uiAbility { ability: "EntryAbility", executeMode: ["foreground"] }
-  // Foreground because the point is to look at the results. The same intent
-  // name is also declared by com.huawei.hmsapp.music on phone/MainAbility; that
-  // would be its own row, since a row is a target and not just an intent.
+  // Foreground because the point is to look at the results.
+  //
+  // WARNING: this target answers 0 and comes to the front, but does not act on
+  // the query -- it lands on whatever page it was last on. Verified with three
+  // different queries from a cold start. The same intent on com.huawei.hmsapp.music
+  // does honour it (see searchInMusic below), so the key is right and this
+  // implementation is the problem. Kept as a row because the failure is worth
+  // having on record, not because it is useful.
   new IntentSpec('searchOnMap', 'MapSearchParams',
     'com.huawei.hmos.maps.app', 'entry', 'EntryAbility', 'ViewSearchPageLocal',
     [new IntentParam('query', 'string', 'query', [], new Map<string, string>(),
       'what to look for')],
     'opens the map search page for a place', 'catalog', 'foreground'),
+
+  // The same standard intent, implemented by a second app -- which is the point
+  // of the row, because it is the only way left to find out whether `query` is
+  // the right key at all.
+  //
+  // Maps answers ViewSearchPageLocal with code 0 and comes to the front, but
+  // lands on its trip planner with the search text nowhere in sight. Its record
+  // declares inputParams empty, so `query` came from the standard catalogue
+  // matched on the intent NAME, and a name match is inference: an app may
+  // implement a custom intent that happens to share the name and takes its own
+  // keys. The executor would settle it -- srcEntry points at
+  // ./ets/insightIntents/IntentExecutorImpl.ets -- but the HAP is not readable
+  // without root.
+  //
+  // Answered: it lands. Searching "Beatles" opens the music app's search page
+  // with "Beatles" in the field and real results under it -- Artist: The
+  // Beatles, 1701 songs, 57 albums -- and no Huawei ID signed in. So `query` is
+  // the right key, the payload travels correctly, and Maps simply does not act
+  // on it. Two apps, one standard intent, one honours the contract and one
+  // reports success without doing the work.
+  //
+  // Which is the standing warning about this tier made concrete: a result code
+  // is chosen by the target's developer, so a zero is the target talking, not
+  // proof that the call did anything.
+  new IntentSpec('searchInMusic', 'MusicSearchParams',
+    'com.huawei.hmsapp.music', 'phone', 'MainAbility', 'ViewSearchPageLocal',
+    [new IntentParam('query', 'string', 'query', [], new Map<string, string>(),
+      'what to look for')],
+    'opens the music search page for a song or artist', 'catalog', 'foreground'),
 ]
 
 /** The spec behind intent.<name>, or null when there is none. */
