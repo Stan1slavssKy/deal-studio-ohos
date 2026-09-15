@@ -2,7 +2,7 @@ import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter
 import { CATALOG, ComponentSpec, stylesFor, payloadKindFor } from './VeraUiCatalog'
 import { INTENT_CATALOG, intentByName } from './VeraIntentCatalog'
 import { IntentParam } from './VeraIntentCatalog'
-import { CALENDAR_EVENT_PARAMS } from './VeraCalendarCatalog'
+import { CALENDAR_CATALOG, calendarFnByName } from './VeraCalendarCatalog'
 
 // ===== AST Nodes =====
 
@@ -1222,14 +1222,17 @@ function buildStdIntentModule(): ModuleInterface {
  * the program sees one idiom rather than two.
  */
 function buildStdCalendarModule(): ModuleInterface {
-  let paramsType = new VeraClassType('std/calendar:EventParams', 'EventParams')
-  for (let p of CALENDAR_EVENT_PARAMS) {
-    paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
+  let fns: ExternalFunction[] = []
+  let classes: ExternalClass[] = []
+  for (let fn of CALENDAR_CATALOG) {
+    let paramsType = new VeraClassType('std/calendar:' + fn.paramsClass, fn.paramsClass)
+    for (let p of fn.params) {
+      paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
+    }
+    classes.push(new ExternalClass(fn.paramsClass, paramsType))
+    fns.push(new ExternalFunction(fn.name, [paramsType, STRING], INT, false))
   }
-  let fns: ExternalFunction[] = [
-    new ExternalFunction('addEvent', [paramsType, STRING], INT, false),
-  ]
-  return new ModuleInterface('std/calendar', fns, [new ExternalClass('EventParams', paramsType)])
+  return new ModuleInterface('std/calendar', fns, classes)
 }
 
 class Scope {
@@ -1722,8 +1725,11 @@ class Analyzer {
       label = 'intent.' + name
       params = spec!.params
     } else if (callee.identity.startsWith(calendarPrefix)) {
-      label = 'calendar.' + callee.identity.substring(calendarPrefix.length)
-      params = CALENDAR_EVENT_PARAMS
+      let name = callee.identity.substring(calendarPrefix.length)
+      let fn = calendarFnByName(name)
+      if (fn === null) return
+      label = 'calendar.' + name
+      params = fn!.params
     } else {
       return
     }

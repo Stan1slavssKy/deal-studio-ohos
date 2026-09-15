@@ -14,7 +14,7 @@ import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraIntValue, VeraString
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
 import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
 import { runIntent } from '../vera/VeraIntents'
-import { addCalendarEvent } from '../vera/VeraCalendar'
+import { addCalendarEvent, clearCalendarEvents } from '../vera/VeraCalendar'
 import { LengthMetrics } from '@ohos.arkui.node'
 
 import { catalogKinds } from '../vera/VeraUiCatalog'
@@ -358,7 +358,7 @@ export struct VeraPreview {
     if (effects.length === 0) { return }
     this.host!.pendingEffects = []
     for (let effect of effects) {
-      console.info('VERA-EFFECT id=' + effect.id.toString() + ' ' + effect.kind +
+      console.info('VERA-EFFECT id=' + effect.id.toString() + ' ' + effect.kind + '.' + effect.fn +
         ' -> ' + effect.resultHandler)
       this.runEffect(effect)
     }
@@ -367,7 +367,9 @@ export struct VeraPreview {
   /** One effect, whichever host it belongs to, answered through its handler. */
   private runEffect(effect: HostEffect): void {
     let answer: Promise<string>
-    if (effect.kind === 'calendar') {
+    if (effect.kind === 'calendar' && effect.fn === 'clearEvents') {
+      answer = clearCalendarEvents()
+    } else if (effect.kind === 'calendar') {
       answer = addCalendarEvent(
         this.effectText(effect, 'title'),
         this.effectInt(effect, 'hour', 9),

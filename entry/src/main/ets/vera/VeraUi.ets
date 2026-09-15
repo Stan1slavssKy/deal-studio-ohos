@@ -12,7 +12,7 @@ import {
   RuntimeTrap,
 } from './VeraInterpreter'
 import { IntentSpec, intentByName } from './VeraIntentCatalog'
-import { CALENDAR_EVENT_PARAMS } from './VeraCalendarCatalog'
+import { calendarFnByName } from './VeraCalendarCatalog'
 
 export class VeraUiNode {
   id: number = 0
@@ -277,13 +277,15 @@ export class HostEffect {
   id: number
   /** 'intent' or 'calendar' -- which host the request is for. */
   kind: string
+  /** Which function of that host: the intent's row name, or addEvent/clearEvents. */
+  fn: string
   /** The intent's row; null for any other kind. */
   spec: IntentSpec | null
   values: Map<string, string>
   resultHandler: string
-  constructor(id: number, kind: string, spec: IntentSpec | null,
+  constructor(id: number, kind: string, fn: string, spec: IntentSpec | null,
       values: Map<string, string>, resultHandler: string) {
-    this.id = id; this.kind = kind; this.spec = spec
+    this.id = id; this.kind = kind; this.fn = fn; this.spec = spec
     this.values = values; this.resultHandler = resultHandler
   }
 }
@@ -470,7 +472,7 @@ export class UiHostEnvironment extends HostEnvironment {
     }
     let id = this.nextEffectId
     this.nextEffectId = id + 1
-    this.pendingEffects.push(new HostEffect(id, 'intent', spec!, values, asString(args[1])))
+    this.pendingEffects.push(new HostEffect(id, 'intent', name, spec!, values, asString(args[1])))
     return new VeraIntValue(id)
   }
 
@@ -480,7 +482,8 @@ export class UiHostEnvironment extends HostEnvironment {
    * Calendar Kit calls anything either.
    */
   private queueCalendar(name: string, args: RuntimeValue[]): RuntimeValue {
-    if (name !== 'addEvent') {
+    let fn = calendarFnByName(name)
+    if (fn === null) {
       throw new RuntimeTrap('R0015', `unknown std/calendar function: ${name}`)
     }
     if (!this.effectsAllowed) {
@@ -492,7 +495,7 @@ export class UiHostEnvironment extends HostEnvironment {
     }
     let record = args[0] as VeraObjectValue
     let values = new Map<string, string>()
-    for (let p of CALENDAR_EVENT_PARAMS) {
+    for (let p of fn!.params) {
       let field = record.fields.get(p.name)
       if (field === undefined) { continue }
       let value = field as RuntimeValue
@@ -504,7 +507,7 @@ export class UiHostEnvironment extends HostEnvironment {
     }
     let id = this.nextEffectId
     this.nextEffectId = id + 1
-    this.pendingEffects.push(new HostEffect(id, 'calendar', null, values, asString(args[1])))
+    this.pendingEffects.push(new HostEffect(id, 'calendar', name, null, values, asString(args[1])))
     return new VeraIntValue(id)
   }
 }
