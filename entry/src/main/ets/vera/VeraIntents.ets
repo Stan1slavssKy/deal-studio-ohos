@@ -26,6 +26,17 @@ const DOMAIN = 0x0000
  * platform expects: catalogue names become platform names, catalogue values
  * become platform values, and an empty string means "omit" -- which is how a
  * language with no optional record fields expresses an optional parameter.
+ *
+ * A platformName may be a dotted path, and that is what lets the scalar record
+ * reach an object parameter. Eleven parameters in the standard catalogue are
+ * objects -- StartNavigate's dstLocation and srcLocation among them -- and every
+ * one of them is a flat bag of strings in the specification's own examples:
+ *
+ *   dstLocation = { locationSystem, poiId, locationName, longitude, latitude, address }
+ *
+ * So the program writes a flat record with a field per leaf, and the nesting
+ * happens here. The language, the compiler and the bytecode never learn that
+ * objects exist.
  */
 function buildParams(spec: IntentSpec, values: Map<string, string>): Record<string, Object> {
   let params: Record<string, Object> = {}
@@ -36,11 +47,21 @@ function buildParams(spec: IntentSpec, values: Map<string, string>): Record<stri
     if (text.length === 0) { continue }
     let mapped = p.valueMap.get(text)
     let out: string = mapped !== undefined ? mapped as string : text
-    if (p.kind === 'int') {
-      params[p.platformName] = Number.parseInt(out, 10) as Object
-    } else {
-      params[p.platformName] = out as Object
+    let value: Object = p.kind === 'int' ? Number.parseInt(out, 10) as Object : out as Object
+    let dot = p.platformName.indexOf('.')
+    if (dot < 0) {
+      params[p.platformName] = value
+      continue
     }
+    // One level is all the catalogue ever asks for, so this does not recurse.
+    let group = p.platformName.substring(0, dot)
+    let leaf = p.platformName.substring(dot + 1)
+    let nested = params[group] as Record<string, Object> | undefined
+    if (nested === undefined) {
+      nested = {} as Record<string, Object>
+      params[group] = nested as Object
+    }
+    nested![leaf] = value
   }
   return params
 }

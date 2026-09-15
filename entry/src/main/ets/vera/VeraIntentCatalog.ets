@@ -130,6 +130,48 @@ export const INTENT_CATALOG: IntentSpec[] = [
       'how to travel')],
     'starts navigation to a named place', 'catalog', 'foreground'),
 
+  // The same intent as startNavigate, aimed at a place instead of at "home".
+  //
+  // startNavigate fails on a device with no Huawei ID, and the reason is the
+  // parameter rather than the intent: dstLocationType "家" is a place only a
+  // signed-in profile knows. The specification's other destination parameter
+  // asks for nothing of the sort -- dstLocation carries the place itself:
+  //
+  //   { locationSystem, poiId, locationName, longitude, latitude, address }
+  //
+  // It is an object, which the scalar record cannot hold, so the row spreads it
+  // into one field per leaf and lets the dotted platformName reassemble it in
+  // VeraIntents. No part of the language or the compiler is involved.
+  //
+  // Coordinates are strings in the specification's own example, so they are
+  // strings here. They come from the person using the program, never from the
+  // model: a made-up latitude is a made-up parameter value.
+  //
+  // Contract: the standard-intent catalogue. Tier was 'catalog' and that was
+  // the whole risk, since com.huawei.hmos.maps.app declares inputParams empty
+  // exactly as it does for ViewSearchPageLocal, which it answers with 0 while
+  // ignoring the query. The probe came out the other way: sent
+  // dstLocation.locationName "北京西站" with its latitude and longitude, and
+  // Petal Maps drew a real route to those coordinates -- turn-by-turn screen,
+  // speedometer, distance and ETA. Tier is therefore 'probed', which outranks
+  // the catalogue guess it started from.
+  //
+  // Worth keeping straight: the map app ignoring `query` was about that one
+  // intent, not about the app. Given parameters it understands, it acts on
+  // them.
+  new IntentSpec('navigateTo', 'NavigateToParams',
+    'com.huawei.hmos.maps.app', 'entry', 'EntryAbility', 'StartNavigate',
+    [new IntentParam('place', 'string', 'dstLocation.locationName', [],
+      new Map<string, string>(), 'name of the place to go to'),
+     new IntentParam('latitude', 'string', 'dstLocation.latitude', [],
+      new Map<string, string>(), 'latitude, or "" to leave it out'),
+     new IntentParam('longitude', 'string', 'dstLocation.longitude', [],
+      new Map<string, string>(), 'longitude, or "" to leave it out'),
+     new IntentParam('traffic', 'string', 'trafficType',
+      ['Drive', 'Walk', 'Cycle', 'Bus', 'Subway'], new Map<string, string>(),
+      'how to travel')],
+    'starts navigation to a place given by name and coordinates', 'probed', 'foreground'),
+
   // The one target here that needs no account, which is why it exists.
   //
   // StartNavigate and PlayMusicList both fail on a device with no Huawei ID --
