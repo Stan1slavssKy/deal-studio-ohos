@@ -167,10 +167,36 @@ export const INTENT_CATALOG: IntentSpec[] = [
       new Map<string, string>(), 'latitude, or "" to leave it out'),
      new IntentParam('longitude', 'string', 'dstLocation.longitude', [],
       new Map<string, string>(), 'longitude, or "" to leave it out'),
+     // Where the journey starts. Leave all three empty and the map uses wherever
+     // the phone is, which is right for one-off navigation and wrong for a
+     // planned day: the second leg starts where the first one ended, not where
+     // the person happened to be when they opened the app.
+     //
+     // NOT HONOURED by com.huawei.hmos.maps.app. It accepts the parameter,
+     // answers 0, and routes from the phone's current position anyway --
+     // verified with a payload carrying
+     //   srcLocation {locationName:"Istanbul Airport", 41.2753, 28.7519}
+     // and a destination in Istanbul, which drew a route starting near Moscow.
+     // dstLocation in the same call is honoured, so this is one parameter
+     // ignored rather than the app ignoring parameters.
+     //
+     // com.amap.hmapp declares the same intent and may well honour it, but it
+     // cannot be tested without accepting its first-run privacy agreement,
+     // which is the device owner's decision to make.
+     //
+     // Sent regardless: the program is right to say where the leg begins, and
+     // the day it describes stays correct even when the map redraws the first
+     // leg from wherever the phone happens to be.
+     new IntentParam('fromPlace', 'string', 'srcLocation.locationName', [],
+      new Map<string, string>(), 'name of the place to start from, or "" for where the phone is'),
+     new IntentParam('fromLatitude', 'string', 'srcLocation.latitude', [],
+      new Map<string, string>(), 'latitude of the starting place, or ""'),
+     new IntentParam('fromLongitude', 'string', 'srcLocation.longitude', [],
+      new Map<string, string>(), 'longitude of the starting place, or ""'),
      new IntentParam('traffic', 'string', 'trafficType',
       ['Drive', 'Walk', 'Cycle', 'Bus', 'Subway'], new Map<string, string>(),
       'how to travel')],
-    'starts navigation to a place given by name and coordinates', 'probed', 'foreground'),
+    'starts navigation between two places given by name and coordinates', 'probed', 'foreground'),
 
   // Opens one section of the music app.
   //
