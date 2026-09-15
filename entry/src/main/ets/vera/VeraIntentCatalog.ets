@@ -173,10 +173,17 @@ export const INTENT_CATALOG: IntentSpec[] = [
      // the person happened to be when they opened the app.
      //
      // NOT HONOURED by com.huawei.hmos.maps.app. It accepts the parameter,
-     // answers 0, and routes from the phone's current position anyway --
-     // verified with a payload carrying
-     //   srcLocation {locationName:"Istanbul Airport", 41.2753, 28.7519}
-     // and a destination in Istanbul, which drew a route starting near Moscow.
+     // answers 0, and routes from the phone's current position anyway.
+     //
+     // Established twice, the second time without the confound. The first try
+     // sent srcLocation {"Istanbul Airport", 41.2753, 28.7519} with an Istanbul
+     // destination and got a route starting near Moscow -- suggestive, but a
+     // route across a continent might have failed for its own reasons. So the
+     // second try kept both ends a few kilometres apart and next to the phone:
+     //   src {"Red Square", 55.7539, 37.6208} -> dst {"Gorky Park", 55.7298, 37.6019}
+     // Petal Maps entered turn-by-turn navigation to Gorky Park from where the
+     // phone actually was, not from Red Square. Short, routable, still ignored.
+     //
      // dstLocation in the same call is honoured, so this is one parameter
      // ignored rather than the app ignoring parameters.
      //
