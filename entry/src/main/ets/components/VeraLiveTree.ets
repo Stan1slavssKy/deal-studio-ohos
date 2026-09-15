@@ -79,10 +79,18 @@ export function toLive(node: VeraUiNode): LiveNode {
  * re-render a node that did not change, which is the very behaviour this
  * replaces.
  *
- * Children are matched by position. When the count changes the list is rebuilt
- * wholesale: that is coarse, but a structural change is exactly the case where
- * positional identity is meaningless, and it is rare next to the common one --
- * a fixed layout whose text and enabled flags move.
+ * Children are matched by position, and a position that already exists keeps
+ * its node. That is not an optimisation either -- it is the invariant the
+ * renderer depends on. ForEach there is keyed by position, so ArkUI retains the
+ * component it already built for that key and never re-invokes the builder; the
+ * component goes on reading the LiveNode it closed over. Hand it a replacement
+ * object and that row freezes forever at whatever it showed when it was
+ * created, while the new node is rendered by nobody.
+ *
+ * Rebuilding the whole list whenever the count changed did exactly that, and it
+ * is the common case rather than a rare one: any program that appends to a log
+ * grows its list every frame. A list drawn newest-first -- the natural way to
+ * show a journal -- then disagrees with its own state on every row.
  */
 export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.kind !== next.kind) { live.kind = next.kind }
@@ -104,13 +112,21 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.maximum !== next.maximum) { live.maximum = next.maximum }
   if (live.options.join('\u0000') !== next.options.join('\u0000')) { live.options = next.options }
 
-  if (live.children.length !== next.children.length) {
-    let kids: LiveNode[] = []
-    for (let child of next.children) { kids.push(toLive(child)) }
-    live.children = kids
-    return
-  }
-  for (let i = 0; i < next.children.length; i++) {
+  // Reconcile the positions that already exist, in place, so the components
+  // rendering them keep pointing at a node that is still being updated.
+  let shared = live.children.length < next.children.length
+    ? live.children.length : next.children.length
+  for (let i = 0; i < shared; i++) {
     reconcile(live.children[i], next.children[i])
   }
+  if (live.children.length === next.children.length) { return }
+
+  // The length did change, so the array has to be reassigned -- @Trace sees a
+  // field being written, not an array being mutated, and without the write
+  // ForEach never learns the list grew. The surviving nodes are carried over
+  // by reference; only the tail is new.
+  let kids: LiveNode[] = []
+  for (let i = 0; i < shared; i++) { kids.push(live.children[i]) }
+  for (let i = shared; i < next.children.length; i++) { kids.push(toLive(next.children[i])) }
+  live.children = kids
 }

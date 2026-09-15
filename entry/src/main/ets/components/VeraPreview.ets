@@ -12,7 +12,8 @@
 
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraIntValue, VeraStringValue,
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
-import { UiHostEnvironment, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
+import { UiHostEnvironment, IntentEffect, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
+import { runIntent } from '../vera/VeraIntents'
 import { LengthMetrics } from '@ohos.arkui.node'
 
 import { catalogKinds } from '../vera/VeraUiCatalog'
@@ -46,10 +47,24 @@ export struct VeraPreview {
   // fields are what drive the re-render. See VeraLiveTree.
   @State hasRoot: boolean = false
   private liveRoot: LiveNode | null = null
-  @State revision: number = 0
+  /**
+   * A frame counter for the logs, and nothing more -- build() does not read it,
+   * so writing it triggers no re-render. It is not @State for that reason: it
+   * used to key a ForEach that recreated the whole tree on every action, and
+   * leaving it looking like state invited the assumption that the safety net is
+   * still there. It is not; correctness now rests entirely on reconcile keeping
+   * node identity.
+   */
+  private revision: number = 0
   @State error: string = ''
   private vm: VirtualMachine | null = null
+  private host: UiHostEnvironment | null = null
   private currentState: RuntimeValue | null = null
+  /**
+   * Set when the screen goes away. An intent answers long after the tap, and
+   * without this a late answer would re-enter a VM that is no longer there.
+   */
+  private disposed: boolean = false
   // Live tickers, keyed by the program's own id for each: handle, interval and
   // the moment of the last fire, so a handler can be told how long really passed.
   private timers: Map<string, number> = new Map<string, number>()
@@ -92,9 +107,9 @@ export struct VeraPreview {
     this.error = ''
     if (this.vbc2.length === 0) { return }
     try {
-      let host = new UiHostEnvironment()
+      this.host = new UiHostEnvironment()
       let module = deserializeVbc2(this.vbc2)
-      this.vm = new VirtualMachine(module, host)
+      this.vm = new VirtualMachine(module, this.host)
       this.currentState = this.restoreState()
       if (this.currentState === null) { this.currentState = this.vm!.execute('init') }
       this.renderView()
@@ -209,6 +224,7 @@ export struct VeraPreview {
 
   aboutToDisappear(): void {
     // Without this the tickers -- and the VM they drive -- outlive the screen.
+    this.disposed = true
     this.stopAllTimers()
   }
 
@@ -252,6 +268,10 @@ export struct VeraPreview {
   private renderView(): void {
     if (this.vm === null || this.currentState === null) { return }
     try {
+      // view is re-run on every change, so an intent call from there would
+      // start navigation on every repaint. The host refuses one while this is
+      // false; only dispatch lifts it, and only around the handler itself.
+      if (this.host !== null) { this.host!.effectsAllowed = false }
       let viewTree = this.vm!.execute('view', [this.currentState!])
       let nodes = decodeVeraUi(viewTree)
       let root = nodes.length > 0 ? nodes[0] : null
@@ -297,17 +317,55 @@ export struct VeraPreview {
     if (this.vm === null || this.currentState === null) { return }
     let t0 = Date.now()
     try {
+      if (this.host !== null) { this.host!.effectsAllowed = true }
       this.currentState = this.vm!.execute(action, [this.currentState!, payload])
+      if (this.host !== null) { this.host!.effectsAllowed = false }
       console.info('VERA-ACTION ' + action + ' steps=' + this.vm!.stepsExecuted().toString() +
         ' ms=' + (Date.now() - t0).toString())
       this.renderView()
       if (persist) { this.persistState() }
+      this.drainEffects()
     } catch (e) {
+      if (this.host !== null) {
+        this.host!.effectsAllowed = false
+        // A handler that trapped half-way may have queued an intent it would
+        // never have reached. Asking the platform for it would act on a state
+        // the program never committed to.
+        this.host!.pendingEffects = []
+      }
       console.error('VERA-ACTION ' + action + ' TRAP steps=' + this.vm!.stepsExecuted().toString() +
         ' ms=' + (Date.now() - t0).toString() + ' err=' + (e as Error).message)
       this.error = 'Action error: ' + (e as Error).message
       // A ticker whose handler traps would otherwise trap again every interval.
       this.stopAllTimers()
+    }
+  }
+
+  /**
+   * Runs the intents the handler asked for, and brings each answer back the way
+   * every other event arrives -- as a dispatch to a named handler.
+   *
+   * The queue is taken and cleared first: delivering an answer runs a handler,
+   * and that handler may queue intents of its own.
+   *
+   * A late answer to a screen that has gone is dropped rather than pushed into
+   * a VM that is no longer running.
+   */
+  private drainEffects(): void {
+    if (this.host === null) { return }
+    let effects: IntentEffect[] = this.host!.pendingEffects
+    if (effects.length === 0) { return }
+    this.host!.pendingEffects = []
+    for (let effect of effects) {
+      console.info('VERA-INTENT id=' + effect.id.toString() + ' ' + effect.spec.name +
+        ' -> ' + effect.resultHandler)
+      runIntent(effect.spec, effect.values).then((answer: string) => {
+        if (this.disposed) { return }
+        this.dispatch(effect.resultHandler, new VeraStringValue(answer))
+      }).catch((e: Error) => {
+        if (this.disposed) { return }
+        this.dispatch(effect.resultHandler, new VeraStringValue('error: ' + e.message))
+      })
     }
   }
 
@@ -353,11 +411,19 @@ export struct VeraPreview {
 
   @Builder
   renderChildren(node: LiveNode) {
-    // Positional keys: the live tree is mutated in place, so a node keeps its
-    // identity across frames and only its changed fields re-render.
+    // Keyed by position and kind. Position, because reconcile keeps a node's
+    // identity across frames, so a retained component is still reading a node
+    // that is being updated and only the changed fields re-render.
+    //
+    // Kind as well, because renderNode picks its branch with an if/else chain
+    // when the component is built, and a retained component cannot switch
+    // branches later. A position that turns from a text into a listitem -- an
+    // empty-state line replaced by the first real row -- would otherwise stay a
+    // text forever. Including the kind makes ArkUI rebuild exactly then, and
+    // never merely because some text changed.
     ForEach(node.children, (child: LiveNode) => {
       this.renderNode(child, node.kind)
-    }, (child: LiveNode, index: number) => index.toString())
+    }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
   }
 
   @Builder
@@ -618,7 +684,8 @@ export struct VeraPreview {
           }
           .width(Math.floor(100 / (node.columns > 0 ? node.columns : 1)).toString() + '%')
           .padding(node.style === 'compact' ? 2 : node.style === 'spacious' ? 6 : 4)
-        }, (child: LiveNode, index: number) => index.toString())
+          // Same keying as renderChildren; see the note there.
+        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
       }
       .width('100%')
       .padding(4)
