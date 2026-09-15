@@ -58,11 +58,25 @@ export class IntentSpec {
    * target answered; 'schema' -- the device record declared it.
    */
   tier: string
+  /**
+   * 'foreground' or 'background'.
+   *
+   * Not a preference -- the target declares which modes it supports and asking
+   * for one it does not is an error. Within what it supports, the choice is
+   * about whether the person should be looking at that app: navigation is
+   * useless off-screen, music is worse on it, because coming to the front tears
+   * the calling app away for something the user only wanted to hear.
+   *
+   * Background dispatch goes through the Call mechanism rather than starting a
+   * page, and needs ohos.permission.ABILITY_BACKGROUND_COMMUNICATION.
+   */
+  mode: string
   constructor(name: string, paramsClass: string, bundle: string, moduleName: string,
-      ability: string, intentName: string, params: IntentParam[], summary: string, tier: string) {
+      ability: string, intentName: string, params: IntentParam[], summary: string,
+      tier: string, mode: string) {
     this.name = name; this.paramsClass = paramsClass; this.bundle = bundle
     this.moduleName = moduleName; this.ability = ability; this.intentName = intentName
-    this.params = params; this.summary = summary; this.tier = tier
+    this.params = params; this.summary = summary; this.tier = tier; this.mode = mode
   }
 }
 
@@ -89,11 +103,13 @@ export const INTENT_CATALOG: IntentSpec[] = [
   // Target: the device's own intent record --
   //   uiAbility { ability: "MainAbility", executeMode: ["foreground","background"] }
   // and the bundle is installed here (`bm dump -n com.huawei.hmsapp.music`).
+  // Background, because it supports it: nobody asking for driving music wants
+  // the music app to take over the screen.
   new IntentSpec('playMusicList', 'MusicParams',
     'com.huawei.hmsapp.music', 'phone', 'MainAbility', 'PlayMusicList',
     [new IntentParam('scene', 'string', 'sceneType', MUSIC_SCENES,
       new Map<string, string>(), 'which moment of the day the music is for')],
-    'puts on a playlist chosen for a moment of the day', 'catalog'),
+    'puts on a playlist chosen for a moment of the day', 'catalog', 'background'),
 
   // Contract: the standard-intent catalogue. Parameters are all optional there,
   // so the record carries the two that need no coordinates -- a destination by
@@ -101,9 +117,10 @@ export const INTENT_CATALOG: IntentSpec[] = [
   //
   // Target: the device's own intent record --
   //   uiAbility { ability: "EntryAbility", executeMode: ["foreground"] }
-  // Foreground only, which is what runIntent asks for. com.amap.hmapp declares
-  // the same intent on entry/EntryAbility and is installed too, so a second row
-  // pointing there is a one-line change if the Huawei one refuses.
+  // Foreground is the only mode it declares, and the right one anyway -- a
+  // route the driver cannot see is no route. com.amap.hmapp declares the same
+  // intent on entry/EntryAbility and is installed too, so a second row pointing
+  // there is a one-line change if the Huawei one refuses.
   new IntentSpec('startNavigate', 'NavigateParams',
     'com.huawei.hmos.maps.app', 'entry', 'EntryAbility', 'StartNavigate',
     [new IntentParam('destination', 'string', 'dstLocationType', ['home', 'work'],
@@ -111,7 +128,7 @@ export const INTENT_CATALOG: IntentSpec[] = [
      new IntentParam('traffic', 'string', 'trafficType',
       ['Drive', 'Walk', 'Cycle', 'Bus', 'Subway'], new Map<string, string>(),
       'how to travel')],
-    'starts navigation to a named place', 'catalog'),
+    'starts navigation to a named place', 'catalog', 'foreground'),
 ]
 
 /** The spec behind intent.<name>, or null when there is none. */

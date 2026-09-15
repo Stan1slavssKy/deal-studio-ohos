@@ -61,10 +61,16 @@ export async function runIntent(spec: IntentSpec, values: Map<string, string>): 
     abilityName: spec.ability,
     insightIntentName: spec.intentName,
     insightIntentParam: params,
-    executeMode: insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND
+    // Which mode is on the row, not a fixed choice here: a target that declares
+    // only foreground rejects a background call, and one that supports both
+    // should not seize the screen for something the user only wanted to hear.
+    executeMode: spec.mode === 'background'
+      ? insightIntent.ExecuteMode.UI_ABILITY_BACKGROUND
+      : insightIntent.ExecuteMode.UI_ABILITY_FOREGROUND
   }
   hilog.info(DOMAIN, 'VERA', 'VERA-INTENT ' + spec.intentName + ' -> ' + spec.bundle + '/' +
-    spec.moduleName + '/' + spec.ability + ' params=' + JSON.stringify(params))
+    spec.moduleName + '/' + spec.ability + ' mode=' + spec.mode +
+    ' params=' + JSON.stringify(params))
   try {
     let result: insightIntent.ExecuteResult = await insightIntentDriver.execute(param)
     if (result.code === 0) {
