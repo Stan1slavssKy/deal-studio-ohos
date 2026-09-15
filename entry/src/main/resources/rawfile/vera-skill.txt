@@ -5,7 +5,7 @@ VERA-L uses TypeScript syntax with types: int, number, boolean, string, user cla
 Every program must define:
 - import * as ui from "std/ui"
 - optionally: import * as time from "std/time", as math from "std/math",
-  as strings from "std/strings"
+  as strings from "std/strings", as intent from "std/intent"
 - @jsonable class AppState with all state fields
 - function init(): AppState returning the initial state
 - function view(state: AppState): ui.View building the UI tree
@@ -102,6 +102,28 @@ is a function you write:
   }
 A clock reading is then pad2(m / 60) + ":" + pad2(m % 60).
 
+The platform — import * as intent from "std/intent". This is the only way a
+program reaches anything outside itself: there is no audio, no navigation, no
+way to open another app, and no API for any of them other than these calls.
+Use one whenever the user asks for something the program cannot draw.
+
+{{INTENT_CATALOG}}
+
+Each call takes a record of parameters and the name of a handler, and returns an
+int request id you can ignore:
+  intent.playMusicList({ scene: "EVENING_SCENE" }, "onMusicAnswer")
+Rules that are not obvious:
+  - Every field of the record must be written, even one you do not want to send.
+    Send "" for those; there are no optional fields and no defaults.
+  - Only the values listed above are accepted for a field. Anything else is a
+    compile error, and so is a field name that is not listed.
+  - Call it only from a handler, never from view. view runs again on every
+    change, so a call from there would fire on every repaint.
+  - The answer arrives later, as a call to the handler you named, which must be
+    function name(state: AppState, value: string): AppState. The string is "ok",
+    or "declined code=100060202" when the app refused, or "error 202: ..." when
+    the system did. Keep it and show it -- it is the only sign the call worked.
+
 Loops come in two forms and there is no other -- no for(;;), no ++ and no +=:
   for (let e: Entry of log) { ... }        the type annotation is required
   let i: int = 0;
@@ -145,7 +167,7 @@ Restrictions — do NOT use:
 - const, var, template literals, switch, arrow functions, ?., ??, spread, destructuring
 - Object field mutation (return new objects instead)
 - console, Math, Date, JSON, or any standard library other than std/ui, std/time,
-  std/math and std/strings
+  std/math, std/strings and std/intent
 - Classes cannot have methods or constructors, only fields
 - Array literals require typed context (assign to typed variable first)
 

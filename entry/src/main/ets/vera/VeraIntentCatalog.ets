@@ -1,0 +1,147 @@
+/**
+ * The one description of the std/intent vocabulary.
+ *
+ * Same arrangement as VeraUiCatalog and for the same reason: the compiler's
+ * module interface, the host's call to the platform, and the prose in
+ * vera-skill.txt all read this table, so adding an intent is one row rather
+ * than four edits that nothing cross-checks.
+ *
+ * It also settles a question the intent framework makes unavoidable. On a real
+ * device roughly 95% of installed intents declare no parameter contract
+ * anywhere machine-readable, so an agent that fills the gap from imagination
+ * writes plausible code that fails at runtime. Here the contract lives in this
+ * table, taken from the standard-intent catalogue, and the generated program
+ * only picks values. It cannot name a parameter, because it never sees one:
+ * `platformName` and `valueMap` keep the platform's own spelling -- and its
+ * Chinese literals -- on this side of the bridge.
+ *
+ * Pure data. Carries kinds as strings rather than compiler types, so it does
+ * not import the compiler and there is no cycle.
+ */
+
+export class IntentParam {
+  /** Field name in the record the program writes. */
+  name: string
+  /** 'string' | 'int' */
+  kind: string
+  /** Closed set of accepted values; empty when unconstrained. */
+  values: string[]
+  /** Key this field becomes in insightIntentParam. */
+  platformName: string
+  /** Value translation on the way out; empty map means identity. */
+  valueMap: Map<string, string>
+  /** One line for the prompt. */
+  summary: string
+  constructor(name: string, kind: string, platformName: string, values: string[] = [],
+      valueMap: Map<string, string> = new Map<string, string>(), summary: string = '') {
+    this.name = name; this.kind = kind; this.platformName = platformName
+    this.values = values; this.valueMap = valueMap; this.summary = summary
+  }
+}
+
+export class IntentSpec {
+  /** Name in the language: intent.<name> */
+  name: string
+  /** Name of the generated parameter class: intent.<paramsClass> */
+  paramsClass: string
+  /** Where the intent lives, read from the device -- never guessed. */
+  bundle: string
+  moduleName: string
+  ability: string
+  /** The platform's own intent name. */
+  intentName: string
+  params: IntentParam[]
+  summary: string
+  /**
+   * How the contract was established, in the vocabulary of the caller
+   * workflow: 'catalog' -- the standard-intent specification; 'probed' -- the
+   * target answered; 'schema' -- the device record declared it.
+   */
+  tier: string
+  constructor(name: string, paramsClass: string, bundle: string, moduleName: string,
+      ability: string, intentName: string, params: IntentParam[], summary: string, tier: string) {
+    this.name = name; this.paramsClass = paramsClass; this.bundle = bundle
+    this.moduleName = moduleName; this.ability = ability; this.intentName = intentName
+    this.params = params; this.summary = summary; this.tier = tier
+  }
+}
+
+/** The twelve sceneType values the PlayMusicList specification enumerates. */
+const MUSIC_SCENES: string[] = ['MORNING_SCENE', 'MIDDAY_SCENE', 'EVENING_SCENE', 'NIGHT_SCENE',
+  'WEEKEND_SCENE', 'FESTIVAL_SCENE', 'BIRTHDAY_SCENE', 'ANNIVERSARY_SCENE', 'DRIVE_SCENE',
+  'SUBWAY_SCENE', 'TRAVEL_SCENE', 'CITY_SCENE']
+
+/**
+ * dstLocationType is prose in the specification -- "家", "公司" -- so the
+ * program says home and work and the translation happens here. A Chinese
+ * literal in a generated program would be a parameter value invented by the
+ * model in all but name.
+ */
+const DESTINATIONS: Map<string, string> = new Map<string, string>([
+  ['home', '家'],
+  ['work', '公司'],
+])
+
+export const INTENT_CATALOG: IntentSpec[] = [
+  // Contract: the standard-intent catalogue (sceneType is a closed set there);
+  // the device record declares inputParams empty, so the catalogue is the only
+  // source and the tier is 'catalog'.
+  // Target: the device's own intent record --
+  //   uiAbility { ability: "MainAbility", executeMode: ["foreground","background"] }
+  // and the bundle is installed here (`bm dump -n com.huawei.hmsapp.music`).
+  new IntentSpec('playMusicList', 'MusicParams',
+    'com.huawei.hmsapp.music', 'phone', 'MainAbility', 'PlayMusicList',
+    [new IntentParam('scene', 'string', 'sceneType', MUSIC_SCENES,
+      new Map<string, string>(), 'which moment of the day the music is for')],
+    'puts on a playlist chosen for a moment of the day', 'catalog'),
+
+  // Contract: the standard-intent catalogue. Parameters are all optional there,
+  // so the record carries the two that need no coordinates -- a destination by
+  // name and a mode of travel.
+  //
+  // Target: the device's own intent record --
+  //   uiAbility { ability: "EntryAbility", executeMode: ["foreground"] }
+  // Foreground only, which is what runIntent asks for. com.amap.hmapp declares
+  // the same intent on entry/EntryAbility and is installed too, so a second row
+  // pointing there is a one-line change if the Huawei one refuses.
+  new IntentSpec('startNavigate', 'NavigateParams',
+    'com.huawei.hmos.maps.app', 'entry', 'EntryAbility', 'StartNavigate',
+    [new IntentParam('destination', 'string', 'dstLocationType', ['home', 'work'],
+      DESTINATIONS, 'where to go'),
+     new IntentParam('traffic', 'string', 'trafficType',
+      ['Drive', 'Walk', 'Cycle', 'Bus', 'Subway'], new Map<string, string>(),
+      'how to travel')],
+    'starts navigation to a named place', 'catalog'),
+]
+
+/** The spec behind intent.<name>, or null when there is none. */
+export function intentByName(name: string): IntentSpec | null {
+  for (let spec of INTENT_CATALOG) { if (spec.name === name) { return spec } }
+  return null
+}
+
+/** Accepted values for one field of one intent's record; empty if unconstrained. */
+export function intentValuesFor(intentFunction: string, field: string): string[] {
+  let spec = intentByName(intentFunction)
+  if (spec === null) { return [] }
+  for (let p of spec!.params) { if (p.name === field) { return p.values } }
+  return []
+}
+
+/**
+ * The intent section of the model's prompt, generated so it cannot drift from
+ * what the compiler accepts and the host sends.
+ */
+export function describeIntentsForPrompt(): string {
+  let lines: string[] = []
+  for (let spec of INTENT_CATALOG) {
+    let fields: string[] = []
+    for (let p of spec.params) { fields.push(p.name) }
+    lines.push('  intent.' + spec.name + '({ ' + fields.join(', ') + ' }, result)  -- ' + spec.summary)
+    for (let p of spec.params) {
+      let allowed = p.values.length > 0 ? p.values.join(' ') : 'any ' + p.kind
+      lines.push('      ' + p.name + ': ' + allowed)
+    }
+  }
+  return lines.join('\n')
+}

@@ -11,6 +11,7 @@ import {
   HostEnvironment,
   RuntimeTrap,
 } from './VeraInterpreter'
+import { IntentSpec, intentByName } from './VeraIntentCatalog'
 
 export class VeraUiNode {
   id: number = 0
@@ -263,11 +264,41 @@ function invokeStdStrings(name: string, args: RuntimeValue[]): RuntimeValue {
   }
 }
 
+/**
+ * One intent the program asked for, waiting to be run.
+ *
+ * The VM is synchronous -- invoke() has to return a value on the spot -- while
+ * the platform answers with a promise. So the call does not run the intent; it
+ * records the request, and whoever drives the VM runs it afterwards and brings
+ * the answer back through the ordinary handler path.
+ */
+export class IntentEffect {
+  id: number
+  spec: IntentSpec
+  values: Map<string, string>
+  resultHandler: string
+  constructor(id: number, spec: IntentSpec, values: Map<string, string>, resultHandler: string) {
+    this.id = id; this.spec = spec; this.values = values; this.resultHandler = resultHandler
+  }
+}
+
 export class UiHostEnvironment extends HostEnvironment {
+  /** Requests made during the handler that is running now. */
+  pendingEffects: IntentEffect[] = []
+  /**
+   * Whether an effect may be requested at all: true while a handler runs, false
+   * while view() runs. view is a pure function of state and is re-run on every
+   * change, so an intent call from there would start navigation on every
+   * repaint.
+   */
+  effectsAllowed: boolean = false
+  private nextEffectId: number = 1
+
   invoke(module: string, name: string, args: RuntimeValue[], awaited: boolean): RuntimeValue {
     if (module === 'std/time') { return invokeStdTime(name, args) }
     if (module === 'std/math') { return invokeStdMath(name, args) }
     if (module === 'std/strings') { return invokeStdStrings(name, args) }
+    if (module === 'std/intent') { return this.queueIntent(name, args) }
     if (module !== 'std/ui') {
       throw new RuntimeTrap('R0015', `external function unavailable: ${module}.${name}`)
     }
@@ -395,6 +426,45 @@ export class UiHostEnvironment extends HostEnvironment {
       default:
         throw new RuntimeTrap('R0015', `unknown std/ui function: ${name}`)
     }
+  }
+
+  /**
+   * Records an intent request and hands the program back a request id.
+   *
+   * The program never names a platform parameter: it writes the record this
+   * intent's catalogue row declares, and the names and values in it are
+   * translated on the way out, in VeraIntents. An empty string is a field the
+   * program chose not to send -- the language has no optional record fields, so
+   * that is how an optional parameter is spelled.
+   */
+  private queueIntent(name: string, args: RuntimeValue[]): RuntimeValue {
+    let spec = intentByName(name)
+    if (spec === null) {
+      throw new RuntimeTrap('R0015', `unknown std/intent function: ${name}`)
+    }
+    if (!this.effectsAllowed) {
+      throw new RuntimeTrap('R0026',
+        `intent.${name} may only be called from a handler, not from view`)
+    }
+    if (!(args[0] instanceof VeraObjectValue)) {
+      throw new RuntimeTrap('R0020', 'expected a parameter record')
+    }
+    let record = args[0] as VeraObjectValue
+    let values = new Map<string, string>()
+    for (let p of spec!.params) {
+      let field = record.fields.get(p.name)
+      if (field === undefined) { continue }
+      let value = field as RuntimeValue
+      if (value instanceof VeraStringValue) {
+        values.set(p.name, (value as VeraStringValue).value)
+      } else if (value instanceof VeraIntValue) {
+        values.set(p.name, (value as VeraIntValue).value.toString())
+      }
+    }
+    let id = this.nextEffectId
+    this.nextEffectId = id + 1
+    this.pendingEffects.push(new IntentEffect(id, spec!, values, asString(args[1])))
+    return new VeraIntValue(id)
   }
 }
 

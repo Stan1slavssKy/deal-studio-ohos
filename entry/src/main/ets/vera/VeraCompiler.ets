@@ -1,5 +1,6 @@
 import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter'
 import { CATALOG, ComponentSpec, stylesFor, payloadKindFor } from './VeraUiCatalog'
+import { INTENT_CATALOG, intentByName } from './VeraIntentCatalog'
 
 // ===== AST Nodes =====
 
@@ -1179,6 +1180,33 @@ function buildStdStringsModule(): ModuleInterface {
   return new ModuleInterface('std/strings', fns, [])
 }
 
+/**
+ * The platform's intents, generated from VeraIntentCatalog.
+ *
+ * Each row yields two names: a class holding the intent's parameters and the
+ * function that takes it. A record rather than positional arguments because
+ * almost every intent parameter is a string -- swap two of them positionally
+ * and the call still compiles and still runs, just wrongly. As fields they are
+ * checked: an unknown one is E2022, a missing one E2024.
+ *
+ * The second argument is the name of the handler the answer comes back to,
+ * spelled the way ui.Button spells its action. The result is an int request id,
+ * because the call is an effect: the VM is synchronous and the platform is not.
+ */
+function buildStdIntentModule(): ModuleInterface {
+  let fns: ExternalFunction[] = []
+  let classes: ExternalClass[] = []
+  for (let spec of INTENT_CATALOG) {
+    let paramsType = new VeraClassType('std/intent:' + spec.paramsClass, spec.paramsClass)
+    for (let p of spec.params) {
+      paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
+    }
+    classes.push(new ExternalClass(spec.paramsClass, paramsType))
+    fns.push(new ExternalFunction(spec.name, [paramsType, STRING], INT, false))
+  }
+  return new ModuleInterface('std/intent', fns, classes)
+}
+
 class Scope {
   values: Map<string, VeraType> = new Map<string, VeraType>()
   parent: Scope | null
@@ -1262,6 +1290,7 @@ class Analyzer {
     registry.set('std/time', buildStdTimeModule())
     registry.set('std/math', buildStdMathModule())
     registry.set('std/strings', buildStdStringsModule())
+    registry.set('std/intent', buildStdIntentModule())
     for (let decl of this.model.application.imports) {
       if (this.globals.find(decl.name) !== null) { this.addError('E2001', 'duplicate global ' + decl.name, decl.span); continue }
       let found = registry.get(decl.specifier)
@@ -1603,6 +1632,7 @@ class Analyzer {
       this.checkExpression(expr.argumentsList[i], scope, param)
     }
     this.checkStyleArguments(expr, callee)
+    this.checkIntentArguments(expr, callee)
     return callee.result
   }
 
@@ -1634,6 +1664,56 @@ class Analyzer {
       }
       this.checkHandlerSignature(expr, spec)
       return
+    }
+  }
+
+  /**
+   * The same idea as checkStyleArguments, for std/intent.
+   *
+   * checkObject already rejects an unknown or missing field, so what is left is
+   * the two things a type cannot say: that a field's value comes from a closed
+   * set, and that the result handler exists and takes the answer. Both are
+   * caught here rather than at runtime, which matters more than usual -- a
+   * compile error goes back into the generation loop and the model fixes it,
+   * while a runtime trap surfaces minutes later, on a program that already
+   * looked finished.
+   *
+   * Literal arguments only: a computed record or a computed handler name cannot
+   * be resolved here and is left alone.
+   */
+  private checkIntentArguments(expr: CallExpression, callee: VeraFunctionType): void {
+    const prefix = 'external:std/intent:'
+    if (!callee.identity.startsWith(prefix)) return
+    let spec = intentByName(callee.identity.substring(prefix.length))
+    if (spec === null) return
+    if (expr.argumentsList.length > 0 && expr.argumentsList[0] instanceof ObjectExpression) {
+      let record = expr.argumentsList[0] as ObjectExpression
+      for (let prop of record.properties) {
+        if (!(prop.value instanceof StringExpression)) continue
+        let value = (prop.value as StringExpression).value
+        for (let p of spec!.params) {
+          if (p.name !== prop.name || p.values.length === 0) continue
+          // An empty string is how a record with no optional fields says
+          // "omit this parameter", so it is always allowed.
+          if (value.length === 0) continue
+          if (p.values.indexOf(value) < 0) {
+            this.addError('E2105', 'unknown ' + spec!.name + ' ' + p.name + ' "' + value +
+              '"; allowed: ' + p.values.join(' '), prop.value.span)
+          }
+        }
+      }
+    }
+    if (expr.argumentsList.length < 2 || !(expr.argumentsList[1] instanceof StringExpression)) return
+    let arg = expr.argumentsList[1]
+    let handlerName = (arg as StringExpression).value
+    let fn = this.model.functions.get(handlerName)
+    if (fn === undefined) {
+      this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span)
+      return
+    }
+    if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
+      this.addError('E2106', 'intent.' + spec!.name + ' answers with a string, so "' +
+        handlerName + '" must take (state, value: string)', arg.span)
     }
   }
 

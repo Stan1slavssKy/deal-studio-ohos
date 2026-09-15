@@ -11,6 +11,7 @@ import { deepseek } from '../vera/DeepSeekEngine'
 import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
+import { describeIntentsForPrompt } from '../vera/VeraIntentCatalog'
 
 const MAX_RETRIES: number = 3
 const DEFAULT_SERVER_URL: string = 'http://31.77.129.17:8787'
@@ -238,11 +239,14 @@ struct GeneratePage {
   private async loadResources(): Promise<void> {
     try {
       let mgr = getContext(this).resourceManager
-      // The component catalogue is generated from VeraUiCatalog rather than
-      // written out in the rawfile, so the prompt cannot describe a component
-      // the compiler rejects or the renderer cannot draw.
+      // Both catalogues are generated rather than written out in the rawfile,
+      // so the prompt cannot describe a component the compiler rejects or the
+      // renderer cannot draw, nor an intent the compiler will not accept and
+      // the host will not send.
       let skill = await loadRawfileText(mgr, 'vera-skill.txt')
-      this.systemPrompt = skill.replace('{{UI_CATALOG}}', describeCatalogForPrompt())
+      this.systemPrompt = skill
+        .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
+        .replace('{{INTENT_CATALOG}}', describeIntentsForPrompt())
       this.grammar = await loadRawfileText(mgr, 'vera.gbnf')
       this.status = 'Resources loaded'
     } catch (e) {
