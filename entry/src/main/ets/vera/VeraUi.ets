@@ -12,6 +12,7 @@ import {
   RuntimeTrap,
 } from './VeraInterpreter'
 import { IntentSpec, intentByName } from './VeraIntentCatalog'
+import { CALENDAR_EVENT_PARAMS } from './VeraCalendarCatalog'
 
 export class VeraUiNode {
   id: number = 0
@@ -272,19 +273,24 @@ function invokeStdStrings(name: string, args: RuntimeValue[]): RuntimeValue {
  * records the request, and whoever drives the VM runs it afterwards and brings
  * the answer back through the ordinary handler path.
  */
-export class IntentEffect {
+export class HostEffect {
   id: number
-  spec: IntentSpec
+  /** 'intent' or 'calendar' -- which host the request is for. */
+  kind: string
+  /** The intent's row; null for any other kind. */
+  spec: IntentSpec | null
   values: Map<string, string>
   resultHandler: string
-  constructor(id: number, spec: IntentSpec, values: Map<string, string>, resultHandler: string) {
-    this.id = id; this.spec = spec; this.values = values; this.resultHandler = resultHandler
+  constructor(id: number, kind: string, spec: IntentSpec | null,
+      values: Map<string, string>, resultHandler: string) {
+    this.id = id; this.kind = kind; this.spec = spec
+    this.values = values; this.resultHandler = resultHandler
   }
 }
 
 export class UiHostEnvironment extends HostEnvironment {
   /** Requests made during the handler that is running now. */
-  pendingEffects: IntentEffect[] = []
+  pendingEffects: HostEffect[] = []
   /**
    * Whether an effect may be requested at all: true while a handler runs, false
    * while view() runs. view is a pure function of state and is re-run on every
@@ -299,6 +305,7 @@ export class UiHostEnvironment extends HostEnvironment {
     if (module === 'std/math') { return invokeStdMath(name, args) }
     if (module === 'std/strings') { return invokeStdStrings(name, args) }
     if (module === 'std/intent') { return this.queueIntent(name, args) }
+    if (module === 'std/calendar') { return this.queueCalendar(name, args) }
     if (module !== 'std/ui') {
       throw new RuntimeTrap('R0015', `external function unavailable: ${module}.${name}`)
     }
@@ -463,7 +470,41 @@ export class UiHostEnvironment extends HostEnvironment {
     }
     let id = this.nextEffectId
     this.nextEffectId = id + 1
-    this.pendingEffects.push(new IntentEffect(id, spec!, values, asString(args[1])))
+    this.pendingEffects.push(new HostEffect(id, 'intent', spec!, values, asString(args[1])))
+    return new VeraIntValue(id)
+  }
+
+  /**
+   * The same shape as queueIntent, for the calendar. The record is read by the
+   * field names the catalogue declares, so the program never has to know what
+   * Calendar Kit calls anything either.
+   */
+  private queueCalendar(name: string, args: RuntimeValue[]): RuntimeValue {
+    if (name !== 'addEvent') {
+      throw new RuntimeTrap('R0015', `unknown std/calendar function: ${name}`)
+    }
+    if (!this.effectsAllowed) {
+      throw new RuntimeTrap('R0026',
+        `calendar.${name} may only be called from a handler, not from view`)
+    }
+    if (!(args[0] instanceof VeraObjectValue)) {
+      throw new RuntimeTrap('R0020', 'expected a parameter record')
+    }
+    let record = args[0] as VeraObjectValue
+    let values = new Map<string, string>()
+    for (let p of CALENDAR_EVENT_PARAMS) {
+      let field = record.fields.get(p.name)
+      if (field === undefined) { continue }
+      let value = field as RuntimeValue
+      if (value instanceof VeraStringValue) {
+        values.set(p.name, (value as VeraStringValue).value)
+      } else if (value instanceof VeraIntValue) {
+        values.set(p.name, (value as VeraIntValue).value.toString())
+      }
+    }
+    let id = this.nextEffectId
+    this.nextEffectId = id + 1
+    this.pendingEffects.push(new HostEffect(id, 'calendar', null, values, asString(args[1])))
     return new VeraIntValue(id)
   }
 }

@@ -12,6 +12,7 @@ import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { describeIntentsForPrompt } from '../vera/VeraIntentCatalog'
+import { describeCalendarForPrompt } from '../vera/VeraCalendarCatalog'
 
 const MAX_RETRIES: number = 3
 const DEFAULT_SERVER_URL: string = 'http://31.77.129.17:8787'
@@ -247,6 +248,7 @@ struct GeneratePage {
       this.systemPrompt = skill
         .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
         .replace('{{INTENT_CATALOG}}', describeIntentsForPrompt())
+        .replace('{{CALENDAR_CATALOG}}', describeCalendarForPrompt())
       this.grammar = await loadRawfileText(mgr, 'vera.gbnf')
       this.status = 'Resources loaded'
     } catch (e) {

@@ -11,6 +11,14 @@
     {
       "name": "EntryAbility_label",
       "value": "label"
+    },
+    {
+      "name": "read_calendar_reason",
+      "value": "Read your calendar so a generated app can show what is already scheduled"
+    },
+    {
+      "name": "write_calendar_reason",
+      "value": "Add reminders to your calendar when a generated app asks"
     }
   ]
 }

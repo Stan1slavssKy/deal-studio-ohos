@@ -26,8 +26,23 @@
     //
     // which makes the install itself the test of whether the profile was
     // accepted.
+    // READ_CALENDAR and WRITE_CALENDAR are normal level but user_grant, so
+    // unlike the four below they are NOT granted by the signature: they need a
+    // runtime request, which VeraCalendar.requestCalendarPermissions makes at
+    // startup, and reason/usedScene are mandatory for them. reason must be a
+    // $string resource, never a literal.
     "requestPermissions": [
       { "name": "ohos.permission.INTERNET" },
+      {
+        "name": "ohos.permission.READ_CALENDAR",
+        "reason": "$string:read_calendar_reason",
+        "usedScene": { "abilities": ["EntryAbility"], "when": "inuse" }
+      },
+      {
+        "name": "ohos.permission.WRITE_CALENDAR",
+        "reason": "$string:write_calendar_reason",
+        "usedScene": { "abilities": ["EntryAbility"], "when": "inuse" }
+      },
       { "name": "ohos.permission.EXECUTE_INSIGHT_INTENT" },
       { "name": "ohos.permission.START_INVISIBLE_ABILITY" },
       { "name": "ohos.permission.ABILITY_BACKGROUND_COMMUNICATION" },

@@ -172,6 +172,25 @@ export const INTENT_CATALOG: IntentSpec[] = [
       'how to travel')],
     'starts navigation to a place given by name and coordinates', 'probed', 'foreground'),
 
+  // Opens one section of the music app.
+  //
+  // The strongest row in this table on the evidence: the device record declares
+  // the pageId values itself, with a display name for each, so this is 'schema'
+  // tier rather than a name match against the catalogue. That is the same tier
+  // as searchInMusic, which worked, and a tier above navigateTo.
+  //
+  // localSongs is the one that matters here -- music already on the phone, no
+  // account and no network. The rest of the declared set is kept because a row
+  // costs nothing and the values are the device's own.
+  new IntentSpec('openMusicPage', 'MusicPageParams',
+    'com.huawei.hmsapp.music', 'phone', 'MainAbility', 'JumpFunctionPage',
+    [new IntentParam('page', 'string', 'pageId',
+      ['localSongs', 'recentPlay', 'favoriteSongs', 'privateFM', 'heartBeat',
+       'daily30', 'hotSongs', 'newSongs', 'ringTone'],
+      new Map<string, string>(),
+      'which section: localSongs is music already on the phone')],
+    'opens a section of the music app', 'schema', 'foreground'),
+
   // The one target here that needs no account, which is why it exists.
   //
   // StartNavigate and PlayMusicList both fail on a device with no Huawei ID --

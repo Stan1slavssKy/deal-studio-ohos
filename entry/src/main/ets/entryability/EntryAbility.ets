@@ -6,6 +6,7 @@ import hilog from '@ohos.hilog'
 import router from '@ohos.router'
 import { refreshForms } from '../vera/FormUpdater'
 import { settings } from '../vera/SettingsStore'
+import { requestCalendarPermissions } from '../vera/VeraCalendar'
 
 const DOMAIN = 0x0000
 
@@ -65,6 +66,11 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onWindowStageCreate')
+    // std/calendar needs READ_CALENDAR and WRITE_CALENDAR, which are user_grant
+    // and so cannot come from the signature. Asked here rather than at the
+    // first calendar call, because a permission dialog appearing in the middle
+    // of a generated program's handler gives no clue what asked for it.
+    requestCalendarPermissions(this.context)
     windowStage.loadContent('pages/Index', (err): void => {
       if (err?.code) {
         hilog.error(DOMAIN, 'VERA', 'loadContent failed')

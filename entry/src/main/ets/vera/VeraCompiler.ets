@@ -1,6 +1,8 @@
 import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter'
 import { CATALOG, ComponentSpec, stylesFor, payloadKindFor } from './VeraUiCatalog'
 import { INTENT_CATALOG, intentByName } from './VeraIntentCatalog'
+import { IntentParam } from './VeraIntentCatalog'
+import { CALENDAR_EVENT_PARAMS } from './VeraCalendarCatalog'
 
 // ===== AST Nodes =====
 
@@ -1207,6 +1209,29 @@ function buildStdIntentModule(): ModuleInterface {
   return new ModuleInterface('std/intent', fns, classes)
 }
 
+/**
+ * The phone's calendar, generated from VeraCalendarCatalog.
+ *
+ * Deliberately not an intent: the device's CreateCalendarEvent and its
+ * relatives declare no parameters and are not standard intent names, so their
+ * contract would have to be invented. Calendar Kit is documented, needs no
+ * system signing, and is therefore the better tool -- the same reasoning the
+ * intent skill gives for preferring a public API when one exists.
+ *
+ * One function and one parameter class, shaped exactly like an intent row so
+ * the program sees one idiom rather than two.
+ */
+function buildStdCalendarModule(): ModuleInterface {
+  let paramsType = new VeraClassType('std/calendar:EventParams', 'EventParams')
+  for (let p of CALENDAR_EVENT_PARAMS) {
+    paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
+  }
+  let fns: ExternalFunction[] = [
+    new ExternalFunction('addEvent', [paramsType, STRING], INT, false),
+  ]
+  return new ModuleInterface('std/calendar', fns, [new ExternalClass('EventParams', paramsType)])
+}
+
 class Scope {
   values: Map<string, VeraType> = new Map<string, VeraType>()
   parent: Scope | null
@@ -1291,6 +1316,7 @@ class Analyzer {
     registry.set('std/math', buildStdMathModule())
     registry.set('std/strings', buildStdStringsModule())
     registry.set('std/intent', buildStdIntentModule())
+    registry.set('std/calendar', buildStdCalendarModule())
     for (let decl of this.model.application.imports) {
       if (this.globals.find(decl.name) !== null) { this.addError('E2001', 'duplicate global ' + decl.name, decl.span); continue }
       let found = registry.get(decl.specifier)
@@ -1682,22 +1708,38 @@ class Analyzer {
    * be resolved here and is left alone.
    */
   private checkIntentArguments(expr: CallExpression, callee: VeraFunctionType): void {
-    const prefix = 'external:std/intent:'
-    if (!callee.identity.startsWith(prefix)) return
-    let spec = intentByName(callee.identity.substring(prefix.length))
-    if (spec === null) return
+    // Both host-backed modules take (record, handlerName) and both want the
+    // same two checks, so they share one implementation. Only the table of
+    // field specs differs.
+    let label = ''
+    let params: IntentParam[] = []
+    const intentPrefix = 'external:std/intent:'
+    const calendarPrefix = 'external:std/calendar:'
+    if (callee.identity.startsWith(intentPrefix)) {
+      let name = callee.identity.substring(intentPrefix.length)
+      let spec = intentByName(name)
+      if (spec === null) return
+      label = 'intent.' + name
+      params = spec!.params
+    } else if (callee.identity.startsWith(calendarPrefix)) {
+      label = 'calendar.' + callee.identity.substring(calendarPrefix.length)
+      params = CALENDAR_EVENT_PARAMS
+    } else {
+      return
+    }
+
     if (expr.argumentsList.length > 0 && expr.argumentsList[0] instanceof ObjectExpression) {
       let record = expr.argumentsList[0] as ObjectExpression
       for (let prop of record.properties) {
         if (!(prop.value instanceof StringExpression)) continue
         let value = (prop.value as StringExpression).value
-        for (let p of spec!.params) {
+        for (let p of params) {
           if (p.name !== prop.name || p.values.length === 0) continue
           // An empty string is how a record with no optional fields says
           // "omit this parameter", so it is always allowed.
           if (value.length === 0) continue
           if (p.values.indexOf(value) < 0) {
-            this.addError('E2105', 'unknown ' + spec!.name + ' ' + p.name + ' "' + value +
+            this.addError('E2105', 'unknown ' + label + ' ' + p.name + ' "' + value +
               '"; allowed: ' + p.values.join(' '), prop.value.span)
           }
         }
@@ -1712,7 +1754,7 @@ class Analyzer {
       return
     }
     if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
-      this.addError('E2106', 'intent.' + spec!.name + ' answers with a string, so "' +
+      this.addError('E2106', label + ' answers with a string, so "' +
         handlerName + '" must take (state, value: string)', arg.span)
     }
   }

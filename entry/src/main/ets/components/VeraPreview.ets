@@ -12,8 +12,9 @@
 
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraIntValue, VeraStringValue,
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
-import { UiHostEnvironment, IntentEffect, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
+import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
 import { runIntent } from '../vera/VeraIntents'
+import { addCalendarEvent } from '../vera/VeraCalendar'
 import { LengthMetrics } from '@ohos.arkui.node'
 
 import { catalogKinds } from '../vera/VeraUiCatalog'
@@ -353,20 +354,49 @@ export struct VeraPreview {
    */
   private drainEffects(): void {
     if (this.host === null) { return }
-    let effects: IntentEffect[] = this.host!.pendingEffects
+    let effects: HostEffect[] = this.host!.pendingEffects
     if (effects.length === 0) { return }
     this.host!.pendingEffects = []
     for (let effect of effects) {
-      console.info('VERA-INTENT id=' + effect.id.toString() + ' ' + effect.spec.name +
+      console.info('VERA-EFFECT id=' + effect.id.toString() + ' ' + effect.kind +
         ' -> ' + effect.resultHandler)
-      runIntent(effect.spec, effect.values).then((answer: string) => {
-        if (this.disposed) { return }
-        this.dispatch(effect.resultHandler, new VeraStringValue(answer))
-      }).catch((e: Error) => {
-        if (this.disposed) { return }
-        this.dispatch(effect.resultHandler, new VeraStringValue('error: ' + e.message))
-      })
+      this.runEffect(effect)
     }
+  }
+
+  /** One effect, whichever host it belongs to, answered through its handler. */
+  private runEffect(effect: HostEffect): void {
+    let answer: Promise<string>
+    if (effect.kind === 'calendar') {
+      answer = addCalendarEvent(
+        this.effectText(effect, 'title'),
+        this.effectInt(effect, 'hour', 9),
+        this.effectInt(effect, 'minute', 0),
+        this.effectInt(effect, 'durationMinutes', 15),
+        this.effectInt(effect, 'remindBefore', 0),
+        this.effectText(effect, 'repeat'))
+    } else {
+      answer = runIntent(effect.spec!, effect.values)
+    }
+    answer.then((text: string) => {
+      if (this.disposed) { return }
+      this.dispatch(effect.resultHandler, new VeraStringValue(text))
+    }).catch((e: Error) => {
+      if (this.disposed) { return }
+      this.dispatch(effect.resultHandler, new VeraStringValue('error: ' + e.message))
+    })
+  }
+
+  private effectText(effect: HostEffect, field: string): string {
+    let v = effect.values.get(field)
+    return v !== undefined ? v as string : ''
+  }
+
+  private effectInt(effect: HostEffect, field: string, fallback: number): number {
+    let v = effect.values.get(field)
+    if (v === undefined) { return fallback }
+    let n = Number.parseInt(v as string, 10)
+    return Number.isNaN(n) ? fallback : n
   }
 
   build() {

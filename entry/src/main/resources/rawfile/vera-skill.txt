@@ -5,7 +5,8 @@ VERA-L uses TypeScript syntax with types: int, number, boolean, string, user cla
 Every program must define:
 - import * as ui from "std/ui"
 - optionally: import * as time from "std/time", as math from "std/math",
-  as strings from "std/strings", as intent from "std/intent"
+  as strings from "std/strings", as intent from "std/intent",
+  as calendar from "std/calendar"
 - @jsonable class AppState with all state fields
 - function init(): AppState returning the initial state
 - function view(state: AppState): ui.View building the UI tree
@@ -109,6 +110,18 @@ Use one whenever the user asks for something the program cannot draw.
 
 {{INTENT_CATALOG}}
 
+The calendar — import * as calendar from "std/calendar". This writes into the
+phone's own calendar, so the event shows up in the Calendar app and the system
+reminds the user even when this program is not running.
+
+{{CALENDAR_CATALOG}}
+
+Same rules as an intent call: every field of the record must be written, call it
+only from a handler and never from view, and the answer arrives later as a call
+to the handler you named, which takes (state, value: string). The answer is
+"ok, event 42" or an error line. The person may refuse the calendar permission,
+and then every call answers with an error -- show it rather than hiding it.
+
 Each call takes a record of parameters and the name of a handler, and returns an
 int request id you can ignore:
   intent.playMusicList({ scene: "EVENING_SCENE" }, "onMusicAnswer")
@@ -167,7 +180,7 @@ Restrictions — do NOT use:
 - const, var, template literals, switch, arrow functions, ?., ??, spread, destructuring
 - Object field mutation (return new objects instead)
 - console, Math, Date, JSON, or any standard library other than std/ui, std/time,
-  std/math, std/strings and std/intent
+  std/math, std/strings, std/intent and std/calendar
 - Classes cannot have methods or constructors, only fields
 - Array literals require typed context (assign to typed variable first)
 
