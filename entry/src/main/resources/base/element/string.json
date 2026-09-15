@@ -2,15 +2,15 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "Generates and runs VERA-L programs on the device"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "VERA program library, generator and runner"
     },
     {
       "name": "EntryAbility_label",
-      "value": "label"
+      "value": "VERA"
     },
     {
       "name": "read_calendar_reason",
