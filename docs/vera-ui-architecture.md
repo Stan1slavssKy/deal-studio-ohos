@@ -1,5 +1,13 @@
 # VERA-L UI Architecture over ArkUI
 
+> **Predates the current renderer.** Rendering moved out of RunnerPage into
+> VeraPreview, and the tree is no longer rebuilt per frame -- a persistent
+> @Trace'd tree is reconciled in place. This file also has nothing on std/intent
+> or std/calendar, which did not exist when it was written. The five-stage
+> pipeline below is still the right shape; the names and the last stage are not.
+> See `architecture.html` for the current picture.
+
+
 ## Overview
 
 VERA-L programs never touch ArkUI directly. The VM produces pure data trees; a thin mapping layer in RunnerPage renders them as native HarmonyOS components. The architecture has 5 stages.
