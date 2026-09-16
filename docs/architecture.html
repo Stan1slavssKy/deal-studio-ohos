@@ -343,8 +343,8 @@
           <text class="s" x="505" y="193" text-anchor="middle">hold what ArkUI watches</text>
           <rect class="box-soft" x="410" y="220" width="190" height="44"/>
           <text class="s" x="505" y="247" text-anchor="middle">turn a tap into a call</text>
-          <text class="s" x="505" y="314" text-anchor="middle">21 component kinds, and no way</text>
-          <text class="s" x="505" y="332" text-anchor="middle">to draw anything outside them</text>
+          <text class="s" x="505" y="314" text-anchor="middle">38 component kinds, one theme,</text>
+          <text class="s" x="505" y="332" text-anchor="middle">and no way to draw outside them</text>
 
           <rect class="box" x="790" y="40" width="210" height="250"/>
           <text class="t" x="895" y="76" text-anchor="middle">ArkUI</text>
@@ -649,6 +649,29 @@
         <h3>The catalogue is data, not code</h3>
         <p>One row yields a compiler signature, a host call and a prompt paragraph. A new intent touches
           none of the three.</p>
+      </div>
+      <div class="rule">
+        <h3>The look is one word</h3>
+        <p>A program names a preset — <code>clean soft expressive editorial technical playful</code> —
+          and that settles the palette, the corners, the rhythm, the typeface and the type scale
+          together — <code>technical</code> is monospace, <code>editorial</code> is serif. Seventeen
+          components above the primitives say what a part of a screen <em>is</em>; the renderer
+          decides how that looks. Two generated apps no longer arrive looking the same.</p>
+      </div>
+      <div class="rule">
+        <h3>It follows the phone into the dark</h3>
+        <p>Each preset carries a second palette — its own hue taken down to near-black, not an
+          inversion — and the renderer follows the system setting. The program is never asked: it is
+          a pure function of state and cannot see the phone. A program written before any of this
+          existed goes dark correctly, because the look was never its job. Every text-on-background
+          pair in all twelve palettes is checked against WCAG contrast floors.</p>
+      </div>
+      <div class="rule">
+        <h3>A number stays a number</h3>
+        <p>The language has no number formatting and no way back from a string to an int, so every
+          figure on screen used to be a string the program had built, padded by a function it wrote
+          by hand. <code>IntText</code>, <code>IntStat</code> and <code>IntListItem</code> take the
+          number; <code>IntField</code> and <code>TimeField</code> give one back.</p>
       </div>
     </div>
   </section>
