@@ -1,0 +1,385 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+import * as intent from "std/intent"
+
+@jsonable
+class AppState {
+  active: boolean;
+  remainingMs: int;
+  totalMs: int;
+  callDone: boolean;
+  smsDone: boolean;
+  navDone: boolean;
+  timerDone: boolean;
+  callEnabled: boolean;
+  smsEnabled: boolean;
+  navEnabled: boolean;
+  timerEnabled: boolean;
+  callDelay: int;
+  timerMinutes: int;
+  lastResult: string;
+}
+
+function init(): AppState {
+  return {
+    active: false,
+    remainingMs: 15000,
+    totalMs: 15000,
+    callDone: false,
+    smsDone: false,
+    navDone: false,
+    timerDone: false,
+    callEnabled: true,
+    smsEnabled: true,
+    navEnabled: true,
+    timerEnabled: true,
+    callDelay: 15,
+    timerMinutes: 5,
+    lastResult: ""
+  };
+}
+
+function arm(state: AppState, ignored: int): AppState {
+  return {
+    active: true,
+    remainingMs: state.callDelay * 1000,
+    totalMs: state.callDelay * 1000,
+    callDone: false,
+    smsDone: false,
+    navDone: false,
+    timerDone: false,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: ""
+  };
+}
+
+function abort(state: AppState, ignored: int): AppState {
+  return {
+    active: false,
+    remainingMs: state.totalMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: "Отменено"
+  };
+}
+
+function onTick(state: AppState, elapsedMs: int): AppState {
+  if (!state.active) {
+    return state;
+  }
+  let left: int = state.remainingMs - elapsedMs;
+  if (left > 0) {
+    return {
+      active: true,
+      remainingMs: left,
+      totalMs: state.totalMs,
+      callDone: state.callDone,
+      smsDone: state.smsDone,
+      navDone: state.navDone,
+      timerDone: state.timerDone,
+      callEnabled: state.callEnabled,
+      smsEnabled: state.smsEnabled,
+      navEnabled: state.navEnabled,
+      timerEnabled: state.timerEnabled,
+      callDelay: state.callDelay,
+      timerMinutes: state.timerMinutes,
+      lastResult: state.lastResult
+    };
+  }
+  return {
+    active: false,
+    remainingMs: 0,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: "Время вышло"
+  };
+}
+
+function toggleCall(state: AppState, value: boolean): AppState {
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: value,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: state.lastResult
+  };
+}
+
+function toggleSms(state: AppState, value: boolean): AppState {
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: value,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: state.lastResult
+  };
+}
+
+function toggleNav(state: AppState, value: boolean): AppState {
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: value,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: state.lastResult
+  };
+}
+
+function toggleTimer(state: AppState, value: boolean): AppState {
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: value,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: state.lastResult
+  };
+}
+
+function setDelay(state: AppState, value: int): AppState {
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: value,
+    timerMinutes: state.timerMinutes,
+    lastResult: state.lastResult
+  };
+}
+
+function setTimerMinutes(state: AppState, value: int): AppState {
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: value,
+    lastResult: state.lastResult
+  };
+}
+
+function doCall(state: AppState, ignored: int): AppState {
+  intent.call("com.huawei.hmos.clock/entry/com.huawei.hmos.clock.phone/StartTimer", [], "background", "onAnswer");
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: true,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: "Звонок: запрос отправлен"
+  };
+}
+
+function doSms(state: AppState, ignored: int): AppState {
+  intent.call("com.huawei.hmos.maps.app/entry/EntryAbility/ViewSearchPageLocal", ["query", "дом"], "foreground", "onAnswer");
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: true,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: "SMS: запрос отправлен"
+  };
+}
+
+function doNav(state: AppState, ignored: int): AppState {
+  intent.startNavigate({ destination: "home", traffic: "Drive" }, "onAnswer");
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: true,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: "Навигация: запрос отправлен"
+  };
+}
+
+function doTimer(state: AppState, ignored: int): AppState {
+  intent.call("com.huawei.hmos.clock/entry/com.huawei.hmos.clock.phone/CreateTimer", [], "background", "onAnswer");
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: true,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: "Таймер: запрос отправлен"
+  };
+}
+
+function onAnswer(state: AppState, value: string): AppState {
+  return {
+    active: state.active,
+    remainingMs: state.remainingMs,
+    totalMs: state.totalMs,
+    callDone: state.callDone,
+    smsDone: state.smsDone,
+    navDone: state.navDone,
+    timerDone: state.timerDone,
+    callEnabled: state.callEnabled,
+    smsEnabled: state.smsEnabled,
+    navEnabled: state.navEnabled,
+    timerEnabled: state.timerEnabled,
+    callDelay: state.callDelay,
+    timerMinutes: state.timerMinutes,
+    lastResult: value
+  };
+}
+
+function view(state: AppState): ui.View {
+  let secondsLeft: int = 0;
+  if (state.remainingMs > 0) {
+    secondsLeft = state.remainingMs / 1000;
+  }
+  let progressValue: int = state.totalMs - state.remainingMs;
+
+  let rows: ui.View[] = [];
+  if (state.callEnabled) {
+    rows.push(ui.IntListItem("default", "Позвонить", "через " + ui.intToString(state.callDelay) + " сек", state.callDelay, "", " сек", 1, "doCall", 0, !state.callDone, "clock"));
+  }
+  if (state.smsEnabled) {
+    rows.push(ui.ListItem("default", "Написать «уже еду»", "SMS", "", "doSms", 0, !state.smsDone, "navigate"));
+  }
+  if (state.navEnabled) {
+    rows.push(ui.ListItem("default", "Проложить домой", "Навигация", "", "doNav", 0, !state.navDone, "pin"));
+  }
+  if (state.timerEnabled) {
+    rows.push(ui.IntListItem("default", "Поставить таймер", "минут", state.timerMinutes, "", " мин", 1, "doTimer", 0, !state.timerDone, "clock"));
+  }
+
+  return ui.AppTheme("expressive", "#d32f2f", [
+    ui.Header("default", "СПАСТИ МЕНЯ", "ESCAPE", "Одно нажатие — и всё начнётся", "warning"),
+    ui.Section("hero", "", "", [
+      ui.When(!state.active, ui.Button("danger", "СПАСТИ МЕНЯ", "arm", 0, true)),
+      ui.When(state.active, ui.Column("center", [
+        ui.Text("display", ui.intToString(secondsLeft)),
+        ui.Text("caption", "секунд до действий"),
+        ui.Progress("danger", "", progressValue, state.totalMs),
+        ui.ActionBar("center", [
+          ui.Button("secondary", "Отменить", "abort", 0, true)
+        ])
+      ]))
+    ]),
+    ui.Section("supporting", "Настройки", "Что делать, когда время выйдет", [
+      ui.Toggle("default", "Позвонить", state.callEnabled, "toggleCall"),
+      ui.When(state.callEnabled, ui.IntField("default", "Задержка звонка, сек", state.callDelay, 5, 60, "setDelay")),
+      ui.Toggle("default", "Написать «уже еду»", state.smsEnabled, "toggleSms"),
+      ui.Toggle("default", "Проложить домой", state.navEnabled, "toggleNav"),
+      ui.Toggle("default", "Поставить таймер", state.timerEnabled, "toggleTimer"),
+      ui.When(state.timerEnabled, ui.IntField("default", "Таймер, минут", state.timerMinutes, 1, 60, "setTimerMinutes"))
+    ]),
+    ui.Section("content", "Действия", "Можно запустить вручную", [
+      ui.When(rows.length() === 0, ui.EmptyState("default", "Ничего не выбрано", "Включите хотя бы одно действие выше.", "", "", "info")),
+      ui.When(rows.length() > 0, ui.ListGroup("default", "", rows))
+    ]),
+    ui.When(state.lastResult !== "", ui.Section("supporting", "", "", [
+      ui.InsetBanner("default", "Последний ответ", state.lastResult, "", "", "info")
+    ])),
+    ui.Ticker("default", "clock", 1000, state.active, "onTick")
+  ]);
+}

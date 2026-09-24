@@ -1,0 +1,1 @@
+Voice memo: a button that has the recorder start, one to pause, one to resume and one to end it, with what it answered above them.

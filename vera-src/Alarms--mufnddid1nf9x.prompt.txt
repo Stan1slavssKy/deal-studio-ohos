@@ -1,0 +1,1 @@
+Alarms: let me add an alarm at an hour and minute I pick, change it, get rid of it, see every alarm I have, and when one goes off, put it off for nine minutes or silence it.

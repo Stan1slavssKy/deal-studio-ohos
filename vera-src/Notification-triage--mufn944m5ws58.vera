@@ -1,0 +1,226 @@
+import * as ui from "std/ui"
+import * as intent from "std/intent"
+
+@jsonable
+class Channel {
+  key: string;
+  title: string;
+  subtitle: string;
+  on: boolean;
+  reads: string;
+  writes: string;
+}
+
+@jsonable
+class AppState {
+  appName: string;
+  channels: Channel[];
+  lastResult: string;
+}
+
+function channelOf(key: string, title: string, subtitle: string, readPath: string, writePath: string): Channel {
+  return {
+    key: key,
+    title: title,
+    subtitle: subtitle,
+    on: true,
+    reads: readPath,
+    writes: writePath
+  };
+}
+
+function init(): AppState {
+  let channels: Channel[] = [];
+  channels.push(channelOf("switch",
+    "Notifications allowed",
+    "The master switch: may this app notify you at all",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/GetAllowAppNotifySwitch",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/SetAllowAppNotifySwitch"));
+  channels.push(channelOf("category",
+    "Notification category",
+    "Which kinds of alert this app is permitted to post",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/GetAllowAppNotifyCategory",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/SetAllowAppNotifyCategory"));
+  channels.push(channelOf("ringing",
+    "Ring with sound",
+    "Play a sound when a notification arrives",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/GetAppNotifyWithRinging",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/SetAppNotifyWithRinging"));
+  channels.push(channelOf("vibrate",
+    "Vibrate",
+    "Buzz the phone when a notification arrives",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/GetAppNotifyWithVibrate",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/SetAppNotifyWithVibrate"));
+  channels.push(channelOf("banner",
+    "Show as a banner",
+    "Drop a banner down while you are using the phone",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/GetAppNotifyDisplayOnBanner",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/SetAppNotifyDisplayOnBanner"));
+  channels.push(channelOf("lockScreen",
+    "Show on the lock screen",
+    "Let the notification appear before you unlock",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/GetAppNotifyDisplayOnLockScreen",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/SetAppNotifyDisplayOnLockScreen"));
+  channels.push(channelOf("iconMark",
+    "Mark the app icon",
+    "Put a dot on the icon while notifications are unread",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/GetAppNotifyDisplayOnIconMark",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/SetAppNotifyDisplayOnIconMark"));
+  channels.push(channelOf("top",
+    "Show on top",
+    "Float the notification above whatever you are doing",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/GetAppNotifyDisplayOnTop",
+    "com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/SetAppNotifyDisplayOnTop"));
+  return {appName: "", channels: channels, lastResult: ""};
+}
+
+function setName(state: AppState, value: string): AppState {
+  return {appName: value, channels: state.channels, lastResult: state.lastResult};
+}
+
+function toggleChannel(state: AppState, index: int): AppState {
+  let out: Channel[] = [];
+  let i: int = 0;
+  while (i < state.channels.length()) {
+    let c: Channel = state.channels[i];
+    if (i === index) {
+      out.push({
+        key: c.key,
+        title: c.title,
+        subtitle: c.subtitle,
+        on: !c.on,
+        reads: c.reads,
+        writes: c.writes
+      });
+    } else {
+      out.push(c);
+    }
+    i = i + 1;
+  }
+  return {appName: state.appName, channels: out, lastResult: state.lastResult};
+}
+
+function setAll(state: AppState, value: boolean): AppState {
+  let out: Channel[] = [];
+  for (let c: Channel of state.channels) {
+    out.push({
+      key: c.key,
+      title: c.title,
+      subtitle: c.subtitle,
+      on: value,
+      reads: c.reads,
+      writes: c.writes
+    });
+  }
+  return {appName: state.appName, channels: out, lastResult: state.lastResult};
+}
+
+function readAll(state: AppState, ignored: int): AppState {
+  let out: Channel[] = [];
+  for (let c: Channel of state.channels) {
+    intent.call(c.reads, [], "background", "onAnswer");
+    out.push(c);
+  }
+  return {
+    appName: state.appName,
+    channels: out,
+    lastResult: "Asked the system for every notification setting for " + readName(state)
+  };
+}
+
+function applyAll(state: AppState, ignored: int): AppState {
+  let out: Channel[] = [];
+  for (let c: Channel of state.channels) {
+    let word: string = "false";
+    if (c.on) {
+      word = "true";
+    }
+    intent.call(c.writes, ["enable", word], "background", "onAnswer");
+    out.push(c);
+  }
+  return {
+    appName: state.appName,
+    channels: out,
+    lastResult: "Sent every setting to the system for " + readName(state)
+  };
+}
+
+function readName(state: AppState): string {
+  if (state.appName === "") {
+    return "this app";
+  }
+  return state.appName;
+}
+
+function onAnswer(state: AppState, value: string): AppState {
+  return {appName: state.appName, channels: state.channels, lastResult: value};
+}
+
+function view(state: AppState): ui.View {
+  let total: int = state.channels.length();
+  let onCount: int = 0;
+  let offCount: int = 0;
+  for (let c: Channel of state.channels) {
+    if (c.on) {
+      onCount = onCount + 1;
+    } else {
+      offCount = offCount + 1;
+    }
+  }
+
+  let rows: ui.View[] = [];
+  let i: int = 0;
+  while (i < total) {
+    let c: Channel = state.channels[i];
+    let status: string = "Off";
+    let mark: string = "close";
+    if (c.on) {
+      status = "On";
+      mark = "check";
+    }
+    let position: int = i;
+    rows.push(ui.ListItem("default", c.title, c.subtitle, status,
+      "toggleChannel", position, true, mark));
+    i = i + 1;
+  }
+
+  let named: string = "this app";
+  if (state.appName !== "") {
+    named = state.appName;
+  }
+
+  let onTotal: string = "of " + ui.intToString(total);
+
+  return ui.AppTheme("technical", "", [
+    ui.Header("default", "Notification triage", "EVERY WAY IT CAN REACH YOU",
+      "Name an app, see each channel it may notify through, and change any of them", "list"),
+    ui.Section("hero", "", "", [
+      ui.MetricGroup("default", 3, [
+        ui.IntStat("accent", "Channels on", onCount, "", "", 1, onTotal, "check"),
+        ui.IntStat("default", "Channels off", offCount, "", "", 1, onTotal, "close"),
+        ui.IntStat("default", "Channels", total, "", "", 1, "watched", "list")
+      ])
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Which app", "Type the name you are triaging", ""),
+      ui.TextField("default", "App name", state.appName, "setName")
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Every way it can notify you",
+        "Tap a row to flip that channel for " + named, ui.intToString(onCount) + " on"),
+      ui.ListGroup("default", "", rows)
+    ]),
+    ui.Section("content", "", "", [
+      ui.ActionBar("spread", [
+        ui.Button("secondary", "All on", "setAllOn", 0, true),
+        ui.Button("secondary", "All off", "setAllOff", 0, true),
+        ui.IconButton("secondary", "list", "Read every setting from the system", "readAll", 0, true),
+        ui.Button("primary", "Apply all", "applyAll", 0, true)
+      ])
+    ]),
+    ui.When(state.lastResult !== "",
+      ui.Section("supporting", "", "", [
+        ui.InsetBanner("default", "Last answer from the system", state.lastResult, "", "", "info")
+      ]))
+  ]);
+}

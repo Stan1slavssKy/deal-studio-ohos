@@ -1,0 +1,86 @@
+import * as ui from "std/ui"
+import * as intent from "std/intent"
+
+@jsonable
+class AppState {
+  lastAnswer: string;
+  calls: int;
+  recommendOn: boolean;
+  hmsStyleOn: boolean;
+}
+
+function init(): AppState {
+  return {lastAnswer: "", calls: 0, recommendOn: false, hmsStyleOn: false};
+}
+
+function readRecommend(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/GetRecommendSwitch", [], "background", "onAnswer")
+  return {lastAnswer: "Reading the recommend switch...", calls: state.calls + 1, recommendOn: state.recommendOn, hmsStyleOn: state.hmsStyleOn};
+}
+
+function turnOnRecommend(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOnRecommendSwitch", [], "background", "onAnswer")
+  return {lastAnswer: "Turning the recommend switch on...", calls: state.calls + 1, recommendOn: true, hmsStyleOn: state.hmsStyleOn};
+}
+
+function turnOffRecommend(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOffRecommendSwitch", [], "background", "onAnswer")
+  return {lastAnswer: "Turning the recommend switch off...", calls: state.calls + 1, recommendOn: false, hmsStyleOn: state.hmsStyleOn};
+}
+
+function turnOnHms(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOnStatusBarHmsStyle", [], "background", "onAnswer")
+  return {lastAnswer: "Turning the HMS status bar style on...", calls: state.calls + 1, recommendOn: state.recommendOn, hmsStyleOn: true};
+}
+
+function turnOffHms(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOffStatusBarHmsStyle", [], "background", "onAnswer")
+  return {lastAnswer: "Turning the HMS status bar style off...", calls: state.calls + 1, recommendOn: state.recommendOn, hmsStyleOn: false};
+}
+
+function onAnswer(state: AppState, value: string): AppState {
+  return {lastAnswer: value, calls: state.calls, recommendOn: state.recommendOn, hmsStyleOn: state.hmsStyleOn};
+}
+
+function view(state: AppState): ui.View {
+  let recommendBadge: string = "Off";
+  if (state.recommendOn) {
+    recommendBadge = "On";
+  }
+  let hmsBadge: string = "Off";
+  if (state.hmsStyleOn) {
+    hmsBadge = "On";
+  }
+
+  return ui.AppTheme("technical", "", [
+    ui.Header("default", "Launcher switches", "SCENEBOARD", "The two suggestions the launcher offers, and where each stands now", "list"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.Stat("accent", "Recommend", recommendBadge, "suggested content in the launcher", "star"),
+        ui.Stat("accent", "HMS style", hmsBadge, "status bar look", "info")
+      ]),
+      ui.InsetBanner("default", "Last answer", state.lastAnswer, "", "", "info")
+    ]),
+    ui.Section("content", "Recommend", "Suggested content in the launcher", [
+      ui.KeyValueGroup("default", 2, [
+        ui.KeyValueItem("default", "Now", recommendBadge, "what the switch reads"),
+        ui.KeyValueItem("default", "Calls made", ui.intToString(state.calls), "this session")
+      ]),
+      ui.ActionBar("end", [
+        ui.IconButton("secondary", "info", "Read the recommend switch", "readRecommend", 0, true),
+        ui.Button("secondary", "Turn off", "turnOffRecommend", 0, true),
+        ui.Button("primary", "Turn on", "turnOnRecommend", 0, true)
+      ])
+    ]),
+    ui.Section("content", "HMS status bar style", "The look of the bar at the top", [
+      ui.KeyValueGroup("default", 2, [
+        ui.KeyValueItem("default", "Now", hmsBadge, "what the switch reads"),
+        ui.KeyValueItem("default", "Calls made", ui.intToString(state.calls), "this session")
+      ]),
+      ui.ActionBar("end", [
+        ui.Button("secondary", "Turn off", "turnOffHms", 0, true),
+        ui.Button("primary", "Turn on", "turnOnHms", 0, true)
+      ])
+    ])
+  ]);
+}

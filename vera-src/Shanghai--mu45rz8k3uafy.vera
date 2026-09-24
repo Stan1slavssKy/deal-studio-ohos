@@ -1,0 +1,169 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+import * as intent from "std/intent"
+import * as calendar from "std/calendar"
+
+@jsonable
+class Stop {
+  name: string;
+  minutes: int;
+  latitude: string;
+  longitude: string;
+  icon: string;
+  reached: boolean;
+}
+
+@jsonable
+class AppState {
+  stops: Stop[];
+  reachedCount: int;
+  lastReachedIndex: int;
+  lastMessage: string;
+}
+
+function init(): AppState {
+  let stops: Stop[] = [
+    {name: "The Bund", minutes: 90, latitude: "31.2397", longitude: "121.4900", icon: "pin", reached: false},
+    {name: "Yu Garden", minutes: 75, latitude: "31.2270", longitude: "121.4920", icon: "pin", reached: false},
+    {name: "Nanjing Road", minutes: 60, latitude: "31.2340", longitude: "121.4750", icon: "pin", reached: false},
+    {name: "Shanghai Museum", minutes: 90, latitude: "31.2286", longitude: "121.4750", icon: "pin", reached: false},
+    {name: "Xintiandi", minutes: 60, latitude: "31.2190", longitude: "121.4750", icon: "pin", reached: false},
+    {name: "Lujiazui Skyline", minutes: 75, latitude: "31.2397", longitude: "121.5010", icon: "pin", reached: false}
+  ];
+  return {stops: stops, reachedCount: 0, lastReachedIndex: -1, lastMessage: ""};
+}
+
+function markReached(state: AppState, index: int): AppState {
+  let out: Stop[] = [];
+  let i: int = 0;
+  while (i < state.stops.length()) {
+    let s: Stop = state.stops[i];
+    if (i === index) {
+      out.push({name: s.name, minutes: s.minutes, latitude: s.latitude, longitude: s.longitude, icon: s.icon, reached: true});
+    } else {
+      out.push(s);
+    }
+    i = i + 1;
+  }
+  let count: int = 0;
+  for (let s: Stop of out) {
+    if (s.reached) {
+      count = count + 1;
+    }
+  }
+  return {stops: out, reachedCount: count, lastReachedIndex: index, lastMessage: "Marked " + state.stops[index].name + " as reached"};
+}
+
+function navigateTo(state: AppState, index: int): AppState {
+  let fromPlace: string = "Pudong International Airport";
+  let fromLat: string = "31.1443";
+  let fromLon: string = "121.8083";
+  if (state.lastReachedIndex >= 0) {
+    fromPlace = state.stops[state.lastReachedIndex].name;
+    fromLat = state.stops[state.lastReachedIndex].latitude;
+    fromLon = state.stops[state.lastReachedIndex].longitude;
+  }
+  intent.navigateTo({
+    place: state.stops[index].name,
+    latitude: state.stops[index].latitude,
+    longitude: state.stops[index].longitude,
+    fromPlace: fromPlace,
+    fromLatitude: fromLat,
+    fromLongitude: fromLon,
+    traffic: "Drive"
+  }, "onIntentAnswer");
+  return {stops: state.stops, reachedCount: state.reachedCount, lastReachedIndex: state.lastReachedIndex, lastMessage: "Starting navigation to " + state.stops[index].name};
+}
+
+function addToCalendar(state: AppState, index: int): AppState {
+  let startMinute: int = 540;
+  let i: int = 0;
+  while (i < index) {
+    startMinute = startMinute + state.stops[i].minutes + 30;
+    i = i + 1;
+  }
+  let hour: int = startMinute / 60;
+  let minute: int = startMinute % 60;
+  calendar.addEvent({
+    title: state.stops[index].name,
+    hour: hour,
+    minute: minute,
+    durationMinutes: state.stops[index].minutes,
+    remindBefore: 15,
+    repeat: "once"
+  }, "onCalendarAnswer");
+  return {stops: state.stops, reachedCount: state.reachedCount, lastReachedIndex: state.lastReachedIndex, lastMessage: "Adding " + state.stops[index].name + " to calendar"};
+}
+
+function clearCalendar(state: AppState, ignored: int): AppState {
+  calendar.clearEvents({}, "onCalendarAnswer");
+  return {stops: state.stops, reachedCount: state.reachedCount, lastReachedIndex: state.lastReachedIndex, lastMessage: "Clearing calendar events"};
+}
+
+function openCalendar(state: AppState, ignored: int): AppState {
+  intent.openCalendar({}, "onIntentAnswer");
+  return {stops: state.stops, reachedCount: state.reachedCount, lastReachedIndex: state.lastReachedIndex, lastMessage: "Opening calendar"};
+}
+
+function onIntentAnswer(state: AppState, value: string): AppState {
+  return {stops: state.stops, reachedCount: state.reachedCount, lastReachedIndex: state.lastReachedIndex, lastMessage: value};
+}
+
+function onCalendarAnswer(state: AppState, value: string): AppState {
+  return {stops: state.stops, reachedCount: state.reachedCount, lastReachedIndex: state.lastReachedIndex, lastMessage: value};
+}
+
+function view(state: AppState): ui.View {
+  let totalMinutes: int = 0;
+  for (let s: Stop of state.stops) {
+    totalMinutes = totalMinutes + s.minutes;
+  }
+  let travelMinutes: int = (state.stops.length() - 1) * 30;
+  let leaveBy: int = 1200 - 120;
+
+  let rows: ui.View[] = [];
+  let i: int = 0;
+  while (i < state.stops.length()) {
+    let s: Stop = state.stops[i];
+    let startMinute: int = 540;
+    let j: int = 0;
+    while (j < i) {
+      startMinute = startMinute + state.stops[j].minutes + 30;
+      j = j + 1;
+    }
+    let badge: string = "";
+    if (s.reached) {
+      badge = "Reached";
+    }
+    rows.push(ui.TimelineItem("default", s.name, badge, "", "markReached", i, true, s.icon));
+    rows.push(ui.ActionBar("end", [
+      ui.IconButton("secondary", "calendar", "Add to calendar", "addToCalendar", i, true),
+      ui.Button("primary", "Navigate", "navigateTo", i, true)
+    ]));
+    i = i + 1;
+  }
+
+  return ui.AppTheme("expressive", "", [
+    ui.Header("default", "Shanghai Layover", "11 HOURS", "Land 09:00, back at the airport by 20:00", "clock"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 3, [
+        ui.IntStat("default", "Stops", state.stops.length(), "", "", 1, "", "pin"),
+        ui.IntStat("accent", "Reached", state.reachedCount, "", "", 1, "of " + ui.intToString(state.stops.length()), "check"),
+        ui.IntStat("warning", "Leave by", leaveBy, "", "", 1, "for the airport", "clock")
+      ]),
+      ui.ClockText("body", leaveBy, "Latest departure: ", ""),
+      ui.Progress("accent", "Day planned", totalMinutes + travelMinutes, 660)
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Hour by hour", "Tap to mark reached, navigate or add to calendar", ui.intToString(state.stops.length())),
+      ui.Timeline("default", "", rows)
+    ]),
+    ui.Section("supporting", "", "", [
+      ui.InsetBanner("default", "Last action", state.lastMessage, "", "", "info"),
+      ui.ActionBar("end", [
+        ui.IconButton("secondary", "calendar", "Open calendar", "openCalendar", 0, true),
+        ui.Button("danger", "Clear calendar events", "clearCalendar", 0, true)
+      ])
+    ])
+  ]);
+}

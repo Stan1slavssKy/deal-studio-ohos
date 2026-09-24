@@ -1,0 +1,1 @@
+Kitchen timer: a timer for the minutes I give, with buttons to start it, pause it, reset it, throw it away and see what remains -- and beside it a stopwatch to start, pause and reset.

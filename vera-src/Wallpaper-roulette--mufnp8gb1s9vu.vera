@@ -1,0 +1,76 @@
+import * as ui from "std/ui"
+import * as intent from "std/intent"
+
+@jsonable
+class AppState {
+  lastAnswer: string;
+  lastAction: string;
+  spins: int;
+}
+
+function init(): AppState {
+  return {lastAnswer: "", lastAction: "Nothing sent yet", spins: 0};
+}
+
+function onAnswer(state: AppState, value: string): AppState {
+  return {lastAnswer: value, lastAction: state.lastAction, spins: state.spins};
+}
+
+function queryThemes(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/themecomponent/ThemeComponentAbility/QueryThemes",
+    [], "background", "onAnswer");
+  return {lastAnswer: state.lastAnswer, lastAction: "Checking which theme is on", spins: state.spins + 1};
+}
+
+function setTheme(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/themecomponent/ThemeComponentAbility/SetTheme",
+    [], "foreground", "onAnswer");
+  return {lastAnswer: state.lastAnswer, lastAction: "Putting on a theme", spins: state.spins + 1};
+}
+
+function setWallpaper(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/themecomponent/ThemeComponentAbility/SetSpecificWallpaper",
+    [], "foreground", "onAnswer");
+  return {lastAnswer: state.lastAnswer, lastAction: "Putting up a specific wallpaper", spins: state.spins + 1};
+}
+
+function signWallpaper(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/themecomponent/ThemeComponentAbility/SetWallpaperAndArtSignature",
+    [], "foreground", "onAnswer");
+  return {lastAnswer: state.lastAnswer, lastAction: "Adding an art signature", spins: state.spins + 1};
+}
+
+function toEditor(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/themecomponent/ThemeComponentAbility/SetWallpaperFromThemeEditor",
+    [], "foreground", "onAnswer");
+  return {lastAnswer: state.lastAnswer, lastAction: "Handing it to the theme editor", spins: state.spins + 1};
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("expressive", "", [
+    ui.Header("default", "Wallpaper Roulette", "THEME", "Spin the look of your phone", "star"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.IntStat("accent", "Spins", state.spins, "", "", 1, "this run", "navigate"),
+        ui.Stat("default", "Last move", state.lastAction, "", "info")
+      ])
+    ]),
+    ui.Section("content", "The wheel", "Each row hands the phone a different job", [
+      ui.ListGroup("default", "", [
+        ui.ListItem("default", "Which theme is on?", "Ask the theme component", "Check", "queryThemes", 0, true, "info"),
+        ui.ListItem("default", "Put on a theme", "Apply a theme", "Set", "setTheme", 0, true, "star"),
+        ui.ListItem("default", "Put up a wallpaper", "Set one specific wallpaper", "Set", "setWallpaper", 0, true, "navigate"),
+        ui.ListItem("default", "Sign the wallpaper", "Wallpaper with an art signature", "Add", "signWallpaper", 0, true, "check"),
+        ui.ListItem("default", "Open in theme editor", "Hand it to the editor", "Open", "toEditor", 0, true, "chevron-right")
+      ])
+    ]),
+    ui.Section("supporting", "", "", [
+      ui.InsetBanner("default", "What the phone said", state.lastAnswer, "", "", "info")
+    ]),
+    ui.Section("content", "", "", [
+      ui.ActionBar("center", [
+        ui.Button("primary", "Spin", "setTheme", 0, true)
+      ])
+    ])
+  ]);
+}

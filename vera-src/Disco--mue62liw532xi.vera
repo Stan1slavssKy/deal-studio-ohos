@@ -1,0 +1,263 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+import * as math from "std/math"
+import * as intent from "std/intent"
+
+@jsonable
+class AppState {
+  bpm: int;
+  pattern: int;
+  running: boolean;
+  elapsedMs: int;
+  beatMs: int;
+  beatIndex: int;
+  flashOn: boolean;
+  seed: int;
+  lastAnswer: string;
+  totalRuns: int;
+  totalBeats: int;
+}
+
+function init(): AppState {
+  return {
+    bpm: 120,
+    pattern: 0,
+    running: false,
+    elapsedMs: 0,
+    beatMs: 0,
+    beatIndex: 0,
+    flashOn: false,
+    seed: time.nowSeconds(),
+    lastAnswer: "",
+    totalRuns: 0,
+    totalBeats: 0
+  };
+}
+
+function setBpm(state: AppState, value: int): AppState {
+  return {
+    bpm: value,
+    pattern: state.pattern,
+    running: state.running,
+    elapsedMs: state.elapsedMs,
+    beatMs: state.beatMs,
+    beatIndex: state.beatIndex,
+    flashOn: state.flashOn,
+    seed: state.seed,
+    lastAnswer: state.lastAnswer,
+    totalRuns: state.totalRuns,
+    totalBeats: state.totalBeats
+  };
+}
+
+function setPattern(state: AppState, index: int): AppState {
+  return {
+    bpm: state.bpm,
+    pattern: index,
+    running: state.running,
+    elapsedMs: state.elapsedMs,
+    beatMs: state.beatMs,
+    beatIndex: state.beatIndex,
+    flashOn: state.flashOn,
+    seed: state.seed,
+    lastAnswer: state.lastAnswer,
+    totalRuns: state.totalRuns,
+    totalBeats: state.totalBeats
+  };
+}
+
+function start(state: AppState, ignored: int): AppState {
+  return {
+    bpm: state.bpm,
+    pattern: state.pattern,
+    running: true,
+    elapsedMs: 0,
+    beatMs: 0,
+    beatIndex: 0,
+    flashOn: true,
+    seed: state.seed,
+    lastAnswer: state.lastAnswer,
+    totalRuns: state.totalRuns + 1,
+    totalBeats: state.totalBeats
+  };
+}
+
+function stop(state: AppState, ignored: int): AppState {
+  return {
+    bpm: state.bpm,
+    pattern: state.pattern,
+    running: false,
+    elapsedMs: state.elapsedMs,
+    beatMs: state.beatMs,
+    beatIndex: state.beatIndex,
+    flashOn: false,
+    seed: state.seed,
+    lastAnswer: state.lastAnswer,
+    totalRuns: state.totalRuns,
+    totalBeats: state.totalBeats
+  };
+}
+
+function onTick(state: AppState, elapsedMs: int): AppState {
+  if (!state.running) {
+    return state;
+  }
+  let newElapsed: int = state.elapsedMs + elapsedMs;
+  if (newElapsed >= 30000) {
+    return {
+      bpm: state.bpm,
+      pattern: state.pattern,
+      running: false,
+      elapsedMs: 30000,
+      beatMs: state.beatMs,
+      beatIndex: state.beatIndex,
+      flashOn: false,
+      seed: state.seed,
+      lastAnswer: state.lastAnswer,
+      totalRuns: state.totalRuns,
+      totalBeats: state.totalBeats
+    };
+  }
+
+  let interval: int = 60000 / state.bpm;
+  let newBeatMs: int = state.beatMs + elapsedMs;
+  let newBeatIndex: int = state.beatIndex;
+  let newFlash: boolean = state.flashOn;
+  let newSeed: int = state.seed;
+  let newTotalBeats: int = state.totalBeats;
+
+  if (newBeatMs >= interval) {
+    newBeatMs = newBeatMs - interval;
+    newBeatIndex = newBeatIndex + 1;
+    newTotalBeats = newTotalBeats + 1;
+    newFlash = !state.flashOn;
+    if (state.pattern === 3) {
+      newSeed = math.randomStep(newSeed);
+    }
+  }
+
+  return {
+    bpm: state.bpm,
+    pattern: state.pattern,
+    running: true,
+    elapsedMs: newElapsed,
+    beatMs: newBeatMs,
+    beatIndex: newBeatIndex,
+    flashOn: newFlash,
+    seed: newSeed,
+    lastAnswer: state.lastAnswer,
+    totalRuns: state.totalRuns,
+    totalBeats: newTotalBeats
+  };
+}
+
+function playMusic(state: AppState, ignored: int): AppState {
+  intent.playMusicList({ scene: "NIGHT_SCENE" }, "onMusicAnswer");
+  return state;
+}
+
+function onMusicAnswer(state: AppState, value: string): AppState {
+  return {
+    bpm: state.bpm,
+    pattern: state.pattern,
+    running: state.running,
+    elapsedMs: state.elapsedMs,
+    beatMs: state.beatMs,
+    beatIndex: state.beatIndex,
+    flashOn: state.flashOn,
+    seed: state.seed,
+    lastAnswer: value,
+    totalRuns: state.totalRuns,
+    totalBeats: state.totalBeats
+  };
+}
+
+function view(state: AppState): ui.View {
+  let remaining: int = 30000 - state.elapsedMs;
+  if (remaining < 0) {
+    remaining = 0;
+  }
+  let remainingSec: int = remaining / 1000;
+
+  let patternName: string = "Pulse";
+  if (state.pattern === 1) {
+    patternName = "Double";
+  }
+  if (state.pattern === 2) {
+    patternName = "SOS";
+  }
+  if (state.pattern === 3) {
+    patternName = "Random";
+  }
+
+  let isLit: boolean = false;
+  if (state.running) {
+    if (state.pattern === 0) {
+      isLit = state.flashOn;
+    }
+    if (state.pattern === 1) {
+      isLit = state.beatIndex % 2 === 0;
+    }
+    if (state.pattern === 2) {
+      isLit = state.beatIndex % 3 === 0;
+    }
+    if (state.pattern === 3) {
+      isLit = state.flashOn;
+    }
+  }
+
+  let screenColor: string = "#101018";
+  if (isLit) {
+    screenColor = "#ff2d95";
+  }
+
+  let options: string[] = ["Pulse", "Double", "SOS", "Random"];
+
+  let statusText: string = "Ready";
+  if (state.running) {
+    statusText = "Playing";
+  }
+  if (state.elapsedMs >= 30000) {
+    statusText = "Finished";
+  }
+
+  return ui.AppTheme("expressive", "#ff2d95", [
+    ui.Header("default", "Mini Disco", "30 SECONDS", "Vibration, flash and screen in sync", "star"),
+    ui.Ticker("default", "disco", 50, state.running, "onTick"),
+    ui.Section("hero", "", "", [
+      ui.Canvas("large", [
+        ui.Path("accent", "M50 5 A45 45 0 1 0 50 95 A45 45 0 1 0 50 5 Z", 0),
+        ui.Path("light", "M50 25 A25 25 0 1 0 50 75 A25 25 0 1 0 50 25 Z", 0)
+      ]),
+      ui.MetricGroup("default", 3, [
+        ui.IntStat("accent", "BPM", state.bpm, "", "", 1, "", "chart"),
+        ui.IntStat("default", "Beats", state.beatIndex, "", "", 1, "", "list"),
+        ui.IntStat("warning", "Left", remainingSec, "", "s", 1, "", "clock")
+      ]),
+      ui.Progress("accent", "", state.elapsedMs, 30000),
+      ui.Text("caption", statusText + " - " + patternName)
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Tempo", "60 to 180", ""),
+      ui.Slider("default", "BPM", state.bpm, 60, 180, "setBpm"),
+      ui.Select("default", "Pattern", options, state.pattern, "setPattern")
+    ]),
+    ui.Section("content", "", "", [
+      ui.ActionBar("center", [
+        ui.Button("primary", "Start", "start", 0, !state.running),
+        ui.Button("secondary", "Stop", "stop", 0, state.running),
+        ui.IconButton("secondary", "star", "Play music", "playMusic", 0, true)
+      ])
+    ]),
+    ui.Section("supporting", "", "", [
+      ui.KeyValueGroup("default", 2, [
+        ui.KeyValueItem("default", "Pattern", patternName, ""),
+        ui.KeyValueItem("default", "Duration", "30 seconds", ""),
+        ui.KeyValueItem("default", "Runs", ui.intToString(state.totalRuns), ""),
+        ui.KeyValueItem("default", "Total beats", ui.intToString(state.totalBeats), "")
+      ])
+    ]),
+    ui.When(state.lastAnswer !== "",
+      ui.InsetBanner("default", "Music", state.lastAnswer, "", "", "info"))
+  ]);
+}

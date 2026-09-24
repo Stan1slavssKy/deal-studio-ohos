@@ -1,0 +1,173 @@
+import * as ui from "std/ui"
+import * as intent from "std/intent"
+
+@jsonable
+class AppState {
+  running: boolean;
+  on: boolean;
+  elapsed: int;
+  lastAnswer: string;
+  cycles: int;
+  intervalMs: int;
+}
+
+function init(): AppState {
+  return {running: false, on: false, elapsed: 0, lastAnswer: "", cycles: 0, intervalMs: 1000};
+}
+
+function toggleRun(state: AppState, value: boolean): AppState {
+  return {
+    running: value,
+    on: state.on,
+    elapsed: 0,
+    lastAnswer: state.lastAnswer,
+    cycles: state.cycles,
+    intervalMs: state.intervalMs
+  };
+}
+
+function setInterval(state: AppState, value: int): AppState {
+  return {
+    running: state.running,
+    on: state.on,
+    elapsed: 0,
+    lastAnswer: state.lastAnswer,
+    cycles: state.cycles,
+    intervalMs: value
+  };
+}
+
+function onTick(state: AppState, elapsedMs: int): AppState {
+  if (!state.running) {
+    return state;
+  }
+  let acc: int = state.elapsed + elapsedMs;
+  if (acc < state.intervalMs) {
+    return {
+      running: state.running,
+      on: state.on,
+      elapsed: acc,
+      lastAnswer: state.lastAnswer,
+      cycles: state.cycles,
+      intervalMs: state.intervalMs
+    };
+  }
+  let nextOn: boolean = !state.on;
+  if (nextOn) {
+    intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/OpenFlashlight", [], "background", "onAnswer");
+  } else {
+    intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/CloseFlashlight", [], "background", "onAnswer");
+  }
+  return {
+    running: state.running,
+    on: nextOn,
+    elapsed: acc - state.intervalMs,
+    lastAnswer: state.lastAnswer,
+    cycles: state.cycles + 1,
+    intervalMs: state.intervalMs
+  };
+}
+
+function onAnswer(state: AppState, value: string): AppState {
+  return {
+    running: state.running,
+    on: state.on,
+    elapsed: state.elapsed,
+    lastAnswer: value,
+    cycles: state.cycles,
+    intervalMs: state.intervalMs
+  };
+}
+
+function manualOn(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/OpenFlashlight", [], "background", "onAnswer");
+  return {
+    running: false,
+    on: true,
+    elapsed: 0,
+    lastAnswer: state.lastAnswer,
+    cycles: state.cycles,
+    intervalMs: state.intervalMs
+  };
+}
+
+function manualOff(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/CloseFlashlight", [], "background", "onAnswer");
+  return {
+    running: false,
+    on: false,
+    elapsed: 0,
+    lastAnswer: state.lastAnswer,
+    cycles: state.cycles,
+    intervalMs: state.intervalMs
+  };
+}
+
+function answerText(state: AppState): string {
+  if (state.lastAnswer === "") {
+    return "No call made yet.";
+  }
+  return state.lastAnswer;
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("technical", "", [
+    ui.Header("default", "Torch Controller", "FLASHLIGHT", "Turns the flashlight on and off on a timer", "star"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 3, [
+        ui.IntStat("accent", "Cycles", state.cycles, "", "", 1, "blinks so far", "chart"),
+        ui.IntStat("default", "Interval", state.intervalMs, "", " ms", 1, "between switches", "clock"),
+        ui.IntStat("default", "Elapsed", state.elapsed, "", " ms", 1, "into this step", "info")
+      ]),
+      ui.Row("default", [
+        ui.When(state.on, ui.Badge("success", "Light on", "check")),
+        ui.When(!state.on, ui.Badge("default", "Light off", "close")),
+        ui.When(state.running, ui.Badge("accent", "Blinking", "clock")),
+        ui.When(!state.running, ui.Badge("warning", "Stopped", "warning"))
+      ])
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Automatic blink", "One switch per interval", ui.intToString(state.cycles)),
+      ui.Toggle("default", "Blink the flashlight", state.running, "toggleRun"),
+      ui.IntField("default", "Interval in milliseconds", state.intervalMs, 100, 5000, "setInterval"),
+      ui.ActionBar("end", [
+        ui.Button("primary", "Start blinking", "startBlink", 0, true),
+        ui.Button("secondary", "Stop blinking", "stopBlink", 0, true)
+      ])
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Manual control", "One call, right now", ""),
+      ui.Row("end", [
+        ui.Button("primary", "Turn on", "manualOn", 0, true),
+        ui.Button("secondary", "Turn off", "manualOff", 0, true)
+      ])
+    ]),
+    ui.Section("supporting", "", "", [
+      ui.InsetBanner("default", "Last platform answer", answerText(state), "", "", "info")
+    ]),
+    ui.Ticker("default", "blink", 50, state.running, "onTick")
+  ]);
+}
+
+function startBlink(state: AppState, ignored: int): AppState {
+  return {
+    running: true,
+    on: state.on,
+    elapsed: 0,
+    lastAnswer: state.lastAnswer,
+    cycles: state.cycles,
+    intervalMs: state.intervalMs
+  };
+}
+
+function stopBlink(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/CloseFlashlight", [], "background", "onAnswer");
+  return {
+    running: false,
+    on: false,
+    elapsed: 0,
+    lastAnswer: state.lastAnswer,
+    cycles: state.cycles,
+    intervalMs: state.intervalMs
+  };
+}

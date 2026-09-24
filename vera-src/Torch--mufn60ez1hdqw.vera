@@ -1,0 +1,64 @@
+import * as ui from "std/ui"
+import * as intent from "std/intent"
+
+@jsonable
+class AppState {
+  pending: string;
+  lastAnswer: string;
+  onCount: int;
+  offCount: int;
+}
+
+function init(): AppState {
+  return {pending: "", lastAnswer: "", onCount: 0, offCount: 0};
+}
+
+function turnOn(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/OpenFlashlight", [], "background", "onAnswer");
+  return {pending: "on", lastAnswer: "", onCount: state.onCount, offCount: state.offCount};
+}
+
+function turnOff(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/CloseFlashlight", [], "background", "onAnswer");
+  return {pending: "off", lastAnswer: "", onCount: state.onCount, offCount: state.offCount};
+}
+
+function onAnswer(state: AppState, value: string): AppState {
+  let ons: int = state.onCount;
+  let offs: int = state.offCount;
+  if (state.pending === "on") {
+    ons = ons + 1;
+  }
+  if (state.pending === "off") {
+    offs = offs + 1;
+  }
+  return {pending: "", lastAnswer: value, onCount: ons, offCount: offs};
+}
+
+function view(state: AppState): ui.View {
+  let busy: boolean = state.pending !== "";
+  return ui.AppTheme("technical", "", [
+    ui.Header("default", "Torch", "FLASHLIGHT", "One button for the light, one to put it out", "star"),
+    ui.Section("hero", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.IntStat("accent", "Lit", state.onCount, "", "", 1, "times", "star"),
+        ui.IntStat("default", "Out", state.offCount, "", "", 1, "times", "close")
+      ])
+    ]),
+    ui.Section("content", "", "", [
+      ui.ActionBar("center", [
+        ui.Button("primary", "Turn on", "turnOn", 0, !busy),
+        ui.Button("secondary", "Put out", "turnOff", 0, !busy)
+      ])
+    ]),
+    ui.Section("supporting", "", "", [
+      ui.SectionHeader("default", "Answer", "What the phone said back", ""),
+      ui.When(state.pending !== "",
+        ui.InsetBanner("default", "Waiting", "Asking the phone about the torch. Answer below.", "", "", "clock")),
+      ui.When(state.lastAnswer === "",
+        ui.Text("muted", "Nothing has come back yet.")),
+      ui.When(state.lastAnswer !== "",
+        ui.InsetBanner("default", "Last answer", state.lastAnswer, "", "", "info"))
+    ])
+  ]);
+}
