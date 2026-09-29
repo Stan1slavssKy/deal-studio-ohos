@@ -562,7 +562,10 @@ export struct VeraPreview {
     // sees neither. The log keeps the record -- VERA-INTENT and
     // VERA-INTENT-RAW carry the target and the payload of every call.
     if (!ASK_BEFORE_CALLS) { return false }
-    if (effect.kind !== 'intent') { return false }
+    // sdk.call gets the same treatment as a raw intent.call: nothing about it
+    // is curated or risk-classified, so "ask every time" is the only posture
+    // that makes sense until it is (docs/selector-design.md).
+    if (effect.kind !== 'intent' && effect.kind !== 'sdk') { return false }
     // Already allowed, for this program and this call. The grant died with the
     // previous version of the program: stamp() is the bytecode.
     if (consent.has(this.stamp(), this.consentKey(effect))) { return false }
@@ -586,6 +589,10 @@ export struct VeraPreview {
 
   /** What the dialog says this call is, in the person's words where there are any. */
   private consentTitle(effect: HostEffect): string {
+    if (effect.kind === 'sdk') {
+      let parts = effect.rawTarget.split('.')
+      return 'Run ' + parts[parts.length - 1]
+    }
     if (effect.spec === null) { return 'Run ' + effect.rawTarget.split('/')[3] }
     let spec = effect.spec!
     return spec.titleForUser.length > 0 ? spec.titleForUser : spec.summary
@@ -666,6 +673,13 @@ export struct VeraPreview {
         this.effectInt(effect, 'durationMinutes', 15),
         this.effectInt(effect, 'remindBefore', 0),
         this.effectText(effect, 'repeat'))
+    } else if (effect.kind === 'sdk') {
+      // Backend dispatch to the real OpenHarmony function is out of scope for
+      // now (docs/selector-design.md) -- the point of this phase was the
+      // selector and the compile-time check, not calling interface_sdk-js
+      // for real. The program still gets a well-formed answer rather than
+      // hanging, the same contract intent.call promises.
+      answer = Promise.resolve('error: sdk.call is not implemented yet')
     } else if (effect.spec === null) {
       answer = runRawIntent(effect.rawTarget, effect.values, effect.rawMode)
     } else {

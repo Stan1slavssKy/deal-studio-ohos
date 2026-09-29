@@ -17,8 +17,17 @@ import { selectDomains, selectTargets, Selection, TargetChoice, everything } fro
 import { loadRegistry, describeTargetsForPrompt, registrySize } from '../vera/VeraIntentRegistry'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { describeCalendarForPrompt } from '../vera/VeraCalendarCatalog'
+import { loadSdkIndex } from '../vera/VeraSdkIndex'
 
 const MAX_RETRIES: number = 3
+// Off while the sdk.call path is being exercised in isolation: with this on,
+// intent.call's Jev-selected (or lexical-fallback) addresses land in the
+// prompt as ready-made text, and the model reaches for that instead of
+// synthesizing a call from find_sdk_function's result -- exactly what
+// happened testing sdk.call live (docs/selector-design.md). Nothing about
+// std/intent itself is removed: the compiler, the catalogue and the registry
+// code are untouched, this only stops the prompt from mentioning them.
+const INTENTS_ENABLED: boolean = false
 // vera-server's address is not written down here. It lives in settings, given
 // the same way as the API key -- `--ps veraServer http://host:port` -- because
 // one person's machine address has no business in a shared repository.
@@ -279,9 +288,18 @@ struct GeneratePage {
       loadRegistry().then((count: number) => {
         console.info('VERA-REGISTRY ' + count.toString() + ' intents available to intent.call')
       })
+      // The sdk selector's index (docs/selector-design.md): loaded once here
+      // so it's ready before DeepSeekEngine's find_sdk_function tool call
+      // needs it mid-generation.
+      loadSdkIndex(mgr).then((count: number) => {
+        console.info('VERA-SDK ' + count.toString() + ' sdk functions available to search')
+      })
       this.systemPrompt = this.promptTemplate
-        .replace('{{INTENT_CATALOG}}', describeIntentsForPrompt())
-        .replace('{{DEVICE_INTENTS}}', '  (the list is read from the phone when you generate)')
+        .replace('{{INTENT_CATALOG}}', INTENTS_ENABLED ? describeIntentsForPrompt() :
+          '  (disabled for now -- do not use intent.call)')
+        .replace('{{DEVICE_INTENTS}}', INTENTS_ENABLED
+          ? '  (the list is read from the phone when you generate)'
+          : '  (disabled for now -- do not use intent.call)')
       this.grammar = await loadRawfileText(mgr, 'vera.gbnf')
       this.status = 'Resources loaded'
     } catch (e) {
@@ -441,6 +459,16 @@ struct GeneratePage {
    */
   private async applySelection(userPrompt: string): Promise<void> {
     if (this.promptTemplate.length === 0) { return }
+    if (!INTENTS_ENABLED) {
+      // Skip Jev entirely -- not just hidden from the prompt, not called.
+      // VERA-PICK has been seen to time out in practice (docs/selector-
+      // design.md); no reason to pay for that round trip while this is off.
+      this.systemPrompt = this.promptTemplate
+        .replace('{{INTENT_CATALOG}}', '  (disabled for now -- do not use intent.call)')
+        .replace('{{DEVICE_INTENTS}}', '  (disabled for now -- do not use intent.call)')
+      this.selectionNote = 'intents disabled'
+      return
+    }
     let selection: Selection = everything('all intents')
     try {
       selection = await selectDomains(userPrompt, settings.getSelectorKey())

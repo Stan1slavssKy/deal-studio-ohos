@@ -4,6 +4,7 @@ import { iconPath, iconNames } from './VeraIcons'
 import { INTENT_CATALOG, intentByName } from './VeraIntentCatalog'
 import { IntentParam } from './VeraIntentCatalog'
 import { CALENDAR_CATALOG, calendarFnByName } from './VeraCalendarCatalog'
+import { isValidSdkTarget } from './VeraSdkIndex'
 
 // ===== AST Nodes =====
 
@@ -1249,6 +1250,31 @@ function buildStdIntentModule(): ModuleInterface {
 }
 
 /**
+ * Everything std/intent's catalogue does not cover and never will: the
+ * OpenHarmony system API surface, found by the generating model itself
+ * through the find_sdk_function tool (DeepSeekEngine.ets) rather than
+ * described here row by row -- there are tens of thousands of candidates,
+ * nobody has probed them on a phone, and the point of the tool is that
+ * nobody has to. See docs/selector-design.md.
+ *
+ * One function, the same shape as std/intent's own escape hatch:
+ *
+ *   sdk.call("CameraKit.CameraManager.setTorchMode", ["mode", "0"], "onAnswer")
+ *
+ * What intent.call cannot check, this can: the index this checks against
+ * (VeraSdkIndex, built offline by tools/build-sdk-index.py from interface_
+ * sdk-js) is a static artifact, not a device-only registry, so a target the
+ * model invented instead of asking is a compile error here rather than a
+ * silent no-op on the phone.
+ */
+function buildStdSdkModule(): ModuleInterface {
+  let fns: ExternalFunction[] = [
+    new ExternalFunction('call', [STRING, new VeraArrayType(STRING), STRING], INT, false)
+  ]
+  return new ModuleInterface('std/sdk', fns, [])
+}
+
+/**
  * The phone's calendar, generated from VeraCalendarCatalog.
  *
  * Deliberately not an intent: the device's CreateCalendarEvent and its
@@ -1359,6 +1385,7 @@ class Analyzer {
     registry.set('std/strings', buildStdStringsModule())
     registry.set('std/intent', buildStdIntentModule())
     registry.set('std/calendar', buildStdCalendarModule())
+    registry.set('std/sdk', buildStdSdkModule())
     for (let decl of this.model.application.imports) {
       if (this.globals.find(decl.name) !== null) { this.addError('E2001', 'duplicate global ' + decl.name, decl.span); continue }
       let found = registry.get(decl.specifier)
@@ -1709,6 +1736,7 @@ class Analyzer {
     this.checkStyleArguments(expr, callee)
     this.checkComposition(expr, callee)
     this.checkIntentArguments(expr, callee)
+    this.checkSdkArguments(expr, callee)
     return callee.result
   }
 
@@ -1990,6 +2018,57 @@ class Analyzer {
     }
     if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
       this.addError('E2106', 'intent.call answers with a string, so "' + handlerName +
+        '" must take (state, value: string)', arg.span)
+    }
+  }
+
+  /**
+   * sdk.call's target, checked against a closed set -- the one thing
+   * intent.call cannot do, because VeraSdkIndex is built offline from
+   * interface_sdk-js rather than read from the device at runtime. A model
+   * that skips find_sdk_function and writes a target from memory gets this
+   * error back, and the existing retry loop (GeneratePage.runAttempt) is
+   * what gives it a chance to call the tool instead of failing quietly on
+   * the phone the way an invented intent.call target does.
+   *
+   * The set of other checks (pairs, non-empty names, handler signature)
+   * mirrors checkRawIntentArguments; there is no mode argument here, since
+   * sdk functions have no execute-mode concept.
+   */
+  private checkSdkArguments(expr: CallExpression, callee: VeraFunctionType): void {
+    if (callee.identity !== 'external:std/sdk:call') return
+    if (expr.argumentsList.length > 0 && expr.argumentsList[0] instanceof StringExpression) {
+      let arg = expr.argumentsList[0]
+      let target = (arg as StringExpression).value
+      if (!isValidSdkTarget(target)) {
+        this.addError('E2110', 'sdk.call target "' + target + '" is not one find_sdk_function ' +
+          'returned; call it first and use a target exactly as it came back', arg.span)
+      }
+    }
+    if (expr.argumentsList.length > 1 && expr.argumentsList[1] instanceof ArrayExpression) {
+      let arg = expr.argumentsList[1]
+      let items = (arg as ArrayExpression).elements
+      if (items.length % 2 !== 0) {
+        this.addError('E2111', 'sdk.call parameters are name and value in pairs, so the ' +
+          'array must have an even number of items; got ' + items.length.toString(), arg.span)
+      }
+      for (let i = 0; i + 1 < items.length; i = i + 2) {
+        if (!(items[i] instanceof StringExpression)) { continue }
+        if ((items[i] as StringExpression).value.trim().length === 0) {
+          this.addError('E2111', 'sdk.call parameter names cannot be empty', items[i].span)
+        }
+      }
+    }
+    if (expr.argumentsList.length < 3 || !(expr.argumentsList[2] instanceof StringExpression)) return
+    let arg = expr.argumentsList[2]
+    let handlerName = (arg as StringExpression).value
+    let fn = this.model.functions.get(handlerName)
+    if (fn === undefined) {
+      this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span)
+      return
+    }
+    if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
+      this.addError('E2106', 'sdk.call answers with a string, so "' + handlerName +
         '" must take (state, value: string)', arg.span)
     }
   }

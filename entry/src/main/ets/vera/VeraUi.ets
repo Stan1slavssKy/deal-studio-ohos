@@ -330,19 +330,19 @@ function invokeStdStrings(name: string, args: RuntimeValue[]): RuntimeValue {
  */
 export class HostEffect {
   id: number
-  /** 'intent' or 'calendar' -- which host the request is for. */
+  /** 'intent', 'calendar' or 'sdk' -- which host the request is for. */
   kind: string
-  /** Which function of that host: the intent's row name, or addEvent/clearEvents. */
+  /** Which function of that host: the intent's row name, or addEvent/clearEvents/call. */
   fn: string
-  /** The intent's row; null for a raw call and for any other kind. */
+  /** The intent's row; null for a raw or sdk call and for any other kind. */
   spec: IntentSpec | null
   values: Map<string, string>
   resultHandler: string
-  /** intent.call only: bundle/module/ability/IntentName, as the program wrote it. */
+  /** intent.call and sdk.call: the target as the program wrote it. */
   rawTarget: string = ''
-  /** intent.call only: the parameter names, in the order the program wrote them. */
+  /** intent.call and sdk.call: the parameter names, in the order the program wrote them. */
   rawParams: string = ''
-  /** intent.call only: 'foreground' or 'background'. */
+  /** intent.call only: 'foreground' or 'background'; unused by sdk.call. */
   rawMode: string = ''
   constructor(id: number, kind: string, fn: string, spec: IntentSpec | null,
       values: Map<string, string>, resultHandler: string) {
@@ -369,6 +369,7 @@ export class UiHostEnvironment extends HostEnvironment {
     if (module === 'std/strings') { return invokeStdStrings(name, args) }
     if (module === 'std/intent') { return this.queueIntent(name, args) }
     if (module === 'std/calendar') { return this.queueCalendar(name, args) }
+    if (module === 'std/sdk') { return this.queueSdk(args) }
     if (module !== 'std/ui') {
       throw new RuntimeTrap('R0015', `external function unavailable: ${module}.${name}`)
     }
@@ -772,6 +773,42 @@ export class UiHostEnvironment extends HostEnvironment {
     effect.rawTarget = target
     effect.rawParams = order.join(' ')
     effect.rawMode = mode
+    this.pendingEffects.push(effect)
+    return new VeraIntValue(id)
+  }
+
+  /**
+   * The same shape as queueRawIntent, for the OpenHarmony SDK surface found
+   * through find_sdk_function rather than the intent catalogue. No mode
+   * argument -- sdk functions have no execute-mode concept the way an insight
+   * intent does. Unlike a raw intent, an invented target here is already
+   * caught at compile time (VeraCompiler.checkSdkArguments) against the same
+   * offline index this never has to read itself; what runs here is only what
+   * the compiler already accepted the shape of.
+   */
+  private queueSdk(args: RuntimeValue[]): RuntimeValue {
+    if (!this.effectsAllowed) {
+      throw new RuntimeTrap('R0026', 'sdk.call may only be called from a handler, not from view')
+    }
+    let target = asString(args[0]).trim()
+    let pairs = asArray(args[1]).elements
+    if (pairs.length % 2 !== 0) {
+      throw new RuntimeTrap('R0027',
+        'sdk.call parameters are name and value in pairs; got ' + pairs.length.toString() + ' items')
+    }
+    let values = new Map<string, string>()
+    let order: string[] = []
+    for (let i = 0; i + 1 < pairs.length; i = i + 2) {
+      let key = asString(pairs[i]).trim()
+      if (key.length === 0) { continue }
+      values.set(key, asString(pairs[i + 1]))
+      order.push(key)
+    }
+    let id = this.nextEffectId
+    this.nextEffectId = id + 1
+    let effect = new HostEffect(id, 'sdk', 'call', null, values, asString(args[2]))
+    effect.rawTarget = target
+    effect.rawParams = order.join(' ')
     this.pendingEffects.push(effect)
     return new VeraIntValue(id)
   }
