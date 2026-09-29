@@ -61,8 +61,13 @@ export class SdkEntry {
   descriptionTokens: string[] = []
 }
 
-/** "setTorchMode" -> ['set', 'torch', 'mode']; "UIAbility" -> ['ui', 'ability']. */
-function identifierTokens(name: string): string[] {
+/**
+ * "setTorchMode" -> ['set', 'torch', 'mode']; "UIAbility" -> ['ui', 'ability'].
+ * Exported: VeraIntentIndex.ets reuses this for the same reason
+ * VeraSdkIndex reuses VeraIntentRegistry's requestWords -- one tokenizer for
+ * one concern, not two copies that drift.
+ */
+export function identifierTokens(name: string): string[] {
   let matches = name.match(/[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z0-9]+|[A-Z]+/g)
   if (matches === null) { return [] }
   let tokens: string[] = []
@@ -109,7 +114,8 @@ const STOPWORDS: string[] = ['the', 'and', 'for', 'are', 'was', 'her', 'its',
   'them', 'what', 'when', 'then', 'than', 'into', 'onto', 'over', 'will',
   'would', 'could', 'should', 'about']
 
-function needWords(need: string): string[] {
+/** Exported for VeraIntentIndex.ets -- the same "need" string shape, same filler to drop. */
+export function needWords(need: string): string[] {
   let words: string[] = []
   for (let w of requestWords(need)) {
     if (w.length >= 3 && STOPWORDS.indexOf(w) < 0) { words.push(w) }

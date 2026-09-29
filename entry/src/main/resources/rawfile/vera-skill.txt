@@ -200,7 +200,13 @@ program reaches anything outside itself: there is no audio, no navigation, no
 way to open another app, and no API for any of them other than these calls.
 Use one whenever the user asks for something the program cannot draw.
 
-{{INTENT_CATALOG}}
+Before writing one, call find_intent_function with what you need in plain
+words ("start navigation to a place", "send a text message"). It returns a
+few real candidates, each already shaped as a call you can adapt -- either a
+typed intent.<name>(...) from the checked catalogue, or a raw intent.call(...)
+target for something the catalogue does not cover. Never write an
+intent.call target you did not get back from that call: a wrong address is
+accepted by the platform and does nothing, so there is no error to catch it.
 
 The calendar — import * as calendar from "std/calendar". This writes into the
 phone's own calendar, so the event shows up in the Calendar app and the system
@@ -214,14 +220,15 @@ to the handler you named, which takes (state, value: string). The answer is
 "ok, event 42" or an error line. The person may refuse the calendar permission,
 and then every call answers with an error -- show it rather than hiding it.
 
-Each call takes a record of parameters and the name of a handler, and returns an
-int request id you can ignore:
+A typed intent call, once find_intent_function has given you one, takes a
+record of parameters and the name of a handler, and returns an int request id
+you can ignore:
   intent.playMusicList({ scene: "EVENING_SCENE" }, "onMusicAnswer")
 Rules that are not obvious:
   - Every field of the record must be written, even one you do not want to send.
     Send "" for those; there are no optional fields and no defaults.
-  - Only the values listed above are accepted for a field. Anything else is a
-    compile error, and so is a field name that is not listed.
+  - Only the values find_intent_function listed for that field are accepted.
+    Anything else is a compile error, and so is a field name that is not listed.
   - Call it only from a handler, never from view. view runs again on every
     change, so a call from there would fire on every repaint.
   - The answer arrives later, as a call to the handler you named, which must be
@@ -233,37 +240,25 @@ Rules that are not obvious:
     person". That is a normal outcome, not an error: say so and leave the state
     as it was.
 
-Anything else the phone can do — intent.call. The list above is what has been
-checked on a real phone. The phone has hundreds of other intents, and this
-reaches them:
+A raw intent call, once find_intent_function has given you a target for
+something the checked catalogue does not cover:
 
   intent.call("com.huawei.hmos.settings/phone_settings/DefaultIntentBackgroundUiAbility/GetSettingSwitch",
               ["itemName", "bluetooth"], "background", "onAnswer")
 
-  - The first argument is bundle/module/ability/IntentName, four parts.
+  - The first argument is the target exactly as find_intent_function returned
+    it. Do not invent one or guess at an app that wasn't returned -- a wrong
+    address is accepted by the platform and does nothing.
   - The second is the platform's own parameters as name, value, name, value in
     one array of strings, or [] when there are none. Never write JSON yourself:
     you cannot escape a quote or a line break, and the payload would be broken
     by the first item of someone's shopping list.
-  - The third is "background" or "foreground". Background unless the person
-    should be looking at that app.
+  - The third is "background" or "foreground", exactly as find_intent_function
+    returned it.
   - The answer is the target's own result as JSON text, or "ok", or an error
     line, or "declined by the person".
 
-These are on this phone right now, with the modes they accept. Use the address
-exactly as written; do not invent one, and do not guess at an app that is not
-listed -- a wrong address is accepted by the platform and does nothing.
-
-{{DEVICE_INTENTS}}
-
-Most of them declare no parameters anywhere, so unless a line says otherwise you
-are guessing at what to send. Prefer a row from the checked list above whenever
-one fits.
-
-Use intent.call only for something the checked list does not cover, and only when you
-actually know the target and its parameters -- a guessed parameter name is
-accepted by the phone and then ignored, so the call reports success and nothing
-happens. Every intent.call is shown to the person before it runs.
+Every intent.call is shown to the person before it runs.
 
 The rest of the phone — sdk.call. Before writing one, call find_sdk_function
 with what you need in plain words ("add an event to the calendar", "read the
@@ -283,9 +278,9 @@ failure, because the whole list is known ahead of time and checked against:
   - The answer arrives at the handler you named, the same shape as intent.call's:
     "ok", the function's own result, an error line, or "declined by the person".
 
-Prefer std/intent, std/calendar or something the checked list already covers
-whenever it fits. Reach for sdk.call only for a capability nothing above has,
-and only after find_sdk_function has told you the target actually exists.
+Prefer std/calendar, or an intent find_intent_function gave you, whenever it
+fits. Reach for sdk.call only for a capability neither offers, and only after
+find_sdk_function has told you the target actually exists.
 
 Loops come in two forms and there is no other -- no for(;;), no ++ and no +=:
   for (let e: Entry of log) { ... }        the type annotation is required

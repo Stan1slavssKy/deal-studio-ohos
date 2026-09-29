@@ -15,24 +15,23 @@
  * is unused here and the output goes through extractVeraSource() in case the
  * model wraps the program in a markdown fence anyway.
  *
- * Phase 3 of the sdk selector (docs/selector-design.md): one tool,
- * find_sdk_function, backed by VeraSdkIndex's local, no-network search. This
- * is DeepSeek-only, not extended to LlamaEngine's on-device path -- that path
- * decodes under a GBNF grammar with no tool-call support, and building one
- * there is a materially bigger change than this selector question. A round
- * of tool_calls is answered locally and the conversation continues; the loop
- * is bounded (MAX_TOOL_ROUNDS) so a model that keeps asking can't hang a
- * generation, matching JevSelector's own fail-toward-finishing posture. The
- * result the caller sees is unchanged either way: one GenerateResult, same as
- * before this existed -- runAttempt does not know or care how many requests
- * it took.
- *
- * This wires the mechanism only. Nothing in vera-skill.txt tells the model
- * sdk.call exists, and the compiler does not accept it yet (Phase 4) -- so a
- * model that calls find_sdk_function today and then tries to use what it
- * found will fail to compile, the same as any other unknown identifier, and
- * retry through the existing error-feedback loop. That is expected until
- * Phase 4 lands, not a bug in this phase.
+ * Two tools (docs/selector-design.md): find_sdk_function, backed by
+ * VeraSdkIndex's local search over interface_sdk-js; and
+ * find_intent_function, backed by VeraIntentIndex's local search over the
+ * curated intent catalogue and the raw device registry -- the same
+ * treatment, for the same reason: either source spliced into the prompt
+ * ahead of generation (as the registry's JevSelector pick, or its lexical
+ * fallback, used to be) sits there as ready text before the model starts
+ * reasoning, and wins over a tool result it has to synthesize even when
+ * that result is correct. One discovery mechanism for both removes that
+ * asymmetry. Both are DeepSeek-only, not extended to LlamaEngine's on-device
+ * path -- that path decodes under a GBNF grammar with no tool-call support,
+ * and building one there is a materially bigger change than this selector
+ * question. A round of tool_calls is answered locally (by name) and the
+ * conversation continues; the loop is bounded (MAX_TOOL_ROUNDS) across both
+ * tools so a model that keeps asking can't hang a generation. The result the
+ * caller sees is unchanged either way: one GenerateResult -- runAttempt does
+ * not know or care how many requests, or which tool, it took.
  */
 
 import http from '@ohos.net.http'
@@ -40,15 +39,18 @@ import util from '@ohos.util'
 import { GenerateRequest, GenerateResult, TokenCallback } from './LlamaEngine'
 import { settings } from './SettingsStore'
 import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
+import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 
 const SDK_TOOL_NAME = 'find_sdk_function'
 const SDK_SEARCH_LIMIT = 8
+const INTENT_TOOL_NAME = 'find_intent_function'
+const INTENT_SEARCH_LIMIT = 8
 /**
- * How many find_sdk_function round trips one generation tolerates. Each round
- * is a full request-response cycle against DeepSeek, so this bounds latency
- * and cost, not just correctness -- a model that never stops asking still
- * gets cut off and falls through to "produced empty output", a failure mode
- * runAttempt already handles.
+ * How many tool-call round trips one generation tolerates, across both
+ * tools. Each round is a full request-response cycle against DeepSeek, so
+ * this bounds latency and cost, not just correctness -- a model that never
+ * stops asking still gets cut off and falls through to "produced empty
+ * output", a failure mode runAttempt already handles.
  */
 const MAX_TOOL_ROUNDS = 4
 
@@ -104,25 +106,38 @@ function toolResultMessage(toolCallId: string, content: string): Record<string, 
   return m
 }
 
-/** The one tool DeepSeek is offered, describing itself well enough to be found without a system-prompt mention. */
-function sdkToolSchema(): Record<string, Object>[] {
+function needParameter(description: string): Record<string, Object> {
   let need: Record<string, Object> = {}
   need['type'] = 'string'
-  need['description'] = 'Plain-language description of the platform capability needed, e.g. "add an event to the calendar".'
+  need['description'] = description
   let properties: Record<string, Object> = {}
   properties['need'] = need
   let parameters: Record<string, Object> = {}
   parameters['type'] = 'object'
   parameters['properties'] = properties
   parameters['required'] = ['need']
-  let fn: Record<string, Object> = {}
-  fn['name'] = SDK_TOOL_NAME
-  fn['description'] = 'Looks up a platform SDK function by what it needs to do, out of thousands the phone offers with no built-in catalogue. Returns a few candidates with their target, parameters, return type and description. Never invent a target string: only use one returned by this tool.'
-  fn['parameters'] = parameters
-  let tool: Record<string, Object> = {}
-  tool['type'] = 'function'
-  tool['function'] = fn
-  return [tool]
+  return parameters
+}
+
+/** The two tools DeepSeek is offered, each describing itself well enough to be found without a system-prompt mention. */
+function toolSchemas(): Record<string, Object>[] {
+  let sdkFn: Record<string, Object> = {}
+  sdkFn['name'] = SDK_TOOL_NAME
+  sdkFn['description'] = 'Looks up a platform SDK function by what it needs to do, out of thousands the phone offers with no built-in catalogue. Returns a few candidates with their target, parameters, return type and description. Never invent a target string: only use one returned by this tool.'
+  sdkFn['parameters'] = needParameter('Plain-language description of the platform capability needed, e.g. "read the free internal storage space".')
+  let sdkTool: Record<string, Object> = {}
+  sdkTool['type'] = 'function'
+  sdkTool['function'] = sdkFn
+
+  let intentFn: Record<string, Object> = {}
+  intentFn['name'] = INTENT_TOOL_NAME
+  intentFn['description'] = 'Looks up how to reach another app on the phone: a typed intent.<name> call from the checked catalogue when one fits, or a raw intent.call target otherwise. Returns a few candidates with a ready-to-adapt call. Never invent a target: only use one returned by this tool.'
+  intentFn['parameters'] = needParameter('Plain-language description of what another app needs to do, e.g. "start navigation to a place" or "send a text message".')
+  let intentTool: Record<string, Object> = {}
+  intentTool['type'] = 'function'
+  intentTool['function'] = intentFn
+
+  return [sdkTool, intentTool]
 }
 
 /** find_sdk_function's answer, in the shape handed back as the tool result. */
@@ -140,6 +155,26 @@ function sdkResultsJson(entries: SdkEntry[]): string {
     item['params'] = e.params
     item['returnType'] = e.returnType
     item['description'] = e.description
+    items.push(item)
+  }
+  body['results'] = items
+  return JSON.stringify(body)
+}
+
+/** find_intent_function's answer, in the shape handed back as the tool result. */
+function intentResultsJson(entries: IntentEntry[]): string {
+  let body: Record<string, Object> = {}
+  if (entries.length === 0) {
+    body['results'] = []
+    body['note'] = 'No intent matched. Try a different, more specific phrasing, or if this app does not need to reach another app, it may not need this tool at all.'
+    return JSON.stringify(body)
+  }
+  let items: Record<string, Object>[] = []
+  for (let e of entries) {
+    let item: Record<string, Object> = {}
+    item['kind'] = e.kind
+    item['description'] = e.description
+    item['call'] = e.callHint
     items.push(item)
   }
   body['results'] = items
@@ -293,11 +328,19 @@ export class DeepSeekEngine {
           // the tool result below tells the model that plainly rather than
           // dropping its call silently.
         }
-        let results = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT)
-        console.info('VERA-SDK-TOOL round=' + round.toString() + ' need="' + need +
-          '" found=' + results.length.toString() +
-          (results.length > 0 ? ' top=' + results[0].kit + '.' + results[0].module + '.' + results[0].name : ''))
-        messages.push(toolResultMessage(call.id, sdkResultsJson(results)))
+        if (call.name === INTENT_TOOL_NAME) {
+          let results = findIntentFunction(need, INTENT_SEARCH_LIMIT)
+          console.info('VERA-INTENT-TOOL round=' + round.toString() + ' need="' + need +
+            '" found=' + results.length.toString() +
+            (results.length > 0 ? ' top=' + results[0].kind + ':' + results[0].name : ''))
+          messages.push(toolResultMessage(call.id, intentResultsJson(results)))
+        } else {
+          let results = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT)
+          console.info('VERA-SDK-TOOL round=' + round.toString() + ' need="' + need +
+            '" found=' + results.length.toString() +
+            (results.length > 0 ? ' top=' + results[0].kit + '.' + results[0].module + '.' + results[0].name : ''))
+          messages.push(toolResultMessage(call.id, sdkResultsJson(results)))
+        }
       }
     }
 
@@ -397,7 +440,7 @@ export class DeepSeekEngine {
     payload['thinking'] = thinking
     payload['temperature'] = temperature
     payload['max_tokens'] = maxTokens
-    payload['tools'] = sdkToolSchema()
+    payload['tools'] = toolSchemas()
     return JSON.stringify(payload)
   }
 

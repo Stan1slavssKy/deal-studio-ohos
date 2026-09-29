@@ -12,22 +12,12 @@ import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
-import { describeIntentsForPrompt } from '../vera/VeraIntentCatalog'
-import { selectDomains, selectTargets, Selection, TargetChoice, everything } from '../vera/JevSelector'
-import { loadRegistry, describeTargetsForPrompt, registrySize } from '../vera/VeraIntentRegistry'
+import { loadRegistry } from '../vera/VeraIntentRegistry'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { describeCalendarForPrompt } from '../vera/VeraCalendarCatalog'
 import { loadSdkIndex } from '../vera/VeraSdkIndex'
 
 const MAX_RETRIES: number = 3
-// Off while the sdk.call path is being exercised in isolation: with this on,
-// intent.call's Jev-selected (or lexical-fallback) addresses land in the
-// prompt as ready-made text, and the model reaches for that instead of
-// synthesizing a call from find_sdk_function's result -- exactly what
-// happened testing sdk.call live (docs/selector-design.md). Nothing about
-// std/intent itself is removed: the compiler, the catalogue and the registry
-// code are untouched, this only stops the prompt from mentioning them.
-const INTENTS_ENABLED: boolean = false
 // vera-server's address is not written down here. It lives in settings, given
 // the same way as the API key -- `--ps veraServer http://host:port` -- because
 // one person's machine address has no business in a shared repository.
@@ -219,10 +209,8 @@ struct GeneratePage {
   @State attempts: AttemptMetrics[] = []
   @State totalMs: number = 0
   private systemPrompt: string = ''
-  /** The skill with every catalogue but the intents spliced in. */
+  /** The skill with std/ui and std/calendar spliced in. */
   private promptTemplate: string = ''
-  /** What the selection step decided, shown while generating. */
-  @State selectionNote: string = ''
   private grammar: string = ''
   private previousSource: string = ''
   private genStartTime: number = 0
@@ -274,19 +262,20 @@ struct GeneratePage {
           extra.problems.join('; '))
       }
       let skill = await loadRawfileText(mgr, 'vera-skill.txt')
-      // The UI and calendar catalogues are the same for every request, so they
-      // are spliced in once. The intent catalogue is not: which rows a request
-      // needs depends on what the person asked for, and that is decided per
-      // generation, in startGenerate below. {{INTENT_CATALOG}} therefore stays
-      // in the template until then.
+      // The UI and calendar catalogues are the same for every request, so
+      // they are spliced in once. The intent catalogue is not spliced at
+      // all any more: find_intent_function (DeepSeekEngine.ets,
+      // VeraIntentIndex.ets) looks it up, along with the raw device
+      // registry, when the model decides it needs one.
       this.promptTemplate = skill
         .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
         .replace('{{CALENDAR_CATALOG}}', describeCalendarForPrompt())
-      // The phone's own list of intents, read once. It is what makes
-      // intent.call usable: without an address the model would have to invent
-      // one, and an invented address fails silently.
+      // The phone's own list of intents, read once. find_intent_function
+      // reads it through VeraIntentRegistry.registryEntries(); without an
+      // address the model would have to invent one, and an invented address
+      // fails silently.
       loadRegistry().then((count: number) => {
-        console.info('VERA-REGISTRY ' + count.toString() + ' intents available to intent.call')
+        console.info('VERA-REGISTRY ' + count.toString() + ' intents available to find_intent_function')
       })
       // The sdk selector's index (docs/selector-design.md): loaded once here
       // so it's ready before DeepSeekEngine's find_sdk_function tool call
@@ -295,11 +284,6 @@ struct GeneratePage {
         console.info('VERA-SDK ' + count.toString() + ' sdk functions available to search')
       })
       this.systemPrompt = this.promptTemplate
-        .replace('{{INTENT_CATALOG}}', INTENTS_ENABLED ? describeIntentsForPrompt() :
-          '  (disabled for now -- do not use intent.call)')
-        .replace('{{DEVICE_INTENTS}}', INTENTS_ENABLED
-          ? '  (the list is read from the phone when you generate)'
-          : '  (disabled for now -- do not use intent.call)')
       this.grammar = await loadRawfileText(mgr, 'vera.gbnf')
       this.status = 'Resources loaded'
     } catch (e) {
@@ -440,60 +424,12 @@ struct GeneratePage {
     this.startRun(this.prompt.trim())
     this.genStartTime = Date.now()
     this.lastRequest = this.prompt.trim()
-    this.status = 'Choosing which intents this needs...'
-    this.applySelection(this.prompt.trim()).then(() => {
-      this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')... ' + this.selectionNote
-      this.runAttempt(this.prompt.trim(), '')
-    })
-  }
-
-  /**
-   * Picks the intent rows this request needs and splices them into the prompt.
-   *
-   * Runs once per generation rather than once per attempt: the request does not
-   * change between retries, and a retry is already the slow path.
-   *
-   * The chosen domains go into the status line because a selection that dropped
-   * something is otherwise invisible -- the app would simply come back without
-   * the feature, a minute later, with nothing to point at.
-   */
-  private async applySelection(userPrompt: string): Promise<void> {
-    if (this.promptTemplate.length === 0) { return }
-    if (!INTENTS_ENABLED) {
-      // Skip Jev entirely -- not just hidden from the prompt, not called.
-      // VERA-PICK has been seen to time out in practice (docs/selector-
-      // design.md); no reason to pay for that round trip while this is off.
-      this.systemPrompt = this.promptTemplate
-        .replace('{{INTENT_CATALOG}}', '  (disabled for now -- do not use intent.call)')
-        .replace('{{DEVICE_INTENTS}}', '  (disabled for now -- do not use intent.call)')
-      this.selectionNote = 'intents disabled'
-      return
-    }
-    let selection: Selection = everything('all intents')
-    try {
-      selection = await selectDomains(userPrompt, settings.getSelectorKey())
-    } catch (_e) {
-      // selectDomains does not throw, but a generation must not depend on that.
-      selection = everything('all intents (selector failed)')
-    }
-    // Two questions, two jobs. The domains decide which catalogue rows are
-    // described, and they are good at that: a row belongs to one part of the
-    // phone and says so. The addresses are picked intent by intent, because a
-    // domain cannot tell a torch from a camera and the registry has no words
-    // to match on beyond the intent's own name.
-    let picked: TargetChoice = new TargetChoice([], 'no pick')
-    try {
-      picked = await selectTargets(userPrompt, settings.getSelectorKey())
-    } catch (_e) {
-    }
-    let registry = describeTargetsForPrompt(picked.targets, userPrompt)
-    this.systemPrompt = this.promptTemplate
-      .replace('{{INTENT_CATALOG}}', describeIntentsForPrompt(selection.domains))
-      .replace('{{DEVICE_INTENTS}}', registry.length > 0
-        ? registry
-        : '  (none found on this phone -- use the checked list above)')
-    this.selectionNote = selection.note + ' | ' + picked.note +
-      (registry.length > 0 ? ' | ' + registry.length.toString() + ' chars of addresses' : '')
+    // No pre-generation intent selection step any more: find_intent_function
+    // and find_sdk_function (DeepSeekEngine.ets) are looked up by the model
+    // itself, mid-generation, the first time either is worth calling.
+    // JevSelector.ets is unchanged and still callable; nothing here calls it.
+    this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
+    this.runAttempt(this.prompt.trim(), '')
   }
 
   private async doServerGenerate(): Promise<void> {
