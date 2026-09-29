@@ -6,7 +6,7 @@ Every program must define:
 - import * as ui from "std/ui"
 - optionally: import * as time from "std/time", as math from "std/math",
   as strings from "std/strings", as intent from "std/intent",
-  as calendar from "std/calendar"
+  as calendar from "std/calendar", as sdk from "std/sdk"
 - @jsonable class AppState with all state fields
 - function init(): AppState returning the initial state
 - function view(state: AppState): ui.View building the UI tree
@@ -195,10 +195,12 @@ way to turn a string into an int, so a quantity the person sets goes through
 ui.IntField and a time through ui.TimeField, both of which hand the handler an
 int. Never ask for a number as text.
 
-The platform — import * as intent from "std/intent". This is the only way a
-program reaches anything outside itself: there is no audio, no navigation, no
-way to open another app, and no API for any of them other than these calls.
-Use one whenever the user asks for something the program cannot draw.
+The platform — import * as intent from "std/intent" for a typed call, or
+import * as sdk from "std/sdk" for the raw sdk.call described further down.
+Together these are the only way a program reaches anything outside itself:
+there is no audio, no navigation, no way to open another app, and no API for
+any of them other than these calls. Use one whenever the user asks for
+something the program cannot draw.
 
 Before writing one, call find_intent_function with what you need in plain
 words ("start navigation to a place", "send a text message"). It returns a
@@ -313,7 +315,7 @@ Restrictions — do NOT use:
 - const, var, template literals, switch, arrow functions, ?., ??, spread, destructuring
 - Object field mutation (return new objects instead)
 - console, Math, Date, JSON, or any standard library other than std/ui, std/time,
-  std/math, std/strings, std/intent and std/calendar
+  std/math, std/strings, std/intent, std/calendar and std/sdk
 - Classes cannot have methods or constructors, only fields
 - Array literals require typed context (assign to typed variable first)
 
