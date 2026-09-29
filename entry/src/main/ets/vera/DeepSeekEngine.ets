@@ -48,9 +48,11 @@ const INTENT_SEARCH_LIMIT = 8
 /**
  * How many tool-call round trips one generation tolerates, across both
  * tools. Each round is a full request-response cycle against DeepSeek, so
- * this bounds latency and cost, not just correctness -- a model that never
- * stops asking still gets cut off and falls through to "produced empty
- * output", a failure mode runAttempt already handles.
+ * this bounds latency and cost, not just correctness. Seen live at 4: a
+ * model still legitimately refining its search on the last allowed round --
+ * generate() forces one final, tools-off request in that case rather than
+ * ending with nothing, so this bounds cost without risking "produced empty
+ * output" the way just stopping cold would.
  */
 const MAX_TOOL_ROUNDS = 4
 
@@ -131,7 +133,7 @@ function toolSchemas(): Record<string, Object>[] {
 
   let intentFn: Record<string, Object> = {}
   intentFn['name'] = INTENT_TOOL_NAME
-  intentFn['description'] = 'Looks up how to reach another app on the phone: a typed intent.<name> call from the checked catalogue when one fits, or a raw intent.call target otherwise. Returns a few candidates with a ready-to-adapt call. Never invent a target: only use one returned by this tool.'
+  intentFn['description'] = 'Looks up how to reach another app on the phone: a typed intent.<name> call from the checked catalogue when one fits, or a raw sdk.call target otherwise. Returns a few candidates with a ready-to-adapt call. Never invent a target: only use one returned by this tool.'
   intentFn['parameters'] = needParameter('Plain-language description of what another app needs to do, e.g. "start navigation to a place" or "send a text message".')
   let intentTool: Record<string, Object> = {}
   intentTool['type'] = 'function'
@@ -299,10 +301,11 @@ export class DeepSeekEngine {
 
     let round = 0
     let turn: StreamTurn = new StreamTurn()
+    let stillAsking = false
     while (round < MAX_TOOL_ROUNDS) {
       round++
       try {
-        turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken)
+        turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, true)
       } catch (e) {
         this.generating = false
         throw e as Error
@@ -314,8 +317,10 @@ export class DeepSeekEngine {
       if (this.cancelled) { break }
       if (turn.finishReason !== 'tool_calls' || turn.toolCalls.length === 0) {
         this.text += turn.content
+        stillAsking = false
         break
       }
+      stillAsking = true
       messages.push(assistantToolCallMessage(turn.toolCalls))
       for (let call of turn.toolCalls) {
         let need = ''
@@ -341,6 +346,25 @@ export class DeepSeekEngine {
             (results.length > 0 ? ' top=' + results[0].kit + '.' + results[0].module + '.' + results[0].name : ''))
           messages.push(toolResultMessage(call.id, sdkResultsJson(results)))
         }
+      }
+    }
+
+    // MAX_TOOL_ROUNDS was reached while the model was still asking for more:
+    // without this, its last round of tool results are computed and pushed
+    // to `messages` but never sent back, and the generation ends with
+    // nothing -- "produced empty output" -- even though good answers were
+    // sitting right there. One last request, tools left off so it cannot
+    // ask again, forces a real answer out of what it already has.
+    if (stillAsking && !this.cancelled) {
+      try {
+        let final = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, false)
+        this.inputTokens = this.inputTokens + final.inputTokens
+        this.outputTokens = this.outputTokens + final.outputTokens
+        this.finishReason = final.finishReason
+        this.text += final.content
+      } catch (e) {
+        this.generating = false
+        throw e as Error
       }
     }
 
@@ -370,7 +394,7 @@ export class DeepSeekEngine {
 
   /** One request/response cycle: sends `messages`, returns what streamed back. */
   private async streamOnce(messages: Record<string, Object>[], temperature: number,
-      maxTokens: number, onToken: TokenCallback): Promise<StreamTurn> {
+      maxTokens: number, onToken: TokenCallback, allowTools: boolean): Promise<StreamTurn> {
     let key = settings.getApiKey()
     this.buffer = ''
     this.rawBody = ''
@@ -402,7 +426,7 @@ export class DeepSeekEngine {
       code = await client.requestInStream(settings.getBaseUrl() + '/chat/completions', {
         method: http.RequestMethod.POST,
         header: header,
-        extraData: this.buildBody(messages, temperature, maxTokens),
+        extraData: this.buildBody(messages, temperature, maxTokens, allowTools),
         connectTimeout: 15000,
         readTimeout: 300000
       })
@@ -426,7 +450,8 @@ export class DeepSeekEngine {
     return turn
   }
 
-  private buildBody(messages: Record<string, Object>[], temperature: number, maxTokens: number): string {
+  private buildBody(messages: Record<string, Object>[], temperature: number,
+      maxTokens: number, allowTools: boolean): string {
     let payload: Record<string, Object> = {}
     payload['model'] = settings.getModel()
     payload['messages'] = messages
@@ -440,7 +465,10 @@ export class DeepSeekEngine {
     payload['thinking'] = thinking
     payload['temperature'] = temperature
     payload['max_tokens'] = maxTokens
-    payload['tools'] = toolSchemas()
+    // Left off on the forced final round (generate()) so a model that would
+    // otherwise keep asking has no way to -- it must answer with whatever
+    // tool results it already has.
+    if (allowTools) { payload['tools'] = toolSchemas() }
     return JSON.stringify(payload)
   }
 

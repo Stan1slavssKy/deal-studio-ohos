@@ -590,7 +590,10 @@ export struct VeraPreview {
   /** What the dialog says this call is, in the person's words where there are any. */
   private consentTitle(effect: HostEffect): string {
     if (effect.kind === 'sdk') {
-      let parts = effect.rawTarget.split('.')
+      // sdk.call's two target shapes (VeraCompiler.buildStdSdkModule):
+      // slash-separated (an intent address) or dot-separated (an sdk entry).
+      let sep = effect.rawTarget.indexOf('/') >= 0 ? '/' : '.'
+      let parts = effect.rawTarget.split(sep)
       return 'Run ' + parts[parts.length - 1]
     }
     if (effect.spec === null) { return 'Run ' + effect.rawTarget.split('/')[3] }
@@ -673,12 +676,18 @@ export struct VeraPreview {
         this.effectInt(effect, 'durationMinutes', 15),
         this.effectInt(effect, 'remindBefore', 0),
         this.effectText(effect, 'repeat'))
+    } else if (effect.kind === 'sdk' && effect.rawTarget.indexOf('/') >= 0) {
+      // An intent-style target reached through the unified sdk.call: the
+      // real backend already exists for this shape, so it gets real
+      // dispatch, exactly like a legacy intent.call would.
+      answer = runRawIntent(effect.rawTarget, effect.values, effect.rawMode)
     } else if (effect.kind === 'sdk') {
-      // Backend dispatch to the real OpenHarmony function is out of scope for
-      // now (docs/selector-design.md) -- the point of this phase was the
-      // selector and the compile-time check, not calling interface_sdk-js
-      // for real. The program still gets a well-formed answer rather than
-      // hanging, the same contract intent.call promises.
+      // An sdk-style target: backend dispatch to the real OpenHarmony
+      // function is out of scope for now (docs/selector-design.md) -- the
+      // point of this phase was the selector and the compile-time check, not
+      // calling interface_sdk-js for real. The program still gets a
+      // well-formed answer rather than hanging, the same contract
+      // intent.call promises.
       answer = Promise.resolve('error: sdk.call is not implemented yet')
     } else if (effect.spec === null) {
       answer = runRawIntent(effect.rawTarget, effect.values, effect.rawMode)

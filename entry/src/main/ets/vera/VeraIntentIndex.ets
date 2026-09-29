@@ -18,6 +18,12 @@
  * JevSelector.ets and its network round trips are untouched and still
  * callable; nothing here deletes them. GeneratePage simply stops invoking
  * them in favour of this.
+ *
+ * A raw registry hit is now offered as sdk.call, not intent.call: the two
+ * raw escape hatches are unified (VeraCompiler.buildStdSdkModule). std/intent
+ * itself, and its own `call`, are untouched for a saved program that already
+ * uses them -- this file just stops suggesting the old spelling for new
+ * generations.
  */
 
 import { INTENT_CATALOG, IntentSpec } from './VeraIntentCatalog'
@@ -26,9 +32,9 @@ import { identifierTokens, needWords } from './VeraSdkIndex'
 
 /** One candidate find_intent_function can return. */
 export class IntentEntry {
-  /** 'catalog' (typed, checked) or 'raw' (intent.call escape hatch). */
+  /** 'catalog' (typed, checked) or 'raw' (the sdk.call escape hatch). */
   kind: string = ''
-  /** catalog: the intent.<name> function; raw: the intent.call target. */
+  /** catalog: the intent.<name> function; raw: the sdk.call target. */
   name: string = ''
   domain: string = ''
   description: string = ''
@@ -68,7 +74,11 @@ function rawEntry(entry: RegistryEntry): IntentEntry {
   if (entry.words.length > 0) { bits.push(entry.words) }
   e.description = bits.join(', ')
   let mode = entry.modes.indexOf('background') >= 0 ? 'background' : 'foreground'
-  e.callHint = 'intent.call("' + entry.target + '", [], "' + mode + '", "yourHandlerName")'
+  // sdk.call, not intent.call: the two raw escape hatches are unified (see
+  // buildStdSdkModule in VeraCompiler.ets). Argument order is (target,
+  // params, handler, mode) -- mode trails because it is the optional one,
+  // unlike intent.call's own (target, params, mode, handler).
+  e.callHint = 'sdk.call("' + entry.target + '", [], "yourHandlerName", "' + mode + '")'
   e.nameTokens = identifierTokens(entry.intentName)
   e.descriptionTokens = requestWords(e.description)
   return e

@@ -778,13 +778,15 @@ export class UiHostEnvironment extends HostEnvironment {
   }
 
   /**
-   * The same shape as queueRawIntent, for the OpenHarmony SDK surface found
-   * through find_sdk_function rather than the intent catalogue. No mode
-   * argument -- sdk functions have no execute-mode concept the way an insight
-   * intent does. Unlike a raw intent, an invented target here is already
-   * caught at compile time (VeraCompiler.checkSdkArguments) against the same
-   * offline index this never has to read itself; what runs here is only what
-   * the compiler already accepted the shape of.
+   * The unified raw escape hatch: an sdk index entry (found through
+   * find_sdk_function) or, since VeraCompiler.buildStdSdkModule merged the
+   * two, an intent address (found through find_intent_function) -- told
+   * apart downstream by VeraPreview.runEffect on whether the target has a
+   * slash in it, the same test the compiler used to accept it. `mode` is the
+   * fourth, optional argument: omitted for an sdk-style target (meaningless
+   * there), present as "foreground"/"background" for an intent-style one --
+   * absent here just means the compiled call had fewer than 4 arguments, not
+   * that anything went wrong.
    */
   private queueSdk(args: RuntimeValue[]): RuntimeValue {
     if (!this.effectsAllowed) {
@@ -804,11 +806,13 @@ export class UiHostEnvironment extends HostEnvironment {
       values.set(key, asString(pairs[i + 1]))
       order.push(key)
     }
+    let mode = args.length > 3 ? asString(args[3]) : 'background'
     let id = this.nextEffectId
     this.nextEffectId = id + 1
     let effect = new HostEffect(id, 'sdk', 'call', null, values, asString(args[2]))
     effect.rawTarget = target
     effect.rawParams = order.join(' ')
+    effect.rawMode = mode
     this.pendingEffects.push(effect)
     return new VeraIntValue(id)
   }
