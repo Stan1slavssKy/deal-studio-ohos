@@ -130,7 +130,15 @@ function readAnswer(spec: IntentSpec, result: insightIntent.ExecuteResult): stri
  */
 export async function runRawIntent(target: string, values: Map<string, string>, mode: string): Promise<string> {
   let parts = target.split('/')
-  if (parts.length !== 4) { return 'error: target must be bundle/module/ability/IntentName' }
+  // Three parts, no intent name: nothing to tell the target, so just open it
+  // -- the raw-call equivalent of an IntentSpec with via: 'launch' (openCalendar
+  // being the reason this exists at all: ViewCalendarEvent refused an empty
+  // payload and is not a standard intent, so there was no contract to write,
+  // but the calendar app needs no contract to just be opened).
+  if (parts.length === 3) { return launchRawTarget(parts[0].trim(), parts[2].trim()) }
+  if (parts.length !== 4) {
+    return 'error: target must be bundle/module/ability/IntentName, or bundle/module/ability to just launch it'
+  }
   // The program wrote names and values; the object is built here, so a line
   // break or a quote in someone's shopping list cannot break the payload.
   let params: Record<string, Object> = {}
@@ -170,13 +178,16 @@ export async function runRawIntent(target: string, values: Map<string, string>, 
  * Opens the target's ability directly, for rows that have nothing to tell it.
  *
  * This is ordinary public API -- no intent framework, no system signature -- and
- * it is the right tool when the whole request is "show me that app".
+ * it is the right tool when the whole request is "show me that app". Shared by
+ * a catalogue row (via launchTarget) and a raw sdk.call three-part target (via
+ * runRawIntent) -- the same operation either way, just named by a spec or by
+ * the program directly.
  */
-async function launchTarget(spec: IntentSpec): Promise<string> {
+async function launchRawTarget(bundle: string, ability: string): Promise<string> {
   let context = AbilityContext.value
   if (context === null) { return 'error: no ability context yet' }
-  let want: Want = { bundleName: spec.bundle, abilityName: spec.ability }
-  hilog.info(DOMAIN, 'VERA', 'VERA-LAUNCH ' + spec.bundle + '/' + spec.ability)
+  let want: Want = { bundleName: bundle, abilityName: ability }
+  hilog.info(DOMAIN, 'VERA', 'VERA-LAUNCH ' + bundle + '/' + ability)
   try {
     await context.startAbility(want)
     return 'ok'
@@ -185,6 +196,10 @@ async function launchTarget(spec: IntentSpec): Promise<string> {
     hilog.error(DOMAIN, 'VERA', 'VERA-LAUNCH failed ' + err.code.toString() + ': ' + err.message)
     return 'error ' + err.code.toString() + ': ' + err.message
   }
+}
+
+async function launchTarget(spec: IntentSpec): Promise<string> {
+  return launchRawTarget(spec.bundle, spec.ability)
 }
 
 /**

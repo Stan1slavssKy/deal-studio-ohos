@@ -1,7 +1,6 @@
 import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter'
 import { CATALOG, ComponentSpec, ChildRule, stylesFor, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
 import { iconPath, iconNames } from './VeraIcons'
-import { INTENT_CATALOG, intentByName } from './VeraIntentCatalog'
 import { IntentParam } from './VeraIntentCatalog'
 import { CALENDAR_CATALOG, calendarFnByName } from './VeraCalendarCatalog'
 import { isValidSdkTarget } from './VeraSdkIndex'
@@ -1197,94 +1196,47 @@ function buildStdStringsModule(): ModuleInterface {
 }
 
 /**
- * The platform's intents, generated from VeraIntentCatalog.
- *
- * Each row yields two names: a class holding the intent's parameters and the
- * function that takes it. A record rather than positional arguments because
- * almost every intent parameter is a string -- swap two of them positionally
- * and the call still compiles and still runs, just wrongly. As fields they are
- * checked: an unknown one is E2022, a missing one E2024.
- *
- * The second argument is the name of the handler the answer comes back to,
- * spelled the way ui.Button spells its action. The result is an int request id,
- * because the call is an effect: the VM is synchronous and the platform is not.
- */
-function buildStdIntentModule(): ModuleInterface {
-  let fns: ExternalFunction[] = []
-  let classes: ExternalClass[] = []
-  for (let spec of INTENT_CATALOG) {
-    let paramsType = new VeraClassType('std/intent:' + spec.paramsClass, spec.paramsClass)
-    for (let p of spec.params) {
-      paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
-    }
-    classes.push(new ExternalClass(spec.paramsClass, paramsType))
-    fns.push(new ExternalFunction(spec.name, [paramsType, STRING], INT, false))
-  }
-  // The way out of the catalogue, for an intent nobody has written a row for.
-  //
-  // Every row above is a promise: the parameters were read out of a contract
-  // and the call was watched working on a phone. This one promises nothing. The
-  // program names the target and writes the platform's own parameter keys, and
-  // the compiler can check neither -- the phone has 810 intents and 734 of them
-  // declare no parameters at all, so there is nothing to check against.
-  //
-  // It exists because the alternative is worse: a catalogue that will never
-  // cover the phone, and a program that cannot even try. The cost is paid at
-  // the other end -- the person confirms every one of these before it runs,
-  // with the target and the payload in front of them, because nothing else in
-  // this system knows whether the call is a volume change or a payment.
-  //
-  // Parameters are pairs rather than JSON, and that is not a style choice: the
-  // first program written against a JSON string built one by concatenation, put
-  // a line break in it, and the payload never parsed. The language has no way
-  // to escape a string, so asking a program for JSON is asking it to be wrong
-  // eventually. Pairs it writes correctly by construction, and the host builds
-  // the object -- including a dotted key like "dstLocation.latitude", which
-  // nests exactly as a catalogue row's platformName does.
-  //
-  //   intent.call("com.huawei.hmos.settings/phone_settings/DefaultIntentBackgroundUiAbility/GetSettingSwitch",
-  //               ["itemName", "bluetooth"], "background", "onAnswer")
-  fns.push(new ExternalFunction('call',
-    [STRING, new VeraArrayType(STRING), STRING, STRING], INT, false))
-  return new ModuleInterface('std/intent', fns, classes)
-}
-
-/**
- * The one raw escape hatch for anything std/intent's typed catalogue and
- * std/calendar don't cover: the OpenHarmony system API surface (found
- * through find_sdk_function, VeraSdkIndex, built offline by tools/build-sdk-
- * index.py from interface_sdk-js) and, unified here, raw device intents too
- * (found through find_intent_function, VeraIntentIndex) -- what used to be
- * std/intent's own `call`. See docs/selector-design.md.
+ * The one way a program reaches anything outside itself other than
+ * std/calendar: the OpenHarmony system API surface (found through
+ * find_sdk_function, VeraSdkIndex, built offline by tools/build-sdk-index.py
+ * from interface_sdk-js) and device intents (found through
+ * find_intent_function, VeraIntentIndex) -- both the curated, probed rows
+ * that used to be a typed intent.<name> and the raw device registry that
+ * always came back as intent.call. See docs/selector-design.md.
  *
  *   sdk.call("CameraKit.CameraManager.setTorchMode", ["mode", "0"], "onAnswer")
  *   sdk.call("com.huawei.hmos.meetimeservice/phone_default/IntentUIAbility/SendTextMessage",
  *            [], "onAnswer", "background")
+ *   sdk.call("com.huawei.hmos.calendar/phone/MainAbility", [], "onAnswer")
  *
  * One function, two target shapes, told apart by checkSdkArguments on
- * whether the target has slashes (an intent address) or dots (an sdk
- * index entry) -- the same distinction the two tools already encode in what
- * they hand back. The trailing `mode` is optional and only means anything
- * for an intent-style target; it trails, rather than sitting before `handler`
- * the way it does on std/intent's own `call`, because only a trailing
- * parameter may be optional here. Execution branches the same way
+ * whether the target has slashes (an intent address) or dots (an sdk index
+ * entry) -- the same distinction the two tools already encode in what they
+ * hand back. An intent-style target is itself two shapes, told apart by
+ * whether it has three or four slash-separated parts: three
+ * (bundle/module/ability) just launches the target, the way opening the
+ * calendar app does; four (...ability/IntentName) goes through
+ * insightIntentDriver with a name and parameters. See runRawIntent in
+ * VeraIntents.ets. The trailing `mode` is optional and only means anything
+ * for the four-part shape. Execution branches the same way
  * (VeraPreview.runEffect): an intent-style target gets real dispatch through
- * runRawIntent, an sdk-style one is still a stub -- calling the real
- * OpenHarmony function for that target is a backend question this project
- * has deliberately left alone.
+ * runRawIntent, an sdk-style one is real for whatever VeraSdkBackend.ets has
+ * a row for and the same honest stub as always otherwise.
  *
- * What std/intent's own `call` cannot check, this can for an sdk-style
- * target: the index it's checked against is a static artifact, not a
- * device-only registry, so a target the model invented instead of asking is
- * a compile error here rather than a silent no-op on the phone. An
- * intent-style target still can't be checked that way -- the registry is
- * device-only -- so it gets the same structural check std/intent's `call`
- * always did.
- *
- * std/intent's own module and its `call` are untouched, for a program saved
- * before this existed; nothing here removes them, and nothing generated from
- * now on is told to write intent.call any more (VeraIntentIndex.ets, vera-
- * skill.txt).
+ * What used to be std/intent's typed catalogue cannot check any more (the
+ * closed set of allowed values for a field, e.g. startNavigate's traffic
+ * type) once its rows are reached through this raw call instead: the model
+ * is shown every allowed value, translated to the platform's own spelling,
+ * in find_intent_function's own answer, but nothing here can catch it writing
+ * a value that was not on that list. That is a real, accepted cost of
+ * retiring the typed catalogue (see the commit that removed
+ * buildStdIntentModule, revert it if this turns out to matter) -- sdk-style
+ * targets already carried exactly this risk, and now intent-style ones do
+ * too. What this can still check, for an sdk-style target, that a
+ * device-only registry entry never could: the index it's checked against is
+ * a static artifact, not read from the phone, so a target the model invented
+ * instead of asking is a compile error here rather than a silent no-op on
+ * the phone.
  */
 function buildStdSdkModule(): ModuleInterface {
   let fns: ExternalFunction[] = [
@@ -1403,7 +1355,6 @@ class Analyzer {
     registry.set('std/time', buildStdTimeModule())
     registry.set('std/math', buildStdMathModule())
     registry.set('std/strings', buildStdStringsModule())
-    registry.set('std/intent', buildStdIntentModule())
     registry.set('std/calendar', buildStdCalendarModule())
     registry.set('std/sdk', buildStdSdkModule())
     for (let decl of this.model.application.imports) {
@@ -1755,7 +1706,7 @@ class Analyzer {
     }
     this.checkStyleArguments(expr, callee)
     this.checkComposition(expr, callee)
-    this.checkIntentArguments(expr, callee)
+    this.checkCalendarArguments(expr, callee)
     this.checkSdkArguments(expr, callee)
     return callee.result
   }
@@ -1909,7 +1860,7 @@ class Analyzer {
   }
 
   /**
-   * The same idea as checkStyleArguments, for std/intent.
+   * The same idea as checkStyleArguments, for std/calendar.
    *
    * checkObject already rejects an unknown or missing field, so what is left is
    * the two things a type cannot say: that a field's value comes from a closed
@@ -1919,28 +1870,19 @@ class Analyzer {
    * while a runtime trap surfaces minutes later, on a program that already
    * looked finished.
    *
+   * Used to also check std/intent's own typed catalogue the same way;
+   * removed along with that catalogue (buildStdIntentModule) in favour of
+   * sdk.call for every intent, catalogue row or not. checkSdkArguments is
+   * what checks an sdk.call now.
+   *
    * Literal arguments only: a computed record or a computed handler name cannot
    * be resolved here and is left alone.
    */
-  private checkIntentArguments(expr: CallExpression, callee: VeraFunctionType): void {
-    // Both host-backed modules take (record, handlerName) and both want the
-    // same two checks, so they share one implementation. Only the table of
-    // field specs differs.
+  private checkCalendarArguments(expr: CallExpression, callee: VeraFunctionType): void {
     let label = ''
     let params: IntentParam[] = []
-    const intentPrefix = 'external:std/intent:'
     const calendarPrefix = 'external:std/calendar:'
-    if (callee.identity === intentPrefix + 'call') {
-      this.checkRawIntentArguments(expr)
-      return
-    }
-    if (callee.identity.startsWith(intentPrefix)) {
-      let name = callee.identity.substring(intentPrefix.length)
-      let spec = intentByName(name)
-      if (spec === null) return
-      label = 'intent.' + name
-      params = spec!.params
-    } else if (callee.identity.startsWith(calendarPrefix)) {
+    if (callee.identity.startsWith(calendarPrefix)) {
       let name = callee.identity.substring(calendarPrefix.length)
       let fn = calendarFnByName(name)
       if (fn === null) return
@@ -1983,85 +1925,27 @@ class Analyzer {
 
   /**
    * What little can be checked about intent.call.
-   *
-   * Not the parameters -- that is the whole point of the escape hatch, and the
-   * phone has no contract to check them against. But the shape of the target,
-   * the mode and the payload are checkable when they are written out, and each
-   * of them is a mistake the model makes and the platform answers with silence:
-   * a target with a missing segment goes nowhere, a mode that is not one of the
-   * two is ignored, and a payload that is not an object never reaches the
-   * target as parameters at all.
-   *
-   * A computed argument is left alone, as everywhere else here.
    */
-  private checkRawIntentArguments(expr: CallExpression): void {
-    if (expr.argumentsList.length > 0 && expr.argumentsList[0] instanceof StringExpression) {
-      let arg = expr.argumentsList[0]
-      let target = (arg as StringExpression).value
-      let parts = target.split('/')
-      let empty = false
-      for (let part of parts) { if (part.trim().length === 0) { empty = true } }
-      if (parts.length !== 4 || empty) {
-        this.addError('E2109', 'intent.call target must be ' +
-          '"bundle/module/ability/IntentName", four parts, none empty; got "' + target + '"', arg.span)
-      }
-    }
-    if (expr.argumentsList.length > 1 && expr.argumentsList[1] instanceof ArrayExpression) {
-      let arg = expr.argumentsList[1]
-      let items = (arg as ArrayExpression).elements
-      if (items.length % 2 !== 0) {
-        this.addError('E2109', 'intent.call parameters are name and value in pairs, so the ' +
-          'array must have an even number of items; got ' + items.length.toString(), arg.span)
-      }
-      for (let i = 0; i + 1 < items.length; i = i + 2) {
-        if (!(items[i] instanceof StringExpression)) { continue }
-        if ((items[i] as StringExpression).value.trim().length === 0) {
-          this.addError('E2109', 'intent.call parameter names cannot be empty', items[i].span)
-        }
-      }
-    }
-    if (expr.argumentsList.length > 2 && expr.argumentsList[2] instanceof StringExpression) {
-      let arg = expr.argumentsList[2]
-      let mode = (arg as StringExpression).value
-      if (mode !== 'foreground' && mode !== 'background') {
-        this.addError('E2109', 'intent.call mode must be "foreground" or "background"; got "' +
-          mode + '"', arg.span)
-      }
-    }
-    if (expr.argumentsList.length < 4 || !(expr.argumentsList[3] instanceof StringExpression)) return
-    let arg = expr.argumentsList[3]
-    let handlerName = (arg as StringExpression).value
-    let fn = this.model.functions.get(handlerName)
-    if (fn === undefined) {
-      this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span)
-      return
-    }
-    if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
-      this.addError('E2106', 'intent.call answers with a string, so "' + handlerName +
-        '" must take (state, value: string)', arg.span)
-    }
-  }
 
   /**
-   * sdk.call's target, checked against a closed set -- the one thing
-   * intent.call cannot do, because VeraSdkIndex is built offline from
-   * interface_sdk-js rather than read from the device at runtime. A model
-   * that skips find_sdk_function and writes a target from memory gets this
-   * error back, and the existing retry loop (GeneratePage.runAttempt) is
-   * what gives it a chance to call the tool instead of failing quietly on
-   * the phone the way an invented intent.call target does.
+   * sdk.call covers two target shapes (VeraCompiler.buildStdSdkModule): an
+   * intent address (bundle/module/ability/IntentName or, to just launch the
+   * target, bundle/module/ability -- slash-separated and device-only, so only
+   * the shape can be checked) or an sdk index entry (kit.module.name,
+   * dot-separated, a static artifact built offline from interface_sdk-js, so
+   * checked against a real closed set built by tools/build-sdk-index.py).
+   * Told apart by whether the literal target has a slash in it -- the same
+   * test a person would use reading it.
    *
-   * The set of other checks (pairs, non-empty names, handler signature)
-   * mirrors checkRawIntentArguments; there is no mode argument here, since
-   * sdk functions have no execute-mode concept.
-   */
-  /**
-   * sdk.call covers two target shapes now (VeraCompiler.buildStdSdkModule):
-   * an intent address (bundle/module/ability/IntentName, slash-separated,
-   * device-only, so only the shape can be checked) or an sdk index entry
-   * (kit.module.name, dot-separated, a static artifact, so checked against a
-   * real closed set). Told apart by whether the literal target has a slash
-   * in it -- the same test a person would use reading it.
+   * An sdk-style target the model invented instead of calling
+   * find_sdk_function is a compile error here (E2110) -- the existing retry
+   * loop (GeneratePage.runAttempt) gives it a chance to call the tool
+   * instead. An intent-style target has no such closed set to check against
+   * (the registry is read from the device, not a static artifact), so an
+   * invented one only fails silently on the phone -- the same risk a raw
+   * intent target always carried, and now every intent-style target carries
+   * it, catalogue-derived or not, since std/intent's typed catalogue no
+   * longer exists to check field values at compile time.
    */
   private checkSdkArguments(expr: CallExpression, callee: VeraFunctionType): void {
     if (callee.identity !== 'external:std/sdk:call') return
@@ -2072,9 +1956,10 @@ class Analyzer {
         let parts = target.split('/')
         let empty = false
         for (let part of parts) { if (part.trim().length === 0) { empty = true } }
-        if (parts.length !== 4 || empty) {
+        if ((parts.length !== 4 && parts.length !== 3) || empty) {
           this.addError('E2109', 'an intent-style sdk.call target must be ' +
-            '"bundle/module/ability/IntentName", four parts, none empty; got "' + target + '"', arg.span)
+            '"bundle/module/ability/IntentName", or "bundle/module/ability" to just launch it; got "' +
+            target + '"', arg.span)
         }
       } else if (!isValidSdkTarget(target)) {
         this.addError('E2110', 'sdk.call target "' + target + '" is not one find_sdk_function ' +

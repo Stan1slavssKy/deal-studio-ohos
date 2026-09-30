@@ -5,8 +5,8 @@ VERA-L uses TypeScript syntax with types: int, number, boolean, string, user cla
 Every program must define:
 - import * as ui from "std/ui"
 - optionally: import * as time from "std/time", as math from "std/math",
-  as strings from "std/strings", as intent from "std/intent",
-  as calendar from "std/calendar", as sdk from "std/sdk"
+  as strings from "std/strings", as calendar from "std/calendar",
+  as sdk from "std/sdk"
 - @jsonable class AppState with all state fields
 - function init(): AppState returning the initial state
 - function view(state: AppState): ui.View building the UI tree
@@ -195,20 +195,27 @@ way to turn a string into an int, so a quantity the person sets goes through
 ui.IntField and a time through ui.TimeField, both of which hand the handler an
 int. Never ask for a number as text.
 
-The platform — import * as intent from "std/intent" for a typed call, or
-import * as sdk from "std/sdk" for the raw sdk.call described further down.
-Together these are the only way a program reaches anything outside itself:
-there is no audio, no navigation, no way to open another app, and no API for
-any of them other than these calls. Use one whenever the user asks for
-something the program cannot draw.
+The platform — import * as sdk from "std/sdk" for sdk.call, described further
+down. Together with std/calendar it is the only way a program reaches
+anything outside itself: there is no audio, no navigation, no way to open
+another app, and no API for any of them other than these calls. Use one
+whenever the user asks for something the program cannot draw.
 
-Before writing one, call find_intent_function with what you need in plain
-words ("start navigation to a place", "send a text message"). It returns a
-few real candidates, each already shaped as a call you can adapt -- either a
-typed intent.<name>(...) from the checked catalogue, or a raw sdk.call(...)
-target for something the catalogue does not cover. Never write a target you
-did not get back from that call: a wrong address is accepted by the platform
-and does nothing, so there is no error to catch it.
+Before writing one, call find_intent_function or find_sdk_function with what
+you need in plain words ("start navigation to a place", "send a text
+message", "read the current battery level"). Each returns a few real
+candidates, already shaped as an sdk.call you can copy -- with real platform
+values already substituted in, so you never have to invent one. Never write a
+target, or a parameter value, you did not get back from one of these calls: a
+wrong sdk target is a compile error, a wrong intent address or value is
+accepted by the platform and does nothing, so there is no error to catch it.
+
+find_intent_function's answer says which kind each candidate is: "catalog"
+means the address and every value shown for it were read from a real
+specification or probed on a phone -- trust it and use the values exactly as
+shown. "raw" means it came from this device's own intent registry, unchecked
+-- it may take parameters nobody has confirmed, or none at all; still prefer
+it over inventing something, but expect it to do nothing if the guess is wrong.
 
 The calendar — import * as calendar from "std/calendar". This writes into the
 phone's own calendar, so the event shows up in the Calendar app and the system
@@ -216,61 +223,60 @@ reminds the user even when this program is not running.
 
 {{CALENDAR_CATALOG}}
 
-Same rules as an intent call: every field of the record must be written, call it
-only from a handler and never from view, and the answer arrives later as a call
-to the handler you named, which takes (state, value: string). The answer is
-"ok, event 42" or an error line. The person may refuse the calendar permission,
-and then every call answers with an error -- show it rather than hiding it.
-
-A typed intent call, once find_intent_function has given you one, takes a
-record of parameters and the name of a handler, and returns an int request id
-you can ignore:
-  intent.playMusicList({ scene: "EVENING_SCENE" }, "onMusicAnswer")
+A calendar call takes a record of parameters and the name of a handler, and
+returns an int request id you can ignore:
+  calendar.addEvent({ title: "Dentist", hour: "14", minute: "0",
+    durationMinutes: "30", remindBefore: "60", repeat: "once" }, "onAnswer")
 Rules that are not obvious:
   - Every field of the record must be written, even one you do not want to send.
     Send "" for those; there are no optional fields and no defaults.
-  - Only the values find_intent_function listed for that field are accepted.
-    Anything else is a compile error, and so is a field name that is not listed.
+  - Only the values listed for a field are accepted. Anything else is a compile
+    error, and so is a field name that is not listed.
   - Call it only from a handler, never from view. view runs again on every
     change, so a call from there would fire on every repaint.
   - The answer arrives later, as a call to the handler you named, which must be
-    function name(state: AppState, value: string): AppState. The string is "ok",
-    or "declined code=100060202" when the app refused, or "error 202: ..." when
-    the system did. Keep it and show it -- it is the only sign the call worked.
-  - A call that changes something is shown to the person before it runs, and
-    they may refuse it. Then the handler is called with "declined by the
-    person". That is a normal outcome, not an error: say so and leave the state
-    as it was.
+    function name(state: AppState, value: string): AppState. The answer is
+    "ok, event 42" or an error line. The person may refuse the calendar
+    permission, and then every call answers with an error -- show it rather
+    than hiding it.
 
-One raw call, sdk.call, reaches anything else: a device intent
-find_intent_function found that the checked catalogue does not cover, or a
-platform SDK function find_sdk_function found. Call whichever tool fits what
-you need in plain words ("read the current battery level", "send a text
-message") first. Never write a target you did not get back from one of them
--- for an sdk target that is a compile error, for an intent address it is
-accepted by the platform and does nothing, so there is no error to catch it.
+sdk.call reaches everything else: a device intent find_intent_function found,
+or a platform SDK function find_sdk_function found. Call whichever tool fits
+what you need in plain words first. Never write a target you did not get back
+from one of them -- for an sdk target that is a compile error, for an intent
+address it is accepted by the platform and does nothing, so there is no error
+to catch it.
 
   sdk.call("CameraKit.CameraManager.setTorchMode", ["mode", "0"], "onAnswer")
 
-  sdk.call("com.huawei.hmos.settings/phone_settings/DefaultIntentBackgroundUiAbility/GetSettingSwitch",
-           ["itemName", "bluetooth"], "onAnswer", "background")
+  sdk.call("com.huawei.hmsapp.music/phone/MainAbility/PlayMusicList",
+           ["sceneType", "EVENING_SCENE"], "onAnswer", "background")
 
-  - The first argument is the target exactly as the tool returned it.
+  sdk.call("com.huawei.hmos.calendar/phone/MainAbility", [], "onAnswer")
+
+  - The first argument is the target exactly as the tool returned it. An
+    intent address is bundle/module/ability/IntentName (four parts) to call a
+    named intent with parameters, or bundle/module/ability (three parts, no
+    trailing name) to just open the target when it has nothing to be told --
+    find_intent_function tells you which shape a given candidate needs; never
+    guess which one a target wants.
   - The second is name, value, name, value in one array of strings, or [] when
-    there is nothing to send. Never write JSON yourself: you cannot escape a
+    there is nothing to send -- always [] for a three-part target, since there
+    is nothing to tell it. Never write JSON yourself: you cannot escape a
     quote or a line break, and the payload would be broken by the first item
-    of someone's shopping list.
+    of someone's shopping list. Use the exact platform value the tool showed
+    you, translated already if the field needed it -- never a value you typed
+    from the request itself.
   - The third is the handler's name.
-  - The fourth, "background" or "foreground", only exists for an intent
-    address -- leave it off for an sdk target, and write it exactly as
-    find_intent_function returned it otherwise.
+  - The fourth, "background" or "foreground", only exists for a four-part
+    intent target -- leave it off otherwise, and write it exactly as
+    find_intent_function returned it.
   - The answer arrives at the handler you named: the target's own result as
     JSON text, "ok", an error line, or "declined by the person".
 
 Every sdk.call reaching a device intent is shown to the person before it
-runs. Prefer std/calendar, or an intent find_intent_function gave you,
-whenever it fits. Reach for an sdk.call target only for a capability neither
-offers, and only after the matching tool has told you it actually exists.
+runs. Prefer std/calendar whenever it fits, and prefer a "catalog" candidate
+over a "raw" one when find_intent_function offers both for the same request.
 
 Loops come in two forms and there is no other -- no for(;;), no ++ and no +=:
   for (let e: Entry of log) { ... }        the type annotation is required
@@ -315,7 +321,7 @@ Restrictions — do NOT use:
 - const, var, template literals, switch, arrow functions, ?., ??, spread, destructuring
 - Object field mutation (return new objects instead)
 - console, Math, Date, JSON, or any standard library other than std/ui, std/time,
-  std/math, std/strings, std/intent, std/calendar and std/sdk
+  std/math, std/strings, std/calendar and std/sdk
 - Classes cannot have methods or constructors, only fields
 - Array literals require typed context (assign to typed variable first)
 

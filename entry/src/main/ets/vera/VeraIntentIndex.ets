@@ -19,30 +19,53 @@
  * callable; nothing here deletes them. GeneratePage simply stops invoking
  * them in favour of this.
  *
- * A raw registry hit is now offered as sdk.call, not intent.call: the two
- * raw escape hatches are unified (VeraCompiler.buildStdSdkModule). std/intent
- * itself, and its own `call`, are untouched for a saved program that already
- * uses them -- this file just stops suggesting the old spelling for new
- * generations.
+ * Both a catalogue row and a raw registry hit are now offered as sdk.call,
+ * never intent.call or a typed intent.<name>: std/intent is no longer a
+ * module a new program can import at all (VeraCompiler.collectImports), so
+ * sdk.call is the only way a program written from now on reaches an intent.
+ * A catalogue row's real address, mode and probed platform values (including
+ * any valueMap translation, e.g. "work" -> the platform's own literal) are
+ * substituted directly into the suggested call, and 'launch' rows (nothing to
+ * tell the target, e.g. opening the calendar app) come back as a three-part
+ * target -- see runRawIntent in VeraIntents.ets for how the two target shapes
+ * are told apart and run. std/intent is no longer registered by the compiler
+ * at all (a separate, revertible commit), so a program saved before that
+ * change keeps running from its existing bytecode but cannot be recompiled
+ * (Refine) without reverting it.
  */
 
-import { INTENT_CATALOG, IntentSpec } from './VeraIntentCatalog'
+import { INTENT_CATALOG, IntentSpec, IntentParam } from './VeraIntentCatalog'
 import { registryEntries, RegistryEntry, requestWords } from './VeraIntentRegistry'
 import { identifierTokens, needWords } from './VeraSdkIndex'
 
 /** One candidate find_intent_function can return. */
 export class IntentEntry {
-  /** 'catalog' (typed, checked) or 'raw' (the sdk.call escape hatch). */
+  /** 'catalog' (probed, so its address and values are trustworthy) or 'raw'
+   * (the device registry, unverified). Both come back as an sdk.call. */
   kind: string = ''
-  /** catalog: the intent.<name> function; raw: the sdk.call target. */
+  /** An internal identifier only -- never shown to the model. */
   name: string = ''
   domain: string = ''
   description: string = ''
-  /** A ready-to-adapt call, so the model copies a working shape rather than
-   * reconstructing one from a param list. */
+  /** A ready-to-copy sdk.call, so the model copies a working shape -- with
+   * real platform values already substituted in -- rather than reconstructing
+   * one from a param list. */
   callHint: string = ''
   nameTokens: string[] = []
   descriptionTokens: string[] = []
+}
+
+/**
+ * The one value a closed-set param would send for a given program-level
+ * value, translating through the row's own valueMap when it has one (e.g.
+ * startNavigate's "work" -> "公司") and passing it through unchanged
+ * otherwise. Every closed-set value the row accepts is shown this way in the
+ * description, not just the first, so the model can write whichever one the
+ * request actually needs instead of only ever copying the example.
+ */
+function platformValue(p: IntentParam, programValue: string): string {
+  let mapped = p.valueMap.get(programValue)
+  return mapped !== undefined ? mapped as string : programValue
 }
 
 function catalogEntry(spec: IntentSpec): IntentEntry {
@@ -51,14 +74,27 @@ function catalogEntry(spec: IntentSpec): IntentEntry {
   e.name = spec.name
   e.domain = spec.domain
   let fields: string[] = []
-  let example: string[] = []
+  let pairs: string[] = []
   for (let p of spec.params) {
-    let vals = p.values.length > 0 ? ', one of: ' + p.values.join(' ') : ''
-    fields.push(p.name + ' (' + p.kind + vals + ')')
-    example.push(p.name + ': "' + (p.values.length > 0 ? p.values[0] : '') + '"')
+    if (p.values.length > 0) {
+      let shown: string[] = []
+      for (let v of p.values) { shown.push(v + '=' + platformValue(p, v)) }
+      fields.push(p.platformName + ' (one of: ' + shown.join(' ') + ')')
+    } else {
+      fields.push(p.platformName + ' (' + p.kind + ')')
+    }
+    let example = p.values.length > 0 ? platformValue(p, p.values[0]) : ''
+    if (example.length > 0) { pairs.push('"' + p.platformName + '", "' + example + '"') }
   }
-  e.description = spec.summary + (fields.length > 0 ? '. Fields: ' + fields.join(', ') : '')
-  e.callHint = 'intent.' + spec.name + '({ ' + example.join(', ') + ' }, "yourHandlerName")'
+  e.description = spec.summary + (fields.length > 0 ? '. Platform fields: ' + fields.join(', ') : '')
+  // 'launch' has no intent name and nothing to tell the target, so the target
+  // is just bundle/module/ability -- three parts, not four. runRawIntent
+  // (VeraIntents.ets) tells the two shapes apart the same way.
+  let target = spec.via === 'launch'
+    ? spec.bundle + '/' + spec.moduleName + '/' + spec.ability
+    : spec.bundle + '/' + spec.moduleName + '/' + spec.ability + '/' + spec.intentName
+  let modeArg = spec.via === 'launch' ? '' : ', "' + spec.mode + '"'
+  e.callHint = 'sdk.call("' + target + '", [' + pairs.join(', ') + '], "yourHandlerName"' + modeArg + ')'
   e.nameTokens = identifierTokens(spec.name)
   e.descriptionTokens = requestWords(e.description)
   return e

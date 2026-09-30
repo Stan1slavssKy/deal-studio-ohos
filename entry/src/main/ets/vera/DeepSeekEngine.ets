@@ -133,7 +133,7 @@ function toolSchemas(): Record<string, Object>[] {
 
   let intentFn: Record<string, Object> = {}
   intentFn['name'] = INTENT_TOOL_NAME
-  intentFn['description'] = 'Looks up how to reach another app on the phone: a typed intent.<name> call from the checked catalogue when one fits, or a raw sdk.call target otherwise. Returns a few candidates with a ready-to-adapt call. Never invent a target: only use one returned by this tool.'
+  intentFn['description'] = 'Looks up how to reach another app on the phone, as a ready-to-adapt sdk.call. A "catalog" result is a probed, trustworthy address with real platform values already filled in; a "raw" result comes from this device\'s own intent registry and is unverified. Never invent a target or a value: only use one returned by this tool.'
   intentFn['parameters'] = needParameter('Plain-language description of what another app needs to do, e.g. "start navigation to a place" or "send a text message".')
   let intentTool: Record<string, Object> = {}
   intentTool['type'] = 'function'
@@ -147,7 +147,7 @@ function sdkResultsJson(entries: SdkEntry[]): string {
   let body: Record<string, Object> = {}
   if (entries.length === 0) {
     body['results'] = []
-    body['note'] = 'No sdk function matched. Try a different, more specific phrasing, or if nothing this specific exists, use what std/ui, std/intent or std/calendar already offer instead.'
+    body['note'] = 'No sdk function matched. Try a different, more specific phrasing, or if nothing this specific exists, use what std/ui or std/calendar already offer instead.'
     return JSON.stringify(body)
   }
   let items: Record<string, Object>[] = []
