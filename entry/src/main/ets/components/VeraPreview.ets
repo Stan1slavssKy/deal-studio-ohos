@@ -14,6 +14,7 @@ import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraIntValue, VeraString
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
 import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
 import { runIntent, runRawIntent } from '../vera/VeraIntents'
+import { runSdkAdapter } from '../vera/VeraSdkBackend'
 import { addCalendarEvent, clearCalendarEvents } from '../vera/VeraCalendar'
 import { LengthMetrics } from '@ohos.arkui.node'
 import mediaquery from '@ohos.mediaquery'
@@ -682,13 +683,12 @@ export struct VeraPreview {
       // dispatch, exactly like a legacy intent.call would.
       answer = runRawIntent(effect.rawTarget, effect.values, effect.rawMode)
     } else if (effect.kind === 'sdk') {
-      // An sdk-style target: backend dispatch to the real OpenHarmony
-      // function is out of scope for now (docs/selector-design.md) -- the
-      // point of this phase was the selector and the compile-time check, not
-      // calling interface_sdk-js for real. The program still gets a
-      // well-formed answer rather than hanging, the same contract
-      // intent.call promises.
-      answer = Promise.resolve('error: sdk.call is not implemented yet')
+      // An sdk-style target: a real, curated adapter (VeraSdkBackend.ets) if
+      // one has been written for this exact target, the same honest stub as
+      // before otherwise. Most of the closed set this compiles against has
+      // no adapter yet -- that was never in scope for the selector work --
+      // but a target that does have one now really calls interface_sdk-js.
+      answer = runSdkAdapter(effect.rawTarget, effect.values)
     } else if (effect.spec === null) {
       answer = runRawIntent(effect.rawTarget, effect.values, effect.rawMode)
     } else {

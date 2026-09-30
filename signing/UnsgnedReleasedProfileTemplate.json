@@ -20,7 +20,8 @@
             "ohos.permission.EXECUTE_INSIGHT_INTENT",
             "ohos.permission.START_INVISIBLE_ABILITY",
             "ohos.permission.ABILITY_BACKGROUND_COMMUNICATION",
-            "ohos.permission.GET_BUNDLE_INFO_PRIVILEGED"
+            "ohos.permission.GET_BUNDLE_INFO_PRIVILEGED",
+            "ohos.permission.STORAGE_MANAGER"
         ]
     },
     "permissions": {
