@@ -40,6 +40,8 @@ import { GenerateRequest, GenerateResult, TokenCallback } from './LlamaEngine'
 import { settings } from './SettingsStore'
 import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
+import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
+import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
 
 const SDK_TOOL_NAME = 'find_sdk_function'
 const SDK_SEARCH_LIMIT = 8
@@ -181,6 +183,21 @@ function intentResultsJson(entries: IntentEntry[]): string {
   }
   body['results'] = items
   return JSON.stringify(body)
+}
+
+/** Short key list for the token-vs-embedding comparison log line -- the
+ * point of VERA-*-EMBED-CMP is to see at a glance whether the two rankings
+ * agree, not to replay the full tool result. */
+function sdkKeysList(entries: SdkEntry[]): string {
+  let keys: string[] = []
+  for (let e of entries) { keys.push(e.kit + '.' + e.module + '.' + e.name) }
+  return '[' + keys.join(', ') + ']'
+}
+
+function intentKeysList(entries: IntentEntry[]): string {
+  let keys: string[] = []
+  for (let e of entries) { keys.push(e.kind + ':' + e.name) }
+  return '[' + keys.join(', ') + ']'
 }
 
 function httpErrorMessage(code: number, body: string): string {
@@ -334,15 +351,28 @@ export class DeepSeekEngine {
           // dropping its call silently.
         }
         if (call.name === INTENT_TOOL_NAME) {
-          let results = findIntentFunction(need, INTENT_SEARCH_LIMIT)
+          let tokenResults = findIntentFunction(need, INTENT_SEARCH_LIMIT)
+          let embedResults = await findIntentFunctionByEmbedding(need, INTENT_SEARCH_LIMIT)
+          console.info('VERA-INTENT-EMBED-CMP need="' + need + '" token=' + intentKeysList(tokenResults) +
+            ' embedding=' + (embedResults === null ? 'n/a' : intentKeysList(embedResults)))
+          // Embedding search is used outright when ready, not blended with
+          // the token result -- see VeraIntentEmbeddingCache.ets's doc
+          // comment on why the two stay separate for now. Falling back to
+          // the token result is the same "not ready yet / unavailable this
+          // session" case VeraEmbeddings.ets's null already means.
+          let results = embedResults !== null ? embedResults : tokenResults
           console.info('VERA-INTENT-TOOL round=' + round.toString() + ' need="' + need +
-            '" found=' + results.length.toString() +
+            '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
             (results.length > 0 ? ' top=' + results[0].kind + ':' + results[0].name : ''))
           messages.push(toolResultMessage(call.id, intentResultsJson(results)))
         } else {
-          let results = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT)
+          let tokenResults = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT)
+          let embedResults = await findSdkFunctionByEmbedding(need, SDK_SEARCH_LIMIT)
+          console.info('VERA-SDK-EMBED-CMP need="' + need + '" token=' + sdkKeysList(tokenResults) +
+            ' embedding=' + (embedResults === null ? 'n/a' : sdkKeysList(embedResults)))
+          let results = embedResults !== null ? embedResults : tokenResults
           console.info('VERA-SDK-TOOL round=' + round.toString() + ' need="' + need +
-            '" found=' + results.length.toString() +
+            '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
             (results.length > 0 ? ' top=' + results[0].kit + '.' + results[0].module + '.' + results[0].name : ''))
           messages.push(toolResultMessage(call.id, sdkResultsJson(results)))
         }

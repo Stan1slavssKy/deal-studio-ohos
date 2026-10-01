@@ -1,5 +1,7 @@
 /**
  * NAPI wrapper for llama.cpp — exposes llamaInit, llamaGenerate, llamaStop, llamaFree
+ * (text generation) and llamaEmbedInit, llamaEmbedBatch, llamaEmbedFree (text
+ * embedding, a second, independent model+context pair -- see VeraEmbeddings.ets)
  * to ArkTS as the 'llama' native module.
  *
  * Build: place llama.cpp source in entry/src/main/cpp/llama.cpp/ (git clone)
@@ -12,6 +14,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
+#include <cmath>
 #include <atomic>
 #include <napi/native_api.h>
 
@@ -26,6 +30,12 @@ static std::atomic<bool> g_stop_flag{false};
 static llama_model* g_model = nullptr;
 static llama_context* g_ctx = nullptr;
 static llama_sampler* g_sampler = nullptr;
+
+// Separate from g_model/g_ctx above: a different GGUF (EmbeddingGemma-300M,
+// not the generation model), loaded independently and kept alive for the
+// process lifetime once VeraEmbeddings.ets asks for it.
+static llama_model* g_embed_model = nullptr;
+static llama_context* g_embed_ctx = nullptr;
 
 struct JsonValue {
     std::string str;
@@ -176,12 +186,27 @@ static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
     std::vector<llama_token> tokens(n_prompt);
     llama_tokenize(vocab, prompt.c_str(), prompt.size(), tokens.data(), tokens.size(), true, true);
 
-    // Set up grammar if provided
-    auto* grammar = grammar_str.empty() ? nullptr :
-        llama_grammar_init_impl(vocab, grammar_str.c_str(), "root");
+    // Set up grammar if provided -- llama_grammar_init_impl (the raw grammar
+    // object this was written against) is gone from current llama.cpp;
+    // grammar is a sampler now, chained ahead of the usual top_p/temp/dist
+    // sampler g_sampler already holds. A fresh chain only when a grammar is
+    // actually requested, since g_sampler is built once in LlamaInit and
+    // reused for every call that doesn't need one.
+    llama_sampler* active_sampler = g_sampler;
+    llama_sampler* grammar_chain = nullptr;
+    if (!grammar_str.empty()) {
+        grammar_chain = llama_sampler_chain_init(llama_sampler_chain_default_params());
+        llama_sampler* grammar_sampler = llama_sampler_init_grammar(vocab, grammar_str.c_str(), "root");
+        if (grammar_sampler) { llama_sampler_chain_add(grammar_chain, grammar_sampler); }
+        llama_sampler_chain_add(grammar_chain, llama_sampler_init_top_p(0.95f, 1));
+        llama_sampler_chain_add(grammar_chain, llama_sampler_init_temp(0.2f));
+        llama_sampler_chain_add(grammar_chain, llama_sampler_init_dist(42));
+        active_sampler = grammar_chain;
+    }
 
-    // Decode prompt
-    llama_kv_cache_clear(g_ctx);
+    // Decode prompt -- llama_kv_cache_clear is gone too; memory is addressed
+    // through llama_get_memory now.
+    llama_memory_clear(llama_get_memory(g_ctx), true);
     llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
     llama_decode(g_ctx, batch);
 
@@ -191,13 +216,10 @@ static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
     int output_token_count = 0;
 
     for (int i = 0; i < max_tokens && !g_stop_flag.load(); i++) {
-        llama_token new_token;
-        if (grammar) {
-            llama_sampler_accept(g_sampler, new_token); // apply grammar constraint
-        }
-        new_token = llama_sampler_sample(g_sampler, g_ctx, -1);
+        llama_token new_token = llama_sampler_sample(active_sampler, g_ctx, -1);
+        llama_sampler_accept(active_sampler, new_token);
 
-        if (llama_token_is_eog(vocab, new_token)) break;
+        if (llama_vocab_is_eog(vocab, new_token)) break;
 
         char buf[256];
         int n = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, true);
@@ -219,7 +241,7 @@ static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
         llama_decode(g_ctx, next_batch);
     }
 
-    if (grammar) llama_grammar_free_impl(grammar);
+    if (grammar_chain) llama_sampler_free(grammar_chain);
 
     napi_value result_obj;
     napi_create_object(env, &result_obj);
@@ -234,6 +256,166 @@ static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
     napi_set_named_property(env, result_obj, "outputTokens", output_tokens_val);
     return result_obj;
 #endif
+}
+
+// llamaEmbedInit(configJson: string): boolean
+// config: { model_path, n_ctx, n_threads }
+static napi_value LlamaEmbedInit(napi_env env, napi_callback_info info) {
+    napi_value result;
+#ifdef LLAMA_STUB
+    napi_get_boolean(env, false, &result);
+    return result;
+#else
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    size_t json_len = 0;
+    napi_get_value_string_utf8(env, args[0], nullptr, 0, &json_len);
+    std::string config_json(json_len, '\0');
+    napi_get_value_string_utf8(env, args[0], config_json.data(), json_len + 1, &json_len);
+
+    napi_value global, json_obj, parse_fn, config_val;
+    napi_get_global(env, &global);
+    napi_get_named_property(env, global, "JSON", &json_obj);
+    napi_get_named_property(env, json_obj, "parse", &parse_fn);
+    napi_value json_str;
+    napi_create_string_utf8(env, config_json.c_str(), config_json.size(), &json_str);
+    napi_call_function(env, json_obj, parse_fn, 1, &json_str, &config_val);
+
+    std::string model_path = json_string(env, config_val, "model_path");
+    int n_ctx = json_int(env, config_val, "n_ctx", 512);
+    int n_threads = json_int(env, config_val, "n_threads", 4);
+
+    if (g_embed_model) { llama_model_free(g_embed_model); g_embed_model = nullptr; }
+    if (g_embed_ctx) { llama_free(g_embed_ctx); g_embed_ctx = nullptr; }
+
+    auto mparams = llama_model_default_params();
+    g_embed_model = llama_model_load_from_file(model_path.c_str(), mparams);
+    if (!g_embed_model) {
+        napi_get_boolean(env, false, &result);
+        return result;
+    }
+
+    auto cparams = llama_context_default_params();
+    cparams.n_ctx = n_ctx;
+    // EmbeddingGemma is a non-causal (bidirectional) model -- llama.cpp's own
+    // embedding example sets n_ubatch == n_batch for exactly this case
+    // (examples/embedding/embedding.cpp), so both are pinned to n_ctx here
+    // rather than left at the (causal-generation-sized) defaults.
+    cparams.n_batch = n_ctx;
+    cparams.n_ubatch = n_ctx;
+    cparams.n_threads = n_threads;
+    cparams.n_threads_batch = n_threads;
+    cparams.embeddings = true;
+    cparams.pooling_type = LLAMA_POOLING_TYPE_MEAN;
+    g_embed_ctx = llama_init_from_model(g_embed_model, cparams);
+    if (!g_embed_ctx) {
+        llama_model_free(g_embed_model); g_embed_model = nullptr;
+        napi_get_boolean(env, false, &result);
+        return result;
+    }
+
+    napi_get_boolean(env, true, &result);
+    return result;
+#endif
+}
+
+// llamaEmbedBatch(texts: string[]): number[][]
+// One L2-normalized vector per input text, in order; a text that fails to
+// embed (too long for n_ctx, decode error) comes back as an empty array --
+// VeraEmbeddings.ets treats that element as "skip", never as a reason to
+// fail the whole batch.
+static napi_value LlamaEmbedBatch(napi_env env, napi_callback_info info) {
+#ifdef LLAMA_STUB
+    napi_value result;
+    napi_create_array(env, &result);
+    return result;
+#else
+    size_t argc = 1;
+    napi_value args[1];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+
+    uint32_t n_texts = 0;
+    napi_get_array_length(env, args[0], &n_texts);
+
+    napi_value out_array;
+    napi_create_array_with_length(env, n_texts, &out_array);
+
+    if (!g_embed_model || !g_embed_ctx) {
+        return out_array;
+    }
+
+    auto vocab = llama_model_get_vocab(g_embed_model);
+    int n_embd = llama_model_n_embd_out(g_embed_model);
+    int n_ctx = llama_n_ctx(g_embed_ctx);
+
+    for (uint32_t i = 0; i < n_texts; i++) {
+        napi_value item_val;
+        napi_get_element(env, args[0], i, &item_val);
+        size_t len = 0;
+        napi_get_value_string_utf8(env, item_val, nullptr, 0, &len);
+        std::string text(len, '\0');
+        napi_get_value_string_utf8(env, item_val, text.data(), len + 1, &len);
+
+        napi_value vec_val;
+        int n_tok = llama_tokenize(vocab, text.c_str(), text.size(), nullptr, 0, true, true);
+        int n_tok_abs = n_tok < 0 ? -n_tok : n_tok;
+        if (n_tok_abs == 0 || n_tok_abs > n_ctx) {
+            napi_create_array_with_length(env, 0, &vec_val);
+            napi_set_element(env, out_array, i, vec_val);
+            continue;
+        }
+        std::vector<llama_token> tokens(n_tok_abs);
+        llama_tokenize(vocab, text.c_str(), text.size(), tokens.data(), tokens.size(), true, true);
+
+        llama_memory_clear(llama_get_memory(g_embed_ctx), true);
+        llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
+        // llama.cpp's own batch validation marks every token as needing
+        // output when embeddings are requested but none were explicitly
+        // flagged (src/llama-batch.cpp), which is exactly the case here --
+        // llama_batch_get_one leaves `logits` null, same shape LlamaGenerate
+        // already relies on for the single-sequence case.
+        if (llama_decode(g_embed_ctx, batch) != 0) {
+            napi_create_array_with_length(env, 0, &vec_val);
+            napi_set_element(env, out_array, i, vec_val);
+            continue;
+        }
+
+        const float* embd = llama_get_embeddings_seq(g_embed_ctx, 0);
+        if (!embd) {
+            napi_create_array_with_length(env, 0, &vec_val);
+            napi_set_element(env, out_array, i, vec_val);
+            continue;
+        }
+
+        double sum_sq = 0;
+        for (int d = 0; d < n_embd; d++) { sum_sq += static_cast<double>(embd[d]) * embd[d]; }
+        double norm = std::sqrt(sum_sq);
+
+        napi_create_array_with_length(env, n_embd, &vec_val);
+        for (int d = 0; d < n_embd; d++) {
+            napi_value num_val;
+            double v = norm > 0 ? static_cast<double>(embd[d]) / norm : 0;
+            napi_create_double(env, v, &num_val);
+            napi_set_element(env, vec_val, d, num_val);
+        }
+        napi_set_element(env, out_array, i, vec_val);
+    }
+
+    return out_array;
+#endif
+}
+
+// llamaEmbedFree(): void
+static napi_value LlamaEmbedFree(napi_env env, napi_callback_info info) {
+#ifndef LLAMA_STUB
+    if (g_embed_ctx) { llama_free(g_embed_ctx); g_embed_ctx = nullptr; }
+    if (g_embed_model) { llama_model_free(g_embed_model); g_embed_model = nullptr; }
+#endif
+    napi_value undef;
+    napi_get_undefined(env, &undef);
+    return undef;
 }
 
 // llamaStop(): void
@@ -263,6 +445,9 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"llamaGenerate", nullptr, LlamaGenerate, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"llamaStop", nullptr, LlamaStop, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"llamaFree", nullptr, LlamaFree, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"llamaEmbedInit", nullptr, LlamaEmbedInit, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"llamaEmbedBatch", nullptr, LlamaEmbedBatch, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"llamaEmbedFree", nullptr, LlamaEmbedFree, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;

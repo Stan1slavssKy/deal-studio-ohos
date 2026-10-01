@@ -136,20 +136,46 @@ function scoreEntry(e: IntentEntry, words: string[]): number {
 }
 
 /**
- * The top `limit` intent candidates for `need` -- a fresh brute-force scan
- * over the catalogue (7 rows) and whatever's in the registry (0 to ~640,
- * however much of it is loaded), same reasoning as findSdkFunction: cheap
- * enough at this size that caching the index buys nothing and risks locking
- * in an empty registry if this runs before loadRegistry() finishes.
+ * Builds (or reuses) the IntentEntry pool -- tokenizing names/descriptions
+ * and assembling each row's callHint string is real work repeated for
+ * nothing if done fresh on every search, so it's kept across calls.
+ *
+ * Invalidated by registry size rather than built once and forgotten: this
+ * file can be asked to search before VeraIntentRegistry.loadRegistry()'s
+ * device read finishes, and locking in whatever the registry had at that
+ * moment (possibly still empty) would mean no raw intent ever surfaces for
+ * the rest of the session even after the real registry arrives. Comparing
+ * registryEntries().length catches exactly that case -- a later call with a
+ * now-nonempty registry rebuilds once more, and then stays cached, because
+ * loadRegistry() itself only ever populates the registry once per process.
+ */
+let cachedEntries: IntentEntry[] | null = null
+let cachedRegistryLength = -1
+
+/** Exported for VeraIntentEmbeddingCache.ets -- the same pool findIntentFunction
+ * searches by token, now also searchable by embedding. */
+export function allEntries(): IntentEntry[] {
+  let registryLength = registryEntries().length
+  if (cachedEntries !== null && cachedRegistryLength === registryLength) {
+    return cachedEntries!
+  }
+  let entries: IntentEntry[] = []
+  for (let spec of INTENT_CATALOG) { entries.push(catalogEntry(spec)) }
+  for (let reg of registryEntries()) { entries.push(rawEntry(reg)) }
+  cachedEntries = entries
+  cachedRegistryLength = registryLength
+  return entries
+}
+
+/**
+ * The top `limit` intent candidates for `need` -- a brute-force scan over
+ * the catalogue (7 rows) and whatever's in the registry (0 to ~640).
  *
  * Ties favour a catalog row over a raw one: it is typed and probed, and
  * docs/demo-prompts.md's own guidance is to prefer it whenever it fits.
  */
 export function findIntentFunction(need: string, limit: number = 8): IntentEntry[] {
-  let entries: IntentEntry[] = []
-  for (let spec of INTENT_CATALOG) { entries.push(catalogEntry(spec)) }
-  for (let reg of registryEntries()) { entries.push(rawEntry(reg)) }
-
+  let entries = allEntries()
   let words = needWords(need)
   let scored: IntentEntry[] = []
   let scores: Map<string, number> = new Map<string, number>()

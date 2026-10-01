@@ -51,6 +51,9 @@ interface NativeLlama {
   llamaGenerate(paramsJson: string, callback: (token: string) => void): NativeGenerateResult
   llamaStop(): void
   llamaFree(): void
+  llamaEmbedInit(configJson: string): boolean
+  llamaEmbedBatch(texts: string[]): number[][]
+  llamaEmbedFree(): void
 }
 
 let native: NativeLlama | null = null
@@ -60,6 +63,28 @@ function getNative(): NativeLlama {
     native = nativeLlama as NativeLlama
   }
   return native!
+}
+
+/**
+ * Passthroughs to the embedding half of the same native module, for
+ * VeraEmbeddings.ets -- not a second `import ... from 'libllama.so'` (that
+ * fails at runtime: "Load native module failed, ModuleName:
+ * @normalized:Y&&&libllama.so&", confirmed on-device this session), and not
+ * a forwarded reference to the module object either (confirmed separately:
+ * the import only resolves to a real object at a call site inside *this*
+ * file -- handing the reference itself to another file comes back
+ * undefined). One import, one place; everything else calls through here.
+ */
+export function nativeEmbedInit(configJson: string): boolean {
+  return getNative().llamaEmbedInit(configJson)
+}
+
+export function nativeEmbedBatch(texts: string[]): number[][] {
+  return getNative().llamaEmbedBatch(texts)
+}
+
+export function nativeEmbedFree(): void {
+  getNative().llamaEmbedFree()
 }
 
 export class LlamaEngine {

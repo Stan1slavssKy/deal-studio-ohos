@@ -214,6 +214,10 @@ export async function loadSdkIndex(mgr: resourceManager.ResourceManager): Promis
 
 export function sdkIndexSize(): number { return cache.length }
 
+/** The loaded index itself, in load order -- VeraSdkEmbeddingCache.ets keys
+ * its cache file to this order and needs the real entries to embed. */
+export function sdkIndexEntries(): SdkEntry[] { return cache }
+
 /** find_sdk_function as DeepSeek's tool call reaches it: search the loaded index. */
 export function findSdkFunctionFromCache(need: string, limit: number = 8): SdkEntry[] {
   return findSdkFunction(cache, need, limit)
