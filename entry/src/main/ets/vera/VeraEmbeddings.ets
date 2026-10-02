@@ -33,7 +33,9 @@ import hilog from '@ohos.hilog'
 import { nativeEmbedInit, nativeEmbedBatch } from './LlamaEngine'
 
 const DOMAIN = 0x0000
-const MODEL_FILE = 'embeddinggemma-300m-q4_k_m.gguf'
+/** Exported so VeraSdkEmbeddingCache.ets can bind its bundled cache to this
+ * exact model, not just the corpus -- one string, not two copies to drift. */
+export const MODEL_FILE = 'embeddinggemma-300m-q4_k_m.gguf'
 
 /** Where GeneratePage.ets's downloader fetches the model from -- small and
  * public, unlike the generation model, so no vera-server hop is needed. */

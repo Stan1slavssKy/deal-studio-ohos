@@ -1,27 +1,52 @@
 /**
- * On-device embedding cache for VeraSdkIndex's corpus (tools/build-sdk-index.py's
- * 16,511 entries) -- the piece EmbeddingGemma can't precompute host-side,
- * because the model only runs through the native llama.cpp binding
- * (VeraEmbeddings.ets), which is device-only. Computed once per device, in
- * the background, and cached to disk as a flat Float32Array; nothing calls
- * into this cache until it (or a fresh build) is ready.
+ * Embedding cache for VeraSdkIndex's corpus (tools/build-sdk-index.py's
+ * 16,511 entries) -- the piece EmbeddingGemma can't precompute host-side as
+ * part of the normal build, because the model only runs through the native
+ * llama.cpp binding (VeraEmbeddings.ets), which is device-only.
+ *
+ * Three sources, tried in order, cheapest first:
+ *  1. {filesDir}/vera/sdk-embeddings.bin -- this device's own cache, from a
+ *     previous run of step 2 or 3.
+ *  2. The bundled rawfile of the same name (tools/build-sdk-embeddings.py,
+ *     run host-side against the same corpus and the same GGUF, the same way
+ *     tools/build-sdk-index.py already produces the bundled sdk-index.json)
+ *     -- read once, then copied into (1) so every later launch takes the
+ *     fast path without touching resourceManager again.
+ *  3. Computed on-device, in the background, chunked (see CHUNK_SIZE) --
+ *     the ~31-minute fallback for whenever (1) and (2) are both unusable
+ *     (first run on a device with no network for the bundle... there isn't
+ *     one, it's bundled; realistically this is for a corpus/model mismatch
+ *     caught by the hashes below, or a build that skipped the host step).
  *
  * Recomputed whole, not incrementally: unlike the intent registry (up to
  * ~640 entries, changes as apps are installed -- see
  * VeraIntentEmbeddingCache.ets), sdk-index.json is a static, versioned
- * rawfile baked in at build time. A source-hash mismatch (the index was
- * rebuilt) invalidates the whole cache rather than trying to patch it.
+ * rawfile baked in at build time.
+ *
+ * A cache file (device-local or bundled) is rejected if either hash in its
+ * header doesn't match what's expected right now: sourceHash over the
+ * corpus's entry identities (sdk-index.json was rebuilt) or modelHash over
+ * VeraEmbeddings.MODEL_FILE (the embedding model changed). Checking only the
+ * corpus and not the model was a real gap in the first version of this file
+ * -- a bundled or on-disk cache from a different model would have been
+ * accepted silently, serving vectors from the wrong vector space with
+ * nothing to catch it.
  */
 
 import fs from '@ohos.file.fs'
 import hilog from '@ohos.hilog'
+import resourceManager from '@ohos.resourceManager'
 import { SdkEntry, sdkIndexEntries } from './VeraSdkIndex'
-import { embedBatch, embedOne, embeddingModelReady } from './VeraEmbeddings'
+import { embedBatch, embedOne, embeddingModelReady, MODEL_FILE } from './VeraEmbeddings'
 
 const DOMAIN = 0x0000
 /** 'VSD1' as an int32 -- just a tag to reject a file that isn't this cache. */
 const MAGIC = 0x56534431
-const HEADER_INTS = 5 // magic, version, count, dimension, source hash
+/** Bumped because the header grew a field (modelHash) -- an old 5-int file
+ * fails this check outright rather than being misread 4 bytes short. */
+const FORMAT_VERSION = 2
+const HEADER_INTS = 6 // magic, version, count, dimension, source hash, model hash
+const BUNDLED_RAWFILE = 'sdk-embeddings.bin'
 /**
  * How many entries go into one native llamaEmbedBatch call. Measured on
  * device this session: ~145ms/entry, sequential (the native side decodes
@@ -59,6 +84,13 @@ function sourceHash(entries: SdkEntry[]): number {
   return h >>> 0
 }
 
+/** Over VeraEmbeddings.MODEL_FILE -- catches a cache built from a different
+ * embedding model, which sourceHash alone never could (tools/
+ * build-sdk-embeddings.py computes this exact same way). */
+function modelHash(): number {
+  return fnv1a(MODEL_FILE, 0x811c9dc5)
+}
+
 /** One L2-normalized vector per entry, in sdkIndexEntries() order, flattened. */
 let vectors: Float32Array | null = null
 let dimension = 0
@@ -69,6 +101,38 @@ export function sdkEmbeddingsReady(): boolean { return ready }
 
 function cacheFilePath(filesDir: string): string { return filesDir + '/vera/sdk-embeddings.bin' }
 
+/** What validateHeader trusts the payload with, once a header checks out. */
+class HeaderShape {
+  count: number = 0
+  dim: number = 0
+}
+
+/** Validates a cache's header against the corpus and model expected right
+ * now; returns the entry count and vector dimension to trust the payload
+ * with, or null if anything about this file doesn't match. Shared between
+ * the device-local cache and the bundled rawfile -- same format, same
+ * rules, only the byte source differs. */
+function validateHeader(header: Int32Array, entries: SdkEntry[]): HeaderShape | null {
+  // >>> 0 on every header read, not just the two hash fields: Int32Array
+  // reads a 32-bit pattern as *signed*, but fnv1a/sourceHash/modelHash all
+  // return the unsigned interpretation of that same pattern (their own
+  // `>>> 0`). A hash at or above 0x80000000 -- modelHash is one, confirmed
+  // on-device this session -- reads back negative from the array and can
+  // never equal the positive value the hash functions return, rejecting a
+  // header that is actually byte-for-byte correct.
+  if ((header[0] >>> 0) !== MAGIC) { return null }
+  if ((header[1] >>> 0) !== FORMAT_VERSION) { return null }
+  let count = header[2] >>> 0
+  let dim = header[3] >>> 0
+  if (count !== entries.length) { return null }
+  if ((header[4] >>> 0) !== sourceHash(entries)) { return null }
+  if ((header[5] >>> 0) !== modelHash()) { return null }
+  let result = new HeaderShape()
+  result.count = count
+  result.dim = dim
+  return result
+}
+
 function readCache(filesDir: string, entries: SdkEntry[]): boolean {
   let path = cacheFilePath(filesDir)
   try {
@@ -78,25 +142,56 @@ function readCache(filesDir: string, entries: SdkEntry[]): boolean {
     try {
       let headerBuf = new ArrayBuffer(HEADER_INTS * 4)
       fs.readSync(file.fd, headerBuf)
-      let header = new Int32Array(headerBuf)
-      if (header[0] !== MAGIC) { return false }
-      let count = header[2]
-      let dim = header[3]
-      let hash = header[4]
-      if (count !== entries.length) { return false }
-      if (hash !== sourceHash(entries)) { return false }
-      let payloadBytes = count * dim * 4
+      let valid = validateHeader(new Int32Array(headerBuf), entries)
+      if (valid === null) { return false }
+      let payloadBytes = valid.count * valid.dim * 4
       if (stat.size < HEADER_INTS * 4 + payloadBytes) { return false }
       let payloadBuf = new ArrayBuffer(payloadBytes)
       fs.readSync(file.fd, payloadBuf)
       vectors = new Float32Array(payloadBuf)
-      dimension = dim
+      dimension = valid.dim
       ready = true
       return true
     } finally {
       fs.closeSync(file)
     }
   } catch (_e) {
+    return false
+  }
+}
+
+/**
+ * The bundled rawfile, built host-side by tools/build-sdk-embeddings.py
+ * against the same sdk-index.json and the same GGUF, so a fresh install
+ * skips the ~31-minute on-device build entirely. Tried only when the
+ * device-local cache (readCache) misses; on success, also written to the
+ * device-local path so the next launch doesn't need resourceManager again.
+ */
+async function readBundledCache(mgr: resourceManager.ResourceManager, filesDir: string,
+    entries: SdkEntry[]): Promise<boolean> {
+  try {
+    // getRawFileContent returns a Uint8Array, not an ArrayBuffer -- and its
+    // own .buffer isn't guaranteed to start at byte 0 (byteOffset could be
+    // nonzero). .slice() always returns a fresh Uint8Array backed by its own
+    // buffer at offset 0, which is what a typed-array view over it needs.
+    let data = await mgr.getRawFileContent(BUNDLED_RAWFILE)
+    if (data.byteLength < HEADER_INTS * 4) { return false }
+    let header = new Int32Array(data.slice(0, HEADER_INTS * 4).buffer)
+    let valid = validateHeader(header, entries)
+    if (valid === null) {
+      hilog.warn(DOMAIN, 'VERA', 'VERA-SDK-EMBED bundled cache present but stale -- corpus or model changed since it was built')
+      return false
+    }
+    let payloadBytes = valid.count * valid.dim * 4
+    if (data.byteLength < HEADER_INTS * 4 + payloadBytes) { return false }
+    let flat = new Float32Array(data.slice(HEADER_INTS * 4, HEADER_INTS * 4 + payloadBytes).buffer)
+    vectors = flat
+    dimension = valid.dim
+    ready = true
+    writeCache(filesDir, entries, valid.dim, flat)
+    return true
+  } catch (e) {
+    hilog.warn(DOMAIN, 'VERA', 'VERA-SDK-EMBED no usable bundled cache: ' + (e as Error).message)
     return false
   }
 }
@@ -109,10 +204,11 @@ function writeCache(filesDir: string, entries: SdkEntry[], dim: number, flat: Fl
       let headerBuf = new ArrayBuffer(HEADER_INTS * 4)
       let header = new Int32Array(headerBuf)
       header[0] = MAGIC
-      header[1] = 1
+      header[1] = FORMAT_VERSION
       header[2] = entries.length
       header[3] = dim
       header[4] = sourceHash(entries)
+      header[5] = modelHash()
       fs.writeSync(file.fd, headerBuf)
       fs.writeSync(file.fd, flat.buffer)
     } finally {
@@ -123,11 +219,16 @@ function writeCache(filesDir: string, entries: SdkEntry[], dim: number, flat: Fl
   }
 }
 
-async function build(filesDir: string): Promise<void> {
+async function build(filesDir: string, mgr: resourceManager.ResourceManager): Promise<void> {
   let entries = sdkIndexEntries()
   if (entries.length === 0) { return }
   if (readCache(filesDir, entries)) {
     hilog.info(DOMAIN, 'VERA', 'VERA-SDK-EMBED cache hit, ' + entries.length.toString() +
+      ' vectors, dim=' + dimension.toString())
+    return
+  }
+  if (await readBundledCache(mgr, filesDir, entries)) {
+    hilog.info(DOMAIN, 'VERA', 'VERA-SDK-EMBED bundled cache hit, ' + entries.length.toString() +
       ' vectors, dim=' + dimension.toString())
     return
   }
@@ -190,9 +291,9 @@ async function build(filesDir: string): Promise<void> {
  * session (entries.length was still 0, so build() took its very first
  * early-return and never actually started embedding anything).
  */
-export function ensureSdkEmbeddings(filesDir: string): Promise<void> {
+export function ensureSdkEmbeddings(filesDir: string, mgr: resourceManager.ResourceManager): Promise<void> {
   if (building === null) {
-    building = build(filesDir).then((): void => { building = null })
+    building = build(filesDir, mgr).then((): void => { building = null })
   }
   return building!
 }

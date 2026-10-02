@@ -296,7 +296,7 @@ struct GeneratePage {
         // can run before this rawfile read finishes, in which case its first
         // pass sees an empty index and does nothing -- re-checking here,
         // now that the index is actually loaded, is what starts the real build.
-        ensureSdkEmbeddings(getContext(this).filesDir).then(() => {
+        ensureSdkEmbeddings(getContext(this).filesDir, mgr).then(() => {
           console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
         })
       })
@@ -435,7 +435,7 @@ struct GeneratePage {
     if (!embedModelExists(filesDir)) { return }
     let ok = await loadEmbeddingModel(filesDir)
     if (!ok) { return }
-    ensureSdkEmbeddings(filesDir).then(() => {
+    ensureSdkEmbeddings(filesDir, getContext(this).resourceManager).then(() => {
       console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
     })
     ensureIntentEmbeddings(filesDir).then(() => {
