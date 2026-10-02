@@ -157,9 +157,14 @@ export function ensureIntentEmbeddings(filesDir: string): Promise<void> {
  */
 export async function findIntentFunctionByEmbedding(need: string, limit: number = 8): Promise<IntentEntry[] | null> {
   if (vectors.size === 0) { return null }
+  // Same two-piece timing as VeraSdkEmbeddingCache.ets's findSdkFunctionByEmbedding
+  // -- see its comment for why queryEmbedMs and scanMs are kept apart.
+  let queryStartedAt = Date.now()
   let q = await embedOne(need)
+  let queryEmbedMs = Date.now() - queryStartedAt
   if (q === null) { return null }
 
+  let scanStartedAt = Date.now()
   let entries = allEntries()
   let scored: IntentEntry[] = []
   let scores: Map<string, number> = new Map<string, number>()
@@ -176,5 +181,10 @@ export async function findIntentFunctionByEmbedding(need: string, limit: number 
     let sb = scores.get(entryKey(b)) as number
     return sb - sa
   })
+  let scanMs = Date.now() - scanStartedAt
+
+  hilog.info(DOMAIN, 'VERA', 'VERA-INTENT-EMBED-TIMING queryEmbedMs=' + queryEmbedMs.toString() +
+    ' scanMs=' + scanMs.toString() + ' totalMs=' + (queryEmbedMs + scanMs).toString())
+
   return scored.slice(0, limit)
 }

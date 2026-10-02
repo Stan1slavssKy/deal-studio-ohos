@@ -340,6 +340,7 @@ export class DeepSeekEngine {
       stillAsking = true
       messages.push(assistantToolCallMessage(turn.toolCalls))
       for (let call of turn.toolCalls) {
+        let callStartedAt = Date.now()
         let need = ''
         try {
           let args = JSON.parse(call.arguments) as Record<string, Object>
@@ -351,8 +352,12 @@ export class DeepSeekEngine {
           // dropping its call silently.
         }
         if (call.name === INTENT_TOOL_NAME) {
+          let tokenStartedAt = Date.now()
           let tokenResults = findIntentFunction(need, INTENT_SEARCH_LIMIT)
+          let tokenMs = Date.now() - tokenStartedAt
+          let embedStartedAt = Date.now()
           let embedResults = await findIntentFunctionByEmbedding(need, INTENT_SEARCH_LIMIT)
+          let embedMs = Date.now() - embedStartedAt
           console.info('VERA-INTENT-EMBED-CMP need="' + need + '" token=' + intentKeysList(tokenResults) +
             ' embedding=' + (embedResults === null ? 'n/a' : intentKeysList(embedResults)))
           // Embedding search is used outright when ready, not blended with
@@ -364,16 +369,29 @@ export class DeepSeekEngine {
           console.info('VERA-INTENT-TOOL round=' + round.toString() + ' need="' + need +
             '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
             (results.length > 0 ? ' top=' + results[0].kind + ':' + results[0].name : ''))
+          // tokenFullMs/embedFullMs: this call's own standalone cost, had it
+          // been the only one run -- both are computed every round
+          // regardless of which is used (see VeraIntentEmbeddingCache.ets's
+          // doc comment on why), so these are measured around each one's own
+          // call, not derived from which branch "won".
+          console.info('VERA-INTENT-TIMING need="' + need + '" tokenFullMs=' + tokenMs.toString() +
+            ' embeddingFullMs=' + embedMs.toString() + ' callTotalMs=' + (Date.now() - callStartedAt).toString())
           messages.push(toolResultMessage(call.id, intentResultsJson(results)))
         } else {
+          let tokenStartedAt = Date.now()
           let tokenResults = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT)
+          let tokenMs = Date.now() - tokenStartedAt
+          let embedStartedAt = Date.now()
           let embedResults = await findSdkFunctionByEmbedding(need, SDK_SEARCH_LIMIT)
+          let embedMs = Date.now() - embedStartedAt
           console.info('VERA-SDK-EMBED-CMP need="' + need + '" token=' + sdkKeysList(tokenResults) +
             ' embedding=' + (embedResults === null ? 'n/a' : sdkKeysList(embedResults)))
           let results = embedResults !== null ? embedResults : tokenResults
           console.info('VERA-SDK-TOOL round=' + round.toString() + ' need="' + need +
             '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
             (results.length > 0 ? ' top=' + results[0].kit + '.' + results[0].module + '.' + results[0].name : ''))
+          console.info('VERA-SDK-TIMING need="' + need + '" tokenFullMs=' + tokenMs.toString() +
+            ' embeddingFullMs=' + embedMs.toString() + ' callTotalMs=' + (Date.now() - callStartedAt).toString())
           messages.push(toolResultMessage(call.id, sdkResultsJson(results)))
         }
       }

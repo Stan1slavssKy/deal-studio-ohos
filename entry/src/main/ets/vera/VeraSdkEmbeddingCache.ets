@@ -310,11 +310,19 @@ export function ensureSdkEmbeddings(filesDir: string, mgr: resourceManager.Resou
  */
 export async function findSdkFunctionByEmbedding(need: string, limit: number = 8): Promise<SdkEntry[] | null> {
   if (!ready || vectors === null) { return null }
+  // Timed in two pieces, not one -- "how long did this take" conflates two
+  // very different costs: a live model inference to embed the query
+  // (queryEmbedMs, the same cost token search never pays at all) and a pure
+  // in-memory scan over 16,511 cached vectors (scanMs). Reported separately
+  // so a benchmark can say which one actually dominates.
+  let queryStartedAt = Date.now()
   let q = await embedOne(need)
+  let queryEmbedMs = Date.now() - queryStartedAt
   if (q === null) { return null }
   let entries = sdkIndexEntries()
   if (entries.length * dimension !== vectors!.length) { return null }
 
+  let scanStartedAt = Date.now()
   let scores: number[] = new Array(entries.length)
   for (let i = 0; i < entries.length; i++) {
     let dot = 0
@@ -325,6 +333,10 @@ export async function findSdkFunctionByEmbedding(need: string, limit: number = 8
   let idx: number[] = []
   for (let i = 0; i < entries.length; i++) { idx.push(i) }
   idx.sort((a: number, b: number) => scores[b] - scores[a])
+  let scanMs = Date.now() - scanStartedAt
+
+  hilog.info(DOMAIN, 'VERA', 'VERA-SDK-EMBED-TIMING queryEmbedMs=' + queryEmbedMs.toString() +
+    ' scanMs=' + scanMs.toString() + ' totalMs=' + (queryEmbedMs + scanMs).toString())
 
   let out: SdkEntry[] = []
   for (let i = 0; i < idx.length && i < limit; i++) { out.push(entries[idx[i]]) }

@@ -8,6 +8,7 @@ import { refreshForms } from '../vera/FormUpdater'
 import { settings } from '../vera/SettingsStore'
 import { requestCalendarPermissions } from '../vera/VeraCalendar'
 import { runProbe } from '../vera/IntentProbe'
+import { requestBenchmark } from '../vera/VeraSearchBenchmark'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 
 const DOMAIN = 0x0000
@@ -29,6 +30,7 @@ export default class EntryAbility extends UIAbility {
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
+    this.extractBenchmark(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -38,6 +40,7 @@ export default class EntryAbility extends UIAbility {
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
+    this.extractBenchmark(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
     }
@@ -115,6 +118,28 @@ export default class EntryAbility extends UIAbility {
     runProbe((target as string).trim(),
       payload !== null && payload !== undefined && typeof payload === 'string' ? (payload as string) : '',
       mode !== null && mode !== undefined && typeof mode === 'string' ? (mode as string) : 'background')
+  }
+
+  /**
+   * Development only, same shape as extractProbe: requests the search
+   * timing benchmark (VeraSearchBenchmark.ets) on this launch --
+   *
+   *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn \
+   *     --ps veraBenchmark 1
+   *
+   * Only sets a flag here, not run directly: the benchmark needs both
+   * corpus caches already warm, which only happens inside
+   * GeneratePage.ets's own resource loading, not at this point.
+   * GeneratePage.ensureEmbeddingsReady() is what actually calls
+   * runSearchBenchmark(), once ready.
+   */
+  private extractBenchmark(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraBenchmark']
+    if (flag === null || flag === undefined) { return }
+    requestBenchmark()
+    hilog.info(DOMAIN, 'VERA', 'VERA-BENCH requested from launch parameter')
   }
 
   private extractProjectId(want: Want): void {

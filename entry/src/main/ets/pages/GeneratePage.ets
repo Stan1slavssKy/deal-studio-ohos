@@ -19,6 +19,7 @@ import { loadSdkIndex } from '../vera/VeraSdkIndex'
 import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL } from '../vera/VeraEmbeddings'
 import { ensureSdkEmbeddings, sdkEmbeddingsReady } from '../vera/VeraSdkEmbeddingCache'
 import { ensureIntentEmbeddings, intentEmbeddingsReady } from '../vera/VeraIntentEmbeddingCache'
+import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchmark'
 
 const MAX_RETRIES: number = 3
 // vera-server's address is not written down here. It lives in settings, given
@@ -435,12 +436,34 @@ struct GeneratePage {
     if (!embedModelExists(filesDir)) { return }
     let ok = await loadEmbeddingModel(filesDir)
     if (!ok) { return }
-    ensureSdkEmbeddings(filesDir, getContext(this).resourceManager).then(() => {
+    // Fire-and-forget, same as before -- both proceed concurrently and the
+    // page never blocks on either. benchmarkRequested() below awaits these
+    // same promises without changing that: a second consumer of an
+    // already-in-flight promise doesn't delay or re-trigger it.
+    let sdkPromise = ensureSdkEmbeddings(filesDir, getContext(this).resourceManager)
+    sdkPromise.then(() => {
       console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
     })
-    ensureIntentEmbeddings(filesDir).then(() => {
+    let intentPromise = ensureIntentEmbeddings(filesDir)
+    intentPromise.then(() => {
       console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
     })
+    if (benchmarkRequested()) {
+      await sdkPromise
+      await intentPromise
+      // loadRegistry()/loadSdkIndex() are separate, independent async
+      // reads (see the race-condition comments on ensureSdkEmbeddings/
+      // ensureIntentEmbeddings themselves) and may still be mid-flight
+      // even after the two awaits above settle with whatever was cached
+      // at that moment -- a few seconds' margin, then one more
+      // ensureIntentEmbeddings call (safe to repeat; coalesces with an
+      // in-flight one, re-checks missing keys otherwise) picks up a
+      // registry read that only finished in between. Only this opt-in
+      // path waits at all; an ordinary launch is unaffected.
+      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
+      await ensureIntentEmbeddings(filesDir)
+      await runSearchBenchmark()
+    }
   }
 
   private async downloadEmbedModel(filesDir: string): Promise<void> {
