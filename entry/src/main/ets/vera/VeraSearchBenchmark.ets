@@ -87,7 +87,21 @@ let requestedFlag = false
  * present; checked by GeneratePage.ensureEmbeddingsReady() once both
  * corpus caches are confirmed warm. */
 export function requestBenchmark(): void { requestedFlag = true }
-export function benchmarkRequested(): boolean { return requestedFlag }
+
+/** Consumes the flag: true at most once per launch parameter, even if
+ * ensureEmbeddingsReady() itself runs more than once in the same process
+ * (confirmed on-device: a single `--ps veraBenchmark 1` launch produced
+ * two full, interleaved runSearchBenchmark() passes under the same pid --
+ * GeneratePage's own page lifecycle invoking its resource-loading path
+ * twice, not a benchmark-specific bug). Checking requestedFlag without
+ * clearing it let every one of those calls see "requested" and start its
+ * own full run; clearing it here on first read makes a second call see
+ * false no matter how many times ensureEmbeddingsReady() itself runs. */
+export function benchmarkRequested(): boolean {
+  if (!requestedFlag) { return false }
+  requestedFlag = false
+  return true
+}
 
 async function benchSdk(c: BenchCase, pass: number): Promise<void> {
   let t0 = Date.now()

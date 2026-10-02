@@ -54,6 +54,7 @@ interface NativeLlama {
   llamaEmbedInit(configJson: string): boolean
   llamaEmbedBatch(texts: string[]): number[][]
   llamaEmbedFree(): void
+  llamaScanCorpus(query: number[], corpus: Float32Array, dimension: number, count: number): Float32Array
 }
 
 let native: NativeLlama | null = null
@@ -85,6 +86,15 @@ export function nativeEmbedBatch(texts: string[]): number[][] {
 
 export function nativeEmbedFree(): void {
   getNative().llamaEmbedFree()
+}
+
+/** Dot product of `query` against each of `count` `dimension`-wide rows of
+ * `corpus`, in native C++ -- see napi_llama.cpp's LlamaScanCorpus for why
+ * this moved out of ArkTS, and why `count` is passed explicitly rather
+ * than left for the native side to infer from the typed array alone.
+ * Returns one score per row, in corpus order. */
+export function nativeScanCorpus(query: number[], corpus: Float32Array, dimension: number, count: number): Float32Array {
+  return getNative().llamaScanCorpus(query, corpus, dimension, count)
 }
 
 export class LlamaEngine {

@@ -268,6 +268,7 @@ hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps veraBenchmark 1
 hdc shell hilog -x | grep VERA-BENCH
 ```
 
+**All numbers in every table below are milliseconds (ms).**
 **tokenFullMs** is token search's entire cost (`findSdkFunctionFromCache`/
 `findIntentFunction` alone) -- no live model call on this path, so "full"
 and "search" are the same number. **embeddingFullMs** is
@@ -289,48 +290,48 @@ as a finding, not hidden by only publishing the isolated numbers.
 
 ### Prompt 1
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | SDK | read the current battery level | tok 159, embed 530 (q93+s437) | tok 45, embed 683 (q89+s594) | tok 62, embed 681 (q90+s591) | **89** | **631** (91+541) | 130 / 536 |
 
 ### Prompt 2
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | SDK | turn on the phone flashlight torch | tok 33, embed 524 (q86+s437) | tok 32, embed 688 (q94+s594) | tok 30, embed 678 (q92+s586) | **32** | **630** (91+539) | 40 / 516 |
 | Intent | turn on the phone flashlight torch | tok 2, embed 154 (q93+s61) | tok 3, embed 159 (q94+s65) | tok 2, embed 160 (q94+s66) | **2** | **158** (94+64) | 1 / 139 |
 
 ### Prompt 3
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | SDK | turn Bluetooth on or off | tok 42, embed 720 (q81+s639) | tok 49, embed 678 (q89+s588) | tok 45, embed 680 (q89+s591) | **45** | **692** (86+606) | 63 / 497 |
 | Intent | open Bluetooth settings | tok 3, embed 138 (q78+s60) | tok 3, embed 139 (q78+s60) | tok 5, embed 139 (q78+s61) | **4** | **138** (78+60) | 3 / 129 |
 
 ### Prompt 4
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | Intent | take a photo with the camera | tok 1, embed 151 (q93+s58) | tok 1, embed 160 (q93+s66) | tok 1, embed 148 (q84+s64) | **1** | **153** (90+63) | 10 / 147 |
 | SDK | take a photo with the camera | tok 60, embed 679 (q88+s590) | tok 42, embed 677 (q92+s585) | tok 66, embed 694 (q93+s601) | **56** | **683** (91+592) | 34 / 535 |
 
 ### Prompt 5
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | Intent | start turn by turn navigation to an address | tok 1, embed 163 (q102+s61) | tok 2, embed 158 (q104+s54) | tok 1, embed 159 (q96+s62) | **1** | **160** (101+59) | 8 / 159 |
 | SDK | start turn by turn navigation to a destination address | tok 69, embed 705 (q114+s591) | tok 65, embed 700 (q105+s595) | tok 44, embed 687 (q99+s588) | **59** | **697** (106+591) | 40 / 542 |
 
 ### Prompt 6
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | Intent | send a text message to a contact | tok 2, embed 160 (q100+s60) | tok 1, embed 160 (q99+s61) | tok 1, embed 165 (q97+s68) | **1** | **162** (99+63) | 10 / 147 |
 | SDK | read the current weather forecast for my location | tok 68, embed 700 (q102+s598) | tok 52, embed 698 (q101+s597) | tok 45, embed 692 (q103+s589) | **55** | **697** (102+595) | 42 / 529 |
 
 ### Prompt 7
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | SDK | scan a QR code with the camera and return the decoded text | tok 112, embed 719 (q127+s592) | tok 116, embed 706 (q117+s589) | tok 117, embed 704 (q114+s590) | **115** | **710** (119+590) | 104 / 540 |
 | Intent | open a web link in the browser | tok 2, embed 154 (q96+s58) | tok 1, embed 159 (q100+s59) | tok 1, embed 160 (q98+s62) | **1** | **158** (98+60) | 2 / 147 |
@@ -339,29 +340,29 @@ as a finding, not hidden by only publishing the isolated numbers.
 
 ### Prompt 8
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | SDK | vibrate the phone | tok 22, embed 671 (q83+s588) | tok 19, embed 672 (q82+s590) | tok 20, embed 680 (q83+s597) | **20** | **674** (83+592) | 37 / 498 |
 | SDK | show a notification | tok 30, embed 669 (q77+s592) | tok 24, embed 667 (q76+s591) | tok 23, embed 676 (q85+s591) | **26** | **671** (79+591) | 29 / 503 |
 
 ### Prompt 9
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | SDK | check whether the phone is currently connected to WiFi | tok 67, embed 694 (q105+s589) | tok 60, embed 698 (q104+s594) | tok 58, embed 696 (q105+s591) | **62** | **696** (105+591) | 70 / 514 |
 | Intent | open the WiFi settings screen | tok 7, embed 148 (q89+s59) | tok 4, embed 155 (q90+s65) | tok 3, embed 147 (q89+s58) | **5** | **150** (89+61) | 2 / 148 |
 
 ### Prompt 10
 
-| corpus | need | pass 1 | pass 2 | pass 3 | avg token | avg embed (query+scan) | live DeepSeek sample (token/embed) |
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) | live DeepSeek sample (ms, token/embed) |
 |---|---|---|---|---|--:|---|---|
 | SDK | record a short voice memo from the microphone | tok 40, embed 692 (q101+s591) | tok 52, embed 692 (q103+s589) | tok 38, embed 693 (q103+s590) | **43** | **692** (102+590) | 78 / 511 |
 | SDK | play back a recorded audio file | tok 86, embed 681 (q93+s588) | tok 65, embed 680 (q93+s587) | tok 62, embed 681 (q92+s589) | **71** | **681** (93+588) | 41 / 523 |
 | Intent | record a voice memo with the sound recorder app | tok 2, embed 168 (q107+s61) | tok 3, embed 166 (q104+s62) | tok 6, embed 166 (q104+s62) | **4** | **167** (105+62) | 2 / 163 |
 
-## Overall (132 timed calls: 39 SDK + 27 intent, 3 passes each)
+## Overall (132 timed calls: 39 SDK + 27 intent, 3 passes each) -- all ms
 
-| corpus | n | token avg | token min/max | embed avg | embed min/max | queryEmbed avg | scan avg |
+| corpus | n | token avg (ms) | token min/max (ms) | embed avg (ms) | embed min/max (ms) | queryEmbed avg (ms) | scan avg (ms) |
 |---|--:|--:|---|--:|---|--:|--:|
 | SDK (16,511 entries) | 39 | 55.9 | 19 / 159 | 680.9 | 524 / 720 | 96.4 | 584.4 |
 | Intent (~661 entries) | 27 | 2.4 | 1 / 7 | 157.4 | 138 / 173 | 95.8 | 61.6 |
@@ -373,7 +374,7 @@ averages alone would hide.** Pass 1's first two SDK scans (prompt 1,
 prompt 2) ran at 437ms; every one of the other 37 SDK scans across all
 three passes sits tightly in a 585-601ms band:
 
-| | pass 1 | pass 2 | pass 3 |
+| (ms) | pass 1 | pass 2 | pass 3 |
 |---|--:|--:|--:|
 | SDK scanMs avg | 571.1 | 591.3 | 590.8 |
 | SDK scanMs range | 437-639 | 585-597 | 586-601 |
@@ -424,3 +425,162 @@ end to end, so even the inflated ~680ms SDK figure is a single-digit
 percentage of total generation time. A generation with several tool
 calls still pays this repeatedly, not once: prompt 7 made four calls
 (two SDK, two intent) in one generation.
+
+## Timing, take two — the scan rewritten in native C++
+
+The scan half of embedding search (`VeraSdkEmbeddingCache.ets`'s dot
+product against all 16,511 cached vectors) was ArkTS: a plain nested
+`for` loop, interpreted, no SIMD. Moved to native C++
+(`napi_llama.cpp`'s `LlamaScanCorpus`, called through
+`LlamaEngine.ets`'s `nativeScanCorpus`), reading the `Float32Array`
+corpus directly out of its backing buffer (no copy) so the compiler can
+auto-vectorize the multiply-add. Query embedding (`queryEmbedMs`, the
+live EmbeddingGemma inference) and the intent corpus's scan (~661
+entries, a `Map<string, number[]>`, structurally different and never
+the bottleneck -- see below) are unchanged.
+
+First version crashed on-device (SIGSEGV): it derived the corpus's
+entry count from `napi_get_typedarray_info`'s reported `length`, whose
+units didn't match what was assumed. Fixed by passing `count` explicitly
+from ArkTS (where it's already known precisely) and independently
+clamping against the backing `ArrayBuffer`'s real byte length
+(`napi_get_arraybuffer_info`) as a hard safety bound, rather than
+trusting either source alone.
+
+Re-run with the exact same methodology as the ArkTS numbers above (3
+interleaved passes, same 22 need-strings, isolated from DeepSeek, no
+warmup discarded) -- after also fixing a second bug this re-run exposed:
+`VeraSearchBenchmark.ets`'s `benchmarkRequested()` read a flag without
+clearing it, so when `GeneratePage`'s resource-loading path happened to
+run more than once in the same process, every call saw "requested" and
+started its own full 3-pass run -- two complete, interleaved runs under
+one pid, confirmed in an earlier capture (66 `VERA-BENCH-SDK`/`-INTENT`
+lines became 104, pass 1 evicted from the log before it could be pulled).
+Fixed by consuming the flag on first read. The run below is the clean
+one: exactly one `VERA-BENCH done`, 39 SDK + 27 intent lines (13x3 +
+9x3), every line's `queryEmbedMs`/`scanMs` split correctly matched to its
+`VERA-BENCH` line (matched backward from each `VERA-BENCH` line to the
+`VERA-*-EMBED-TIMING` line immediately before it, since that's the
+actual logging order -- the ArkTS-era parsing script had this backward,
+silently pairing each result with the *next* call's split instead of its
+own; caught here by cross-checking `queryEmbedMs + scanMs` against the
+independently-logged `embeddingFullMs`, now only accepted within 2ms).
+
+### Prompt 1
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| SDK | read the current battery level | tok 137, embed 146 (q96+s50) | tok 53, embed 137 (q89+s48) | tok 64, embed 133 (q87+s46) | **85** | **139** (91+48) |
+
+### Prompt 2
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| SDK | turn on the phone flashlight torch | tok 51, embed 140 (q93+s47) | tok 31, embed 139 (q92+s47) | tok 30, embed 138 (q92+s46) | **37** | **139** (92+47) |
+| Intent | turn on the phone flashlight torch | tok 2, embed 155 (q96+s59) | tok 6, embed 147 (q93+s54) | tok 3, embed 155 (q94+s61) | **4** | **152** (94+58) |
+
+### Prompt 3
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| SDK | turn Bluetooth on or off | tok 43, embed 132 (q86+s46) | tok 53, embed 132 (q87+s45) | tok 49, embed 134 (q88+s46) | **48** | **133** (87+46) |
+| Intent | open Bluetooth settings | tok 3, embed 137 (q77+s60) | tok 2, embed 140 (q79+s60) | tok 3, embed 163 (q78+s85) | **3** | **146** (78+68) |
+
+### Prompt 4
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| Intent | take a photo with the camera | tok 1, embed 160 (q94+s66) | tok 1, embed 160 (q94+s65) | tok 1, embed 151 (q92+s59) | **1** | **157** (93+63) |
+| SDK | take a photo with the camera | tok 54, embed 141 (q93+s48) | tok 36, embed 139 (q93+s46) | tok 58, embed 139 (q93+s46) | **49** | **140** (93+47) |
+
+### Prompt 5
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| Intent | start turn by turn navigation to an address | tok 2, embed 158 (q102+s56) | tok 1, embed 165 (q104+s61) | tok 1, embed 162 (q102+s60) | **1** | **162** (103+59) |
+| SDK | start turn by turn navigation to a destination address | tok 39, embed 147 (q101+s46) | tok 55, embed 156 (q107+s49) | tok 46, embed 153 (q104+s49) | **47** | **152** (104+48) |
+
+### Prompt 6
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| Intent | send a text message to a contact | tok 1, embed 157 (q98+s59) | tok 1, embed 156 (q98+s58) | tok 1, embed 157 (q99+s58) | **1** | **157** (98+58) |
+| SDK | read the current weather forecast for my location | tok 47, embed 138 (q93+s45) | tok 65, embed 148 (q102+s46) | tok 47, embed 153 (q104+s49) | **53** | **146** (100+47) |
+
+### Prompt 7
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| SDK | scan a QR code with the camera and return the decoded text | tok 74, embed 153 (q109+s44) | tok 102, embed 163 (q115+s48) | tok 116, embed 166 (q118+s48) | **97** | **161** (114+47) |
+| Intent | open a web link in the browser | tok 1, embed 157 (q98+s59) | tok 2, embed 154 (q99+s55) | tok 2, embed 153 (q89+s64) | **2** | **155** (95+59) |
+| Intent | open a URL or web page in the web browser | tok 3, embed 165 (q108+s57) | tok 3, embed 176 (q107+s69) | tok 2, embed 169 (q113+s56) | **3** | **170** (109+61) |
+| SDK | scan a barcode or QR code using the camera | tok 57, embed 154 (q106+s48) | tok 54, embed 150 (q104+s46) | tok 54, embed 155 (q108+s47) | **55** | **153** (106+47) |
+
+### Prompt 8
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| SDK | vibrate the phone | tok 22, embed 130 (q81+s49) | tok 20, embed 128 (q83+s45) | tok 22, embed 129 (q82+s46) | **21** | **129** (82+47) |
+| SDK | show a notification | tok 23, embed 125 (q78+s47) | tok 23, embed 125 (q77+s48) | tok 26, embed 130 (q87+s43) | **24** | **127** (81+46) |
+
+### Prompt 9
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| SDK | check whether the phone is currently connected to WiFi | tok 76, embed 154 (q108+s45) | tok 60, embed 145 (q99+s46) | tok 56, embed 150 (q105+s45) | **64** | **149** (104+45) |
+| Intent | open the WiFi settings screen | tok 4, embed 150 (q91+s59) | tok 3, embed 149 (q90+s59) | tok 6, embed 148 (q88+s60) | **4** | **149** (90+59) |
+
+### Prompt 10
+
+| corpus | need | pass 1 (ms) | pass 2 (ms) | pass 3 (ms) | avg token (ms) | avg embed (ms, query+scan) |
+|---|---|---|---|---|--:|---|
+| SDK | record a short voice memo from the microphone | tok 37, embed 145 (q101+s44) | tok 41, embed 148 (q101+s47) | tok 38, embed 148 (q101+s47) | **39** | **147** (101+46) |
+| SDK | play back a recorded audio file | tok 65, embed 133 (q87+s46) | tok 62, embed 148 (q99+s49) | tok 71, embed 142 (q94+s48) | **66** | **141** (93+48) |
+| Intent | record a voice memo with the sound recorder app | tok 2, embed 168 (q106+s62) | tok 2, embed 166 (q104+s62) | tok 2, embed 164 (q105+s59) | **2** | **166** (105+61) |
+
+## Overall, C++ scan (66 timed calls: 39 SDK + 27 intent, 3 passes each)
+
+| corpus | n | token avg (ms) | token min/max (ms) | embed avg (ms) | embed min/max (ms) | queryEmbed avg (ms) | scan avg (ms) |
+|---|--:|--:|---|--:|---|--:|--:|
+| SDK (16,511 entries) | 39 | 52.7 | 20 / 137 | 142.7 | 125 / 166 | 96.0 | **46.7** (43-50) |
+| Intent (~661 entries, unchanged) | 27 | 2.3 | 1 / 6 | 157.1 | 137 / 176 | 96.2 | 60.8 (54-85) |
+
+## What changed, and what didn't
+
+| | ArkTS scan | C++ scan | ratio |
+|---|--:|--:|--:|
+| SDK scanMs avg | 584.4 ms | 46.7 ms | **~12.5x** |
+| SDK embeddingFullMs avg | 680.9 ms | 142.7 ms | ~4.8x |
+| SDK queryEmbedMs avg | 96.4 ms | 96.0 ms | unchanged (expected -- this path wasn't touched) |
+| SDK tokenMs avg | 55.9 ms | 52.7 ms | unchanged (expected, same code, run-to-run noise) |
+| Intent scanMs avg | 61.6 ms | 60.8 ms | unchanged (expected -- different corpus, different code, not touched) |
+
+~12.5x on the scan itself, not the ~22-24x a first, smaller post-fix
+sample suggested (that sample was 52 scattered measurements pulled from
+the two interleaved runs the duplicate-benchmark bug produced, not a
+clean 3-pass set -- superseded by the number above).
+
+**The bottleneck moved.** Before, `scanMs` (584ms) dwarfed `queryEmbedMs`
+(96ms) -- the scan was nearly the whole story. Now `queryEmbedMs` (96ms,
+unchanged) is larger than `scanMs` (47ms) -- the live EmbeddingGemma
+inference to embed the query text is the dominant cost for SDK search,
+not the corpus scan. Speeding up the scan further has little left to
+buy without also addressing the query-embedding call itself (currently
+one `llamaEmbedBatch([text])` call per search, unbatched, uncached).
+
+**Intent was deliberately left alone.** Its scan (~661 entries, already
+~62ms) was never the measured bottleneck, and its corpus is a
+`Map<string, number[]>` (per-device data, grown incrementally as apps
+install -- see `VeraIntentEmbeddingCache.ets`), not a single flat
+`Float32Array` -- moving it to the same native path would need
+restructuring its storage first, for a corpus an order of magnitude
+smaller than SDK's, where the ArkTS loop was never shown to matter.
+
+**Correctness, not just speed, was re-checked.** Every one of the 66
+isolated calls still returned exactly 8 results (`embeddingFound=8`
+throughout), and a live, non-benchmark generation through the real
+Generate screen ("turn on the phone's flashlight") still resolves to the
+same top candidates as before the rewrite --
+`CameraKit.CameraManager.setTorchMode` (SDK) and
+`.../ScbIntentUIAbility/OpenFlashlight` (intent) -- the native rewrite
+changed where the arithmetic runs, not what it computes.

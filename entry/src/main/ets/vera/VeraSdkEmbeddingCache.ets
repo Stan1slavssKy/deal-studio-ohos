@@ -38,6 +38,7 @@ import hilog from '@ohos.hilog'
 import resourceManager from '@ohos.resourceManager'
 import { SdkEntry, sdkIndexEntries } from './VeraSdkIndex'
 import { embedBatch, embedOne, embeddingModelReady, MODEL_FILE } from './VeraEmbeddings'
+import { nativeScanCorpus } from './LlamaEngine'
 
 const DOMAIN = 0x0000
 /** 'VSD1' as an int32 -- just a tag to reject a file that isn't this cache. */
@@ -323,13 +324,11 @@ export async function findSdkFunctionByEmbedding(need: string, limit: number = 8
   if (entries.length * dimension !== vectors!.length) { return null }
 
   let scanStartedAt = Date.now()
-  let scores: number[] = new Array(entries.length)
-  for (let i = 0; i < entries.length; i++) {
-    let dot = 0
-    let base = i * dimension
-    for (let d = 0; d < dimension; d++) { dot = dot + q[d] * vectors![base + d] }
-    scores[i] = dot
-  }
+  // Dot product against all 16,511 cached vectors, done in native C++
+  // (napi_llama.cpp's LlamaScanCorpus) rather than an ArkTS loop -- the
+  // same ~12.7M multiply-adds, previously measured at ~584ms interpreted
+  // in ArkTS (docs/embeddings-benchmark.md's timing section).
+  let scores: Float32Array = nativeScanCorpus(q, vectors!, dimension, entries.length)
   let idx: number[] = []
   for (let i = 0; i < entries.length; i++) { idx.push(i) }
   idx.sort((a: number, b: number) => scores[b] - scores[a])

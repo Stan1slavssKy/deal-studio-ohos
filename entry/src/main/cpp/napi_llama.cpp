@@ -418,6 +418,94 @@ static napi_value LlamaEmbedFree(napi_env env, napi_callback_info info) {
     return undef;
 }
 
+// llamaScanCorpus(query: number[], corpus: Float32Array, dimension: number, count: number): Float32Array
+// Dot product of `query` (length `dimension`) against each of `count`
+// `dimension`-wide rows of `corpus`, one score per row, in corpus order --
+// the inner loop VeraSdkEmbeddingCache.ets's findSdkFunctionByEmbedding
+// used to run itself, in ArkTS: ~584ms on-device for 16,511 x 768 (~12.7M
+// multiply-adds), because an interpreted per-element loop over a plain
+// number[] never vectorizes. Compiled C++ reading `corpus` directly out of
+// the Float32Array's backing buffer (no copy) lets the compiler
+// auto-vectorize the multiply-add; sorting the (small, 16,511-long) scores
+// array stays in ArkTS, since that part was never the measured cost.
+//
+// `count` is passed explicitly rather than derived from the typed array's
+// own reported length: a first version computed it as corpus_len/dimension
+// from napi_get_typedarray_info's length output and crashed on-device
+// (SIGSEGV reading past the real buffer) -- that length's units didn't
+// match what was assumed here. The actual byte length of the backing
+// ArrayBuffer (napi_get_arraybuffer_info, unambiguous) is used below only
+// as a hard safety clamp, never as the primary source of `count`.
+//
+// Does not touch llama.h / the model at all -- pure NAPI + arithmetic, so
+// unlike every function above it this one needs no LLAMA_STUB guard; it
+// compiles and runs identically with or without llama.cpp present.
+static napi_value LlamaScanCorpus(napi_env env, napi_callback_info info) {
+    size_t argc = 4;
+    napi_value args[4];
+    napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+    if (argc < 4) {
+        napi_value empty;
+        napi_create_arraybuffer(env, 0, nullptr, &empty);
+        napi_value empty_arr;
+        napi_create_typedarray(env, napi_float32_array, 0, empty, 0, &empty_arr);
+        return empty_arr;
+    }
+
+    double dimension_d = 0, count_d = 0;
+    napi_get_value_double(env, args[2], &dimension_d);
+    napi_get_value_double(env, args[3], &count_d);
+    uint32_t dimension = dimension_d > 0 ? static_cast<uint32_t>(dimension_d) : 0;
+    uint32_t requested_count = count_d > 0 ? static_cast<uint32_t>(count_d) : 0;
+
+    uint32_t q_len = 0;
+    napi_get_array_length(env, args[0], &q_len);
+    std::vector<float> query(dimension, 0.0f);
+    uint32_t q_n = q_len < dimension ? q_len : dimension;
+    for (uint32_t d = 0; d < q_n; d++) {
+        napi_value el;
+        napi_get_element(env, args[0], d, &el);
+        double v = 0;
+        napi_get_value_double(env, el, &v);
+        query[d] = static_cast<float>(v);
+    }
+
+    napi_typedarray_type type;
+    size_t typedarray_len = 0;
+    void* corpus_data = nullptr;
+    napi_value src_arraybuffer;
+    size_t byte_offset = 0;
+    napi_get_typedarray_info(env, args[1], &type, &typedarray_len, &corpus_data, &src_arraybuffer, &byte_offset);
+    const float* corpus = static_cast<const float*>(corpus_data);
+
+    void* ab_data = nullptr;
+    size_t ab_byte_len = 0;
+    napi_get_arraybuffer_info(env, src_arraybuffer, &ab_data, &ab_byte_len);
+    size_t safe_byte_len = byte_offset <= ab_byte_len ? (ab_byte_len - byte_offset) : 0;
+    uint32_t max_count_from_buffer = dimension > 0
+        ? static_cast<uint32_t>(safe_byte_len / (static_cast<size_t>(dimension) * sizeof(float)))
+        : 0;
+
+    uint32_t count = requested_count < max_count_from_buffer ? requested_count : max_count_from_buffer;
+    if (corpus == nullptr || dimension == 0) { count = 0; }
+
+    napi_value out_buffer;
+    void* out_data = nullptr;
+    napi_create_arraybuffer(env, static_cast<size_t>(count) * sizeof(float), &out_data, &out_buffer);
+    float* scores = static_cast<float*>(out_data);
+
+    for (uint32_t i = 0; i < count; i++) {
+        const float* row = corpus + static_cast<size_t>(i) * dimension;
+        float dot = 0.0f;
+        for (uint32_t d = 0; d < dimension; d++) { dot += query[d] * row[d]; }
+        scores[i] = dot;
+    }
+
+    napi_value out_array;
+    napi_create_typedarray(env, napi_float32_array, count, out_buffer, 0, &out_array);
+    return out_array;
+}
+
 // llamaStop(): void
 static napi_value LlamaStop(napi_env env, napi_callback_info info) {
     g_stop_flag.store(true);
@@ -448,6 +536,7 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"llamaEmbedInit", nullptr, LlamaEmbedInit, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"llamaEmbedBatch", nullptr, LlamaEmbedBatch, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"llamaEmbedFree", nullptr, LlamaEmbedFree, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"llamaScanCorpus", nullptr, LlamaScanCorpus, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
     return exports;
