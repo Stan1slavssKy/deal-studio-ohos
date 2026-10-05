@@ -37,6 +37,7 @@ import resourceManager from '@ohos.resourceManager'
 import hilog from '@ohos.hilog'
 import { loadRawfileText } from './LlamaEngine'
 import { requestWords } from './VeraIntentRegistry'
+import { isSdkTargetImplemented } from './VeraSdkBackend'
 
 const DOMAIN = 0x0000
 
@@ -128,6 +129,43 @@ const W_MODULE = 2
 const W_DESCRIPTION = 1
 const KIT_BONUS = 2
 const DEPRECATED_PENALTY = 1
+// Comparable to a strong name-token match (W_NAME=3) -- enough to promote an
+// implemented target over a similarly-scored unimplemented one, not enough
+// to override a genuinely better unimplemented match (see
+// sdkImplementedMask's own comment for why this exists at all).
+const IMPLEMENTED_BONUS = 3
+
+let implementedMaskCache: Uint8Array | null = null
+
+/**
+ * Whether each entry in `entries` (same order, same array -- this is the
+ * module-level `cache`, never a different list) has a real adapter in
+ * VeraSdkBackend.ets. Computed once and reused: both the corpus and the
+ * adapter table are fixed for the process lifetime, so recomputing this on
+ * every search call would just be 16,511 string-concat-and-Map-lookup pairs
+ * that always answer the same way.
+ *
+ * Exists because the raw relevance score alone picked a target with no
+ * adapter at all over one that works: a real device generation asking for
+ * "play an audio file or music" ranked AVSessionKit
+ * .AVMusicTemplateController.playMediaEntity (unimplemented) above
+ * MediaKit.AVPlayer.play (implemented, same top-8 list) -- "Music" sitting
+ * right in the unimplemented target's own module name was worth more to
+ * both scorers than the implemented target's actual relevance. Calling it
+ * returns "error: sdk.call is not implemented yet", every time, invisibly.
+ */
+export function sdkImplementedMask(entries: SdkEntry[]): Uint8Array {
+  if (implementedMaskCache !== null && implementedMaskCache.length === entries.length) {
+    return implementedMaskCache
+  }
+  let mask = new Uint8Array(entries.length)
+  for (let i = 0; i < entries.length; i++) {
+    let e = entries[i]
+    mask[i] = isSdkTargetImplemented(e.kit + '.' + e.module + '.' + e.name) ? 1 : 0
+  }
+  implementedMaskCache = mask
+  return mask
+}
 
 function scoreEntry(entry: SdkEntry, words: string[]): number {
   let score = 0
@@ -154,10 +192,13 @@ function scoreEntry(entry: SdkEntry, words: string[]): number {
  */
 export function findSdkFunction(index: SdkEntry[], need: string, limit: number = 8): SdkEntry[] {
   let words = needWords(need)
+  let mask = sdkImplementedMask(index)
   let scored: SdkEntry[] = []
   let scores: Map<string, number> = new Map<string, number>()
-  for (let entry of index) {
+  for (let i = 0; i < index.length; i++) {
+    let entry = index[i]
     let s = scoreEntry(entry, words)
+    if (mask[i] === 1) { s = s + IMPLEMENTED_BONUS }
     if (s > 0) {
       let key = entry.kit + '.' + entry.module + '.' + entry.name
       scores.set(key, s)

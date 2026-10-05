@@ -267,6 +267,9 @@ to catch it.
     of someone's shopping list. Use the exact platform value the tool showed
     you, translated already if the field needed it -- never a value you typed
     from the request itself.
+  - A parameter that takes binary data (an ArrayBuffer) is one string of
+    comma-separated signed 16-bit integers, each from -32768 to 32767. Build it
+    in a loop with ui.intToString and +, one number per sample.
   - The third is the handler's name.
   - The fourth, "background" or "foreground", only exists for a four-part
     intent target -- leave it off otherwise, and write it exactly as

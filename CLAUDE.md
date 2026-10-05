@@ -98,7 +98,9 @@ minute-long generations does not converge — that mistake has been made here.
 | `entry/src/main/ets/vera/VeraIcons.ets` | sixteen icons as path data, normalised to one optical size |
 | `entry/src/main/resources/rawfile/vera-skill.txt` | the prompt, with `{{UI_CATALOG}}` and the intent and calendar catalogues spliced in |
 | `docs/demo-prompts.md` | the prompts this is demonstrated with, and what to check in the output |
+| `docs/prompts/intent-coverage.md` | 59 prompts that between them reach 596 of the 640 intents this phone has, each with the addresses it should pull in and a table to record what the phone actually did. `tools/prompt-coverage.py` checks it against the pulled `insight_intent.db` on the host — run that before editing a prompt, because the wording is what decides which addresses the model is shown |
 | `docs/examples/shanghai-layover.vera` | a program the model actually wrote, kept verbatim |
+| `docs/intent-call-contract.md` | `intent.call`'s signature and its four-shape answer contract (JSON / `"ok"` / `"declined code=N"` / `"error N: ..."`), with two confirmed device cases of generated code checking for `"ok"` or not checking at all — read before touching a handler that reports success or failure |
 
 Adding a component means editing the catalogue, adding a case in
 `VeraUi.ets`, and adding a branch in `VeraPreview.ets` — the compiler, the

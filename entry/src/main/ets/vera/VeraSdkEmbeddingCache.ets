@@ -36,7 +36,7 @@
 import fs from '@ohos.file.fs'
 import hilog from '@ohos.hilog'
 import resourceManager from '@ohos.resourceManager'
-import { SdkEntry, sdkIndexEntries } from './VeraSdkIndex'
+import { SdkEntry, sdkIndexEntries, sdkImplementedMask } from './VeraSdkIndex'
 import { embedBatch, embedOne, embeddingModelReady, MODEL_FILE } from './VeraEmbeddings'
 import { nativeScanCorpus } from './LlamaEngine'
 
@@ -329,6 +329,16 @@ export async function findSdkFunctionByEmbedding(need: string, limit: number = 8
   // same ~12.7M multiply-adds, previously measured at ~584ms interpreted
   // in ArkTS (docs/embeddings-benchmark.md's timing section).
   let scores: Float32Array = nativeScanCorpus(q, vectors!, dimension, entries.length)
+  // Same reasoning and same bonus scale as VeraSdkIndex.ets's
+  // IMPLEMENTED_BONUS (see sdkImplementedMask's own comment): a cosine-
+  // similarity-range bonus (0.15, against a typical good-match score of
+  // ~0.4-0.8) large enough to promote an implemented target over a
+  // similarly-scored unimplemented one, not large enough to override a
+  // genuinely better unimplemented match.
+  let mask = sdkImplementedMask(entries)
+  for (let i = 0; i < entries.length; i++) {
+    if (mask[i] === 1) { scores[i] = scores[i] + 0.15 }
+  }
   let idx: number[] = []
   for (let i = 0; i < entries.length; i++) { idx.push(i) }
   idx.sort((a: number, b: number) => scores[b] - scores[a])

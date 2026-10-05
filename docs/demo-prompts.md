@@ -75,6 +75,8 @@ that wipes every calendar event this app added and one that opens the phone's
 calendar.
 ```
 
+Shanghai layover: I land at Pudong International Airport at 09:00 with 11 hours before my next flight. Plan the day hour by hour around the sights worth seeing, each stop with its name, how long to spend there and its coordinates, a button that starts navigation to it from the last stop I reached, a button that puts the stop in my phone's calendar with a reminder, and the latest time I must leave for the airport. Keep a note of which stops I actually reached, and give me a button that wipes every calendar event this app added and one that opens the phone's calendar.
+
 Exercises everything the device can reach at once: `navigateTo` for each leg,
 `calendar.addEvent` for each stop, `calendar.clearEvents` for the run before
 this one, and `openCalendar`, which launches the app rather than sending it an
@@ -97,6 +99,28 @@ names.
 was pinned down twice, the second time without a confound. The program is still
 right to say where each leg begins, and every leg after the first is correct as
 soon as you are standing at the stop it starts from.
+
+## 4. Blink melody, flashlight in time
+
+```
+A button that plays an 8-second melody in C major at 120 BPM, four notes per bar,
+built from sine tones computed sample by sample with math.sin at 8000 samples per
+second, sent as comma-separated 16-bit samples to the platform audio renderer
+write call with sampleRate 8000. On every beat the flashlight turns on, and it
+turns off 80 milliseconds later, in time with the melody. When the melody ends,
+the flashlight is off and the app shows how many beats it blinked.
+```
+
+Exercises the audio renderer and the torch together. The first version was
+generated at 8 seconds and exceeded the interpreter's step budget (5 000 000 steps
+for one action), so it was asked for 5 seconds with "What to change?". The first
+version also omitted `sampleRate`, so the melody played about six times too fast
+until it was asked for explicitly.
+
+**What to check.** The melody lasts about 5 seconds at 120 BPM, which is ten beats.
+The flashlight flashes on each beat and goes off 80 ms later. The flashes are driven
+by the program's tick, not by the audio clock, so they can drift against the sound;
+check by ear and by eye. It is one button press, not a loop.
 
 ## What none of the prompts say
 

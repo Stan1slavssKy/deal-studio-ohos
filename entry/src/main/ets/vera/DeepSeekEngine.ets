@@ -39,6 +39,7 @@ import util from '@ohos.util'
 import { GenerateRequest, GenerateResult, TokenCallback } from './LlamaEngine'
 import { settings } from './SettingsStore'
 import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
+import { isSdkTargetImplemented } from './VeraSdkBackend'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
 import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
@@ -127,7 +128,7 @@ function needParameter(description: string): Record<string, Object> {
 function toolSchemas(): Record<string, Object>[] {
   let sdkFn: Record<string, Object> = {}
   sdkFn['name'] = SDK_TOOL_NAME
-  sdkFn['description'] = 'Looks up a platform SDK function by what it needs to do, out of thousands the phone offers with no built-in catalogue. Returns a few candidates with their target, parameters, return type and description. Never invent a target string: only use one returned by this tool.'
+  sdkFn['description'] = 'Looks up a platform SDK function by what it needs to do, out of thousands the phone offers with no built-in catalogue. Returns a few candidates with their target, parameters, return type, description, and implemented (whether it actually runs). Never invent a target string: only use one returned by this tool. A result with implemented=false compiles and calls cleanly but always answers "error: sdk.call is not implemented yet" -- if any candidate has implemented=true, prefer it even if another one reads as a closer wording match.'
   sdkFn['parameters'] = needParameter('Plain-language description of the platform capability needed, e.g. "read the free internal storage space".')
   let sdkTool: Record<string, Object> = {}
   sdkTool['type'] = 'function'
@@ -155,10 +156,19 @@ function sdkResultsJson(entries: SdkEntry[]): string {
   let items: Record<string, Object>[] = []
   for (let e of entries) {
     let item: Record<string, Object> = {}
-    item['target'] = e.kit + '.' + e.module + '.' + e.name
+    let target = e.kit + '.' + e.module + '.' + e.name
+    item['target'] = target
     item['params'] = e.params
     item['returnType'] = e.returnType
     item['description'] = e.description
+    // Ranking already nudges an implemented target ahead of a merely-
+    // similar-sounding one that has none (VeraSdkIndex.ets's
+    // sdkImplementedMask), but the model sees this directly too: a target
+    // with implemented=false compiles and calls cleanly, then answers
+    // "error: sdk.call is not implemented yet" every time, with nothing
+    // about the call site itself telling a generated program that in
+    // advance.
+    item['implemented'] = isSdkTargetImplemented(target)
     items.push(item)
   }
   body['results'] = items

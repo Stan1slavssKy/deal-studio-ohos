@@ -1,0 +1,7636 @@
+[
+ {
+  "target": "BasicServicesKit.screenLock.isDeviceLocked",
+  "kit": "BasicServicesKit",
+  "module": "screenLock",
+  "name": "isDeviceLocked",
+  "file": "@ohos.screenLock.d.ts",
+  "params": [
+   [
+    "userId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the device is currently locked and the screenlock requires an identity to authenticate and unlock.",
+  "score": 4
+ },
+ {
+  "target": "NotificationKit.notificationManager.isNotificationEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "isNotificationEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Queries the notification authorization status of the current application. This API uses a promise to",
+  "score": 4
+ },
+ {
+  "target": "NotificationKit.notificationManager.isNotificationEnabledSync",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "isNotificationEnabledSync",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Synchronously queries the notification authorization status of the current application.",
+  "score": 4
+ },
+ {
+  "target": "AbilityKit.appManager.getAppMemorySize",
+  "kit": "AbilityKit",
+  "module": "appManager",
+  "name": "getAppMemorySize",
+  "file": "@ohos.app.ability.appManager.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the maximum memory (RAM allocation) available to the current application. This API uses a promise to return",
+  "score": 3
+ },
+ {
+  "target": "AbilityKit.autoStartupManager.getAutoStartupStatusForSelf",
+  "kit": "AbilityKit",
+  "module": "autoStartupManager",
+  "name": "getAutoStartupStatusForSelf",
+  "file": "@ohos.app.ability.autoStartupManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether the current application is enabled for automatic startup at boot time. This API uses a promise to",
+  "score": 3
+ },
+ {
+  "target": "AbilityKit.childProcessManager.isArkChildProcessSupported",
+  "kit": "AbilityKit",
+  "module": "childProcessManager",
+  "name": "isArkChildProcessSupported",
+  "file": "@ohos.app.ability.childProcessManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the caller is allowed to create ark child processes on this device.",
+  "score": 3
+ },
+ {
+  "target": "AbilityKit.childProcessManager.isNativeChildProcessSupported",
+  "kit": "AbilityKit",
+  "module": "childProcessManager",
+  "name": "isNativeChildProcessSupported",
+  "file": "@ohos.app.ability.childProcessManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the caller is allowed to create native child processes on this device.",
+  "score": 3
+ },
+ {
+  "target": "AccessibilityKit.accessibility.getSeniorModeStateForSelf",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "getSeniorModeStateForSelf",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Check if this application's senior mode is enabled.",
+  "score": 3
+ },
+ {
+  "target": "ArkUI.PiPWindow.isPiPEnabled",
+  "kit": "ArkUI",
+  "module": "PiPWindow",
+  "name": "isPiPEnabled",
+  "file": "@ohos.PiPWindow.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the current device supports the PiP feature.",
+  "score": 3
+ },
+ {
+  "target": "ArkUI.display.setFoldStatusLocked",
+  "kit": "ArkUI",
+  "module": "display",
+  "name": "setFoldStatusLocked",
+  "file": "@ohos.display.d.ts",
+  "params": [
+   [
+    "locked",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets whether to lock the current fold status of the foldable device.",
+  "score": 3
+ },
+ {
+  "target": "ArkUI.floatView.isFloatViewEnabled",
+  "kit": "ArkUI",
+  "module": "floatView",
+  "name": "isFloatViewEnabled",
+  "file": "@ohos.window.floatView.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the device supports the float view.",
+  "score": 3
+ },
+ {
+  "target": "ArkUI.floatingBall.isFloatingBallEnabled",
+  "kit": "ArkUI",
+  "module": "floatingBall",
+  "name": "isFloatingBallEnabled",
+  "file": "@ohos.window.floatingBall.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the device supports floating balls.",
+  "score": 3
+ },
+ {
+  "target": "BasicServicesKit.batteryInfo.isBatteryConfigSupported",
+  "kit": "BasicServicesKit",
+  "module": "batteryInfo",
+  "name": "isBatteryConfigSupported",
+  "file": "@ohos.batteryInfo.d.ts",
+  "params": [
+   [
+    "sceneName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the battery configuration is enabled based on the specified scenario.",
+  "score": 3
+ },
+ {
+  "target": "BasicServicesKit.screenLock.unlock",
+  "kit": "BasicServicesKit",
+  "module": "screenLock",
+  "name": "unlock",
+  "file": "@ohos.screenLock.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Unlock the screen.",
+  "score": 3
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.isHotspotDualBandSupported",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "isHotspotDualBandSupported",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether a device serving as a Wi-Fi hotspot supports both the 2.4 GHz and 5 GHz Wi-Fi.",
+  "score": 3
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.isWifiActive",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "isWifiActive",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Query the Wi-Fi status",
+  "score": 3
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.removeDevice",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "removeDevice",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "id",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Remove a Wi-Fi DeviceConfig with networkId.",
+  "score": 3
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.startWifiDetection",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "startWifiDetection",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Start Wi-Fi network detection",
+  "score": 3
+ },
+ {
+  "target": "LocationKit.geoLocationManager.isLocationEnabled",
+  "kit": "LocationKit",
+  "module": "geoLocationManager",
+  "name": "isLocationEnabled",
+  "file": "@ohos.geoLocationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Obtain current location switch status.",
+  "score": 3
+ },
+ {
+  "target": "LocationKit.geoLocationManager.isLocationEnabledByUserId",
+  "kit": "LocationKit",
+  "module": "geoLocationManager",
+  "name": "isLocationEnabledByUserId",
+  "file": "@ohos.geoLocationManager.d.ts",
+  "params": [
+   [
+    "userId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Obtaining the location switch status of a specified user.",
+  "score": 3
+ },
+ {
+  "target": "MechanicKit.mechanicManager.getCameraTrackingEnabled",
+  "kit": "MechanicKit",
+  "module": "mechanicManager",
+  "name": "getCameraTrackingEnabled",
+  "file": "@ohos.distributedHardware.mechanicManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether camera tracking is enabled for this mechanical device.",
+  "score": 3
+ },
+ {
+  "target": "NotificationKit.notificationManager.isDistributedEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "isDistributedEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "deviceType",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether a device enables cross-device notification. This API uses a promise to return the result.",
+  "score": 3
+ },
+ {
+  "target": "NotificationKit.notificationManager.setDistributedEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "setDistributedEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "enable",
+    "boolean",
+    false
+   ],
+   [
+    "deviceType",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets whether the device of a specified type enables cross-device notification. This API uses a promise to return",
+  "score": 3
+ },
+ {
+  "target": "NotificationKit.notificationManager.setPriorityEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "setPriorityEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "enable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the enabling status of the priority notification.",
+  "score": 3
+ },
+ {
+  "target": "NotificationKit.notificationManager.setPriorityIntelligentEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "setPriorityIntelligentEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "enable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the enabling status of the intelligent priority notification service. This API uses a promise to return the",
+  "score": 3
+ },
+ {
+  "target": "NotificationKit.notificationManager.setTargetDeviceStatus",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "setTargetDeviceStatus",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "deviceType",
+    "string",
+    false
+   ],
+   [
+    "status",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the status of a device after it is successfully connected. Device status determines the notification mode of",
+  "score": 3
+ },
+ {
+  "target": "TelephonyKit.call.hasVoiceCapability",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "hasVoiceCapability",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether a device supports voice calls.",
+  "score": 3
+ },
+ {
+  "target": "TelephonyKit.call.makeCall",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "makeCall",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "phoneNumber",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Go to the dial screen and the called number is displayed.",
+  "score": 3
+ },
+ {
+  "target": "TelephonyKit.sms.getImsShortMessageFormat",
+  "kit": "TelephonyKit",
+  "module": "sms",
+  "name": "getImsShortMessageFormat",
+  "file": "@ohos.telephony.sms.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Gets SMS format supported on IMS. SMS over IMS format is either 3GPP or 3GPP2.",
+  "score": 3
+ },
+ {
+  "target": "TelephonyKit.sms.hasSmsCapability",
+  "kit": "TelephonyKit",
+  "module": "sms",
+  "name": "hasSmsCapability",
+  "file": "@ohos.telephony.sms.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Returns whether a device is capable of sending and receiving SMS messages.",
+  "score": 3
+ },
+ {
+  "target": "AbilityKit.abilityManager.isEmbeddedUIExtensionSupported",
+  "kit": "AbilityKit",
+  "module": "abilityManager",
+  "name": "isEmbeddedUIExtensionSupported",
+  "file": "@ohos.app.ability.abilityManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Indicates whether the current device supports EmbeddedUIExtensionAbility.",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.abilityManager.setResidentProcessEnabled",
+  "kit": "AbilityKit",
+  "module": "abilityManager",
+  "name": "setResidentProcessEnabled",
+  "file": "@ohos.app.ability.abilityManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ],
+   [
+    "enable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Enables or disables the resident process of an application.",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.appManager.isRamConstrainedDevice",
+  "kit": "AbilityKit",
+  "module": "appManager",
+  "name": "isRamConstrainedDevice",
+  "file": "@ohos.app.ability.appManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether the current device is a RAM-constrained device (a device with severely limited memory resources).",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.appRecovery.restartApp",
+  "kit": "AbilityKit",
+  "module": "appRecovery",
+  "name": "restartApp",
+  "file": "@ohos.app.ability.appRecovery.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Restarts the current process and starts the first ability that is displayed when the application is started. If the",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.appRecovery.saveAppState",
+  "kit": "AbilityKit",
+  "module": "appRecovery",
+  "name": "saveAppState",
+  "file": "@ohos.app.ability.appRecovery.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Saves the application state. This API can be used together with the APIs of",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.autoStartupManager.isAutoStartupSupported",
+  "kit": "AbilityKit",
+  "module": "autoStartupManager",
+  "name": "isAutoStartupSupported",
+  "file": "@ohos.app.ability.autoStartupManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the current device supports auto startup on this device.",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.bundleManager.isApplicationEnabled",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "isApplicationEnabled",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether an application is enabled. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.bundleManager.isApplicationEnabledSync",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "isApplicationEnabledSync",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether an application is enabled. This API returns the result synchronously.",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.bundleManager.setAdditionalInfo",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "setAdditionalInfo",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ],
+   [
+    "additionalInfo",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets additional information for an application. This API can be called only by AppGallery.",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.distributedBundleManager.getRemoteBundleVersionCode",
+  "kit": "AbilityKit",
+  "module": "distributedBundleManager",
+  "name": "getRemoteBundleVersionCode",
+  "file": "@ohos.bundle.distributedBundleManager.d.ts",
+  "params": [
+   [
+    "deviceId",
+    "string",
+    false
+   ],
+   [
+    "bundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Obtains the version information of an app with a specified bundle name on a specified remote device.",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.hyperSnapManager.setHyperSnapEnabled",
+  "kit": "AbilityKit",
+  "module": "hyperSnapManager",
+  "name": "setHyperSnapEnabled",
+  "file": "@ohos.app.ability.hyperSnapManager.d.ts",
+  "params": [
+   [
+    "enableFlag",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Enables or disables the Hyper Snap performance optimization for the application.",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.overlay.setOverlayEnabled",
+  "kit": "AbilityKit",
+  "module": "overlay",
+  "name": "setOverlayEnabled",
+  "file": "@ohos.bundle.overlay.d.ts",
+  "params": [
+   [
+    "moduleName",
+    "string",
+    false
+   ],
+   [
+    "isEnabled",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Enables or disables a module with the overlay feature in the current application. This API uses a promise to return",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.shortcutManager.isShortcutSupported",
+  "kit": "AbilityKit",
+  "module": "shortcutManager",
+  "name": "isShortcutSupported",
+  "file": "@ohos.bundle.shortcutManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the current device supports shortcuts.",
+  "score": 2
+ },
+ {
+  "target": "AbilityKit.shortcutManager.setShortcutVisibleForSelf",
+  "kit": "AbilityKit",
+  "module": "shortcutManager",
+  "name": "setShortcutVisibleForSelf",
+  "file": "@ohos.bundle.shortcutManager.d.ts",
+  "params": [
+   [
+    "id",
+    "string",
+    false
+   ],
+   [
+    "visible",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets whether to display the specified shortcut for the current application. This API uses a promise to return the",
+  "score": 2
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isAudioMonoEnabled",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isAudioMonoEnabled",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether mono audio mode is enabled. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isAudioMonoEnabledSync",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isAudioMonoEnabledSync",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether mono audio mode is enabled with a synchronous mode.",
+  "score": 2
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isOpenAccessibilitySync",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isOpenAccessibilitySync",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether any accessibility application has been enabled in the system. To obtain information about",
+  "score": 2
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isScreenReaderOpenSync",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isScreenReaderOpenSync",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether screen reader mode is enabled.",
+  "score": 2
+ },
+ {
+  "target": "AccessibilityKit.accessibility.setSeniorModeStateForSelf",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "setSeniorModeStateForSelf",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [
+   [
+    "state",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Set this application's senior mode.",
+  "score": 2
+ },
+ {
+  "target": "ArkUI.display.hasPrivateWindow",
+  "kit": "ArkUI",
+  "module": "display",
+  "name": "hasPrivateWindow",
+  "file": "@ohos.display.d.ts",
+  "params": [
+   [
+    "displayId",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether there is a visible privacy window on a display. The privacy window can be set by calling",
+  "score": 2
+ },
+ {
+  "target": "ArkUI.display.isCaptured",
+  "kit": "ArkUI",
+  "module": "display",
+  "name": "isCaptured",
+  "file": "@ohos.display.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the device's screen content is being captured.",
+  "score": 2
+ },
+ {
+  "target": "ArkUI.screen.isScreenRotationLocked",
+  "kit": "ArkUI",
+  "module": "screen",
+  "name": "isScreenRotationLocked",
+  "file": "@ohos.screen.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether auto rotate is locked. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "ArkUI.screen.setScreenRotationLocked",
+  "kit": "ArkUI",
+  "module": "screen",
+  "name": "setScreenRotationLocked",
+  "file": "@ohos.screen.d.ts",
+  "params": [
+   [
+    "isLocked",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets whether to lock auto rotate. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "ArkUI.window.toggleShownStateForAllAppWindows",
+  "kit": "ArkUI",
+  "module": "window",
+  "name": "toggleShownStateForAllAppWindows",
+  "file": "@ohos.window.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Hides or restores the application's windows during quick multi-window switching. This API uses a promise to return",
+  "score": 2
+ },
+ {
+  "target": "BackgroundTasksKit.reminderAgentManager.cancelReminderOnDisplay",
+  "kit": "BackgroundTasksKit",
+  "module": "reminderAgentManager",
+  "name": "cancelReminderOnDisplay",
+  "file": "@ohos.reminderAgentManager.d.ts",
+  "params": [
+   [
+    "reminderId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Cancels the notification card displayed in the notification center with the agent reminder data retained. For",
+  "score": 2
+ },
+ {
+  "target": "BasicServicesKit.brightness.setValue",
+  "kit": "BasicServicesKit",
+  "module": "brightness",
+  "name": "setValue",
+  "file": "@ohos.brightness.d.ts",
+  "params": [
+   [
+    "value",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets the screen brightness.",
+  "score": 2
+ },
+ {
+  "target": "BasicServicesKit.commonEventManager.setStaticSubscriberState",
+  "kit": "BasicServicesKit",
+  "module": "commonEventManager",
+  "name": "setStaticSubscriberState",
+  "file": "@ohos.commonEventManager.d.ts",
+  "params": [
+   [
+    "enable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Enables or disables static subscription for an app. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "BasicServicesKit.screenLock.isLocked",
+  "kit": "BasicServicesKit",
+  "module": "screenLock",
+  "name": "isLocked",
+  "file": "@ohos.screenLock.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the screen is currently locked.",
+  "score": 2
+ },
+ {
+  "target": "BasicServicesKit.serialManager.cancelSerialRight",
+  "kit": "BasicServicesKit",
+  "module": "serialManager",
+  "name": "cancelSerialRight",
+  "file": "@ohos.usbManager.serial.d.ts",
+  "params": [
+   [
+    "portId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Cancels the permission to access the serial port device when the application is running. This API is used to close",
+  "score": 2
+ },
+ {
+  "target": "BasicServicesKit.serialManager.hasSerialRight",
+  "kit": "BasicServicesKit",
+  "module": "serialManager",
+  "name": "hasSerialRight",
+  "file": "@ohos.usbManager.serial.d.ts",
+  "params": [
+   [
+    "portId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the application has the permission to access the serial port device. When an application is",
+  "score": 2
+ },
+ {
+  "target": "BasicServicesKit.serialManager.requestSerialRight",
+  "kit": "BasicServicesKit",
+  "module": "serialManager",
+  "name": "requestSerialRight",
+  "file": "@ohos.usbManager.serial.d.ts",
+  "params": [
+   [
+    "portId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Requests the permission for the application to access the serial port device. After the application exits, the",
+  "score": 2
+ },
+ {
+  "target": "BasicServicesKit.usbManager.hasRight",
+  "kit": "BasicServicesKit",
+  "module": "usbManager",
+  "name": "hasRight",
+  "file": "@ohos.usbManager.d.ts",
+  "params": [
+   [
+    "deviceName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the application has the permission to access the device.",
+  "score": 2
+ },
+ {
+  "target": "BasicServicesKit.usbManager.removeRight",
+  "kit": "BasicServicesKit",
+  "module": "usbManager",
+  "name": "removeRight",
+  "file": "@ohos.usbManager.d.ts",
+  "params": [
+   [
+    "deviceName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Removes the device access permission for the application. System applications are granted the device access",
+  "score": 2
+ },
+ {
+  "target": "BasicServicesKit.usbManager.requestRight",
+  "kit": "BasicServicesKit",
+  "module": "usbManager",
+  "name": "requestRight",
+  "file": "@ohos.usbManager.d.ts",
+  "params": [
+   [
+    "deviceName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Requests the temporary device access permission for the application. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.access.isBluetoothSupported",
+  "kit": "ConnectivityKit",
+  "module": "access",
+  "name": "isBluetoothSupported",
+  "file": "@ohos.bluetooth.access.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether Bluetooth is available.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.nfcController.isNfcOpen",
+  "kit": "ConnectivityKit",
+  "module": "nfcController",
+  "name": "isNfcOpen",
+  "file": "@ohos.nfc.controller.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether NFC is enabled.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.partnerAgent.isPartnerAgentSupported",
+  "kit": "ConnectivityKit",
+  "module": "partnerAgent",
+  "name": "isPartnerAgentSupported",
+  "file": "@ohos.FusionConnectivity.partnerAgent.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the current device supports the partner agent feature.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.ranging.isRangingSupported",
+  "kit": "ConnectivityKit",
+  "module": "ranging",
+  "name": "isRangingSupported",
+  "file": "@ohos.FusionConnectivity.ranging.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the current device supports the ranging feature.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.disableNetwork",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "disableNetwork",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "netId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Disable the specified DeviceConfig by networkId.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.disableWifi",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "disableWifi",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Disable Wi-Fi.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.enableWifi",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "enableWifi",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Enable Wi-Fi.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.getSignalLevel",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "getSignalLevel",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "rssi",
+    "int",
+    false
+   ],
+   [
+    "band",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Calculate the Wi-Fi signal level based on the Wi-Fi RSSI and frequency band.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.getSupportedFeatures",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "getSupportedFeatures",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": false,
+  "description": "Obtain the features supported by the device.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.isFeatureSupported",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "isFeatureSupported",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "featureId",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the device supports a specified feature.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.isHotspotActive",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "isHotspotActive",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether Wi-Fi hotspot is active on a device.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.isOpenSoftApAllowed",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "isOpenSoftApAllowed",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether Wi-Fi hotspot is can be operated under some situation. When the airplane mode is turned on",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.isWlanSupported",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "isWlanSupported",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Query whether Wi-Fi is available",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.removeAllNetwork",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "removeAllNetwork",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Remove all the saved Wi-Fi configurations.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.setDeviceName",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "setDeviceName",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "devName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Set the name of the Wi-Fi P2P device.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.setScanAlwaysAllowed",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "setScanAlwaysAllowed",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "isScanAlwaysAllowed",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "User can trigger scan even Wi-Fi is disabled.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.startDiscoverDevices",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "startDiscoverDevices",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Start discover Wi-Fi P2P devices.",
+  "score": 2
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.stopDiscoverDevices",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "stopDiscoverDevices",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Stop discover Wi-Fi P2P devices.",
+  "score": 2
+ },
+ {
+  "target": "CoreFileKit.Environment.getStorageDataDir",
+  "kit": "CoreFileKit",
+  "module": "Environment",
+  "name": "getStorageDataDir",
+  "file": "@ohos.file.environment.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the root directory of the memory. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "CoreFileKit.cloudSyncManager.notifyDataChange",
+  "kit": "CoreFileKit",
+  "module": "cloudSyncManager",
+  "name": "notifyDataChange",
+  "file": "@ohos.file.cloudSyncManager.d.ts",
+  "params": [
+   [
+    "accountId",
+    "string",
+    false
+   ],
+   [
+    "bundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Notifies the device-cloud service that the cloud data of a specific application under a specified account has been",
+  "score": 2
+ },
+ {
+  "target": "CoreFileKit.keyManager.deactivateUserKey",
+  "kit": "CoreFileKit",
+  "module": "keyManager",
+  "name": "deactivateUserKey",
+  "file": "@ohos.file.keyManager.d.ts",
+  "params": [
+   [
+    "userId",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "When the screen is locked, the specified user key is uninstalled synchronously.",
+  "score": 2
+ },
+ {
+  "target": "DataProtectionKit.dlpPermission.cleanSandboxAppConfig",
+  "kit": "DataProtectionKit",
+  "module": "dlpPermission",
+  "name": "cleanSandboxAppConfig",
+  "file": "@ohos.dlpPermission.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Clears the sandbox application configuration. After the API is successfully called, the sandbox application",
+  "score": 2
+ },
+ {
+  "target": "DeviceCertificateKit.certificateManagerDialog.supportsCACertDialog",
+  "kit": "DeviceCertificateKit",
+  "module": "certificateManagerDialog",
+  "name": "supportsCACertDialog",
+  "file": "@ohos.security.certManagerDialog.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the device supports the [openCertificateDetailDialog]{@link",
+  "score": 2
+ },
+ {
+  "target": "InputKit.pointer.getHoverScrollState",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getHoverScrollState",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains the status of the mouse hover scroll switch. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "InputKit.pointer.setHoverScrollState",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setHoverScrollState",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "state",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the status of the mouse hover scroll switch. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "MechanicKit.mechanicManager.setCameraTrackingEnabled",
+  "kit": "MechanicKit",
+  "module": "mechanicManager",
+  "name": "setCameraTrackingEnabled",
+  "file": "@ohos.distributedHardware.mechanicManager.d.ts",
+  "params": [
+   [
+    "isEnabled",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Enables or disables camera tracking.",
+  "score": 2
+ },
+ {
+  "target": "MultimodalAwarenessKit.metadataBinding.notifyMetadataBindingEvent",
+  "kit": "MultimodalAwarenessKit",
+  "module": "metadataBinding",
+  "name": "notifyMetadataBindingEvent",
+  "file": "@ohos.multimodalAwareness.metadataBinding.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Transfers metadata to the application or service that calls the encoding API. This API uses a promise to return the",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.cancelAll",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "cancelAll",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Cancels all notifications of this application. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.cancelGroup",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "cancelGroup",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "groupName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Cancels notifications under a notification group of this application. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.getActiveNotificationCount",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "getActiveNotificationCount",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Obtains the number of active notifications of this application. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.isPriorityEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "isPriorityEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether the priority notification is enabled.",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.isPriorityIntelligentEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "isPriorityIntelligentEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains whether the intelligent priority notification service is enabled. This API uses a promise to return the",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.isSmartReminderEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "isSmartReminderEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "deviceType",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains a smart reminder for cross-device collaboration. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.offBadgeNumberQuery",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "offBadgeNumberQuery",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Unregisters the callback for querying the number of application badges.",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.removeAllSlots",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "removeAllSlots",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Removes all notification slots for this application. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.setGeofenceEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "setGeofenceEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "enabled",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the enabling state of geofencing. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "NotificationKit.notificationManager.setSmartReminderEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "setSmartReminderEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "deviceType",
+    "string",
+    false
+   ],
+   [
+    "enable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets a smart reminder for cross-device collaboration. This API uses a promise to return the result.",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiTraceMeter.isTraceEnabled",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiTraceMeter",
+  "name": "isTraceEnabled",
+  "file": "@ohos.hiTraceMeter.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether application trace capture is enabled.",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiTraceMeter.unregisterTraceListener",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiTraceMeter",
+  "name": "unregisterTraceListener",
+  "file": "@ohos.hiTraceMeter.d.ts",
+  "params": [
+   [
+    "index",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Unregisters the callback function used to notify whether the trace capture is enabled, which is registered using",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getAppVMObjectUsedSize",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getAppVMObjectUsedSize",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "bigint",
+  "isPromise": false,
+  "description": "Obtains the VM memory size occupied by ArkTS objects.",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getGraphicsMemory",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getGraphicsMemory",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the total GPU memory size (**gl** + **graph**) of the application. This API uses a promise to return the",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getGraphicsMemorySync",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getGraphicsMemorySync",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtains the total GPU memory size (GL + graph) of an application in synchronous mode.",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getGwpAsanGrayscaleState",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getGwpAsanGrayscaleState",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtain the remaining days of GWP-ASan grayscale for your application.",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getPss",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getPss",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "bigint",
+  "isPromise": false,
+  "description": "Obtains the size of the physical memory actually used by the application process. This API is implemented by",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.isDebugState",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "isDebugState",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Obtains the debugging state of an application process.",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.startJsCpuProfiling",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "startJsCpuProfiling",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [
+   [
+    "filename",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Starts the VM profiling method. **startJsCpuProfiling(filename: string)** and **stopJsCpuProfiling()** are called",
+  "score": 2
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.stopJsCpuProfiling",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "stopJsCpuProfiling",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Stops the VM profiling method. **stopJsCpuProfiling()** and **startJsCpuProfiling(filename: string)** are called in",
+  "score": 2
+ },
+ {
+  "target": "SensorServiceKit.vibrator.isHdHapticSupported",
+  "kit": "SensorServiceKit",
+  "module": "vibrator",
+  "name": "isHdHapticSupported",
+  "file": "@ohos.vibrator.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether HD vibration is supported.",
+  "score": 2
+ },
+ {
+  "target": "SensorServiceKit.vibrator.isSupportEffectSync",
+  "kit": "SensorServiceKit",
+  "module": "vibrator",
+  "name": "isSupportEffectSync",
+  "file": "@ohos.vibrator.d.ts",
+  "params": [
+   [
+    "effectId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the preset vibration effect is supported.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.call.controlCamera",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "controlCamera",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "callId",
+    "int",
+    false
+   ],
+   [
+    "cameraId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Control camera to open/close/switch camera by cameraId when video call.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.call.removeMissedIncomingCallNotification",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "removeMissedIncomingCallNotification",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Remove missed incoming call notification.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.call.setDisplaySurface",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "setDisplaySurface",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "callId",
+    "int",
+    false
+   ],
+   [
+    "surfaceId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Set display surface when video call.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.data.isCellularDataRoamingEnabled",
+  "kit": "TelephonyKit",
+  "module": "data",
+  "name": "isCellularDataRoamingEnabled",
+  "file": "@ohos.telephony.data.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Check whether roaming is enabled for cellular data services.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.data.isCellularDataRoamingEnabledSync",
+  "kit": "TelephonyKit",
+  "module": "data",
+  "name": "isCellularDataRoamingEnabledSync",
+  "file": "@ohos.telephony.data.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether roaming is enabled for cellular data services.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.radio.isNRSupported",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "isNRSupported",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the device supports 5G New Radio (NR).",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.sim.hasOperatorPrivileges",
+  "kit": "TelephonyKit",
+  "module": "sim",
+  "name": "hasOperatorPrivileges",
+  "file": "@ohos.telephony.sim.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether your application (the caller) has been granted the operator permissions.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.sms.getDefaultSmsSimId",
+  "kit": "TelephonyKit",
+  "module": "sms",
+  "name": "getDefaultSmsSimId",
+  "file": "@ohos.telephony.sms.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the default SIM ID for sending SMS messages.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.sms.getDefaultSmsSlotId",
+  "kit": "TelephonyKit",
+  "module": "sms",
+  "name": "getDefaultSmsSlotId",
+  "file": "@ohos.telephony.sms.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the default SIM card for sending SMS messages.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.sms.isImsSmsSupported",
+  "kit": "TelephonyKit",
+  "module": "sms",
+  "name": "isImsSmsSupported",
+  "file": "@ohos.telephony.sms.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "SMS over IMS is supported if IMS is registered and SMS is supported on IMS.",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.sms.setDefaultSmsSlotId",
+  "kit": "TelephonyKit",
+  "module": "sms",
+  "name": "setDefaultSmsSlotId",
+  "file": "@ohos.telephony.sms.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the default SIM card for sending SMS messages. You can obtain the default SIM card by",
+  "score": 2
+ },
+ {
+  "target": "TelephonyKit.sms.setSmscAddr",
+  "kit": "TelephonyKit",
+  "module": "sms",
+  "name": "setSmscAddr",
+  "file": "@ohos.telephony.sms.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ],
+   [
+    "smscAddr",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the address for the Short Message Service Center (SMSC) based on a specified slot ID.",
+  "score": 2
+ },
+ {
+  "target": "AVSessionKit.avSession.isDesktopLyricSupported",
+  "kit": "AVSessionKit",
+  "module": "avSession",
+  "name": "isDesktopLyricSupported",
+  "file": "@ohos.multimedia.avsession.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Whether desktop lyric feature is supported.",
+  "score": 1
+ },
+ {
+  "target": "AVSessionKit.avSession.setDiscoverable",
+  "kit": "AVSessionKit",
+  "module": "avSession",
+  "name": "setDiscoverable",
+  "file": "@ohos.multimedia.avsession.d.ts",
+  "params": [
+   [
+    "enable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Enable or disable device to be discoverable, used at sink side.",
+  "score": 1
+ },
+ {
+  "target": "AVSessionKit.avSession.startDeviceLogging",
+  "kit": "AVSessionKit",
+  "module": "avSession",
+  "name": "startDeviceLogging",
+  "file": "@ohos.multimedia.avsession.d.ts",
+  "params": [
+   [
+    "url",
+    "string",
+    false
+   ],
+   [
+    "maxSize",
+    "int",
+    true
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Begin to write device logs into a file descriptor for the purpose of problem locating.",
+  "score": 1
+ },
+ {
+  "target": "AVSessionKit.avSession.stopCastDeviceDiscovery",
+  "kit": "AVSessionKit",
+  "module": "avSession",
+  "name": "stopCastDeviceDiscovery",
+  "file": "@ohos.multimedia.avsession.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Stop device discovery.",
+  "score": 1
+ },
+ {
+  "target": "AVSessionKit.avSession.stopDeviceLogging",
+  "kit": "AVSessionKit",
+  "module": "avSession",
+  "name": "stopDeviceLogging",
+  "file": "@ohos.multimedia.avsession.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Stop the current device written even the discovery is ongoing.",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.appManager.getProcessMemoryByPid",
+  "kit": "AbilityKit",
+  "module": "appManager",
+  "name": "getProcessMemoryByPid",
+  "file": "@ohos.app.ability.appManager.d.ts",
+  "params": [
+   [
+    "pid",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the memory size of a process. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.application.exitMasterProcessRole",
+  "kit": "AbilityKit",
+  "module": "application",
+  "name": "exitMasterProcessRole",
+  "file": "@ohos.app.ability.application.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Relinquishes the [master-process](docroot://application-models/ability-terminology.md#master-process) role from the",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.bundleManager.canOpenLink",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "canOpenLink",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "link",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the target application can be accessed based on the provided link. The scheme specified in the link",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.bundleManager.cleanBundleCacheFilesForSelf",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "cleanBundleCacheFilesForSelf",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Clears the application cache. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.bundleManager.getApplicationLabel",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "getApplicationLabel",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ],
+   [
+    "appIndex",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the name of an application with the specified package name and clone index.",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.bundleManager.getSandboxDataDir",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "getSandboxDataDir",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ],
+   [
+    "appIndex",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the sandbox directory of an application based on the given bundle name and clone index.",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.bundleManager.getSpecifiedDistributionType",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "getSpecifiedDistributionType",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the [distribution type](docroot://security/app-provision-structure.md) of a bundle in synchronous mode. The",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.bundleManager.setAlternateIcon",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "setAlternateIcon",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "alternateIconName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the alternate icon of the caller based on the given alternate icon name.",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.defaultAppManager.isDefaultApplication",
+  "kit": "AbilityKit",
+  "module": "defaultAppManager",
+  "name": "isDefaultApplication",
+  "file": "@ohos.bundle.defaultAppManager.d.ts",
+  "params": [
+   [
+    "type",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether this application is the default application of a system-defined application type or a",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.defaultAppManager.isDefaultApplicationSync",
+  "kit": "AbilityKit",
+  "module": "defaultAppManager",
+  "name": "isDefaultApplicationSync",
+  "file": "@ohos.bundle.defaultAppManager.d.ts",
+  "params": [
+   [
+    "type",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether this application is the default application of a system-defined application type or a",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.hyperSnapManager.requestRebuildHyperSnap",
+  "kit": "AbilityKit",
+  "module": "hyperSnapManager",
+  "name": "requestRebuildHyperSnap",
+  "file": "@ohos.app.ability.hyperSnapManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Requests the recreation of the Hyper Snap process snapshot for the application.",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.uriPermissionManager.revokeUriPermission",
+  "kit": "AbilityKit",
+  "module": "uriPermissionManager",
+  "name": "revokeUriPermission",
+  "file": "@ohos.application.uriPermissionManager.d.ts",
+  "params": [
+   [
+    "uri",
+    "string",
+    false
+   ],
+   [
+    "targetBundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Revokes the URI permission from an application. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isAnimationReduceEnabled",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isAnimationReduceEnabled",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether animation reduction mode is enabled. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isAnimationReduceEnabledSync",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isAnimationReduceEnabledSync",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether animation reduction mode is enabled with a synchronous method.",
+  "score": 1
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isFlashReminderEnabled",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isFlashReminderEnabled",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether flash alerts mode is enabled. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isFlashReminderEnabledSync",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isFlashReminderEnabledSync",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether flash alerts mode is enabled with a synchronous method.",
+  "score": 1
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isOpenTouchGuideSync",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isOpenTouchGuideSync",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether touch guide mode is enabled.",
+  "score": 1
+ },
+ {
+  "target": "AccessibilityKit.accessibility.isSeniorModeEnabled",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "isSeniorModeEnabled",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether the senior mode is enabled. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "ArkData.relationalStore.isVectorSupported",
+  "kit": "ArkData",
+  "module": "relationalStore",
+  "name": "isVectorSupported",
+  "file": "@ohos.data.relationalStore.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the system supports vector stores.",
+  "score": 1
+ },
+ {
+  "target": "ArkTS.buffer.isEncoding",
+  "kit": "ArkTS",
+  "module": "buffer",
+  "name": "isEncoding",
+  "file": "@ohos.buffer.d.ts",
+  "params": [
+   [
+    "encoding",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the encoding format is supported.",
+  "score": 1
+ },
+ {
+  "target": "ArkTS.fastbuffer.isEncoding",
+  "kit": "ArkTS",
+  "module": "fastbuffer",
+  "name": "isEncoding",
+  "file": "@ohos.fastbuffer.d.ts",
+  "params": [
+   [
+    "encoding",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Returns true if encoding is the name of a supported character encoding, or false otherwise.",
+  "score": 1
+ },
+ {
+  "target": "ArkTS.process.getPastCpuTime",
+  "kit": "ArkTS",
+  "module": "process",
+  "name": "getPastCpuTime",
+  "file": "@ohos.process.d.ts",
+  "params": [],
+  "returnType": "number",
+  "isPromise": false,
+  "description": "Obtains the CPU time (in milliseconds) from the time the process starts to the current time.",
+  "score": 1
+ },
+ {
+  "target": "ArkTS.util.getMainThreadStackTrace",
+  "kit": "ArkTS",
+  "module": "util",
+  "name": "getMainThreadStackTrace",
+  "file": "@ohos.util.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the stack trace information of the main thread. A maximum of 64 call frames can be returned.",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.display.isFoldable",
+  "kit": "ArkUI",
+  "module": "display",
+  "name": "isFoldable",
+  "file": "@ohos.display.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether this device is foldable.",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.display.removeVirtualScreenSurface",
+  "kit": "ArkUI",
+  "module": "display",
+  "name": "removeVirtualScreenSurface",
+  "file": "@ohos.display.d.ts",
+  "params": [
+   [
+    "screenId",
+    "long",
+    false
+   ],
+   [
+    "surfaceId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Remove surface for the virtual screen.",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.performanceMonitor.end",
+  "kit": "ArkUI",
+  "module": "performanceMonitor",
+  "name": "end",
+  "file": "@ohos.arkui.performanceMonitor.d.ts",
+  "params": [
+   [
+    "scene",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Marks the end of a user scene. Call this API when the scene ends.",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.screen.destroyVirtualScreen",
+  "kit": "ArkUI",
+  "module": "screen",
+  "name": "destroyVirtualScreen",
+  "file": "@ohos.screen.d.ts",
+  "params": [
+   [
+    "screenId",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Destroys a virtual screen. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.window.getGlobalWindowMode",
+  "kit": "ArkUI",
+  "module": "window",
+  "name": "getGlobalWindowMode",
+  "file": "@ohos.window.d.ts",
+  "params": [
+   [
+    "displayId",
+    "long",
+    true
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the window mode of the window that is in the foreground lifecycle on the specified screen. This API uses a",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.window.minimizeAll",
+  "kit": "ArkUI",
+  "module": "window",
+  "name": "minimizeAll",
+  "file": "@ohos.window.d.ts",
+  "params": [
+   [
+    "id",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Minimizes all main windows on a display. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.window.minimizeAllWithExclusion",
+  "kit": "ArkUI",
+  "module": "window",
+  "name": "minimizeAllWithExclusion",
+  "file": "@ohos.window.d.ts",
+  "params": [
+   [
+    "displayId",
+    "long",
+    false
+   ],
+   [
+    "excludeWindowId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Minimizes all main windows on a display while keeping one window open. This API uses a promise to return the",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.window.setGestureNavigationEnabled",
+  "kit": "ArkUI",
+  "module": "window",
+  "name": "setGestureNavigationEnabled",
+  "file": "@ohos.window.d.ts",
+  "params": [
+   [
+    "enable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Enables or disables gesture navigation. This API uses a promise to return the result. For security purposes, the",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.window.shiftAppWindowFocus",
+  "kit": "ArkUI",
+  "module": "window",
+  "name": "shiftAppWindowFocus",
+  "file": "@ohos.window.d.ts",
+  "params": [
+   [
+    "sourceWindowId",
+    "int",
+    false
+   ],
+   [
+    "targetWindowId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Shifts the window focus from the source window to the target window in the same application. The window focus can",
+  "score": 1
+ },
+ {
+  "target": "ArkUI.window.shiftAppWindowPointerEvent",
+  "kit": "ArkUI",
+  "module": "window",
+  "name": "shiftAppWindowPointerEvent",
+  "file": "@ohos.window.d.ts",
+  "params": [
+   [
+    "sourceWindowId",
+    "int",
+    false
+   ],
+   [
+    "targetWindowId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Transfers a mouse input event from one window to another within the same application. This API takes effect only",
+  "score": 1
+ },
+ {
+  "target": "BackgroundTasksKit.reminderAgentManager.cancelAllReminders",
+  "kit": "BackgroundTasksKit",
+  "module": "reminderAgentManager",
+  "name": "cancelAllReminders",
+  "file": "@ohos.reminderAgentManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Cancels all reminders set by the current application. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "BackgroundTasksKit.reminderAgentManager.deleteExcludeDates",
+  "kit": "BackgroundTasksKit",
+  "module": "reminderAgentManager",
+  "name": "deleteExcludeDates",
+  "file": "@ohos.reminderAgentManager.d.ts",
+  "params": [
+   [
+    "reminderId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Deletes all non-reminder dates for a recurring calendar reminder with a specific ID. This API uses a promise to",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.batteryInfo.getBatteryConfig",
+  "kit": "BasicServicesKit",
+  "module": "batteryInfo",
+  "name": "getBatteryConfig",
+  "file": "@ohos.batteryInfo.d.ts",
+  "params": [
+   [
+    "sceneName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the battery configuration based on the specified scenario.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.batteryInfo.setBatteryConfig",
+  "kit": "BasicServicesKit",
+  "module": "batteryInfo",
+  "name": "setBatteryConfig",
+  "file": "@ohos.batteryInfo.d.ts",
+  "params": [
+   [
+    "sceneName",
+    "string",
+    false
+   ],
+   [
+    "sceneValue",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "number",
+  "isPromise": false,
+  "description": "Sets the battery configuration based on the specified scenario.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.batteryStats.getAppPowerPercent",
+  "kit": "BasicServicesKit",
+  "module": "batteryStats",
+  "name": "getAppPowerPercent",
+  "file": "@ohos.batteryStatistics.d.ts",
+  "params": [
+   [
+    "uid",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "double",
+  "isPromise": false,
+  "description": "Obtains the proportion of the power consumption of an application.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.batteryStats.getAppPowerValue",
+  "kit": "BasicServicesKit",
+  "module": "batteryStats",
+  "name": "getAppPowerValue",
+  "file": "@ohos.batteryStatistics.d.ts",
+  "params": [
+   [
+    "uid",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "double",
+  "isPromise": false,
+  "description": "Obtains the power consumption of an application, in unit of mAh.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.cacheDownload.cancel",
+  "kit": "BasicServicesKit",
+  "module": "cacheDownload",
+  "name": "cancel",
+  "file": "@ohos.request.cacheDownload.d.ts",
+  "params": [
+   [
+    "url",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Cancels an ongoing download task based on the URL. The saved memory cache and file cache are not affected.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.cacheDownload.clearMemoryCache",
+  "kit": "BasicServicesKit",
+  "module": "cacheDownload",
+  "name": "clearMemoryCache",
+  "file": "@ohos.request.cacheDownload.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Clears this memory cache.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.cacheDownload.setMemoryCacheSize",
+  "kit": "BasicServicesKit",
+  "module": "cacheDownload",
+  "name": "setMemoryCacheSize",
+  "file": "@ohos.request.cacheDownload.d.ts",
+  "params": [
+   [
+    "bytes",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets the upper limit of the memory cache size for the **cacheDownload** component.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.customConfig.getChannelId",
+  "kit": "BasicServicesKit",
+  "module": "customConfig",
+  "name": "getChannelId",
+  "file": "@ohos.customization.customConfig.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains a pre-installed channel ID of this application.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.osAccount.isDomainAccountSupported",
+  "kit": "BasicServicesKit",
+  "module": "osAccount",
+  "name": "isDomainAccountSupported",
+  "file": "@ohos.account.osAccount.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether this domain account is supported. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.power.isActive",
+  "kit": "BasicServicesKit",
+  "module": "power",
+  "name": "isActive",
+  "file": "@ohos.power.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the current device is active.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.power.isStandby",
+  "kit": "BasicServicesKit",
+  "module": "power",
+  "name": "isStandby",
+  "file": "@ohos.power.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the device is in standby mode.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.serial.addPortAuthorization",
+  "kit": "BasicServicesKit",
+  "module": "serial",
+  "name": "addPortAuthorization",
+  "file": "@ohos.busManager.serial.d.ts",
+  "params": [
+   [
+    "tokenId",
+    "string",
+    false
+   ],
+   [
+    "deviceId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Adds the permission for applications to access the serial port.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.serialManager.close",
+  "kit": "BasicServicesKit",
+  "module": "serialManager",
+  "name": "close",
+  "file": "@ohos.usbManager.serial.d.ts",
+  "params": [
+   [
+    "portId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Closes the serial port device.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.serialManager.open",
+  "kit": "BasicServicesKit",
+  "module": "serialManager",
+  "name": "open",
+  "file": "@ohos.usbManager.serial.d.ts",
+  "params": [
+   [
+    "portId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Opens a serial port device.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.settings.isDoubleClickAppForSelf",
+  "kit": "BasicServicesKit",
+  "module": "settings",
+  "name": "isDoubleClickAppForSelf",
+  "file": "@ohos.settings.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "1. Checks whether the application started by double-pressing the Down key is the application itself.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.systemDateTime.getAutoTimeStatus",
+  "kit": "BasicServicesKit",
+  "module": "systemDateTime",
+  "name": "getAutoTimeStatus",
+  "file": "@ohos.systemDateTime.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Obtains the switch status of the automatic time setting. This API returns the result synchronously.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.systemTimer.destroyTimer",
+  "kit": "BasicServicesKit",
+  "module": "systemTimer",
+  "name": "destroyTimer",
+  "file": "@ohos.systemTimer.d.ts",
+  "params": [
+   [
+    "timer",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Destroys a timer. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.systemTimer.startTimer",
+  "kit": "BasicServicesKit",
+  "module": "systemTimer",
+  "name": "startTimer",
+  "file": "@ohos.systemTimer.d.ts",
+  "params": [
+   [
+    "timer",
+    "long",
+    false
+   ],
+   [
+    "triggerTime",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Starts a timer. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "BasicServicesKit.systemTimer.stopTimer",
+  "kit": "BasicServicesKit",
+  "module": "systemTimer",
+  "name": "stopTimer",
+  "file": "@ohos.systemTimer.d.ts",
+  "params": [
+   [
+    "timer",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Stops a timer. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.access.convertUuid",
+  "kit": "ConnectivityKit",
+  "module": "access",
+  "name": "convertUuid",
+  "file": "@ohos.bluetooth.access.d.ts",
+  "params": [
+   [
+    "uuid",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Convert 2-byte and 4-byte UUID strings to the 16-byte UUID string standard used in Bluetooth.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.connection.getLastConnectionTime",
+  "kit": "ConnectivityKit",
+  "module": "connection",
+  "name": "getLastConnectionTime",
+  "file": "@ohos.bluetooth.connection.d.ts",
+  "params": [
+   [
+    "deviceId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get latest connection time of device.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.socket.getDeviceId",
+  "kit": "ConnectivityKit",
+  "module": "socket",
+  "name": "getDeviceId",
+  "file": "@ohos.bluetooth.socket.d.ts",
+  "params": [
+   [
+    "clientSocket",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtain the device id in the client socket.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.socket.getL2capPsm",
+  "kit": "ConnectivityKit",
+  "module": "socket",
+  "name": "getL2capPsm",
+  "file": "@ohos.bluetooth.socket.d.ts",
+  "params": [
+   [
+    "serverSocket",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Get l2cap socket psm.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.allowAutoConnect",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "allowAutoConnect",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "netId",
+    "int",
+    false
+   ],
+   [
+    "isAllowed",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Set whther to allow automatic connnect by networkId.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.connectToCandidateConfig",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "connectToCandidateConfig",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "networkId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Connect to a specified candidate hotspot by networkId, only the configuration which is added by ourself",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.connectToCandidateConfigWithUserAction",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "connectToCandidateConfigWithUserAction",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "networkId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Connect to a specified candidate hotspot by networkId, and wait for user respond result.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.deletePersistentGroup",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "deletePersistentGroup",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "netId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Delete the persistent P2P group with the specified network ID.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.disconnect",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "disconnect",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Disconnect connection between sta and Wi-Fi hotspot.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.enableSemiWifi",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "enableSemiWifi",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Enable semi - Wifi.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.factoryReset",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "factoryReset",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Reset all saved device configure.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.getCountryCode",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "getCountryCode",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtain the country code of the device.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.isConnected",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "isConnected",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the Wi-Fi connection has been set up.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.isRandomMacDisabled",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "isRandomMacDisabled",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "is random mac disabled",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.reassociate",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "reassociate",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Re-associate to current network.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.reconnect",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "reconnect",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Re-connect to current network.",
+  "score": 1
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.startScan",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "startScan",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Scan Wi-Fi hotspot.",
+  "score": 1
+ },
+ {
+  "target": "CoreFileKit.fileUri.getUriFromPath",
+  "kit": "CoreFileKit",
+  "module": "fileUri",
+  "name": "getUriFromPath",
+  "file": "@ohos.file.fileuri.d.ts",
+  "params": [
+   [
+    "path",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Get the uri from the path of file in app sandbox",
+  "score": 1
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getFreeSizeOfVolume",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getFreeSizeOfVolume",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [
+   [
+    "volumeUuid",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get the free size of volume.",
+  "score": 1
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getFreeSizeSync",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getFreeSizeSync",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": false,
+  "description": "Obtains the available space of the built-in storage, in bytes. This API returns the result synchronously.",
+  "score": 1
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getTotalSizeOfVolume",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getTotalSizeOfVolume",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [
+   [
+    "volumeUuid",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get the total size of volume.",
+  "score": 1
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getTotalSizeSync",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getTotalSizeSync",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": false,
+  "description": "Obtains the total space of the built-in storage, in bytes. This API returns the result synchronously.",
+  "score": 1
+ },
+ {
+  "target": "DataProtectionKit.dlpPermission.getDLPSuffix",
+  "kit": "DataProtectionKit",
+  "module": "dlpPermission",
+  "name": "getDLPSuffix",
+  "file": "@ohos.dlpPermission.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the DLP file name extension. After the API is called successfully, the DLP file name extension (for",
+  "score": 1
+ },
+ {
+  "target": "DataProtectionKit.dlpPermission.getSandboxAppConfig",
+  "kit": "DataProtectionKit",
+  "module": "dlpPermission",
+  "name": "getSandboxAppConfig",
+  "file": "@ohos.dlpPermission.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains sandbox application configuration. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "DataProtectionKit.dlpPermission.isInSandbox",
+  "kit": "DataProtectionKit",
+  "module": "dlpPermission",
+  "name": "isInSandbox",
+  "file": "@ohos.dlpPermission.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether this application is running in a DLP sandbox environment. This API uses a promise to return the",
+  "score": 1
+ },
+ {
+  "target": "DataProtectionKit.dlpPermission.setSandboxAppConfig",
+  "kit": "DataProtectionKit",
+  "module": "dlpPermission",
+  "name": "setSandboxAppConfig",
+  "file": "@ohos.dlpPermission.d.ts",
+  "params": [
+   [
+    "configInfo",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the configuration information of the sandbox application. The configuration information is in JSON string",
+  "score": 1
+ },
+ {
+  "target": "DistributedServiceKit.abilityConnectionManager.destroyAbilityConnectionSession",
+  "kit": "DistributedServiceKit",
+  "module": "abilityConnectionManager",
+  "name": "destroyAbilityConnectionSession",
+  "file": "@ohos.distributedsched.abilityConnectionManager.d.ts",
+  "params": [
+   [
+    "sessionId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Destroys a collaboration session between applications.",
+  "score": 1
+ },
+ {
+  "target": "DistributedServiceKit.abilityConnectionManager.reject",
+  "kit": "DistributedServiceKit",
+  "module": "abilityConnectionManager",
+  "name": "reject",
+  "file": "@ohos.distributedsched.abilityConnectionManager.d.ts",
+  "params": [
+   [
+    "token",
+    "string",
+    false
+   ],
+   [
+    "reason",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Rejects a connection request in a cross-device collaboration session. After a connection request sent from the peer",
+  "score": 1
+ },
+ {
+  "target": "DistributedServiceKit.abilityConnectionManager.sendMessage",
+  "kit": "DistributedServiceKit",
+  "module": "abilityConnectionManager",
+  "name": "sendMessage",
+  "file": "@ohos.distributedsched.abilityConnectionManager.d.ts",
+  "params": [
+   [
+    "sessionId",
+    "int",
+    false
+   ],
+   [
+    "msg",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sends text messages after a collaboration session is set up.",
+  "score": 1
+ },
+ {
+  "target": "DrmKit.drm.isMediaKeySystemSupported",
+  "kit": "DrmKit",
+  "module": "drm",
+  "name": "isMediaKeySystemSupported",
+  "file": "@ohos.multimedia.drm.d.ts",
+  "params": [
+   [
+    "name",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Judge whether a system that specifies name is supported.",
+  "score": 1
+ },
+ {
+  "target": "FormKit.formProvider.isRequestPublishFormSupported",
+  "kit": "FormKit",
+  "module": "formProvider",
+  "name": "isRequestPublishFormSupported",
+  "file": "@ohos.app.form.formProvider.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether a widget can be added to the widget host. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "IMEKit.inputMethod.setSimpleKeyboardEnabled",
+  "kit": "IMEKit",
+  "module": "inputMethod",
+  "name": "setSimpleKeyboardEnabled",
+  "file": "@ohos.inputMethod.d.ts",
+  "params": [
+   [
+    "enable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Set simple keyboard mode.",
+  "score": 1
+ },
+ {
+  "target": "InputKit.inputDevice.getIntervalSinceLastInput",
+  "kit": "InputKit",
+  "module": "inputDevice",
+  "name": "getIntervalSinceLastInput",
+  "file": "@ohos.multimodalInput.inputDevice.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Obtains the interval (including the device sleep time) elapsed since the last system input event. This API uses a",
+  "score": 1
+ },
+ {
+  "target": "InputKit.pointer.getTouchpadDoubleTapAndDragState",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getTouchpadDoubleTapAndDragState",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains the touchpad double-tap and drag switch state. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "InputKit.pointer.getTouchpadPinchSwitch",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getTouchpadPinchSwitch",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains the touchpad pinch switch state. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "InputKit.pointer.getTouchpadScrollSwitch",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getTouchpadScrollSwitch",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains the touchpad scroll switch state. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "InputKit.pointer.getTouchpadSwipeSwitch",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getTouchpadSwipeSwitch",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains the touchpad multi-finger swipe switch state. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "InputKit.pointer.getTouchpadTapSwitch",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getTouchpadTapSwitch",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains the touchpad tap switch state. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "InputKit.pointer.isPointerVisible",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "isPointerVisible",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains the visible status of the mouse pointer. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "InputKit.pointer.setTouchpadDoubleTapAndDragState",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setTouchpadDoubleTapAndDragState",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "isOpen",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the touchpad double-tap and drag switch state. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "LocationKit.geoLocationManager.isBeaconFenceSupported",
+  "kit": "LocationKit",
+  "module": "geoLocationManager",
+  "name": "isBeaconFenceSupported",
+  "file": "@ohos.geoLocationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the BeaconFence service is supported.",
+  "score": 1
+ },
+ {
+  "target": "LocationKit.geoLocationManager.isCachedGnssServiceSupported",
+  "kit": "LocationKit",
+  "module": "geoLocationManager",
+  "name": "isCachedGnssServiceSupported",
+  "file": "@ohos.geoLocationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the cached GNSS service is supported.",
+  "score": 1
+ },
+ {
+  "target": "LocationKit.geoLocationManager.isGeocoderAvailable",
+  "kit": "LocationKit",
+  "module": "geoLocationManager",
+  "name": "isGeocoderAvailable",
+  "file": "@ohos.geoLocationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Obtain geocoding service status.",
+  "score": 1
+ },
+ {
+  "target": "LocationKit.geoLocationManager.isGnssFenceServiceSupported",
+  "kit": "LocationKit",
+  "module": "geoLocationManager",
+  "name": "isGnssFenceServiceSupported",
+  "file": "@ohos.geoLocationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the GNSS fence service is supported.",
+  "score": 1
+ },
+ {
+  "target": "LocationKit.geoLocationManager.isGnssServiceSupported",
+  "kit": "LocationKit",
+  "module": "geoLocationManager",
+  "name": "isGnssServiceSupported",
+  "file": "@ohos.geoLocationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the GNSS service is supported.",
+  "score": 1
+ },
+ {
+  "target": "LocationKit.geoLocationManager.isPoiServiceSupported",
+  "kit": "LocationKit",
+  "module": "geoLocationManager",
+  "name": "isPoiServiceSupported",
+  "file": "@ohos.geoLocationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the POI service is supported.",
+  "score": 1
+ },
+ {
+  "target": "MDMKit.adminManager.getEnterpriseManagedTips",
+  "kit": "MDMKit",
+  "module": "adminManager",
+  "name": "getEnterpriseManagedTips",
+  "file": "@ohos.enterprise.adminManager.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Gets enterprise message tips.",
+  "score": 1
+ },
+ {
+  "target": "MDMKit.applicationManager.isAppKioskAllowed",
+  "kit": "MDMKit",
+  "module": "applicationManager",
+  "name": "isAppKioskAllowed",
+  "file": "@ohos.enterprise.applicationManager.d.ts",
+  "params": [
+   [
+    "appIdentifier",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether an application is allowed to run in kiosk mode.",
+  "score": 1
+ },
+ {
+  "target": "MDMKit.browser.getSelfManagedBrowserPolicyVersion",
+  "kit": "MDMKit",
+  "module": "browser",
+  "name": "getSelfManagedBrowserPolicyVersion",
+  "file": "@ohos.enterprise.browser.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the browser policy version of the current device.",
+  "score": 1
+ },
+ {
+  "target": "MechanicKit.mechanicManager.getMaxRotationTime",
+  "kit": "MechanicKit",
+  "module": "mechanicManager",
+  "name": "getMaxRotationTime",
+  "file": "@ohos.distributedHardware.mechanicManager.d.ts",
+  "params": [
+   [
+    "mechId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtains the maximum continuous rotation duration of a mechanical device.",
+  "score": 1
+ },
+ {
+  "target": "MechanicKit.mechanicManager.stopMoving",
+  "kit": "MechanicKit",
+  "module": "mechanicManager",
+  "name": "stopMoving",
+  "file": "@ohos.distributedHardware.mechanicManager.d.ts",
+  "params": [
+   [
+    "mechId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Stops a mechanical device from moving.",
+  "score": 1
+ },
+ {
+  "target": "MediaKit.media.getAVScreenCaptureConfigurableParameters",
+  "kit": "MediaKit",
+  "module": "media",
+  "name": "getAVScreenCaptureConfigurableParameters",
+  "file": "@ohos.multimedia.media.d.ts",
+  "params": [
+   [
+    "sessionId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "get Configurations which user can changes from AVScreenCapture server",
+  "score": 1
+ },
+ {
+  "target": "MediaKit.media.reportAVScreenCaptureUserChoice",
+  "kit": "MediaKit",
+  "module": "media",
+  "name": "reportAVScreenCaptureUserChoice",
+  "file": "@ohos.multimedia.media.d.ts",
+  "params": [
+   [
+    "sessionId",
+    "int",
+    false
+   ],
+   [
+    "choice",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Reports the user selection result in the screen capture privacy dialog box to the AVScreenCapture server to",
+  "score": 1
+ },
+ {
+  "target": "NetworkKit.connection.clearCustomDnsRules",
+  "kit": "NetworkKit",
+  "module": "connection",
+  "name": "clearCustomDnsRules",
+  "file": "@ohos.net.connection.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Clear all custom DNS rules for current application.",
+  "score": 1
+ },
+ {
+  "target": "NetworkKit.connection.hasDefaultNet",
+  "kit": "NetworkKit",
+  "module": "connection",
+  "name": "hasDefaultNet",
+  "file": "@ohos.net.connection.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether the default data network is activated.",
+  "score": 1
+ },
+ {
+  "target": "NetworkKit.connection.hasDefaultNetSync",
+  "kit": "NetworkKit",
+  "module": "connection",
+  "name": "hasDefaultNetSync",
+  "file": "@ohos.net.connection.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the default data network is activated.",
+  "score": 1
+ },
+ {
+  "target": "NetworkKit.connection.isDefaultNetMetered",
+  "kit": "NetworkKit",
+  "module": "connection",
+  "name": "isDefaultNetMetered",
+  "file": "@ohos.net.connection.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether data traffic usage on the current network is metered.",
+  "score": 1
+ },
+ {
+  "target": "NetworkKit.connection.isDefaultNetMeteredSync",
+  "kit": "NetworkKit",
+  "module": "connection",
+  "name": "isDefaultNetMeteredSync",
+  "file": "@ohos.net.connection.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether data traffic usage on the current network is metered.",
+  "score": 1
+ },
+ {
+  "target": "NetworkKit.connection.removeCustomDnsRule",
+  "kit": "NetworkKit",
+  "module": "connection",
+  "name": "removeCustomDnsRule",
+  "file": "@ohos.net.connection.d.ts",
+  "params": [
+   [
+    "host",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Remove the custom DNS rule of the {@link host} for current application.",
+  "score": 1
+ },
+ {
+  "target": "NetworkKit.ethernet.isIfaceActive",
+  "kit": "NetworkKit",
+  "module": "ethernet",
+  "name": "isIfaceActive",
+  "file": "@ohos.net.ethernet.d.ts",
+  "params": [
+   [
+    "iface",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "number",
+  "isPromise": true,
+  "description": "Check whether the specified network is active.",
+  "score": 1
+ },
+ {
+  "target": "NetworkKit.statistics.getCellularRxBytes",
+  "kit": "NetworkKit",
+  "module": "statistics",
+  "name": "getCellularRxBytes",
+  "file": "@ohos.net.statistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Queries the data traffic (including all TCP and UDP data packets) received through the cellular network.",
+  "score": 1
+ },
+ {
+  "target": "NetworkKit.statistics.getCellularTxBytes",
+  "kit": "NetworkKit",
+  "module": "statistics",
+  "name": "getCellularTxBytes",
+  "file": "@ohos.net.statistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Queries the data traffic (including all TCP and UDP data packets) sent through the cellular network.",
+  "score": 1
+ },
+ {
+  "target": "NotificationKit.notificationManager.cancel",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "cancel",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "id",
+    "int",
+    false
+   ],
+   [
+    "label",
+    "string",
+    true
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Cancels a published notification based on the notification ID and label. This API uses a promise to",
+  "score": 1
+ },
+ {
+  "target": "NotificationKit.notificationManager.getBadgeNumber",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "getBadgeNumber",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Obtains the badge number of this application. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "NotificationKit.notificationManager.isGeofenceEnabled",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "isGeofenceEnabled",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether geofencing is enabled. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "NotificationKit.notificationManager.isSupportDoNotDisturbMode",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "isSupportDoNotDisturbMode",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether DND mode is supported. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "NotificationKit.notificationManager.isSupportTemplate",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "isSupportTemplate",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "templateName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether a specified template is supported before using",
+  "score": 1
+ },
+ {
+  "target": "NotificationKit.notificationManager.setBadgeNumber",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "setBadgeNumber",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "badgeNumber",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the notification badge number. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "NotificationKit.notificationManager.snoozeNotification",
+  "kit": "NotificationKit",
+  "module": "notificationManager",
+  "name": "snoozeNotification",
+  "file": "@ohos.notificationManager.d.ts",
+  "params": [
+   [
+    "hashCode",
+    "string",
+    false
+   ],
+   [
+    "delayTime",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Snoozes a notification. The notification will be reminded again after the specified time. Each",
+  "score": 1
+ },
+ {
+  "target": "NotificationKit.notificationSubscribe.removeAll",
+  "kit": "NotificationKit",
+  "module": "notificationSubscribe",
+  "name": "removeAll",
+  "file": "@ohos.notificationSubscribe.d.ts",
+  "params": [
+   [
+    "userId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Removes all notifications for a specified user. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiAppEvent.clearData",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiAppEvent",
+  "name": "clearData",
+  "file": "@ohos.hiviewdfx.hiAppEvent.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Clears local logging data of the application.",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiAppEvent.setUserId",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiAppEvent",
+  "name": "setUserId",
+  "file": "@ohos.hiviewdfx.hiAppEvent.d.ts",
+  "params": [
+   [
+    "name",
+    "string",
+    false
+   ],
+   [
+    "value",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets a user ID, which is used for association when a [Processor]{@link hiAppEvent.Processor} is configured.",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiAppEvent.setUserProperty",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiAppEvent",
+  "name": "setUserProperty",
+  "file": "@ohos.hiviewdfx.hiAppEvent.d.ts",
+  "params": [
+   [
+    "name",
+    "string",
+    false
+   ],
+   [
+    "value",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets a user property, which is used for association when a [Processor]{@link hiAppEvent.Processor} is configured.",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiRetrieval.isParticipant",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiRetrieval",
+  "name": "isParticipant",
+  "file": "@ohos.hiviewdfx.hiRetrieval.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Query if the app is participating the HiRetrieval project.",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hichecker.getRule",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hichecker",
+  "name": "getRule",
+  "file": "@ohos.hichecker.d.ts",
+  "params": [],
+  "returnType": "bigint",
+  "isPromise": false,
+  "description": "Obtains a collection of thread, process, and alarm rules that have been added.",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getCpuUsage",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getCpuUsage",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "double",
+  "isPromise": false,
+  "description": "Obtains the CPU usage of a process.",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getPrivateDirty",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getPrivateDirty",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "bigint",
+  "isPromise": false,
+  "description": "Obtains the size of the private dirty memory of a process. This API is implemented by reading the value of",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getSharedDirty",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getSharedDirty",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "bigint",
+  "isPromise": false,
+  "description": "Obtains the size of the shared dirty memory of a process. This API is implemented by reading the value of",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getSystemCpuUsage",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getSystemCpuUsage",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "double",
+  "isPromise": false,
+  "description": "Obtains the CPU usage of the system.",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getVss",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getVss",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "bigint",
+  "isPromise": false,
+  "description": "Obtains the virtual set size used by the application process. This API is implemented by multiplying the value of",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.stopAppTraceCapture",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "stopAppTraceCapture",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Stops application trace collection. Use [startAppTraceCapture()]{@link hidebug.startAppTraceCapture} to start",
+  "score": 1
+ },
+ {
+  "target": "PerformanceAnalysisKit.jsLeakWatcher.enable",
+  "kit": "PerformanceAnalysisKit",
+  "module": "jsLeakWatcher",
+  "name": "enable",
+  "file": "@ohos.hiviewdfx.jsLeakWatcher.d.ts",
+  "params": [
+   [
+    "isEnable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Enables the detection for JS object leaks. This function is disabled by default.",
+  "score": 1
+ },
+ {
+  "target": "SensorServiceKit.sensor.getDeviceAltitude",
+  "kit": "SensorServiceKit",
+  "module": "sensor",
+  "name": "getDeviceAltitude",
+  "file": "@ohos.sensor.d.ts",
+  "params": [
+   [
+    "seaPressure",
+    "double",
+    false
+   ],
+   [
+    "currentPressure",
+    "double",
+    false
+   ]
+  ],
+  "returnType": "double",
+  "isPromise": true,
+  "description": "Obtains the altitude based on the atmospheric pressure. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "SensorServiceKit.vibrator.isSupportEffect",
+  "kit": "SensorServiceKit",
+  "module": "vibrator",
+  "name": "isSupportEffect",
+  "file": "@ohos.vibrator.d.ts",
+  "params": [
+   [
+    "effectId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether an effect ID is supported. This API uses a promise to return the result.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.canSetCallTransferTime",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "canSetCallTransferTime",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether can set call transfer time.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.cancelMuted",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "cancelMuted",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Unmute during a call.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.combineConference",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "combineConference",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "callId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Merge calls, merge two calls into conference calls.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.getMainCallId",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "getMainCallId",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "callId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Get the main call Id.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.hangUpCall",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "hangUpCall",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "callId",
+    "int",
+    true
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Hang up the foreground call.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.hasCall",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "hasCall",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether a call is ongoing.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.hasCallSync",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "hasCallSync",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether a call is ongoing.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.isImsSwitchEnabled",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "isImsSwitchEnabled",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Judge whether the Ims switch is enabled.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.isImsSwitchEnabledSync",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "isImsSwitchEnabledSync",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Judge whether the Ims switch is enabled.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.isInEmergencyCall",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "isInEmergencyCall",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Judge whether the emergency call is in progress.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.isNewCallAllowed",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "isNewCallAllowed",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Judge whether to allow another new call.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.isRinging",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "isRinging",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Judge whether there is a ringing call.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.preloadCallUI",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "preloadCallUI",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Preload callUI.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.sendCallUiEvent",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "sendCallUiEvent",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "callId",
+    "int",
+    false
+   ],
+   [
+    "eventName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Send call ui event.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.separateConference",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "separateConference",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "callId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Split conference call.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.setCallWaiting",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "setCallWaiting",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ],
+   [
+    "activate",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Set call waiting.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.setMuted",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "setMuted",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Set mute during a call.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.setPreviewSurface",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "setPreviewSurface",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "callId",
+    "int",
+    false
+   ],
+   [
+    "surfaceId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Set preview surface when video call.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.call.unloadCallUI",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "unloadCallUI",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Unload callUI.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.data.disableCellularDataRoaming",
+  "kit": "TelephonyKit",
+  "module": "data",
+  "name": "disableCellularDataRoaming",
+  "file": "@ohos.telephony.data.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Disable cellular data roaming.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.data.enableCellularDataRoaming",
+  "kit": "TelephonyKit",
+  "module": "data",
+  "name": "enableCellularDataRoaming",
+  "file": "@ohos.telephony.data.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Enable cellular data roaming.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.data.isCellularDataEnabled",
+  "kit": "TelephonyKit",
+  "module": "data",
+  "name": "isCellularDataEnabled",
+  "file": "@ohos.telephony.data.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Check whether cellular data services are enabled.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.data.isCellularDataEnabledSync",
+  "kit": "TelephonyKit",
+  "module": "data",
+  "name": "isCellularDataEnabledSync",
+  "file": "@ohos.telephony.data.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether cellular data services are enabled.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.eSIM.isSupported",
+  "kit": "TelephonyKit",
+  "module": "eSIM",
+  "name": "isSupported",
+  "file": "@ohos.telephony.esim.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Whether embedded subscriptions are currently supported.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.factoryReset",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "factoryReset",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Reset all network settings of telephony.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.getIMEI",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "getIMEI",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    true
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the IMEI of a specified card slot of the device.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.getIMEISV",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "getIMEISV",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the software version number of a specified card slot of the device.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.getISOCountryCodeForNetwork",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "getISOCountryCodeForNetwork",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the ISO-defined country code of the country where the registered network is deployed.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.getISOCountryCodeForNetworkSync",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "getISOCountryCodeForNetworkSync",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the ISO-defined country code of the country where the registered network is deployed.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.getMEID",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "getMEID",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    true
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the MEID of a specified card slot of the device.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.getUniqueDeviceId",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "getUniqueDeviceId",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    true
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the unique device ID of a specified card slot of the device.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.isManualNetworkScanning",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "isManualNetworkScanning",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Determine whether the current manual network scan is in progress.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.isRadioOn",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "isRadioOn",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    true
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether the radio service is enabled.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.radio.stopManualNetworkScan",
+  "kit": "TelephonyKit",
+  "module": "radio",
+  "name": "stopManualNetworkScan",
+  "file": "@ohos.telephony.radio.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Stop ManualNetworkScan.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.sim.getMaxSimCount",
+  "kit": "TelephonyKit",
+  "module": "sim",
+  "name": "getMaxSimCount",
+  "file": "@ohos.telephony.sim.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtains the maximum number of SIM cards that can be used simultaneously on the device,",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.sim.setShowName",
+  "kit": "TelephonyKit",
+  "module": "sim",
+  "name": "setShowName",
+  "file": "@ohos.telephony.sim.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ],
+   [
+    "name",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Set the SIM card display name of the specified card slot.",
+  "score": 1
+ },
+ {
+  "target": "TelephonyKit.sms.getSmscAddr",
+  "kit": "TelephonyKit",
+  "module": "sms",
+  "name": "getSmscAddr",
+  "file": "@ohos.telephony.sms.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the SMSC address based on a specified slot ID.",
+  "score": 1
+ },
+ {
+  "target": "UniversalKeystoreKit.huksExternalCrypto.clearUkeyPinAuthState",
+  "kit": "UniversalKeystoreKit",
+  "module": "huksExternalCrypto",
+  "name": "clearUkeyPinAuthState",
+  "file": "@ohos.security.huksExternalCrypto.d.ts",
+  "params": [
+   [
+    "resourceId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Clear the PIN auth state of the specified resource ID.",
+  "score": 1
+ },
+ {
+  "target": "AbilityKit.appManager.isRunningInStabilityTest",
+  "kit": "AbilityKit",
+  "module": "appManager",
+  "name": "isRunningInStabilityTest",
+  "file": "@ohos.app.ability.appManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether the system is undergoing a stability test. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.application.demoteCurrentFromCandidateMasterProcess",
+  "kit": "AbilityKit",
+  "module": "application",
+  "name": "demoteCurrentFromCandidateMasterProcess",
+  "file": "@ohos.app.ability.application.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Removes the current process from the candidate master process list. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.application.promoteCurrentToCandidateMasterProcess",
+  "kit": "AbilityKit",
+  "module": "application",
+  "name": "promoteCurrentToCandidateMasterProcess",
+  "file": "@ohos.app.ability.application.d.ts",
+  "params": [
+   [
+    "insertToHead",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Adds the current process into the",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.bundleManager.getAdditionalInfo",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "getAdditionalInfo",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains additional information about a bundle in synchronous mode. The return value is the **additionalInfo** field",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.bundleManager.getAllBundleCacheSize",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "getAllBundleCacheSize",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Obtains the global cache size. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.bundleManager.getBundleNameByUid",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "getBundleNameByUid",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "uid",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the bundle name based on the given UID. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.bundleManager.getBundleNameByUidSync",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "getBundleNameByUidSync",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "uid",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the bundle name based on the given UID. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.bundleManager.getDynamicIcon",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "getDynamicIcon",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the module name corresponding to the dynamic icon based on the specified bundle name. This API uses a",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.bundleManager.getPluginBundlePathForSelf",
+  "kit": "AbilityKit",
+  "module": "bundleManager",
+  "name": "getPluginBundlePathForSelf",
+  "file": "@ohos.bundle.bundleManager.d.ts",
+  "params": [
+   [
+    "pluginBundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the installation path of a specified plugin in the current",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.dataUriUtils.attachId",
+  "kit": "AbilityKit",
+  "module": "dataUriUtils",
+  "name": "attachId",
+  "file": "@ohos.app.ability.dataUriUtils.d.ts",
+  "params": [
+   [
+    "uri",
+    "string",
+    false
+   ],
+   [
+    "id",
+    "double",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Attaches an ID to the end of a given URI.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.dataUriUtils.deleteId",
+  "kit": "AbilityKit",
+  "module": "dataUriUtils",
+  "name": "deleteId",
+  "file": "@ohos.app.ability.dataUriUtils.d.ts",
+  "params": [
+   [
+    "uri",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Deletes the ID from the end of a given URI.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.dataUriUtils.getId",
+  "kit": "AbilityKit",
+  "module": "dataUriUtils",
+  "name": "getId",
+  "file": "@ohos.app.ability.dataUriUtils.d.ts",
+  "params": [
+   [
+    "uri",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "double",
+  "isPromise": false,
+  "description": "Obtains the ID attached to the end of a given URI.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.dataUriUtils.updateId",
+  "kit": "AbilityKit",
+  "module": "dataUriUtils",
+  "name": "updateId",
+  "file": "@ohos.app.ability.dataUriUtils.d.ts",
+  "params": [
+   [
+    "uri",
+    "string",
+    false
+   ],
+   [
+    "id",
+    "double",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Updates the ID in a given URI.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.freeInstall.isHapModuleRemovable",
+  "kit": "AbilityKit",
+  "module": "freeInstall",
+  "name": "isHapModuleRemovable",
+  "file": "@ohos.bundle.freeInstall.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ],
+   [
+    "moduleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether a module can be removed. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.quickFixManager.revokeQuickFix",
+  "kit": "AbilityKit",
+  "module": "quickFixManager",
+  "name": "revokeQuickFix",
+  "file": "@ohos.app.ability.quickFixManager.d.ts",
+  "params": [
+   [
+    "bundleName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Revokes quick fix. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.startupManager.isStartupTaskInitialized",
+  "kit": "AbilityKit",
+  "module": "startupManager",
+  "name": "isStartupTaskInitialized",
+  "file": "@ohos.app.appstartup.startupManager.d.ts",
+  "params": [
+   [
+    "startupTask",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether a startup task or .so file preloading task is initialized.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.startupManager.removeAllStartupTaskResults",
+  "kit": "AbilityKit",
+  "module": "startupManager",
+  "name": "removeAllStartupTaskResults",
+  "file": "@ohos.app.appstartup.startupManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Removes all startup task results.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.startupManager.removeStartupTaskResult",
+  "kit": "AbilityKit",
+  "module": "startupManager",
+  "name": "removeStartupTaskResult",
+  "file": "@ohos.app.appstartup.startupManager.d.ts",
+  "params": [
+   [
+    "startupTask",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Removes the initialization result of a startup task or .so file preloading task.",
+  "score": 0
+ },
+ {
+  "target": "AbilityKit.wantAgent.setWantAgentMultithreading",
+  "kit": "AbilityKit",
+  "module": "wantAgent",
+  "name": "setWantAgentMultithreading",
+  "file": "@ohos.app.ability.wantAgent.d.ts",
+  "params": [
+   [
+    "isMultithreadingSupported",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Enables or disables the WantAgent multithreading feature.",
+  "score": 0
+ },
+ {
+  "target": "AccessibilityKit.accessibility.getTouchModeSync",
+  "kit": "AccessibilityKit",
+  "module": "accessibility",
+  "name": "getTouchModeSync",
+  "file": "@ohos.accessibility.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Queries single- or double-touch mode.",
+  "score": 0
+ },
+ {
+  "target": "AdsKit.identifier.resetOAID",
+  "kit": "AdsKit",
+  "module": "identifier",
+  "name": "resetOAID",
+  "file": "@ohos.identifier.oaid.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Resets the OAID.",
+  "score": 0
+ },
+ {
+  "target": "ArkData.distributedDataObject.genSessionId",
+  "kit": "ArkData",
+  "module": "distributedDataObject",
+  "name": "genSessionId",
+  "file": "@ohos.data.distributedDataObject.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Creates a random session ID.",
+  "score": 0
+ },
+ {
+  "target": "ArkData.uniformTypeDescriptor.getUniformDataTypeByFilenameExtension",
+  "kit": "ArkData",
+  "module": "uniformTypeDescriptor",
+  "name": "getUniformDataTypeByFilenameExtension",
+  "file": "@ohos.data.uniformTypeDescriptor.d.ts",
+  "params": [
+   [
+    "filenameExtension",
+    "string",
+    false
+   ],
+   [
+    "belongsTo",
+    "string",
+    true
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the uniform data type ID based on the given file name extension and data type. If there are multiple",
+  "score": 0
+ },
+ {
+  "target": "ArkData.uniformTypeDescriptor.getUniformDataTypeByMIMEType",
+  "kit": "ArkData",
+  "module": "uniformTypeDescriptor",
+  "name": "getUniformDataTypeByMIMEType",
+  "file": "@ohos.data.uniformTypeDescriptor.d.ts",
+  "params": [
+   [
+    "mimeType",
+    "string",
+    false
+   ],
+   [
+    "belongsTo",
+    "string",
+    true
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the uniform data type ID based on the given MIME type and data type. If there are multiple uniform data",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.process.abort",
+  "kit": "ArkTS",
+  "module": "process",
+  "name": "abort",
+  "file": "@ohos.process.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Aborts a process and generates a core file. This method will cause a process to exit immediately. Exercise",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.process.chdir",
+  "kit": "ArkTS",
+  "module": "process",
+  "name": "chdir",
+  "file": "@ohos.process.d.ts",
+  "params": [
+   [
+    "dir",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Change current directory",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.process.cwd",
+  "kit": "ArkTS",
+  "module": "process",
+  "name": "cwd",
+  "file": "@ohos.process.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Return the current work directory;",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.process.getStartRealtime",
+  "kit": "ArkTS",
+  "module": "process",
+  "name": "getStartRealtime",
+  "file": "@ohos.process.d.ts",
+  "params": [],
+  "returnType": "number",
+  "isPromise": false,
+  "description": "Obtains the duration (excluding the system sleep time), in milliseconds, from the time the system starts to the",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.process.is64Bit",
+  "kit": "ArkTS",
+  "module": "process",
+  "name": "is64Bit",
+  "file": "@ohos.process.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether this process is running in a 64-bit environment.",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.process.isIsolatedProcess",
+  "kit": "ArkTS",
+  "module": "process",
+  "name": "isIsolatedProcess",
+  "file": "@ohos.process.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether this process is isolated.",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.process.off",
+  "kit": "ArkTS",
+  "module": "process",
+  "name": "off",
+  "file": "@ohos.process.d.ts",
+  "params": [
+   [
+    "type",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Remove registered event",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.process.uptime",
+  "kit": "ArkTS",
+  "module": "process",
+  "name": "uptime",
+  "file": "@ohos.process.d.ts",
+  "params": [],
+  "returnType": "number",
+  "isPromise": false,
+  "description": "Obtains the running time of the current system, in seconds.",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.taskpool.cancel",
+  "kit": "ArkTS",
+  "module": "taskpool",
+  "name": "cancel",
+  "file": "@ohos.taskpool.d.ts",
+  "params": [
+   [
+    "taskId",
+    "number",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Cancels a task in the task pool by task ID. If the task is in the internal queue of the task pool, the task will",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.util.errnoToString",
+  "kit": "ArkTS",
+  "module": "util",
+  "name": "errnoToString",
+  "file": "@ohos.util.d.ts",
+  "params": [
+   [
+    "errno",
+    "number",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains detailed information about a system error code.",
+  "score": 0
+ },
+ {
+  "target": "ArkTS.util.generateRandomUUID",
+  "kit": "ArkTS",
+  "module": "util",
+  "name": "generateRandomUUID",
+  "file": "@ohos.util.d.ts",
+  "params": [
+   [
+    "entropyCache",
+    "boolean",
+    true
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Uses a secure random number generator to generate a random universally unique identifier (UUID) of the string type",
+  "score": 0
+ },
+ {
+  "target": "ArkUI.promptAction.closeToast",
+  "kit": "ArkUI",
+  "module": "promptAction",
+  "name": "closeToast",
+  "file": "@ohos.promptAction.d.ts",
+  "params": [
+   [
+    "toastId",
+    "number",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Closes the specified toast.",
+  "score": 0
+ },
+ {
+  "target": "ArkUI.window.getTopNavDestinationName",
+  "kit": "ArkUI",
+  "module": "window",
+  "name": "getTopNavDestinationName",
+  "file": "@ohos.window.d.ts",
+  "params": [
+   [
+    "windowId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the name of [NavDestination]{@link NavDestination} in the current top-level",
+  "score": 0
+ },
+ {
+  "target": "BackgroundTasksKit.backgroundProcessManager.resetProcessPriority",
+  "kit": "BackgroundTasksKit",
+  "module": "backgroundProcessManager",
+  "name": "resetProcessPriority",
+  "file": "@ohos.resourceschedule.backgroundProcessManager.d.ts",
+  "params": [
+   [
+    "pid",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Unsuppresses the child process. In this case, the child process follows the scheduling policy of the main",
+  "score": 0
+ },
+ {
+  "target": "BackgroundTasksKit.backgroundTaskManager.cancelSuspendDelay",
+  "kit": "BackgroundTasksKit",
+  "module": "backgroundTaskManager",
+  "name": "cancelSuspendDelay",
+  "file": "@ohos.resourceschedule.backgroundTaskManager.d.ts",
+  "params": [
+   [
+    "requestId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Cancels a transient task.",
+  "score": 0
+ },
+ {
+  "target": "BackgroundTasksKit.backgroundTaskManager.getRemainingDelayTime",
+  "kit": "BackgroundTasksKit",
+  "module": "backgroundTaskManager",
+  "name": "getRemainingDelayTime",
+  "file": "@ohos.resourceschedule.backgroundTaskManager.d.ts",
+  "params": [
+   [
+    "requestId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the remaining time of a transient task. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "BackgroundTasksKit.backgroundTaskManager.resetAllEfficiencyResources",
+  "kit": "BackgroundTasksKit",
+  "module": "backgroundTaskManager",
+  "name": "resetAllEfficiencyResources",
+  "file": "@ohos.resourceschedule.backgroundTaskManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Releases all efficiency resources.",
+  "score": 0
+ },
+ {
+  "target": "BackgroundTasksKit.reminderAgentManager.cancelReminder",
+  "kit": "BackgroundTasksKit",
+  "module": "reminderAgentManager",
+  "name": "cancelReminder",
+  "file": "@ohos.reminderAgentManager.d.ts",
+  "params": [
+   [
+    "reminderId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Cancels a reminder published. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "BackgroundTasksKit.workScheduler.isLastWorkTimeOut",
+  "kit": "BackgroundTasksKit",
+  "module": "workScheduler",
+  "name": "isLastWorkTimeOut",
+  "file": "@ohos.resourceschedule.workScheduler.d.ts",
+  "params": [
+   [
+    "workId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether the last execution of a task timed out. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "BackgroundTasksKit.workScheduler.stopAndClearWorks",
+  "kit": "BackgroundTasksKit",
+  "module": "workScheduler",
+  "name": "stopAndClearWorks",
+  "file": "@ohos.resourceschedule.workScheduler.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Stops and clears all the deferred tasks.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.cacheDownload.clearFileCache",
+  "kit": "BasicServicesKit",
+  "module": "cacheDownload",
+  "name": "clearFileCache",
+  "file": "@ohos.request.cacheDownload.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Clears this file cache.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.cacheDownload.setDownloadInfoListSize",
+  "kit": "BasicServicesKit",
+  "module": "cacheDownload",
+  "name": "setDownloadInfoListSize",
+  "file": "@ohos.request.cacheDownload.d.ts",
+  "params": [
+   [
+    "size",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets the size of the download information list.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.cacheDownload.setFileCacheSize",
+  "kit": "BasicServicesKit",
+  "module": "cacheDownload",
+  "name": "setFileCacheSize",
+  "file": "@ohos.request.cacheDownload.d.ts",
+  "params": [
+   [
+    "bytes",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets the upper limit of the file cache size for the **cacheDownload** component.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.configPolicy.getOneCfgFile",
+  "kit": "BasicServicesKit",
+  "module": "configPolicy",
+  "name": "getOneCfgFile",
+  "file": "@ohos.configPolicy.d.ts",
+  "params": [
+   [
+    "relPath",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the path of the configuration file with the highest priority. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.emitter.emit",
+  "kit": "BasicServicesKit",
+  "module": "emitter",
+  "name": "emit",
+  "file": "@ohos.events.emitter.d.ts",
+  "params": [
+   [
+    "eventId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Emits the specified event.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.emitter.off",
+  "kit": "BasicServicesKit",
+  "module": "emitter",
+  "name": "off",
+  "file": "@ohos.events.emitter.d.ts",
+  "params": [
+   [
+    "eventId",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Unsubscribes from all events with the specified event ID.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.selectionManager.getSelectionContent",
+  "kit": "BasicServicesKit",
+  "module": "selectionManager",
+  "name": "getSelectionContent",
+  "file": "@ohos.selectionInput.selectionManager.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains this selected text content. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.systemCapability.querySystemCapabilities",
+  "kit": "BasicServicesKit",
+  "module": "systemCapability",
+  "name": "querySystemCapabilities",
+  "file": "@ohos.systemCapability.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Get System Capability.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.systemDateTime.getNtpTime",
+  "kit": "BasicServicesKit",
+  "module": "systemDateTime",
+  "name": "getNtpTime",
+  "file": "@ohos.systemDateTime.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": false,
+  "description": "Obtains the actual time calculated based on the last updated NTP time. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.systemDateTime.getTime",
+  "kit": "BasicServicesKit",
+  "module": "systemDateTime",
+  "name": "getTime",
+  "file": "@ohos.systemDateTime.d.ts",
+  "params": [
+   [
+    "isNanoseconds",
+    "boolean",
+    true
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": false,
+  "description": "Obtains the time elapsed since the Unix epoch. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.systemDateTime.getTimezone",
+  "kit": "BasicServicesKit",
+  "module": "systemDateTime",
+  "name": "getTimezone",
+  "file": "@ohos.systemDateTime.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the system time zone. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.systemDateTime.getTimezoneSync",
+  "kit": "BasicServicesKit",
+  "module": "systemDateTime",
+  "name": "getTimezoneSync",
+  "file": "@ohos.systemDateTime.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the system time zone in synchronous mode.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.systemDateTime.updateNtpTime",
+  "kit": "BasicServicesKit",
+  "module": "systemDateTime",
+  "name": "updateNtpTime",
+  "file": "@ohos.systemDateTime.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Updates the NTP time from the NTP server This API returns the result asynchronously. In this way, the NTP time is",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.systemParameterEnhance.getSync",
+  "kit": "BasicServicesKit",
+  "module": "systemParameterEnhance",
+  "name": "getSync",
+  "file": "@ohos.systemParameterEnhance.d.ts",
+  "params": [
+   [
+    "key",
+    "string",
+    false
+   ],
+   [
+    "def",
+    "string",
+    true
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains a value of the specified key. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.systemParameterEnhance.setSync",
+  "kit": "BasicServicesKit",
+  "module": "systemParameterEnhance",
+  "name": "setSync",
+  "file": "@ohos.systemParameterEnhance.d.ts",
+  "params": [
+   [
+    "key",
+    "string",
+    false
+   ],
+   [
+    "value",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets a value for the specified key. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.wallpaper.getMinHeightSync",
+  "kit": "BasicServicesKit",
+  "module": "wallpaper",
+  "name": "getMinHeightSync",
+  "file": "@ohos.wallpaper.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtains the minimum height of the wallpaper. in pixels. returns 0 if no wallpaper has been set.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.wallpaper.getMinWidthSync",
+  "kit": "BasicServicesKit",
+  "module": "wallpaper",
+  "name": "getMinWidthSync",
+  "file": "@ohos.wallpaper.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtains the minimum width of the wallpaper. in pixels. returns 0 if no wallpaper has been set.",
+  "score": 0
+ },
+ {
+  "target": "BasicServicesKit.zlib.getOriginalSize",
+  "kit": "BasicServicesKit",
+  "module": "zlib",
+  "name": "getOriginalSize",
+  "file": "@ohos.zlib.d.ts",
+  "params": [
+   [
+    "compressedFile",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Obtains the original size of a compressed file. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.connection.getCarKeyDfxData",
+  "kit": "ConnectivityKit",
+  "module": "connection",
+  "name": "getCarKeyDfxData",
+  "file": "@ohos.bluetooth.connection.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Get the dfx data of car key.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.socket.getMaxReceiveDataSize",
+  "kit": "ConnectivityKit",
+  "module": "socket",
+  "name": "getMaxReceiveDataSize",
+  "file": "@ohos.bluetooth.socket.d.ts",
+  "params": [
+   [
+    "clientSocket",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtain the maximum data size that can be received through this socket channel.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.socket.getMaxTransmitDataSize",
+  "kit": "ConnectivityKit",
+  "module": "socket",
+  "name": "getMaxTransmitDataSize",
+  "file": "@ohos.bluetooth.socket.d.ts",
+  "params": [
+   [
+    "clientSocket",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtain the maximum data size that can be transmitted through this socket channel.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.socket.isConnected",
+  "kit": "ConnectivityKit",
+  "module": "socket",
+  "name": "isConnected",
+  "file": "@ohos.bluetooth.socket.d.ts",
+  "params": [
+   [
+    "clientSocket",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Check whether the current socket connection has been established.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.socket.sppCloseClientSocket",
+  "kit": "ConnectivityKit",
+  "module": "socket",
+  "name": "sppCloseClientSocket",
+  "file": "@ohos.bluetooth.socket.d.ts",
+  "params": [
+   [
+    "socket",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Disables an spp client socket and releases related resources.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.socket.sppCloseServerSocket",
+  "kit": "ConnectivityKit",
+  "module": "socket",
+  "name": "sppCloseServerSocket",
+  "file": "@ohos.bluetooth.socket.d.ts",
+  "params": [
+   [
+    "socket",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Disables an spp server socket and releases related resources.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.getScanAlwaysAllowed",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "getScanAlwaysAllowed",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Get scan always allowed flag.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.isMeteredHotspot",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "isMeteredHotspot",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Whether the hotspot is metered hotspot or not.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.p2pCancelConnect",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "p2pCancelConnect",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Stop an ongoing p2p connection that is being established.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.removeCandidateConfig",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "removeCandidateConfig",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [
+   [
+    "networkId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Remove a specified candidate hotspot configuration, only the configuration which is added by ourself is allowed",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.removeGroup",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "removeGroup",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Remove a P2P group.",
+  "score": 0
+ },
+ {
+  "target": "ConnectivityKit.wifiManager.startPortalCertification",
+  "kit": "ConnectivityKit",
+  "module": "wifiManager",
+  "name": "startPortalCertification",
+  "file": "@ohos.wifiManager.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Start Portal certification.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.Environment.getUserDataDir",
+  "kit": "CoreFileKit",
+  "module": "Environment",
+  "name": "getUserDataDir",
+  "file": "@ohos.file.environment.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the root directory of user files. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.cloudSync.unregisterChange",
+  "kit": "CoreFileKit",
+  "module": "cloudSync",
+  "name": "unregisterChange",
+  "file": "@ohos.file.cloudSync.d.ts",
+  "params": [
+   [
+    "uri",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Unsubscribes from the change of a file.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.hash.hash",
+  "kit": "CoreFileKit",
+  "module": "hash",
+  "name": "hash",
+  "file": "@ohos.file.hash.d.ts",
+  "params": [
+   [
+    "path",
+    "string",
+    false
+   ],
+   [
+    "algorithm",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Calculates a hash value for a file. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.securityLabel.getSecurityLabel",
+  "kit": "CoreFileKit",
+  "module": "securityLabel",
+  "name": "getSecurityLabel",
+  "file": "@ohos.file.securityLabel.d.ts",
+  "params": [
+   [
+    "path",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Obtains the data security level of a file or directory. If no data security level has been set, **s3** is returned",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.securityLabel.getSecurityLabelSync",
+  "kit": "CoreFileKit",
+  "module": "securityLabel",
+  "name": "getSecurityLabelSync",
+  "file": "@ohos.file.securityLabel.d.ts",
+  "params": [
+   [
+    "path",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the data security level of a file or directory in synchronous mode. If no data security level has been set,",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.statfs.getFreeSize",
+  "kit": "CoreFileKit",
+  "module": "statfs",
+  "name": "getFreeSize",
+  "file": "@ohos.file.statvfs.d.ts",
+  "params": [
+   [
+    "path",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Obtains the free size of the specified file system, in bytes. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.statfs.getFreeSizeSync",
+  "kit": "CoreFileKit",
+  "module": "statfs",
+  "name": "getFreeSizeSync",
+  "file": "@ohos.file.statvfs.d.ts",
+  "params": [
+   [
+    "path",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": false,
+  "description": "Obtains the free size of the specified file system, in bytes. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.statfs.getTotalSize",
+  "kit": "CoreFileKit",
+  "module": "statfs",
+  "name": "getTotalSize",
+  "file": "@ohos.file.statvfs.d.ts",
+  "params": [
+   [
+    "path",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Obtains the total size of the specified file system, in bytes. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.statfs.getTotalSizeSync",
+  "kit": "CoreFileKit",
+  "module": "statfs",
+  "name": "getTotalSizeSync",
+  "file": "@ohos.file.statvfs.d.ts",
+  "params": [
+   [
+    "path",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": false,
+  "description": "Obtains the total size of the specified file system, in bytes. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getCurrentBundleInodes",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getCurrentBundleInodes",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get the current bundle inodes.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getFreeInodes",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getFreeInodes",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get the free inodes.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getFreeSize",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getFreeSize",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get the free size.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getSystemDataSize",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getSystemDataSize",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get the system data size.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getSystemSize",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getSystemSize",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get the system size.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getTotalInodes",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getTotalInodes",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get the total inodes.",
+  "score": 0
+ },
+ {
+  "target": "CoreFileKit.storageStatistics.getTotalSize",
+  "kit": "CoreFileKit",
+  "module": "storageStatistics",
+  "name": "getTotalSize",
+  "file": "@ohos.file.storageStatistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Get the total size.",
+  "score": 0
+ },
+ {
+  "target": "DataProtectionKit.dlpPermission.getOriginalFileName",
+  "kit": "DataProtectionKit",
+  "module": "dlpPermission",
+  "name": "getOriginalFileName",
+  "file": "@ohos.dlpPermission.d.ts",
+  "params": [
+   [
+    "fileName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the original name of a DLP file. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "DataProtectionKit.dlpPermission.isDLPFeatureProvided",
+  "kit": "DataProtectionKit",
+  "module": "dlpPermission",
+  "name": "isDLPFeatureProvided",
+  "file": "@ohos.dlpPermission.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether the current system provides the encryption protection feature. This API is available only for",
+  "score": 0
+ },
+ {
+  "target": "DataProtectionKit.dlpPermission.isDLPFile",
+  "kit": "DataProtectionKit",
+  "module": "dlpPermission",
+  "name": "isDLPFile",
+  "file": "@ohos.dlpPermission.d.ts",
+  "params": [
+   [
+    "fd",
+    "number",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Checks whether a file is a DLP file based on the FD. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "DistributedServiceKit.abilityConnectionManager.acceptConnect",
+  "kit": "DistributedServiceKit",
+  "module": "abilityConnectionManager",
+  "name": "acceptConnect",
+  "file": "@ohos.distributedsched.abilityConnectionManager.d.ts",
+  "params": [
+   [
+    "sessionId",
+    "int",
+    false
+   ],
+   [
+    "token",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Accepts the UIAbility connection after a collaboration session is set up and the session ID is obtained.",
+  "score": 0
+ },
+ {
+  "target": "DistributedServiceKit.abilityConnectionManager.destroyStream",
+  "kit": "DistributedServiceKit",
+  "module": "abilityConnectionManager",
+  "name": "destroyStream",
+  "file": "@ohos.distributedsched.abilityConnectionManager.d.ts",
+  "params": [
+   [
+    "streamId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Destroy the Stream.",
+  "score": 0
+ },
+ {
+  "target": "DistributedServiceKit.abilityConnectionManager.disconnect",
+  "kit": "DistributedServiceKit",
+  "module": "abilityConnectionManager",
+  "name": "disconnect",
+  "file": "@ohos.distributedsched.abilityConnectionManager.d.ts",
+  "params": [
+   [
+    "sessionId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Disconnects the UIAbility connection to end the collaboration session.",
+  "score": 0
+ },
+ {
+  "target": "DistributedServiceKit.abilityConnectionManager.startStream",
+  "kit": "DistributedServiceKit",
+  "module": "abilityConnectionManager",
+  "name": "startStream",
+  "file": "@ohos.distributedsched.abilityConnectionManager.d.ts",
+  "params": [
+   [
+    "streamId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Start Streaming",
+  "score": 0
+ },
+ {
+  "target": "DistributedServiceKit.abilityConnectionManager.stopStream",
+  "kit": "DistributedServiceKit",
+  "module": "abilityConnectionManager",
+  "name": "stopStream",
+  "file": "@ohos.distributedsched.abilityConnectionManager.d.ts",
+  "params": [
+   [
+    "streamId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Stop Streaming",
+  "score": 0
+ },
+ {
+  "target": "DrmKit.drm.getMediaKeySystemUuid",
+  "kit": "DrmKit",
+  "module": "drm",
+  "name": "getMediaKeySystemUuid",
+  "file": "@ohos.multimedia.drm.d.ts",
+  "params": [
+   [
+    "name",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Get a MediaKeySystem's UUID.",
+  "score": 0
+ },
+ {
+  "target": "FormKit.formHost.isSystemReady",
+  "kit": "FormKit",
+  "module": "formHost",
+  "name": "isSystemReady",
+  "file": "@ohos.app.form.formHost.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Checks whether the system is ready. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "FormKit.formProvider.activateSceneAnimation",
+  "kit": "FormKit",
+  "module": "formProvider",
+  "name": "activateSceneAnimation",
+  "file": "@ohos.app.form.formProvider.d.ts",
+  "params": [
+   [
+    "formId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Requests to activate a widget. This API takes effect only for",
+  "score": 0
+ },
+ {
+  "target": "FormKit.formProvider.cancelOverflow",
+  "kit": "FormKit",
+  "module": "formProvider",
+  "name": "cancelOverflow",
+  "file": "@ohos.app.form.formProvider.d.ts",
+  "params": [
+   [
+    "formId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Cancels an animation. This API takes effect only for",
+  "score": 0
+ },
+ {
+  "target": "FormKit.formProvider.closeFormEditAbility",
+  "kit": "FormKit",
+  "module": "formProvider",
+  "name": "closeFormEditAbility",
+  "file": "@ohos.app.form.formProvider.d.ts",
+  "params": [
+   [
+    "isMainPage",
+    "boolean",
+    true
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Closes the widget editing page.",
+  "score": 0
+ },
+ {
+  "target": "FormKit.formProvider.deactivateSceneAnimation",
+  "kit": "FormKit",
+  "module": "formProvider",
+  "name": "deactivateSceneAnimation",
+  "file": "@ohos.app.form.formProvider.d.ts",
+  "params": [
+   [
+    "formId",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Requests to deactivate a widget. This API takes effect only for",
+  "score": 0
+ },
+ {
+  "target": "FormKit.formProvider.setFormNextRefreshTime",
+  "kit": "FormKit",
+  "module": "formProvider",
+  "name": "setFormNextRefreshTime",
+  "file": "@ohos.app.form.formProvider.d.ts",
+  "params": [
+   [
+    "formId",
+    "string",
+    false
+   ],
+   [
+    "minute",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the next refresh time for a widget. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "ImageKit.videoProcessingEngine.deinitializeEnvironment",
+  "kit": "ImageKit",
+  "module": "videoProcessingEngine",
+  "name": "deinitializeEnvironment",
+  "file": "@ohos.multimedia.videoProcessingEngine.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Deinitialize global environment for image processing.",
+  "score": 0
+ },
+ {
+  "target": "ImageKit.videoProcessingEngine.initializeEnvironment",
+  "kit": "ImageKit",
+  "module": "videoProcessingEngine",
+  "name": "initializeEnvironment",
+  "file": "@ohos.multimedia.videoProcessingEngine.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Initialize global environment for image processing.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.inputDevice.getKeyboardRepeatDelay",
+  "kit": "InputKit",
+  "module": "inputDevice",
+  "name": "getKeyboardRepeatDelay",
+  "file": "@ohos.multimodalInput.inputDevice.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the keyboard repeat delay. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.inputDevice.getKeyboardRepeatRate",
+  "kit": "InputKit",
+  "module": "inputDevice",
+  "name": "getKeyboardRepeatRate",
+  "file": "@ohos.multimodalInput.inputDevice.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the keyboard repeat rate. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.inputDevice.setKeyboardRepeatDelay",
+  "kit": "InputKit",
+  "module": "inputDevice",
+  "name": "setKeyboardRepeatDelay",
+  "file": "@ohos.multimodalInput.inputDevice.d.ts",
+  "params": [
+   [
+    "delay",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the keyboard repeat delay. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.inputDevice.setKeyboardRepeatRate",
+  "kit": "InputKit",
+  "module": "inputDevice",
+  "name": "setKeyboardRepeatRate",
+  "file": "@ohos.multimodalInput.inputDevice.d.ts",
+  "params": [
+   [
+    "rate",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the keyboard repeat rate. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.getMouseScrollRows",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getMouseScrollRows",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the number of mouse scroll lines. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.getPointerColor",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getPointerColor",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the current mouse pointer color. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.getPointerColorSync",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getPointerColorSync",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtains the pointer color. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.getPointerSize",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getPointerSize",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the current mouse pointer size. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.getPointerSizeSync",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getPointerSizeSync",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtains the pointer size. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.getPointerSpeed",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getPointerSpeed",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the mouse pointer speed. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.getPointerSpeedSync",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getPointerSpeedSync",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": false,
+  "description": "Obtains the mouse pointer speed. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.getTouchpadPointerSpeed",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getTouchpadPointerSpeed",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "int",
+  "isPromise": true,
+  "description": "Obtains the touchpad pointer speed. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.getTouchpadScrollDirection",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "getTouchpadScrollDirection",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": true,
+  "description": "Obtains the scroll direction of the touchpad. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.isPointerVisibleSync",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "isPointerVisibleSync",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the mouse pointer is visible in the current window. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setMouseScrollRows",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setMouseScrollRows",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "rows",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the number of mouse scroll lines. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setPointerColor",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setPointerColor",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "color",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the mouse pointer color. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setPointerColorSync",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setPointerColorSync",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "color",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets the pointer color. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setPointerSize",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setPointerSize",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "size",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the mouse pointer size. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setPointerSizeSync",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setPointerSizeSync",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "size",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets the pointer size. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setPointerSpeed",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setPointerSpeed",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "speed",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the mouse pointer speed. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setPointerSpeedSync",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setPointerSpeedSync",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "speed",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets the mouse pointer speed. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setPointerVisible",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setPointerVisible",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "visible",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets whether the mouse pointer is visible in the current window. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setPointerVisibleSync",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setPointerVisibleSync",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "visible",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Sets whether the mouse pointer is visible in the current window. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setTouchpadPinchSwitch",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setTouchpadPinchSwitch",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "state",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the touchpad pinch switch. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setTouchpadPointerSpeed",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setTouchpadPointerSpeed",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "speed",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the touchpad pointer speed. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setTouchpadScrollDirection",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setTouchpadScrollDirection",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "state",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the touchpad scroll direction. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setTouchpadScrollSwitch",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setTouchpadScrollSwitch",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "state",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the touchpad scroll switch. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setTouchpadSwipeSwitch",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setTouchpadSwipeSwitch",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "state",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the touchpad multi-finger swipe switch. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.pointer.setTouchpadTapSwitch",
+  "kit": "InputKit",
+  "module": "pointer",
+  "name": "setTouchpadTapSwitch",
+  "file": "@ohos.multimodalInput.pointer.d.ts",
+  "params": [
+   [
+    "state",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the touchpad tap switch. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "InputKit.shortKey.setKeyDownDuration",
+  "kit": "InputKit",
+  "module": "shortKey",
+  "name": "setKeyDownDuration",
+  "file": "@ohos.multimodalInput.shortKey.d.ts",
+  "params": [
+   [
+    "businessKey",
+    "string",
+    false
+   ],
+   [
+    "delay",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Sets the delay for starting an ability using shortcut keys. This API uses a promise to return the result.",
+  "score": 0
+ },
+ {
+  "target": "LocalizationKit.i18n.isRTL",
+  "kit": "LocalizationKit",
+  "module": "i18n",
+  "name": "isRTL",
+  "file": "@ohos.i18n.d.ts",
+  "params": [
+   [
+    "locale",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether a language is an RTL language. For an RTL language,",
+  "score": 0
+ },
+ {
+  "target": "MultimodalAwarenessKit.metadataBinding.submitMetadata",
+  "kit": "MultimodalAwarenessKit",
+  "module": "metadataBinding",
+  "name": "submitMetadata",
+  "file": "@ohos.multimodalAwareness.metadataBinding.d.ts",
+  "params": [
+   [
+    "metadata",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Transfers the metadata to be encoded to the MSDP. The MSDP determines whether to transfer the metadata to the",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.connection.findProxyForUrl",
+  "kit": "NetworkKit",
+  "module": "connection",
+  "name": "findProxyForUrl",
+  "file": "@ohos.net.connection.d.ts",
+  "params": [
+   [
+    "url",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Find pac proxy info for the url.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.connection.getPacFileUrl",
+  "kit": "NetworkKit",
+  "module": "connection",
+  "name": "getPacFileUrl",
+  "file": "@ohos.net.connection.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtain the URL {@link pacFileUrl} of the current PAC script.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.connection.getPacUrl",
+  "kit": "NetworkKit",
+  "module": "connection",
+  "name": "getPacUrl",
+  "file": "@ohos.net.connection.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtain the URL {@link pacUrl} of the current PAC script.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.networkSecurity.isCleartextPermitted",
+  "kit": "NetworkKit",
+  "module": "networkSecurity",
+  "name": "isCleartextPermitted",
+  "file": "@ohos.net.networkSecurity.d.ts",
+  "params": [],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the Cleartext traffic is permitted.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.networkSecurity.isCleartextPermittedByHostName",
+  "kit": "NetworkKit",
+  "module": "networkSecurity",
+  "name": "isCleartextPermittedByHostName",
+  "file": "@ohos.net.networkSecurity.d.ts",
+  "params": [
+   [
+    "hostName",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the Cleartext traffic for a specified hostname is permitted.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.statistics.getAllRxBytes",
+  "kit": "NetworkKit",
+  "module": "statistics",
+  "name": "getAllRxBytes",
+  "file": "@ohos.net.statistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Queries the data traffic (including all TCP and UDP data packets) received through all NICs.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.statistics.getAllTxBytes",
+  "kit": "NetworkKit",
+  "module": "statistics",
+  "name": "getAllTxBytes",
+  "file": "@ohos.net.statistics.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Queries the data traffic (including all TCP and UDP data packets) sent through all NICs.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.statistics.getIfaceRxBytes",
+  "kit": "NetworkKit",
+  "module": "statistics",
+  "name": "getIfaceRxBytes",
+  "file": "@ohos.net.statistics.d.ts",
+  "params": [
+   [
+    "nic",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Queries the data traffic (including all TCP and UDP data packets) received through a specified NIC.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.statistics.getIfaceTxBytes",
+  "kit": "NetworkKit",
+  "module": "statistics",
+  "name": "getIfaceTxBytes",
+  "file": "@ohos.net.statistics.d.ts",
+  "params": [
+   [
+    "nic",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Queries the data traffic (including all TCP and UDP data packets) sent through a specified NIC.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.statistics.getSockfdRxBytes",
+  "kit": "NetworkKit",
+  "module": "statistics",
+  "name": "getSockfdRxBytes",
+  "file": "@ohos.net.statistics.d.ts",
+  "params": [
+   [
+    "sockfd",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Queries the data traffic (including all TCP and UDP data packets) received through a specified sockfd.",
+  "score": 0
+ },
+ {
+  "target": "NetworkKit.statistics.getSockfdTxBytes",
+  "kit": "NetworkKit",
+  "module": "statistics",
+  "name": "getSockfdTxBytes",
+  "file": "@ohos.net.statistics.d.ts",
+  "params": [
+   [
+    "sockfd",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Queries the data traffic (including all TCP and UDP data packets) sent through a specified sockfd.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiAppEvent.addProcessorFromConfig",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiAppEvent",
+  "name": "addProcessorFromConfig",
+  "file": "@ohos.hiviewdfx.hiAppEvent.d.ts",
+  "params": [
+   [
+    "processorName",
+    "string",
+    false
+   ],
+   [
+    "configName",
+    "string",
+    true
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": true,
+  "description": "Adds the configuration information of the data processor. The configuration file contains information such as the",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiAppEvent.getUserId",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiAppEvent",
+  "name": "getUserId",
+  "file": "@ohos.hiviewdfx.hiAppEvent.d.ts",
+  "params": [
+   [
+    "name",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the value set through **setUserId**.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiAppEvent.getUserProperty",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiAppEvent",
+  "name": "getUserProperty",
+  "file": "@ohos.hiviewdfx.hiAppEvent.d.ts",
+  "params": [
+   [
+    "name",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the value set through **setUserProperty**.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiAppEvent.removeProcessor",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiAppEvent",
+  "name": "removeProcessor",
+  "file": "@ohos.hiviewdfx.hiAppEvent.d.ts",
+  "params": [
+   [
+    "id",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Removes the data processor of a reported event.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiRetrieval.getLastParticipationTimestamp",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiRetrieval",
+  "name": "getLastParticipationTimestamp",
+  "file": "@ohos.hiviewdfx.hiRetrieval.d.ts",
+  "params": [],
+  "returnType": "long",
+  "isPromise": false,
+  "description": "Query the UNIX timestamp of the last participating time.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiRetrieval.init",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiRetrieval",
+  "name": "init",
+  "file": "@ohos.hiviewdfx.hiRetrieval.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Init the HiRetrieval functionality.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiRetrieval.quit",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiRetrieval",
+  "name": "quit",
+  "file": "@ohos.hiviewdfx.hiRetrieval.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Quit the HiRetrieval project. This operation clears the current HiRetrieval config.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiRetrieval.run",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiRetrieval",
+  "name": "run",
+  "file": "@ohos.hiviewdfx.hiRetrieval.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Trigger the HiRetrieval functionality, make it start working.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiTraceChain.clearId",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiTraceChain",
+  "name": "clearId",
+  "file": "@ohos.hiTraceChain.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Clears the trace ID. This API returns the result synchronously.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiTraceMeter.finishTrace",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiTraceMeter",
+  "name": "finishTrace",
+  "file": "@ohos.hiTraceMeter.d.ts",
+  "params": [
+   [
+    "name",
+    "string",
+    false
+   ],
+   [
+    "taskId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Stops an asynchronous trace.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiTraceMeter.startTrace",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiTraceMeter",
+  "name": "startTrace",
+  "file": "@ohos.hiTraceMeter.d.ts",
+  "params": [
+   [
+    "name",
+    "string",
+    false
+   ],
+   [
+    "taskId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Starts an asynchronous trace.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hiTraceMeter.traceByValue",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hiTraceMeter",
+  "name": "traceByValue",
+  "file": "@ohos.hiTraceMeter.d.ts",
+  "params": [
+   [
+    "name",
+    "string",
+    false
+   ],
+   [
+    "count",
+    "long",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Traces the value changes of an integer variable.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hichecker.addCheckRule",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hichecker",
+  "name": "addCheckRule",
+  "file": "@ohos.hichecker.d.ts",
+  "params": [
+   [
+    "rule",
+    "bigint",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Adds one or more check rules. HiChecker detects unexpected operations or gives feedback based on the added rules.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hichecker.containsCheckRule",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hichecker",
+  "name": "containsCheckRule",
+  "file": "@ohos.hichecker.d.ts",
+  "params": [
+   [
+    "rule",
+    "bigint",
+    false
+   ]
+  ],
+  "returnType": "boolean",
+  "isPromise": false,
+  "description": "Checks whether the specified rule exists in the collection of added rules. If the rule is of the thread level, this",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hichecker.removeCheckRule",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hichecker",
+  "name": "removeCheckRule",
+  "file": "@ohos.hichecker.d.ts",
+  "params": [
+   [
+    "rule",
+    "bigint",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Removes one or more rules. The removed rules will become ineffective.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.disableGwpAsanGrayscale",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "disableGwpAsanGrayscale",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Disables GWP-ASan. This API is used to cancel the custom configuration and restore the default parameter",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.dumpJsHeapData",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "dumpJsHeapData",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [
+   [
+    "filename",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Dumps VM heap data.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.dumpJsRawHeapData",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "dumpJsRawHeapData",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [
+   [
+    "needGC",
+    "boolean",
+    true
+   ]
+  ],
+  "returnType": "string",
+  "isPromise": true,
+  "description": "Dumps the original heap snapshot of the VM for the current thread and generates a .rawheap file. This API uses a",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getNativeHeapAllocatedSize",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getNativeHeapAllocatedSize",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "bigint",
+  "isPromise": false,
+  "description": "Obtains the total number of bytes occupied by the total allocated space (**uordblks**, which is obtained from",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getNativeHeapFreeSize",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getNativeHeapFreeSize",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "bigint",
+  "isPromise": false,
+  "description": "Obtains the total number of bytes occupied by the total free space (**fordblks**, which is obtained from",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getNativeHeapSize",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getNativeHeapSize",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [],
+  "returnType": "bigint",
+  "isPromise": false,
+  "description": "Obtains the total number of bytes occupied by the total space (**uordblks** + **fordblks**, which are obtained from",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.getVMRuntimeStat",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "getVMRuntimeStat",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [
+   [
+    "item",
+    "string",
+    false
+   ]
+  ],
+  "returnType": "long",
+  "isPromise": false,
+  "description": "Obtains the specified system GC statistics based on parameters.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hidebug.setProcDumpInSharedOOM",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hidebug",
+  "name": "setProcDumpInSharedOOM",
+  "file": "@ohos.hidebug.d.ts",
+  "params": [
+   [
+    "enable",
+    "boolean",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Changes the dump heap snapshot from the thread-level to the process-level.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hilog.clean",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hilog",
+  "name": "clean",
+  "file": "@ohos.hilog.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Delete all hilog logs in the sandbox.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hilog.flush",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hilog",
+  "name": "flush",
+  "file": "@ohos.hilog.d.ts",
+  "params": [],
+  "returnType": "void",
+  "isPromise": false,
+  "description": "Flush hilog logs in the sandbox.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.hilog.getOutputDir",
+  "kit": "PerformanceAnalysisKit",
+  "module": "hilog",
+  "name": "getOutputDir",
+  "file": "@ohos.hilog.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Returns the directory path of hilog logs in the sandbox.",
+  "score": 0
+ },
+ {
+  "target": "PerformanceAnalysisKit.jsLeakWatcher.check",
+  "kit": "PerformanceAnalysisKit",
+  "module": "jsLeakWatcher",
+  "name": "check",
+  "file": "@ohos.hiviewdfx.jsLeakWatcher.d.ts",
+  "params": [],
+  "returnType": "string",
+  "isPromise": false,
+  "description": "Obtains the list of objects that are leaked and registered using **jsLeakWatcher.watch()**. Objects that are not",
+  "score": 0
+ },
+ {
+  "target": "TelephonyKit.call.closeUnfinishedUssd",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "closeUnfinishedUssd",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Close unfinished ussd.",
+  "score": 0
+ },
+ {
+  "target": "TelephonyKit.call.disableImsSwitch",
+  "kit": "TelephonyKit",
+  "module": "call",
+  "name": "disableImsSwitch",
+  "file": "@ohos.telephony.call.d.ts",
+  "params": [
+   [
+    "slotId",
+    "int",
+    false
+   ]
+  ],
+  "returnType": "void",
+  "isPromise": true,
+  "description": "Turn off Ims switch.",
+  "score": 0
+ }
+]

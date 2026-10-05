@@ -52,6 +52,22 @@ export async function requestCalendarPermissions(context: common.UIAbilityContex
   }
 }
 
+export async function requestMicrophonePermission(context: common.UIAbilityContext): Promise<void> {
+  AbilityContext.value = context
+  let permissions: Permissions[] = ['ohos.permission.MICROPHONE']
+  try {
+    let result = await abilityAccessCtrl.createAtManager().requestPermissionsFromUser(context, permissions)
+    if (result.authResults[0] === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
+      hilog.info(DOMAIN, 'VERA', 'VERA-AUDIO microphone permission granted')
+    } else {
+      hilog.info(DOMAIN, 'VERA', 'VERA-AUDIO microphone permission declined')
+    }
+  } catch (e) {
+    let err = e as BusinessError
+    hilog.error(DOMAIN, 'VERA', 'VERA-AUDIO permission request failed ' + err.code.toString())
+  }
+}
+
 /**
  * The next occurrence of hour:minute, today if it is still ahead and tomorrow
  * otherwise.

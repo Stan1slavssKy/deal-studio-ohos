@@ -6,8 +6,9 @@ import hilog from '@ohos.hilog'
 import router from '@ohos.router'
 import { refreshForms } from '../vera/FormUpdater'
 import { settings } from '../vera/SettingsStore'
-import { requestCalendarPermissions } from '../vera/VeraCalendar'
+import { requestCalendarPermissions, requestMicrophonePermission } from '../vera/VeraCalendar'
 import { runProbe } from '../vera/IntentProbe'
+import { runSdkProbe, requestSdkSearch } from '../vera/VeraSdkProbe'
 import { requestBenchmark } from '../vera/VeraSearchBenchmark'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 
@@ -30,6 +31,8 @@ export default class EntryAbility extends UIAbility {
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
+    this.extractSdkProbe(want)
+    this.extractSdkSearchProbe(want)
     this.extractBenchmark(want)
   }
 
@@ -40,6 +43,8 @@ export default class EntryAbility extends UIAbility {
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
+    this.extractSdkProbe(want)
+    this.extractSdkSearchProbe(want)
     this.extractBenchmark(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
@@ -121,6 +126,39 @@ export default class EntryAbility extends UIAbility {
   }
 
   /**
+   * Development only, same shape as extractProbe: calls one sdk.call target
+   * directly against VeraSdkBackend.ets's ADAPTERS, so a new adapter can be
+   * tried without going through a real generation. See VeraSdkProbe.ets.
+   *
+   * Reachable only from a launch parameter, so only from a shell on the device.
+   */
+  private extractSdkProbe(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let target = params['probeSdkTarget']
+    if (target === null || target === undefined || typeof target !== 'string') { return }
+    let payload = params['probeSdkParams']
+    runSdkProbe((target as string).trim(),
+      payload !== null && payload !== undefined && typeof payload === 'string' ? (payload as string) : '')
+  }
+
+  /**
+   * Development only: runs find_sdk_function's own search (both token and
+   * embedding) for one `need` string, so a ranking change can be checked
+   * without a real generation. Only sets a flag here, same reasoning as
+   * extractBenchmark -- embedding search needs the SDK corpus cache already
+   * warm, which only happens inside GeneratePage.ets's own resource
+   * loading. See VeraSdkProbe.ets.
+   */
+  private extractSdkSearchProbe(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let need = params['probeSdkSearch']
+    if (need === null || need === undefined || typeof need !== 'string') { return }
+    requestSdkSearch((need as string).trim())
+  }
+
+  /**
    * Development only, same shape as extractProbe: requests the search
    * timing benchmark (VeraSearchBenchmark.ets) on this launch --
    *
@@ -159,7 +197,9 @@ export default class EntryAbility extends UIAbility {
     // and so cannot come from the signature. Asked here rather than at the
     // first calendar call, because a permission dialog appearing in the middle
     // of a generated program's handler gives no clue what asked for it.
-    requestCalendarPermissions(this.context)
+    requestCalendarPermissions(this.context).then((): Promise<void> => {
+      return requestMicrophonePermission(this.context)
+    })
     windowStage.loadContent('pages/Index', (err): void => {
       if (err?.code) {
         hilog.error(DOMAIN, 'VERA', 'loadContent failed')

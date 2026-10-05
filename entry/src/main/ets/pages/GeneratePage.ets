@@ -20,6 +20,7 @@ import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL }
 import { ensureSdkEmbeddings, sdkEmbeddingsReady } from '../vera/VeraSdkEmbeddingCache'
 import { ensureIntentEmbeddings, intentEmbeddingsReady } from '../vera/VeraIntentEmbeddingCache'
 import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchmark'
+import { sdkSearchRequested, runSdkSearchProbe } from '../vera/VeraSdkProbe'
 
 const MAX_RETRIES: number = 3
 // vera-server's address is not written down here. It lives in settings, given
@@ -463,6 +464,16 @@ struct GeneratePage {
       await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
       await ensureIntentEmbeddings(filesDir)
       await runSearchBenchmark()
+    }
+    let search = sdkSearchRequested()
+    if (search !== null) {
+      await sdkPromise
+      // Same race, same margin as the benchmark path above: loadSdkIndex()
+      // is a separate, independent async read that sdkPromise alone
+      // doesn't wait for, and an empty live index makes both searches
+      // answer with nothing to find rather than a real ranking.
+      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
+      await runSdkSearchProbe(search)
     }
   }
 

@@ -134,7 +134,7 @@ export class VirtualMachine {
   private maxSteps: number
   private steps: number = 0
 
-  constructor(module: BytecodeModule, host: HostEnvironment = new EmptyHostEnvironment(), maxSteps: number = 500000) {
+  constructor(module: BytecodeModule, host: HostEnvironment = new EmptyHostEnvironment(), maxSteps: number = 5000000) {
     this.host = host
     this.maxSteps = maxSteps
     for (let fn of module.functions) {

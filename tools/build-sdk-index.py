@@ -17,9 +17,9 @@ handful of functions; a few, ArkUI and AbilityKit chief among them, run to
 hundreds of declarations each). This script reads that tag and every
 function/method signature it can find, off a local interface_sdk-js checkout,
 and writes one flat JSON array of
-{kit, module, name, params, returnType, description, since, deprecated,
-systemapi, permission, file}. No device, no network, no per-item review --
-just static text, read once per SDK version.
+{kit, module, scopeKind, name, params, returnType, description, since,
+deprecated, systemapi, permission, file}. No device, no network, no per-item
+review -- just static text, read once per SDK version.
 
 It is deliberately a heuristic, not a TypeScript parser: regex plus a small
 brace-depth scope tracker, matching the level of rigor tools/prompt-
@@ -59,12 +59,15 @@ DEPRECATED_RE = re.compile(r'@deprecated\b')
 SYSTEMAPI_RE = re.compile(r'@systemapi\b')
 
 # `declare namespace X {` / `class X {` / `interface X {` / `enum X {` --
-# opens a scope with a name. A bare `{` with none of these just deepens
-# whatever scope is already open (an object type literal, a function type,
-# a method body that can't exist in an ambient .d.ts but might in a comment
-# example -- comments are stripped before this ever runs).
+# opens a scope with a name and a kind. A bare `{` with none of these just
+# deepens whatever scope is already open (an object type literal, a function
+# type, a method body that can't exist in an ambient .d.ts but might in a
+# comment example -- comments are stripped before this ever runs). The kind
+# matters downstream: only a `namespace` member is callable as
+# `import X from '@ohos...'; X.func(...)` -- a `class` member needs an
+# instance first, which nothing here can construct generically.
 SCOPE_OPEN_RE = re.compile(
-    r'\b(?:declare\s+)?(?:namespace|class|interface|enum)\s+(\w+)[^{;]*\{'
+    r'\b(?:declare\s+)?(namespace|class|interface|enum)\s+(\w+)[^{;]*\{'
 )
 
 # A callable signature at statement scope: `function NAME(`, or a class/
@@ -134,13 +137,20 @@ def stmt_boundary(code, pos):
 
 def find_declarations(code):
     """One dict per callable-shaped signature in `code`, with its enclosing
-    named scope (namespace/class/interface) resolved via a brace-depth stack
-    walked alongside the declaration matches, both in position order."""
-    named_open_at = {m.end() - 1: m.group(1) for m in SCOPE_OPEN_RE.finditer(code)}
+    named scope (namespace/class/interface) and that scope's kind resolved
+    via a brace-depth stack walked alongside the declaration matches, both in
+    position order."""
+    named_open_at = {}
+    kind_open_at = {}
+    for m in SCOPE_OPEN_RE.finditer(code):
+        brace_pos = m.end() - 1
+        named_open_at[brace_pos] = m.group(2)
+        kind_open_at[brace_pos] = m.group(1)
     brace_events = [(m.start(), 1 if m.group() == '{' else -1)
                      for m in BRACE_RE.finditer(code)]
 
-    stack = []
+    name_stack = []
+    kind_stack = []
     bi = 0
     results = []
     for m in DECL_START_RE.finditer(code):
@@ -148,9 +158,11 @@ def find_declarations(code):
         while bi < len(brace_events) and brace_events[bi][0] < pos:
             bpos, delta = brace_events[bi]
             if delta == 1:
-                stack.append(named_open_at.get(bpos))
-            elif stack:
-                stack.pop()
+                name_stack.append(named_open_at.get(bpos))
+                kind_stack.append(kind_open_at.get(bpos))
+            elif name_stack:
+                name_stack.pop()
+                kind_stack.pop()
             bi += 1
 
         name = m.group('name')
@@ -162,12 +174,21 @@ def find_declarations(code):
         rm = RETURN_TYPE_RE.match(code, params_end + 1)
         if not rm:
             continue
-        module = next((s for s in reversed(stack) if s), None)
+        module = next((s for s in reversed(name_stack) if s), None)
+        # The innermost scope kind that actually had a name -- an unnamed
+        # depth (an object type literal, say) doesn't count as the enclosing
+        # scope for this purpose.
+        scope_kind = None
+        for nm, kd in zip(reversed(name_stack), reversed(kind_stack)):
+            if nm:
+                scope_kind = kd
+                break
         results.append({
             'name': name,
             'params': ' '.join(code[m.end():params_end].split()),
             'returnType': rm.group(1).strip(),
             'module': module,
+            'scopeKind': scope_kind,
             'pos': pos,
             # The nearest preceding boundary, not the name position itself:
             # `function`/`static`/`export` sit between a JSDoc block and the
@@ -255,6 +276,13 @@ def process_file(path, sdk_root):
     return [{
         'kit': kit,
         'module': d['module'] or fallback,
+        # 'namespace', 'class', 'interface' or 'enum' -- whichever scope the
+        # declaration sits directly inside. Only a 'namespace' member is
+        # callable as `import X from '...'; X.name(...)` without first
+        # constructing an instance; unset (no enclosing named scope at all)
+        # is treated the same as 'namespace' by convention below, since a
+        # bare top-level `function` really is one.
+        'scopeKind': d['scopeKind'] or 'namespace',
         'name': d['name'],
         'params': d['params'],
         'returnType': d['returnType'],
