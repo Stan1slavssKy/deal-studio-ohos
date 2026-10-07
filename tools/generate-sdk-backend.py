@@ -53,14 +53,24 @@ function paramString(params: Map<string, string>, name: string, fallback: string
   return v !== undefined ? v : fallback
 }
 
+// A value that is not a number is an error the program can see, not a NaN that
+// the platform quietly reads as 0: a generated program passed ["mode", "OFF"]
+// to setTorchMode, got "ok", and the flashlight never lit. runSdkAdapter turns
+// the throw into "error: ..." as the answer.
 function paramInt(params: Map<string, string>, name: string, fallback: number): number {
   let v = params.get(name)
-  return v !== undefined ? Number.parseInt(v, 10) : fallback
+  if (v === undefined) { return fallback }
+  let n = Number.parseInt(v, 10)
+  if (Number.isNaN(n)) { throw new Error('parameter ' + name + ' must be an integer, got "' + v + '"') }
+  return n
 }
 
 function paramFloat(params: Map<string, string>, name: string, fallback: number): number {
   let v = params.get(name)
-  return v !== undefined ? Number.parseFloat(v) : fallback
+  if (v === undefined) { return fallback }
+  let n = Number.parseFloat(v)
+  if (Number.isNaN(n)) { throw new Error('parameter ' + name + ' must be a number, got "' + v + '"') }
+  return n
 }
 
 function paramBoolean(params: Map<string, string>, name: string, fallback: boolean): boolean {

@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 
 MAGIC = 0x56534431  # 'VSD1' -- must match VeraSdkEmbeddingCache.ets's MAGIC
-FORMAT_VERSION = 2  # must match FORMAT_VERSION there
+FORMAT_VERSION = 4  # must match FORMAT_VERSION there; 4 = text is the summary, one entry per function
 MODEL_FILE = 'embeddinggemma-300m-q4_k_m.gguf'  # must match VeraEmbeddings.MODEL_FILE
 
 
@@ -70,8 +70,11 @@ def embedding_text(e: dict) -> str:
     # Must match VeraSdkEmbeddingCache.ets's sdkEmbeddingText exactly -- a
     # different text here embeds a different thing than the live on-device
     # path would for the same entry, silently.
-    description = e.get('description') or ''
-    text = f"{e['kit']} {e['module']} {e['name']} {description}"
+    # kit module name, then the summary (what it does and what it is for, in
+    # everyday words) in place of the description; an entry without one falls
+    # back to its description. Must match sdkEmbeddingText exactly.
+    parts = [e['kit'], e['module'], e['name'], e.get('summary') or e.get('description') or '']
+    text = ' '.join(p for p in parts if p)
     # One entry, one line, when fed to llama-embedding's -f (newline-
     # separated prompts) -- strip any embedded newlines rather than let one
     # entry split into two prompts.

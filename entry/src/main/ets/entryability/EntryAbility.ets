@@ -10,6 +10,7 @@ import { requestCalendarPermissions, requestMicrophonePermission } from '../vera
 import { runProbe } from '../vera/IntentProbe'
 import { runSdkProbe, requestSdkSearch } from '../vera/VeraSdkProbe'
 import { requestBenchmark } from '../vera/VeraSearchBenchmark'
+import { requestSdkEval } from '../vera/VeraSdkEval'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 
 const DOMAIN = 0x0000
@@ -34,6 +35,7 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkProbe(want)
     this.extractSdkSearchProbe(want)
     this.extractBenchmark(want)
+    this.extractSdkEval(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -46,6 +48,7 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkProbe(want)
     this.extractSdkSearchProbe(want)
     this.extractBenchmark(want)
+    this.extractSdkEval(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
     }
@@ -178,6 +181,22 @@ export default class EntryAbility extends UIAbility {
     if (flag === null || flag === undefined) { return }
     requestBenchmark()
     hilog.info(DOMAIN, 'VERA', 'VERA-BENCH requested from launch parameter')
+  }
+
+  /**
+   * Development only: dumps find_sdk_function's token and embedding rankings
+   * for the gold `need` strings (VeraSdkEval.ets). Sets a flag here, same as
+   * extractBenchmark; GeneratePage.ets runs it once the embedding caches are warm.
+   *
+   *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps veraSdkEval 1
+   */
+  private extractSdkEval(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraSdkEval']
+    if (flag === null || flag === undefined) { return }
+    requestSdkEval()
+    hilog.info(DOMAIN, 'VERA', 'VERA-SDKEVAL requested from launch parameter')
   }
 
   private extractProjectId(want: Want): void {

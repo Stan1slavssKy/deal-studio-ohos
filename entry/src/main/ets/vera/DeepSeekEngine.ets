@@ -39,13 +39,14 @@ import util from '@ohos.util'
 import { GenerateRequest, GenerateResult, TokenCallback } from './LlamaEngine'
 import { settings } from './SettingsStore'
 import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
-import { isSdkTargetImplemented } from './VeraSdkBackend'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
 import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
 
 const SDK_TOOL_NAME = 'find_sdk_function'
-const SDK_SEARCH_LIMIT = 8
+// 16, not 8: on the gold set the right function sat at rank 9-16 often enough that
+// recall went from 0.62 at 8 to 0.76 at 16, for a few hundred more tokens a call.
+const SDK_SEARCH_LIMIT = 16
 const INTENT_TOOL_NAME = 'find_intent_function'
 const INTENT_SEARCH_LIMIT = 8
 /**
@@ -128,7 +129,7 @@ function needParameter(description: string): Record<string, Object> {
 function toolSchemas(): Record<string, Object>[] {
   let sdkFn: Record<string, Object> = {}
   sdkFn['name'] = SDK_TOOL_NAME
-  sdkFn['description'] = 'Looks up a platform SDK function by what it needs to do, out of thousands the phone offers with no built-in catalogue. Returns a few candidates with their target, parameters, return type, description, and implemented (whether it actually runs). Never invent a target string: only use one returned by this tool. A result with implemented=false compiles and calls cleanly but always answers "error: sdk.call is not implemented yet" -- if any candidate has implemented=true, prefer it even if another one reads as a closer wording match.'
+  sdkFn['description'] = 'Looks up a platform SDK function by what it needs to do, out of thousands the phone offers with no built-in catalogue. Returns a few candidates with their target, parameters, return type and a plain description of what each does and what it is for. Pick the one that does what is needed, not the one whose name merely sounds closest. Never invent a target string: only use one returned by this tool.'
   sdkFn['parameters'] = needParameter('Plain-language description of the platform capability needed, e.g. "read the free internal storage space".')
   let sdkTool: Record<string, Object> = {}
   sdkTool['type'] = 'function'
@@ -160,15 +161,7 @@ function sdkResultsJson(entries: SdkEntry[]): string {
     item['target'] = target
     item['params'] = e.params
     item['returnType'] = e.returnType
-    item['description'] = e.description
-    // Ranking already nudges an implemented target ahead of a merely-
-    // similar-sounding one that has none (VeraSdkIndex.ets's
-    // sdkImplementedMask), but the model sees this directly too: a target
-    // with implemented=false compiles and calls cleanly, then answers
-    // "error: sdk.call is not implemented yet" every time, with nothing
-    // about the call site itself telling a generated program that in
-    // advance.
-    item['implemented'] = isSdkTargetImplemented(target)
+    item['description'] = e.summary.length > 0 ? e.summary : e.description
     items.push(item)
   }
   body['results'] = items

@@ -1,0 +1,524 @@
+[
+ {
+  "id": "x01",
+  "slug": "clipboard-copy",
+  "prompt": "A button that copies the quote to the clipboard",
+  "need": "copy text to the clipboard",
+  "gold": {
+   "BasicServicesKit.SystemPasteboard.setData": 2,
+   "BasicServicesKit.SystemPasteboard.setDataSync": 2,
+   "BasicServicesKit.pasteboard.createData": 1
+  }
+ },
+ {
+  "id": "x02",
+  "slug": "clipboard-paste",
+  "prompt": "A paste button that inserts whatever I copied",
+  "need": "read the text currently on the clipboard",
+  "gold": {
+   "BasicServicesKit.SystemPasteboard.getData": 2,
+   "BasicServicesKit.SystemPasteboard.getDataSync": 2,
+   "BasicServicesKit.SystemPasteboard.getUnifiedData": 1
+  }
+ },
+ {
+  "id": "x03",
+  "slug": "http-get",
+  "prompt": "An app that fetches a random joke from a web API",
+  "need": "make an HTTP GET request to a web service",
+  "gold": {
+   "NetworkKit.http.createHttp": 2,
+   "NetworkKit.HttpRequest.request": 2
+  }
+ },
+ {
+  "id": "x04",
+  "slug": "websocket",
+  "prompt": "A chat client that talks to a server in real time",
+  "need": "open a WebSocket connection and send messages",
+  "gold": {
+   "NetworkKit.webSocket.createWebSocket": 2,
+   "NetworkKit.WebSocket.connect": 2,
+   "NetworkKit.WebSocket.send": 2
+  }
+ },
+ {
+  "id": "x05",
+  "slug": "sha256",
+  "prompt": "A tool that shows the SHA-256 of a text",
+  "need": "compute a SHA-256 hash of some data",
+  "gold": {
+   "CryptoArchitectureKit.cryptoFramework.createMd": 2
+  }
+ },
+ {
+  "id": "x06",
+  "slug": "random-bytes",
+  "prompt": "A password generator",
+  "need": "generate secure random bytes",
+  "gold": {
+   "CryptoArchitectureKit.cryptoFramework.createRandom": 2,
+   "CryptoArchitectureKit.Random.generateRandom": 2,
+   "CryptoArchitectureKit.Random.generateRandomSync": 2
+  }
+ },
+ {
+  "id": "x07",
+  "slug": "aes",
+  "prompt": "A notes app that encrypts every note",
+  "need": "encrypt data with AES",
+  "gold": {
+   "CryptoArchitectureKit.cryptoFramework.createCipher": 2,
+   "CryptoArchitectureKit.Cipher.init": 2,
+   "CryptoArchitectureKit.Cipher.doFinal": 2,
+   "CryptoArchitectureKit.Cipher.initSync": 1,
+   "CryptoArchitectureKit.Cipher.doFinalSync": 1
+  }
+ },
+ {
+  "id": "x08",
+  "slug": "biometric",
+  "prompt": "Unlock my diary with a fingerprint",
+  "need": "authenticate the user with fingerprint or face recognition",
+  "gold": {
+   "UserAuthenticationKit.userAuth.getUserAuthInstance": 2,
+   "UserAuthenticationKit.UserAuthInstance.start": 2,
+   "UserAuthenticationKit.userAuth.getAuthInstance": 1
+  }
+ },
+ {
+  "id": "x09",
+  "slug": "keep-screen-on",
+  "prompt": "A recipe reader that never lets the screen sleep",
+  "need": "keep the screen on while the app is open",
+  "gold": {
+   "ArkUI.Window.setWindowKeepScreenOn": 2
+  }
+ },
+ {
+  "id": "x10",
+  "slug": "orientation",
+  "prompt": "A video player that stays in landscape",
+  "need": "lock the screen orientation to landscape",
+  "gold": {
+   "ArkUI.Window.setPreferredOrientation": 2,
+   "ArkUI.Window.setPreferredOrientationWithResult": 2
+  }
+ },
+ {
+  "id": "x11",
+  "slug": "display-size",
+  "prompt": "A layout helper that shows the screen size",
+  "need": "get the screen width, height and pixel density",
+  "gold": {
+   "ArkUI.display.getDefaultDisplaySync": 2,
+   "ArkUI.display.getAllDisplays": 1
+  }
+ },
+ {
+  "id": "x12",
+  "slug": "language",
+  "prompt": "Greet me in the language my phone uses",
+  "need": "read the system display language",
+  "gold": {
+   "LocalizationKit.System.getSystemLanguage": 2,
+   "LocalizationKit.System.getSystemLanguages": 2,
+   "LocalizationKit.i18n.getSystemLanguage": 1,
+   "LocalizationKit.System.getDisplayLanguage": 1
+  }
+ },
+ {
+  "id": "x13",
+  "slug": "timezone",
+  "prompt": "A world clock that starts from my own zone",
+  "need": "get the current time zone of the device",
+  "gold": {
+   "LocalizationKit.i18n.getTimeZone": 2,
+   "LocalizationKit.TimeZone.getID": 2,
+   "BasicServicesKit.systemDateTime.getTimezone": 2,
+   "BasicServicesKit.systemDateTime.getTimezoneSync": 2
+  }
+ },
+ {
+  "id": "x14",
+  "slug": "reminder-set",
+  "prompt": "Remind me to take my medicine at 8am",
+  "need": "schedule a reminder at a specific time",
+  "gold": {
+   "BackgroundTasksKit.reminderAgentManager.publishReminder": 2
+  }
+ },
+ {
+  "id": "x15",
+  "slug": "reminder-cancel",
+  "prompt": "Let me delete a reminder I made",
+  "need": "cancel a scheduled reminder",
+  "gold": {
+   "BackgroundTasksKit.reminderAgentManager.cancelReminder": 2,
+   "BackgroundTasksKit.reminderAgentManager.cancelReminderOnDisplay": 1
+  }
+ },
+ {
+  "id": "x16",
+  "slug": "background",
+  "prompt": "Keep tracking my run while the screen is off",
+  "need": "keep the app running in the background",
+  "gold": {
+   "BackgroundTasksKit.backgroundTaskManager.startBackgroundRunning": 2,
+   "BackgroundTasksKit.backgroundTaskManager.requestSuspendDelay": 1,
+   "API10LessDeprecatedModules.backgroundTaskManager.startBackgroundRunning": 1
+  }
+ },
+ {
+  "id": "x17",
+  "slug": "wifi-on",
+  "prompt": "Warn me when Wi-Fi is turned off",
+  "need": "check whether Wi-Fi is enabled",
+  "gold": {
+   "ConnectivityKit.wifiManager.isWifiActive": 2
+  }
+ },
+ {
+  "id": "x18",
+  "slug": "ble-scan",
+  "prompt": "Find nearby Bluetooth LE sensors",
+  "need": "scan for nearby Bluetooth low energy devices",
+  "gold": {
+   "ConnectivityKit.ble.startBLEScan": 2,
+   "ConnectivityKit.BLE.startBLEScan": 1
+  }
+ },
+ {
+  "id": "x19",
+  "slug": "reverse-geocode",
+  "prompt": "Show the street I am standing on",
+  "need": "find the street address for a pair of coordinates",
+  "gold": {
+   "LocationKit.geoLocationManager.getAddressesFromLocation": 2
+  }
+ },
+ {
+  "id": "x20",
+  "slug": "geocode",
+  "prompt": "Search a city and show where it is",
+  "need": "find the coordinates of an address",
+  "gold": {
+   "LocationKit.geoLocationManager.getAddressesFromLocationName": 2
+  }
+ },
+ {
+  "id": "x21",
+  "slug": "photo-picker",
+  "prompt": "An avatar chooser from my gallery",
+  "need": "let the user pick a photo from the gallery",
+  "gold": {
+   "MediaLibraryKit.PhotoViewPicker.select": 2,
+   "CoreFileKit.PhotoViewPicker.select": 1
+  }
+ },
+ {
+  "id": "x22",
+  "slug": "file-picker",    
+  "prompt": "Import a text file into my notes",
+  "need": "let the user pick a file from storage",
+  "gold": {
+   "CoreFileKit.DocumentViewPicker.select": 2
+  }
+ },
+ {
+  "id": "x23",
+  "slug": "contact-pick",
+  "prompt": "Invite a friend: choose someone from my contacts",
+  "need": "let the user choose a contact from the address book",
+  "gold": {
+   "ContactsKit.contact.selectContacts": 2,
+   "ContactsKit.contact.queryContacts": 1
+  }
+ },
+ {
+  "id": "x24",
+  "slug": "net-type",
+  "prompt": "Warn me when I am on mobile data instead of Wi-Fi",
+  "need": "find out whether the phone is on Wi-Fi or mobile data",
+  "gold": {
+   "NetworkKit.connection.getDefaultNet": 2,
+   "NetworkKit.connection.getNetCapabilities": 2,
+   "NetworkKit.connection.getDefaultNetSync": 2,
+   "NetworkKit.connection.getNetCapabilitiesSync": 2,
+   "NetworkKit.connection.hasDefaultNet": 1
+  }
+ },
+ {
+  "id": "x25",
+  "slug": "app-version",
+  "prompt": "An about screen with the version number",
+  "need": "get the app version number",
+  "gold": {
+   "AbilityKit.bundleManager.getBundleInfoForSelf": 2,
+   "AbilityKit.bundleManager.getBundleInfoForSelfSync": 2
+  }
+ },
+ {
+  "id": "x26",
+  "slug": "decode-image",
+  "prompt": "A thumbnail maker for my photos",
+  "need": "decode an image file into a bitmap",
+  "gold": {
+   "ImageKit.image.createImageSource": 2,
+   "ImageKit.ImageSource.createPixelMap": 2,
+   "ImageKit.ImageSource.createPixelMapSync": 2
+  }
+ },
+ {
+  "id": "x27",
+  "slug": "zip",
+  "prompt": "Back up my notes into one archive",
+  "need": "compress files into a zip archive",
+  "gold": {
+   "BasicServicesKit.zlib.compressFile": 2,
+   "BasicServicesKit.zlib.compressFiles": 2
+  }
+ },
+ {
+  "id": "x28",
+  "slug": "uuid",
+  "prompt": "Give every todo item a unique id",
+  "need": "generate a unique identifier (UUID)",
+  "gold": {
+   "ArkTS.util.generateRandomUUID": 2
+  }
+ },
+ {
+  "id": "x29",
+  "slug": "base64",
+  "prompt": "A base64 encoder tool",
+  "need": "encode data as base64 text",
+  "gold": {
+   "ArkTS.Base64Helper.encodeToString": 2,
+   "ArkTS.Base64Helper.encodeToStringSync": 2,
+   "ArkTS.Base64Helper.encode": 1,
+   "ArkTS.Base64Helper.encodeSync": 1
+  }
+ },
+ {
+  "id": "x30",
+  "slug": "print",
+  "prompt": "Print my monthly report",
+  "need": "print a document",
+  "gold": {
+   "BasicServicesKit.print.print": 2
+  }
+ },
+ {
+  "id": "x31",
+  "slug": "screen-record",
+  "prompt": "Record a tutorial of my screen",
+  "need": "record the screen of the phone",
+  "gold": {
+   "MediaKit.media.createAVScreenCaptureRecorder": 2,
+   "MediaKit.AVScreenCaptureRecorder.startRecording": 2
+  }
+ },
+ {
+  "id": "x32",
+  "slug": "rdb",
+  "prompt": "An expense tracker that keeps its records in a database",
+  "need": "open a local relational database",
+  "gold": {
+   "ArkData.relationalStore.getRdbStore": 2,
+   "ArkData.relationalStore.getRdbStoreSync": 2
+  }
+ },
+ {
+  "id": "x33",
+  "slug": "preferences",
+  "prompt": "Remember the theme the user picked",
+  "need": "store a small setting persistently",
+  "gold": {
+   "ArkData.preferences.getPreferences": 2,
+   "ArkData.preferences.getPreferencesSync": 2
+  }
+ },
+ {
+  "id": "x34",
+  "slug": "accelerometer",
+  "prompt": "A shake detector",
+  "need": "read the accelerometer",
+  "gold": {
+   "SensorServiceKit.sensor.onAccelerometerChange": 2,
+   "SensorServiceKit.sensor.onceAccelerometerChange": 2,
+   "SensorServiceKit.Sensor.subscribeAccelerometer": 1
+  }
+ },
+ {
+  "id": "x35",
+  "slug": "compass",
+  "prompt": "A compass",
+  "need": "get the compass heading of the phone",
+  "gold": {
+   "SensorServiceKit.sensor.onOrientationChange": 2,
+   "SensorServiceKit.sensor.onceOrientationChange": 2,
+   "SensorServiceKit.sensor.onMagneticFieldChange": 1,
+   "SensorServiceKit.sensor.onceMagneticFieldChange": 1
+  }
+ },
+ {
+  "id": "x36",
+  "slug": "steps",
+  "prompt": "A daily step counter",
+  "need": "count the user's steps",
+  "gold": {
+   "SensorServiceKit.sensor.onPedometerChange": 2,
+   "SensorServiceKit.sensor.oncePedometerChange": 2,
+   "SensorServiceKit.sensor.onPedometerDetectionChange": 1,
+   "SensorServiceKit.Sensor.subscribeStepCounter": 1
+  }
+ },
+ {
+  "id": "x37",
+  "slug": "light",
+  "prompt": "Adjust my app's colours to the room light",
+  "need": "measure the ambient light level",
+  "gold": {
+   "SensorServiceKit.sensor.onAmbientLightChange": 2,
+   "SensorServiceKit.sensor.onceAmbientLightChange": 2
+  }
+ },
+ {
+  "id": "x38",
+  "slug": "proximity",
+  "prompt": "Turn the screen dark when the phone is at my ear",
+  "need": "detect whether something is close to the phone's proximity sensor",
+  "gold": {
+   "SensorServiceKit.sensor.onProximityChange": 2,
+   "SensorServiceKit.sensor.onceProximityChange": 2
+  }
+ },
+ {
+  "id": "x39",
+  "slug": "gyro",
+  "prompt": "A spin counter",
+  "need": "read the gyroscope rotation rate",
+  "gold": {
+   "SensorServiceKit.sensor.onGyroscopeChange": 2,
+   "SensorServiceKit.sensor.onceGyroscopeChange": 2
+  }
+ },
+ {
+  "id": "x40",
+  "slug": "toast",
+  "prompt": "Show 'Saved' for a moment after saving",
+  "need": "show a short toast message on screen",
+  "gold": {
+   "ArkUI.PromptAction.showToast": 2,
+   "ArkUI.PromptAction.openToast": 2,
+   "ArkUI.promptAction.openToast": 2,
+   "ArkUI.promptAction.showToast": 1
+  }
+ },
+ {
+  "id": "x41",
+  "slug": "dialog",
+  "prompt": "Ask 'Delete this item?' with Yes and No",
+  "need": "show a dialog with buttons and wait for the choice",
+  "gold": {
+   "ArkUI.PromptAction.showDialog": 2,
+   "ArkUI.promptAction.showDialog": 1
+  }
+ },
+ {
+  "id": "x42",
+  "slug": "screen-on",
+  "prompt": "Only update when the screen is on",
+  "need": "check whether the screen is on",
+  "gold": {
+   "BasicServicesKit.power.isActive": 2
+  }
+ },
+ {
+  "id": "x43",
+  "slug": "wake-lock",
+  "prompt": "Keep the CPU awake while uploading",
+  "need": "keep the device awake with a wake lock",
+  "gold": {
+   "BasicServicesKit.runningLock.create": 2,
+   "BasicServicesKit.RunningLock.hold": 2,
+   "BasicServicesKit.runningLock.createRunningLock": 1
+  }
+ },
+ {
+  "id": "x44",
+  "slug": "dns",
+  "prompt": "A tool that shows the IP address of a website",
+  "need": "resolve a host name to an IP address",
+  "gold": {
+   "NetworkKit.connection.getAddressesByName": 2,
+   "NetworkKit.connection.getAddressesByNameWithOptions": 2,
+   "NetworkKit.NetHandle.getAddressByName": 2
+  }
+ },
+ {
+  "id": "x45",
+  "slug": "tcp",
+  "prompt": "A tiny TCP chat",
+  "need": "open a TCP socket and send data",
+  "gold": {
+   "NetworkKit.socket.constructTCPSocketInstance": 2,
+   "NetworkKit.TCPSocket.connect": 2,
+   "NetworkKit.TCPSocket.send": 2
+  }
+ },
+ {
+  "id": "x46",
+  "slug": "wifi-scan",
+  "prompt": "A Wi-Fi scanner",
+  "need": "list nearby Wi-Fi networks",
+  "gold": {
+   "ConnectivityKit.wifiManager.getScanInfoList": 2,
+   "ConnectivityKit.wifiManager.scan": 1
+  }
+ },
+ {
+  "id": "x47",
+  "slug": "wifi-connect",
+  "prompt": "Connect me to my home Wi-Fi",
+  "need": "connect to a Wi-Fi network with a password",
+  "gold": {
+   "ConnectivityKit.wifiManager.connectToCandidateConfig": 2,
+   "ConnectivityKit.wifiManager.addCandidateConfig": 2,
+   "ConnectivityKit.wifiManager.connectToCandidateConfigWithUserAction": 2,
+   "ConnectivityKit.wifiManager.addDeviceConfig": 1
+  }
+ },
+ {
+  "id": "x48",
+  "slug": "bt-paired",
+  "prompt": "Show which Bluetooth devices I have paired",
+  "need": "list the paired Bluetooth devices",
+  "gold": {
+   "ConnectivityKit.connection.getPairedDevices": 2
+  }
+ },
+ {
+  "id": "x49",
+  "slug": "taskpool",
+  "prompt": "Resize a big image without freezing the screen",
+  "need": "run a heavy computation in a background thread",
+  "gold": {
+   "ArkTS.taskpool.execute": 2,
+   "ArkTS.taskpool.executeDelayed": 1
+  }
+ },
+ {
+  "id": "x50",
+  "slug": "emitter",
+  "prompt": "Tell another screen that the data changed",
+  "need": "send an event between app components",
+  "gold": {
+   "BasicServicesKit.emitter.emit": 2,
+   "BasicServicesKit.Emitter.emit": 2,
+   "BasicServicesKit.emitter.on": 1,
+   "BasicServicesKit.Emitter.on": 1
+  }
+ }
+]

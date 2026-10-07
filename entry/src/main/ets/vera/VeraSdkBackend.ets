@@ -166,6 +166,29 @@ export type SdkAdapter = (params: Map<string, string>) => Promise<string>
 // code a class-based API costs. Not placed in the "generated helpers" block
 // below because tools/generate-sdk-backend.py rewrites that block wholesale
 // on every run and would delete this along with it.
+// An enum value as a program writes it: "ON", "TorchMode.ON", "TORCH_MODE_ON"
+// and "ToneType.TONE_TYPE_DIAL_1" all come back from the model, depending on
+// the run. Keeps the member name: upper case, nothing before the last dot.
+function enumMemberName(raw: string): string {
+  let v = raw.trim().toUpperCase()
+  let dot = v.lastIndexOf('.')
+  return dot >= 0 ? v.substring(dot + 1) : v
+}
+
+// camera.TorchMode by number or by the name the SDK documents; -1 for anything
+// else. A program writes "ON" as readily as "1", and parseInt("ON") is NaN.
+function torchModeFrom(raw: string | undefined): number {
+  if (raw === undefined) { return 0 }
+  let v = enumMemberName(raw)
+  if (v.startsWith('TORCH_MODE_')) { v = v.substring(11) }
+  if (v === 'OFF') { return 0 }
+  if (v === 'ON') { return 1 }
+  if (v === 'AUTO') { return 2 }
+  if (v === 'ALWAYS_OPEN') { return 3 }
+  let n = Number.parseInt(v, 10)
+  return Number.isNaN(n) || n < 0 || n > 3 ? -1 : n
+}
+
 let cameraManagerInstance: camera.CameraManager | null = null
 function cameraManagerOnce(): camera.CameraManager | null {
   if (cameraManagerInstance !== null) { return cameraManagerInstance }
@@ -617,6 +640,180 @@ async function releaseAudioRendererNow(): Promise<string> {
   }
 }
 
+// -- TonePlayer: the platform's own tone generator (dial tones, beep, ack, ...).
+// A class API: nothing works until a TonePlayer exists and a tone is loaded, so
+// one instance is created on first use and kept, the way AudioRenderer is.
+// Every operation goes through queueAudio, so a program that fires start and
+// stop back to back (a blinking pattern) gets them in order.
+let tonePlayerInstance: audio.TonePlayer | null = null
+let tonePlayerLoaded: number = -1
+
+class ToneEntry {
+  name: string = ''
+  value: number = 0
+  constructor(name: string, value: number) { this.name = name; this.value = value }
+}
+
+// audio.ToneType, by the names @ohos.multimedia.audio.d.ts documents.
+const TONE_TYPES: ToneEntry[] = [
+  new ToneEntry('DIAL_0', 0), new ToneEntry('DIAL_1', 1), new ToneEntry('DIAL_2', 2),
+  new ToneEntry('DIAL_3', 3), new ToneEntry('DIAL_4', 4), new ToneEntry('DIAL_5', 5),
+  new ToneEntry('DIAL_6', 6), new ToneEntry('DIAL_7', 7), new ToneEntry('DIAL_8', 8),
+  new ToneEntry('DIAL_9', 9), new ToneEntry('DIAL_S', 10), new ToneEntry('DIAL_P', 11),
+  new ToneEntry('DIAL_A', 12), new ToneEntry('DIAL_B', 13), new ToneEntry('DIAL_C', 14),
+  new ToneEntry('DIAL_D', 15),
+  new ToneEntry('COMMON_SUPERVISORY_DIAL', 100), new ToneEntry('COMMON_SUPERVISORY_BUSY', 101),
+  new ToneEntry('COMMON_SUPERVISORY_CONGESTION', 102), new ToneEntry('COMMON_SUPERVISORY_RADIO_ACK', 103),
+  new ToneEntry('COMMON_SUPERVISORY_RADIO_NOT_AVAILABLE', 104),
+  new ToneEntry('COMMON_SUPERVISORY_CALL_WAITING', 106), new ToneEntry('COMMON_SUPERVISORY_RINGTONE', 107),
+  new ToneEntry('COMMON_SUPERVISORY_CALL_HOLDING', 108),
+  new ToneEntry('COMMON_PROPRIETARY_BEEP', 200), new ToneEntry('COMMON_PROPRIETARY_ACK', 201),
+  new ToneEntry('COMMON_PROPRIETARY_PROMPT', 203), new ToneEntry('COMMON_PROPRIETARY_DOUBLE_BEEP', 204)
+]
+const DEFAULT_TONE = 200 // COMMON_PROPRIETARY_BEEP: a plain beep
+
+/** A tone by number, by full name ("TONE_TYPE_DIAL_1", "DIAL_1") or by the short
+ * name of a common tone ("BEEP", "DOUBLE_BEEP", "BUSY"); nothing at all means a
+ * beep. -1 for anything else. */
+function toneTypeFrom(raw: string | undefined): number {
+  if (raw === undefined || raw.trim().length === 0) { return DEFAULT_TONE }
+  let v = enumMemberName(raw)
+  if (v.startsWith('TONE_TYPE_')) { v = v.substring(10) }
+  for (let t of TONE_TYPES) {
+    let short = t.name.replace('COMMON_PROPRIETARY_', '').replace('COMMON_SUPERVISORY_', '')
+    if (v === t.name || v === short) { return t.value }
+  }
+  let n = Number.parseInt(v, 10)
+  if (Number.isNaN(n)) { return -1 }
+  for (let t of TONE_TYPES) { if (t.value === n) { return n } }
+  return -1
+}
+
+async function tonePlayerOnce(): Promise<audio.TonePlayer> {
+  if (tonePlayerInstance !== null) { return tonePlayerInstance }
+  let player = await audio.createTonePlayer(new ToneRendererInfo())
+  if (player === null) { throw new Error('could not create a tone player') }
+  tonePlayerInstance = player
+  tonePlayerLoaded = -1
+  return player
+}
+
+// load() every time, never "already loaded": a tone that has played out or been
+// stopped is spent, and start() on it plays nothing (the platform logs
+// "CheckToneStopped true ... OnWriteData SequenceGen error"). With a cached
+// load only the first beep of a blinking pattern was ever heard.
+async function toneLoaded(player: audio.TonePlayer, type: number): Promise<void> {
+  await player.load(type as audio.ToneType)
+  tonePlayerLoaded = type
+}
+
+function toneFailed(e: Error): string {
+  // A failed call leaves the player in an unknown state: start over next time.
+  tonePlayerInstance = null
+  tonePlayerLoaded = -1
+  return 'error: ' + e.message
+}
+
+function toneBadType(raw: string | undefined): string {
+  return 'error: type must be a tone number or name (DIAL_0..DIAL_D, BEEP, DOUBLE_BEEP, ACK, PROMPT, BUSY, ...), got "' +
+    (raw ?? '') + '"'
+}
+
+function loadTone(params: Map<string, string>): Promise<string> {
+  return queueAudio(async (): Promise<string> => {
+    let type = toneTypeFrom(params.get('type'))
+    if (type < 0) { return toneBadType(params.get('type')) }
+    try {
+      await toneLoaded(await tonePlayerOnce(), type)
+      return 'ok'
+    } catch (e) { return toneFailed(e as Error) }
+  })
+}
+
+function startTone(params: Map<string, string>): Promise<string> {
+  return queueAudio(async (): Promise<string> => {
+    let given = params.get('type')
+    let type = toneTypeFrom(given)
+    if (type < 0) { return toneBadType(given) }
+    try {
+      let player = await tonePlayerOnce()
+      // An explicit type wins; with none, the last one used, else a beep.
+      let want = given !== undefined && given.trim().length > 0 ? type
+        : (tonePlayerLoaded >= 0 ? tonePlayerLoaded : DEFAULT_TONE)
+      await toneLoaded(player, want)
+      await player.start()
+      return 'ok'
+    } catch (e) { return toneFailed(e as Error) }
+  })
+}
+
+function stopTone(): Promise<string> {
+  return queueAudio(async (): Promise<string> => {
+    let player = tonePlayerInstance
+    if (player === null) { return 'ok' }
+    try {
+      await player.stop()
+      return 'ok'
+    } catch (e) { return toneFailed(e as Error) }
+  })
+}
+
+function releaseTone(): Promise<string> {
+  return queueAudio(async (): Promise<string> => {
+    let player = tonePlayerInstance
+    tonePlayerInstance = null
+    tonePlayerLoaded = -1
+    if (player === null) { return 'ok' }
+    try {
+      await player.release()
+      return 'ok'
+    } catch (e) { return 'error: ' + (e as Error).message }
+  })
+}
+
+// -- Vibration: vibrator.startVibration / stopVibration, and the older
+// vibrator.vibrate a generated program reaches for just as often. The effect and
+// the attribute are objects, which sdk.call cannot carry, so they are built here
+// from flat parameters: `duration` (ms) for a timed buzz, or `effectId` (a preset
+// such as "haptic.clock.timer") with an optional `count`; `usage` is optional and
+// defaults to "alarm", which is not muted by the ringer setting.
+const VIBRATE_USAGES: string[] = ['unknown', 'alarm', 'ring', 'notification', 'communication', 'touch',
+  'media', 'physicalFeedback', 'simulateReality']
+
+function vibrateUsageFrom(raw: string | undefined): string {
+  if (raw === undefined || raw.trim().length === 0) { return 'alarm' }
+  let v = enumMemberName(raw)
+  for (let u of VIBRATE_USAGES) { if (u.toUpperCase() === v) { return u } }
+  return ''
+}
+
+async function vibrateNow(params: Map<string, string>): Promise<string> {
+  let usage = vibrateUsageFrom(params.get('usage'))
+  if (usage.length === 0) {
+    return 'error: usage must be one of ' + VIBRATE_USAGES.join(', ') + ', got "' + (params.get('usage') ?? '') + '"'
+  }
+  let effectJson = ''
+  let preset = params.get('effectId')
+  if (preset !== undefined && preset.trim().length > 0) {
+    effectJson = '{"type":"preset","effectId":' + JSON.stringify(preset.trim()) + ',"count":' +
+      Math.max(1, paramInt(params, 'count', 1)).toString() + '}'
+  } else {
+    let duration = paramInt(params, 'duration', 0)
+    if (duration <= 0) { return 'error: pass duration (milliseconds, more than 0) or effectId' }
+    effectJson = '{"type":"time","duration":' + duration.toString() + '}'
+  }
+  try {
+    // JSON.parse, not an object literal: the effect and the attribute are
+    // interfaces with literal-typed members, which ArkTS will not build inline.
+    let effect = JSON.parse(effectJson) as vibrator.VibrateEffect
+    let attribute = JSON.parse('{"id":0,"usage":"' + usage + '"}') as vibrator.VibrateAttribute
+    await vibrator.startVibration(effect, attribute)
+    return 'ok'
+  } catch (e) {
+    return 'error: ' + (e as Error).message
+  }
+}
+
 // -- generated helpers below (tools/generate-sdk-backend.py) --
 
 function paramString(params: Map<string, string>, name: string, fallback: string): string {
@@ -624,14 +821,24 @@ function paramString(params: Map<string, string>, name: string, fallback: string
   return v !== undefined ? v : fallback
 }
 
+// A value that is not a number is an error the program can see, not a NaN that
+// the platform quietly reads as 0: a generated program passed ["mode", "OFF"]
+// to setTorchMode, got "ok", and the flashlight never lit. runSdkAdapter turns
+// the throw into "error: ..." as the answer.
 function paramInt(params: Map<string, string>, name: string, fallback: number): number {
   let v = params.get(name)
-  return v !== undefined ? Number.parseInt(v, 10) : fallback
+  if (v === undefined) { return fallback }
+  let n = Number.parseInt(v, 10)
+  if (Number.isNaN(n)) { throw new Error('parameter ' + name + ' must be an integer, got "' + v + '"') }
+  return n
 }
 
 function paramFloat(params: Map<string, string>, name: string, fallback: number): number {
   let v = params.get(name)
-  return v !== undefined ? Number.parseFloat(v) : fallback
+  if (v === undefined) { return fallback }
+  let n = Number.parseFloat(v)
+  if (Number.isNaN(n)) { throw new Error('parameter ' + name + ' must be a number, got "' + v + '"') }
+  return n
 }
 
 function paramBoolean(params: Map<string, string>, name: string, fallback: boolean): boolean {
@@ -642,6 +849,92 @@ function paramBoolean(params: Map<string, string>, name: string, fallback: boole
 function paramBigInt(params: Map<string, string>, name: string, fallback: bigint): bigint {
   let v = params.get(name)
   return v !== undefined ? BigInt(v) : fallback
+}
+
+class SdkLocaleInfo {
+  locale: string
+  baseName: string
+  language: string
+  script: string | undefined
+  region: string | undefined
+
+  constructor(value: Intl.Locale) {
+    this.locale = value.toString()
+    this.baseName = value.baseName
+    this.language = value.language
+    this.script = value.script
+    this.region = value.region
+  }
+}
+
+class SdkDisplayInfo {
+  id: number
+  name: string
+  width: number
+  height: number
+  rotation: number
+  orientation: number
+  state: number
+  refreshRate: number
+  densityDPI: number
+  densityPixels: number
+  scaledDensity: number
+  xDPI: number
+  yDPI: number
+
+  constructor(value: display.Display) {
+    this.id = value.id
+    this.name = value.name
+    this.width = value.width
+    this.height = value.height
+    this.rotation = value.rotation
+    this.orientation = value.orientation
+    this.state = value.state
+    this.refreshRate = value.refreshRate
+    this.densityDPI = value.densityDPI
+    this.densityPixels = value.densityPixels
+    this.scaledDensity = value.scaledDensity
+    this.xDPI = value.xDPI
+    this.yDPI = value.yDPI
+  }
+}
+
+class SdkDisplayPhysicalResolutionInfo {
+  foldDisplayMode: number
+  physicalWidth: number
+  physicalHeight: number
+
+  constructor(value: display.DisplayPhysicalResolution) {
+    this.foldDisplayMode = value.foldDisplayMode
+    this.physicalWidth = value.physicalWidth
+    this.physicalHeight = value.physicalHeight
+  }
+}
+
+class SdkDisplayRectInfo {
+  left: number
+  top: number
+  width: number
+  height: number
+
+  constructor(value: display.Rect) {
+    this.left = value.left
+    this.top = value.top
+    this.width = value.width
+    this.height = value.height
+  }
+}
+
+class SdkFoldCreaseRegionInfo {
+  displayId: number
+  creaseRects: Array<SdkDisplayRectInfo>
+
+  constructor(value: display.FoldCreaseRegion) {
+    this.displayId = value.displayId
+    this.creaseRects = value.creaseRects.map((rect: display.Rect): SdkDisplayRectInfo => {
+      return new SdkDisplayRectInfo(rect)
+    })
+  }
 }
 
 const ADAPTERS: Map<string, SdkAdapter> = new Map<string, SdkAdapter>([
@@ -664,7 +957,10 @@ const ADAPTERS: Map<string, SdkAdapter> = new Map<string, SdkAdapter>([
     let manager = cameraManagerOnce()
     if (manager === null) { return 'error: no ability context yet' }
     if (!manager.isTorchSupported()) { return 'error: torch not supported on this device' }
-    let mode = paramInt(params, 'mode', 0)
+    let mode = torchModeFrom(params.get('mode'))
+    if (mode < 0) {
+      return 'error: mode must be 0 (OFF), 1 (ON), 2 (AUTO) or 3 (ALWAYS_OPEN), got "' + (params.get('mode') ?? '') + '"'
+    }
     manager.setTorchMode(mode as camera.TorchMode)
     return 'ok'
   }],
@@ -741,6 +1037,41 @@ const ADAPTERS: Map<string, SdkAdapter> = new Map<string, SdkAdapter>([
   // the common case; start/stop/release are still exposed separately for a
   // program that wants to hold the stream open across several writes rather
   // than pay renderer startup latency each time.
+  // Vibration. startVibration and the deprecated vibrate share one implementation:
+  // `duration` in milliseconds (or `effectId` for a preset), optional `usage`.
+  ['SensorServiceKit.vibrator.startVibration', async (params: Map<string, string>): Promise<string> => {
+    return await vibrateNow(params)
+  }],
+  ['SensorServiceKit.vibrator.vibrate', async (params: Map<string, string>): Promise<string> => {
+    return await vibrateNow(params)
+  }],
+  ['SensorServiceKit.vibrator.stopVibration', async (_params: Map<string, string>): Promise<string> => {
+    try {
+      await vibrator.stopVibration()
+      return 'ok'
+    } catch (e) { return 'error: ' + (e as Error).message }
+  }],
+  // The platform's tone generator. createTonePlayer takes an AudioRendererInfo,
+  // which a program cannot build, so it is created with the same media-usage info
+  // the AudioRenderer adapter uses; load takes `type` (a number or a ToneType
+  // name), and start with no `type` plays whatever is loaded, a beep if nothing is.
+  ['AudioKit.audio.createTonePlayer', async (_params: Map<string, string>): Promise<string> => {
+    return await queueAudio(async (): Promise<string> => {
+      try { await tonePlayerOnce(); return 'ok' } catch (e) { return toneFailed(e as Error) }
+    })
+  }],
+  ['AudioKit.TonePlayer.load', async (params: Map<string, string>): Promise<string> => {
+    return await loadTone(params)
+  }],
+  ['AudioKit.TonePlayer.start', async (params: Map<string, string>): Promise<string> => {
+    return await startTone(params)
+  }],
+  ['AudioKit.TonePlayer.stop', async (_params: Map<string, string>): Promise<string> => {
+    return await stopTone()
+  }],
+  ['AudioKit.TonePlayer.release', async (_params: Map<string, string>): Promise<string> => {
+    return await releaseTone()
+  }],
   ['AudioKit.AudioRenderer.start', async (_params: Map<string, string>): Promise<string> => {
     return await startAudioRenderer()
   }],
@@ -758,6 +1089,66 @@ const ADAPTERS: Map<string, SdkAdapter> = new Map<string, SdkAdapter>([
   }],
   ['CoreFileKit.storageStatistics.getTotalSizeSync', async (_params: Map<string, string>): Promise<string> => {
     return storageStatistics.getTotalSizeSync().toString()
+  }],
+  ['LocalizationKit.System.getSystemLanguages', async (_params: Map<string, string>): Promise<string> => {
+    return JSON.stringify(i18n.System.getSystemLanguages())
+  }],
+  ['LocalizationKit.System.getSystemLanguage', async (_params: Map<string, string>): Promise<string> => {
+    return i18n.System.getSystemLanguage()
+  }],
+  ['LocalizationKit.System.getSystemRegion', async (_params: Map<string, string>): Promise<string> => {
+    return i18n.System.getSystemRegion()
+  }],
+  ['LocalizationKit.System.getSystemLocaleInstance', async (_params: Map<string, string>): Promise<string> => {
+    return JSON.stringify(new SdkLocaleInfo(i18n.System.getSystemLocaleInstance()))
+  }],
+  ['LocalizationKit.System.is24HourClock', async (_params: Map<string, string>): Promise<string> => {
+    return i18n.System.is24HourClock().toString()
+  }],
+  ['LocalizationKit.System.getPreferredLanguageList', async (_params: Map<string, string>): Promise<string> => {
+    return JSON.stringify(i18n.System.getPreferredLanguageList())
+  }],
+  ['LocalizationKit.System.getFirstPreferredLanguage', async (_params: Map<string, string>): Promise<string> => {
+    return i18n.System.getFirstPreferredLanguage()
+  }],
+  ['LocalizationKit.System.getAppPreferredLanguage', async (_params: Map<string, string>): Promise<string> => {
+    return i18n.System.getAppPreferredLanguage()
+  }],
+  ['LocalizationKit.System.getUsingLocalDigit', async (_params: Map<string, string>): Promise<string> => {
+    return i18n.System.getUsingLocalDigit().toString()
+  }],
+  ['LocalizationKit.System.getTemperatureType', async (_params: Map<string, string>): Promise<string> => {
+    return i18n.System.getTemperatureType().toString()
+  }],
+  ['LocalizationKit.System.getFirstDayOfWeek', async (_params: Map<string, string>): Promise<string> => {
+    return i18n.System.getFirstDayOfWeek().toString()
+  }],
+  ['ArkUI.display.getDefaultDisplaySync', async (_params: Map<string, string>): Promise<string> => {
+    return JSON.stringify(new SdkDisplayInfo(display.getDefaultDisplaySync()))
+  }],
+  ['ArkUI.display.getPrimaryDisplaySync', async (_params: Map<string, string>): Promise<string> => {
+    return JSON.stringify(new SdkDisplayInfo(display.getPrimaryDisplaySync()))
+  }],
+  ['ArkUI.display.getAllDisplays', async (_params: Map<string, string>): Promise<string> => {
+    let result = await display.getAllDisplays()
+    return JSON.stringify(result.map((value: display.Display): SdkDisplayInfo => {
+      return new SdkDisplayInfo(value)
+    }))
+  }],
+  ['ArkUI.display.getAllDisplayPhysicalResolution', async (_params: Map<string, string>): Promise<string> => {
+    let result = await display.getAllDisplayPhysicalResolution()
+    return JSON.stringify(result.map((value: display.DisplayPhysicalResolution): SdkDisplayPhysicalResolutionInfo => {
+      return new SdkDisplayPhysicalResolutionInfo(value)
+    }))
+  }],
+  ['ArkUI.display.getFoldStatus', async (_params: Map<string, string>): Promise<string> => {
+    return display.getFoldStatus().toString()
+  }],
+  ['ArkUI.display.getFoldDisplayMode', async (_params: Map<string, string>): Promise<string> => {
+    return display.getFoldDisplayMode().toString()
+  }],
+  ['ArkUI.display.getCurrentFoldCreaseRegion', async (_params: Map<string, string>): Promise<string> => {
+    return JSON.stringify(new SdkFoldCreaseRegionInfo(display.getCurrentFoldCreaseRegion()))
   }],
   // generated by tools/generate-sdk-backend.py -- do not hand-edit below this line
   ['AVSessionKit.avSession.isDesktopLyricSupported', async (params: Map<string, string>): Promise<string> => {
@@ -3032,16 +3423,10 @@ export async function runSdkAdapter(target: string, params: Map<string, string>)
 }
 
 /**
- * Whether `target` has a real row in ADAPTERS -- find_sdk_function's token
- * and embedding search both use this to nudge an implemented target ahead
- * of an unimplemented one that merely reads as a closer semantic match (see
- * VeraSdkIndex.ets's sdkImplementedMask and DeepSeekEngine.ets's
- * sdkResultsJson, which also tells the model directly via an "implemented"
- * field -- a real device generation asking for "play an audio file or
- * music" picked AVSessionKit.AVMusicTemplateController.playMediaEntity
- * (unimplemented; "Music" in its own module name outweighed everything
- * else in the embedding) over MediaKit.AVPlayer.play, which is implemented
- * and was in the same top-8 list).
+ * Whether `target` has a real row in ADAPTERS. Informational only -- the eval
+ * and the sdk probe mark each result :impl/:stub with it. Search does not use
+ * it: whether a target runs is not a relevance signal, and "sdk.call is not
+ * implemented yet" is an acceptable answer.
  */
 export function isSdkTargetImplemented(target: string): boolean {
   return ADAPTERS.has(target)

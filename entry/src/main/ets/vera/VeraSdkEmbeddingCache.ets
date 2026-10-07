@@ -36,7 +36,7 @@
 import fs from '@ohos.file.fs'
 import hilog from '@ohos.hilog'
 import resourceManager from '@ohos.resourceManager'
-import { SdkEntry, sdkIndexEntries, sdkImplementedMask } from './VeraSdkIndex'
+import { SdkEntry, sdkIndexEntries } from './VeraSdkIndex'
 import { embedBatch, embedOne, embeddingModelReady, MODEL_FILE } from './VeraEmbeddings'
 import { nativeScanCorpus } from './LlamaEngine'
 
@@ -44,8 +44,12 @@ const DOMAIN = 0x0000
 /** 'VSD1' as an int32 -- just a tag to reject a file that isn't this cache. */
 const MAGIC = 0x56534431
 /** Bumped because the header grew a field (modelHash) -- an old 5-int file
- * fails this check outright rather than being misread 4 bytes short. */
-const FORMAT_VERSION = 2
+ * fails this check outright rather than being misread 4 bytes short. Bumped
+ * again (4) when sdkEmbeddingText switched to the summary and the index
+ * collapsed to one entry per function: neither hash covers the text, so
+ * without this a cache built from the old text would still pass and quietly
+ * serve the old vectors. */
+const FORMAT_VERSION = 4
 const HEADER_INTS = 6 // magic, version, count, dimension, source hash, model hash
 const BUNDLED_RAWFILE = 'sdk-embeddings.bin'
 /**
@@ -64,7 +68,12 @@ const CHUNK_SIZE = 8
 function sdkKey(e: SdkEntry): string { return e.kit + '.' + e.module + '.' + e.name }
 
 function sdkEmbeddingText(e: SdkEntry): string {
-  return e.kit + ' ' + e.module + ' ' + e.name + ' ' + e.description
+  // Must match embedding_text in tools/build-sdk-embeddings.py exactly. The
+  // summary replaces the description rather than joining it: on the gold set
+  // the two together ranked worse at the top than the summary alone.
+  let body = e.summary.length > 0 ? e.summary : e.description
+  let parts: string[] = [e.kit, e.module, e.name, body]
+  return parts.filter((p: string): boolean => p.length > 0).join(' ')
 }
 
 function fnv1a(s: string, seed: number): number {
@@ -329,16 +338,6 @@ export async function findSdkFunctionByEmbedding(need: string, limit: number = 8
   // same ~12.7M multiply-adds, previously measured at ~584ms interpreted
   // in ArkTS (docs/embeddings-benchmark.md's timing section).
   let scores: Float32Array = nativeScanCorpus(q, vectors!, dimension, entries.length)
-  // Same reasoning and same bonus scale as VeraSdkIndex.ets's
-  // IMPLEMENTED_BONUS (see sdkImplementedMask's own comment): a cosine-
-  // similarity-range bonus (0.15, against a typical good-match score of
-  // ~0.4-0.8) large enough to promote an implemented target over a
-  // similarly-scored unimplemented one, not large enough to override a
-  // genuinely better unimplemented match.
-  let mask = sdkImplementedMask(entries)
-  for (let i = 0; i < entries.length; i++) {
-    if (mask[i] === 1) { scores[i] = scores[i] + 0.15 }
-  }
   let idx: number[] = []
   for (let i = 0; i < entries.length; i++) { idx.push(i) }
   idx.sort((a: number, b: number) => scores[b] - scores[a])

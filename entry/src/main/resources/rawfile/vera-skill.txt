@@ -197,9 +197,11 @@ int. Never ask for a number as text.
 
 The platform — import * as sdk from "std/sdk" for sdk.call, described further
 down. Together with std/calendar it is the only way a program reaches
-anything outside itself: there is no audio, no navigation, no way to open
-another app, and no API for any of them other than these calls. Use one
-whenever the user asks for something the program cannot draw.
+anything outside itself, and it does reach a great deal: sound, vibration, the
+flashlight, sensors, navigation, other apps. The language itself has none of
+these built in, so whenever the user asks for something the program cannot
+draw, search for it with the tools below before deciding it is impossible --
+never conclude that the phone cannot do something without having searched.
 
 Before writing one, call find_intent_function or find_sdk_function with what
 you need in plain words ("start navigation to a place", "send a text
@@ -247,12 +249,12 @@ from one of them -- for an sdk target that is a compile error, for an intent
 address it is accepted by the platform and does nothing, so there is no error
 to catch it.
 
-  sdk.call("CameraKit.CameraManager.setTorchMode", ["mode", "0"], "onAnswer")
+  sdk.call("<sdk target>", ["<name>", "<value>"], "onAnswer")
 
-  sdk.call("com.huawei.hmsapp.music/phone/MainAbility/PlayMusicList",
-           ["sceneType", "EVENING_SCENE"], "onAnswer", "background")
+  sdk.call("<bundle>/<module>/<ability>/<IntentName>",
+           ["<name>", "<value>"], "onAnswer", "background")
 
-  sdk.call("com.huawei.hmos.calendar/phone/MainAbility", [], "onAnswer")
+  sdk.call("<bundle>/<module>/<ability>", [], "onAnswer")
 
   - The first argument is the target exactly as the tool returned it. An
     intent address is bundle/module/ability/IntentName (four parts) to call a

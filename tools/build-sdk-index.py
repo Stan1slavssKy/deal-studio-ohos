@@ -199,6 +199,78 @@ def find_declarations(code):
     return results
 
 
+LINK_RE = re.compile(r'\[([^\]]*)\]\{@link[^}]*\}')
+PARAM_RE = re.compile(r'^@param\s+(?:\{.*?\}\s*)?(\w+)\s*-?\s*(.*)$')
+
+
+def clean_prose(text):
+    """Markdown/link noise out of a JSDoc sentence: `[x]{@link ...}` becomes
+    `x`, and bold/blockquote markers go -- they are not words a request uses."""
+    text = LINK_RE.sub(r'\1', text)
+    text = re.sub(r'\{@link[^}]*\}', '', text)
+    text = text.replace('**', '').replace('<br>', ' ')
+    return ' '.join(text.split())
+
+
+def jsdoc_lines(raw):
+    body = raw.strip()
+    if body.startswith('/*'):
+        body = body[2:]
+    if body.endswith('*/'):
+        body = body[:-2]
+    return [line.strip().lstrip('*').strip() for line in body.splitlines()]
+
+
+def first_paragraph(raw):
+    """Prose before the first @tag, up to the first blank line after it has
+    started, with `> **NOTE**` blockquotes dropped -- what a class or module
+    says about itself ("This interface provides APIs for audio rendering")."""
+    out = []
+    for line in jsdoc_lines(raw):
+        if line.startswith('@'):
+            break
+        if line.startswith('>'):
+            continue
+        if not line:
+            if out:
+                break
+            continue
+        out.append(line)
+    return clean_prose(' '.join(out))
+
+
+def clip(text, limit, sentences=0):
+    """Keeps the front of `text`: at most `sentences` whole sentences (0 = no
+    sentence limit), then at most `limit` characters cut at a word boundary.
+    scopeDoc repeats on every method of a class, so a long one both doubles
+    the index and pulls every sibling's embedding toward the same point."""
+    if sentences:
+        parts = re.split(r'(?<=[.!?])\s+', text)
+        text = ' '.join(parts[:sentences])
+    if len(text) > limit:
+        text = text[:limit].rsplit(' ', 1)[0].rstrip(',;:') + '...'
+    return text
+
+
+def param_doc(raw):
+    """`name: what it is` for each @param, joined -- the only place the SDK
+    says what a buffer or a mode actually holds. Continuation lines of a
+    wrapped @param are folded in."""
+    items = []
+    current = None
+    for line in jsdoc_lines(raw):
+        if line.startswith('@param'):
+            m = PARAM_RE.match(line)
+            current = [m.group(1), m.group(2)] if m else None
+            if current:
+                items.append(current)
+        elif line.startswith('@') or not line:
+            current = None
+        elif current is not None:
+            current[1] += ' ' + line
+    return clip('; '.join(clean_prose(f'{n}: {d}') for n, d in items if d.strip() and n != 'callback'), 160)
+
+
 def parse_jsdoc(raw):
     body = raw.strip()
     if body.startswith('/*'):
@@ -220,11 +292,12 @@ def parse_jsdoc(raw):
         'deprecated': bool(DEPRECATED_RE.search(raw)),
         'systemapi': bool(SYSTEMAPI_RE.search(raw)),
         'permission': permission_m.group(1).strip() if permission_m else '',
+        'paramDoc': param_doc(raw),
     }
 
 
 EMPTY_JSDOC = {'description': '', 'since': '', 'deprecated': False,
-               'systemapi': False, 'permission': ''}
+               'systemapi': False, 'permission': '', 'paramDoc': ''}
 
 
 def attach_jsdoc(decls, code, comments):
@@ -244,6 +317,34 @@ def attach_jsdoc(decls, code, comments):
                 info = parse_jsdoc(raw)
         d.update(info)
     return decls
+
+
+def scope_docs(code, comments):
+    """scope name -> its own first paragraph, for every named scope whose
+    opening line has a block comment directly above it. A method's own
+    one-liner ("Writes the buffer.") says nothing about what it writes to;
+    the class it sits in does ("provides APIs for audio rendering"). The
+    first doc found for a name wins -- a later namespace of the same name
+    (rare) does not overwrite it."""
+    docs = {}
+    ci = 0
+    last = None
+    for m in SCOPE_OPEN_RE.finditer(code):
+        start = max(code.rfind('\n', 0, m.start(2)), 0)
+        while ci < len(comments) and comments[ci][0] < start:
+            last = comments[ci]
+            ci += 1
+        if last is None:
+            continue
+        _, cend, raw = last
+        if cend <= start and code[cend:start].strip() == '' and m.group(2) not in docs:
+            text = clip(first_paragraph(raw), 200, sentences=2)
+            if text:
+                docs[m.group(2)] = text
+    return docs
+
+
+CONTEXT_FIELDS = False  # set by --context-fields in main()
 
 
 def module_fallback(path):
@@ -270,6 +371,7 @@ def process_file(path, sdk_root):
 
     decls = find_declarations(code)
     attach_jsdoc(decls, code, comments)
+    scope_doc = scope_docs(code, comments)
     rel = str(path.relative_to(sdk_root))
     fallback = module_fallback(path)
 
@@ -287,12 +389,47 @@ def process_file(path, sdk_root):
         'params': d['params'],
         'returnType': d['returnType'],
         'description': d['description'],
+        # What the enclosing class/interface/namespace says about itself, and
+        # what each parameter is. Both are context the one-line description
+        # lacks; search reads them (VeraSdkIndex, build-sdk-embeddings).
+        **({'scopeDoc': scope_doc.get(d['module'], ''), 'paramDoc': d['paramDoc']}
+           if CONTEXT_FIELDS else {}),
         'since': d['since'],
         'deprecated': d['deprecated'],
         'systemapi': d['systemapi'],
         'permission': d['permission'],
         'file': rel,
     } for d in decls]
+
+
+def collapse_overloads(entries):
+    """One entry per kit.module.name. The SDK declares one operation several
+    times -- a callback form and a promise form, an older and a newer return
+    type, sometimes in more than one file -- and every declaration became an
+    entry, so a search filled its top slots with copies of the same function.
+    The kept entry is the first one without an AsyncCallback parameter (that is
+    the shape sdk.call's name/value pairs fit), else the first. It counts as
+    deprecated or system-only only if every overload is."""
+    groups = collections.OrderedDict()
+    for e in entries:
+        groups.setdefault((e['kit'], e['module'], e['name']), []).append(e)
+    out = []
+    for group in groups.values():
+        keep = dict(next((e for e in group if 'AsyncCallback' not in e['params']), group[0]))
+        keep['deprecated'] = all(e['deprecated'] for e in group)
+        keep['systemapi'] = all(e['systemapi'] for e in group)
+        out.append(keep)
+    return out
+
+
+def attach_summaries(entries, path):
+    """`summary`: one or two plain sentences per function, from
+    tools/build-sdk-summaries.py. A function without one gets '' and is
+    searched by its description alone."""
+    summaries = json.loads(Path(path).read_text(encoding='utf-8'))
+    for e in entries:
+        e['summary'] = summaries.get(f"{e['kit']}.{e['module']}.{e['name']}", '')
+    return sum(1 for e in entries if e['summary'])
 
 
 def main():
@@ -302,7 +439,14 @@ def main():
                      help='path to the interface_sdk-js api/ directory')
     ap.add_argument('--out', default='tools/sdk-index.json',
                      help='where to write the JSON index (default: tools/sdk-index.json)')
+    ap.add_argument('--summaries', help='JSON from tools/build-sdk-summaries.py; adds a `summary` to each entry')
+    ap.add_argument('--keep-overloads', action='store_true',
+                    help='keep every declaration instead of one entry per function')
+    ap.add_argument('--context-fields', action='store_true',
+                    help='also write scopeDoc/paramDoc (class description, parameter notes)')
     args = ap.parse_args()
+    global CONTEXT_FIELDS
+    CONTEXT_FIELDS = args.context_fields
 
     sdk_root = Path(args.sdk_dir).expanduser().resolve()
     if not sdk_root.is_dir():
@@ -327,6 +471,11 @@ def main():
         for e in entries:
             per_kit[e['kit']] += 1
 
+    declared = len(all_entries)
+    if not args.keep_overloads:
+        all_entries = collapse_overloads(all_entries)
+    with_summary = attach_summaries(all_entries, args.summaries) if args.summaries else 0
+
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     # ensure_ascii=True (the default): the on-device loader
@@ -338,7 +487,8 @@ def main():
     out_path.write_text(json.dumps(all_entries, indent=1), encoding='utf-8')
 
     print(f'{len(files)} files scanned, {len(skipped_no_kit)} skipped (no @kit tag)')
-    print(f'{len(all_entries)} candidate entries across {len(per_kit)} kits')
+    print(f'{declared} declarations -> {len(all_entries)} entries across {len(per_kit)} kits'
+          f'{"" if not args.summaries else f", {with_summary} with a summary"}')
     print(f'wrote {out_path}')
     print()
     print('entries per kit, largest first:')

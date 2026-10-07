@@ -21,6 +21,7 @@ import { ensureSdkEmbeddings, sdkEmbeddingsReady } from '../vera/VeraSdkEmbeddin
 import { ensureIntentEmbeddings, intentEmbeddingsReady } from '../vera/VeraIntentEmbeddingCache'
 import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchmark'
 import { sdkSearchRequested, runSdkSearchProbe } from '../vera/VeraSdkProbe'
+import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 
 const MAX_RETRIES: number = 3
 // vera-server's address is not written down here. It lives in settings, given
@@ -474,6 +475,12 @@ struct GeneratePage {
       // answer with nothing to find rather than a real ranking.
       await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
       await runSdkSearchProbe(search)
+    }
+    if (sdkEvalRequested()) {
+      await sdkPromise
+      // Same race and margin as the search probe above.
+      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
+      await runSdkEval(getContext(this).resourceManager)
     }
   }
 
