@@ -14,6 +14,7 @@ import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { ensureUiEmbeddings } from '../vera/VeraUiIndex'
 import { loadRegistry } from '../vera/VeraIntentRegistry'
+import { loadIntentSummaries } from '../vera/VeraIntentIndex'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { loadSdkIndex } from '../vera/VeraSdkIndex'
 import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL } from '../vera/VeraEmbeddings'
@@ -290,7 +291,11 @@ struct GeneratePage {
       // reads it through VeraIntentRegistry.registryEntries(); without an
       // address the model would have to invent one, and an invented address
       // fails silently.
-      loadRegistry().then((count: number) => {
+      // Summaries first: the intent pool is built from the registry and the
+      // summaries together, and it is rebuilt when either grows, so order only
+      // saves one rebuild -- but it also keeps the first embedding pass from
+      // embedding every intent twice, once per text.
+      loadIntentSummaries(mgr).then(() => loadRegistry()).then((count: number) => {
         console.info('VERA-REGISTRY ' + count.toString() + ' intents available to find_intent_function')
         // ensureEmbeddingsReady() below races this same read (its own,
         // independent async device call) and can run first -- re-checking

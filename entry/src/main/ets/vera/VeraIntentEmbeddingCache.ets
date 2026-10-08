@@ -29,9 +29,26 @@ const DOMAIN = 0x0000
 // threshold HarmonyOS's freeze watchdog logs before a kill.
 const CHUNK_SIZE = 8
 
-function entryKey(e: IntentEntry): string { return e.kind + ':' + e.name }
+/** FNV-1a over the embedded text, so a description that changes (a new
+ * summary, a reworded one) is a different key and gets embedded again. The
+ * cache used to be keyed by name alone, which kept serving the vector of the
+ * old text. Same hash the SDK cache header uses. */
+function textHash(s: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h = (h ^ s.charCodeAt(i)) >>> 0
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(16)
+}
 
-function entryEmbeddingText(e: IntentEntry): string { return e.name + ' ' + e.description }
+/** The intent's own name, then what it is for. Not the address: the bundle path
+ * only adds noise to the vector and the summary already says which app. */
+function entryEmbeddingText(e: IntentEntry): string { return e.label + ' ' + e.description }
+
+function entryKey(e: IntentEntry): string {
+  return e.kind + ':' + e.name + '#' + textHash(entryEmbeddingText(e))
+}
 
 /** key -> L2-normalized vector. Whatever's in here is usable; a key missing
  * from it (model never loaded, or not embedded yet) is simply skipped by
@@ -96,6 +113,13 @@ async function build(filesDir: string): Promise<void> {
   }
   if (missing.length === 0) { return }
   if (!embeddingModelReady()) { return }
+  // Drop vectors of texts that no longer exist, so the file does not grow by a
+  // full copy every time the descriptions are rewritten.
+  let live: Set<string> = new Set<string>()
+  for (let e of entries) { live.add(entryKey(e)) }
+  let stale: string[] = []
+  vectors.forEach((_v: number[], key: string) => { if (!live.has(key)) { stale.push(key) } })
+  for (let key of stale) { vectors.delete(key) }
 
   let startedAt = Date.now()
   let embedded = 0
