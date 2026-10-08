@@ -132,11 +132,19 @@ struct Index {
     .title('VERA')
     .titleMode(NavigationTitleMode.Full)
     .menus([{
+      value: 'Chat',
+      icon: 'resources/base/media/startIcon.png',
+      action: () => { router.pushUrl({ url: 'pages/ChatPage' }) }
+    }, {
       value: '',
       icon: 'resources/base/media/startIcon.png',
       action: () => { this.showCreate = true; this.newName = ''; this.selectedIcon = '📱' }
     }])
     .toolbarConfiguration([{
+      value: 'Chat',
+      status: ToolbarItemStatus.NORMAL,
+      action: () => { router.pushUrl({ url: 'pages/ChatPage' }) }
+    }, {
       value: 'New Project',
       status: ToolbarItemStatus.NORMAL,
       action: () => { this.showCreate = true; this.newName = ''; this.selectedIcon = '📱' }
