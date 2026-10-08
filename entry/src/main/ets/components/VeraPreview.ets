@@ -13,9 +13,8 @@
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraIntValue, VeraStringValue,
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
 import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
-import { runIntent, runRawIntent } from '../vera/VeraIntents'
+import { runRawIntent } from '../vera/VeraIntents'
 import { runSdkAdapter } from '../vera/VeraSdkBackend'
-import { addCalendarEvent, clearCalendarEvents } from '../vera/VeraCalendar'
 import { LengthMetrics } from '@ohos.arkui.node'
 import mediaquery from '@ohos.mediaquery'
 
@@ -548,44 +547,32 @@ export struct VeraPreview {
    * interrupting for -- the person asked for the app and can see what it did.
    * Anything that changes something is, and an intent the catalogue never
    * described always is: nobody has established what it does, so nobody can say
-   * it is safe. The calendar goes through Calendar Kit rather than an intent
-   * and writes to a calendar the person can inspect and the program can wipe,
-   * so it stays as it was.
+   * it is safe.
    */
   private needsConsent(effect: HostEffect): boolean {
     // Asking is off. Turn ASK_BEFORE_CALLS back on and every state-changing
-    // call, and every intent.call, is shown to the person again -- the sheet,
+    // call is shown to the person again -- the sheet,
     // the queue and the remembered grants are all still here and still work.
     //
     // What is lost while it is off is the only thing standing between a
     // generated program and an intent nobody has checked: the phone accepts
     // Pay and SendTextMessage as readily as OpenFlashlight, and the person
-    // sees neither. The log keeps the record -- VERA-INTENT and
-    // VERA-INTENT-RAW carry the target and the payload of every call.
+    // sees neither. The log keeps the record -- VERA-INTENT-RAW carries the
+    // target and the payload of every call.
     if (!ASK_BEFORE_CALLS) { return false }
-    // sdk.call gets the same treatment as a raw intent.call: nothing about it
-    // is curated or risk-classified, so "ask every time" is the only posture
-    // that makes sense until it is (docs/selector-design.md).
-    if (effect.kind !== 'intent' && effect.kind !== 'sdk') { return false }
+    // Nothing about an sdk.call is curated or risk-classified, so "ask every
+    // time" is the only posture that makes sense until it is
+    // (docs/selector-design.md).
+    if (effect.kind !== 'sdk') { return false }
     // Already allowed, for this program and this call. The grant died with the
     // previous version of the program: stamp() is the bytecode.
     if (consent.has(this.stamp(), this.consentKey(effect))) { return false }
-    if (effect.spec === null) { return true }
-    let risk = effect.spec!.risk
-    return risk === 'act' || risk === 'critical'
+    return true
   }
 
-  /**
-   * What a grant is about: the address for a raw call, the row's name for a
-   * catalogue row.
-   *
-   * The row's name rather than its address, because two rows can share an
-   * address and mean opposite things -- setBluetooth and readBluetooth are both
-   * SetSettingSwitch's neighbours in the settings app -- and allowing a reading
-   * must not quietly allow a change.
-   */
+  /** What a grant is about: the target address, as the program wrote it. */
   private consentKey(effect: HostEffect): string {
-    return effect.spec === null ? effect.rawTarget : 'row:' + effect.spec!.name
+    return effect.rawTarget
   }
 
   /** What the dialog says this call is, in the person's words where there are any. */
@@ -597,15 +584,12 @@ export struct VeraPreview {
       let parts = effect.rawTarget.split(sep)
       return 'Run ' + parts[parts.length - 1]
     }
-    if (effect.spec === null) { return 'Run ' + effect.rawTarget.split('/')[3] }
-    let spec = effect.spec!
-    return spec.titleForUser.length > 0 ? spec.titleForUser : spec.summary
+    return 'Run ' + effect.rawTarget
   }
 
   /** The app the call goes to, by bundle name -- the one thing that is never in doubt. */
   private consentTarget(effect: HostEffect): string {
-    if (effect.spec === null) { return effect.rawTarget }
-    return effect.spec!.bundle + ' / ' + effect.spec!.intentName
+    return effect.rawTarget
   }
 
   /**
@@ -615,22 +599,8 @@ export struct VeraPreview {
    * program's own words would be showing something other than what happens.
    */
   private consentValues(effect: HostEffect): string {
-    if (effect.spec === null) {
-      let lines: string[] = []
-      effect.values.forEach((value: string, key: string) => { lines.push(key + ': ' + value) })
-      return lines.length > 0 ? lines.join('\n') : '(no parameters)'
-    }
     let lines: string[] = []
-    let spec = effect.spec!
-    spec.fixed.forEach((value: string, key: string) => { lines.push(key + ': ' + value) })
-    for (let p of spec.params) {
-      let raw = effect.values.get(p.name)
-      let text = raw === undefined ? '' : raw as string
-      if (text.length === 0) { text = p.defaultValue }
-      if (text.length === 0) { continue }
-      let mapped = p.valueMap.get(text)
-      lines.push(p.platformName + ': ' + (mapped !== undefined ? mapped as string : text))
-    }
+    effect.values.forEach((value: string, key: string) => { lines.push(key + ': ' + value) })
     return lines.length > 0 ? lines.join('\n') : '(no parameters)'
   }
 
@@ -667,20 +637,8 @@ export struct VeraPreview {
   /** One effect, whichever host it belongs to, answered through its handler. */
   private runEffect(effect: HostEffect): void {
     let answer: Promise<string>
-    if (effect.kind === 'calendar' && effect.fn === 'clearEvents') {
-      answer = clearCalendarEvents()
-    } else if (effect.kind === 'calendar') {
-      answer = addCalendarEvent(
-        this.effectText(effect, 'title'),
-        this.effectInt(effect, 'hour', 9),
-        this.effectInt(effect, 'minute', 0),
-        this.effectInt(effect, 'durationMinutes', 15),
-        this.effectInt(effect, 'remindBefore', 0),
-        this.effectText(effect, 'repeat'))
-    } else if (effect.kind === 'sdk' && effect.rawTarget.indexOf('/') >= 0) {
-      // An intent-style target reached through the unified sdk.call: the
-      // real backend already exists for this shape, so it gets real
-      // dispatch, exactly like a legacy intent.call would.
+    if (effect.kind === 'sdk' && effect.rawTarget.indexOf('/') >= 0) {
+      // An intent-style target: it gets real dispatch through runRawIntent.
       answer = runRawIntent(effect.rawTarget, effect.values, effect.rawMode)
     } else if (effect.kind === 'sdk') {
       // An sdk-style target: a real, curated adapter (VeraSdkBackend.ets) if
@@ -689,10 +647,8 @@ export struct VeraPreview {
       // no adapter yet -- that was never in scope for the selector work --
       // but a target that does have one now really calls interface_sdk-js.
       answer = runSdkAdapter(effect.rawTarget, effect.values)
-    } else if (effect.spec === null) {
-      answer = runRawIntent(effect.rawTarget, effect.values, effect.rawMode)
     } else {
-      answer = runIntent(effect.spec!, effect.values)
+      answer = runSdkAdapter(effect.rawTarget, effect.values)
     }
     answer.then((text: string) => {
       if (this.disposed) { return }
@@ -703,22 +659,10 @@ export struct VeraPreview {
     })
   }
 
-  private effectText(effect: HostEffect, field: string): string {
-    let v = effect.values.get(field)
-    return v !== undefined ? v as string : ''
-  }
-
-  private effectInt(effect: HostEffect, field: string, fallback: number): number {
-    let v = effect.values.get(field)
-    if (v === undefined) { return fallback }
-    let n = Number.parseInt(v as string, 10)
-    return Number.isNaN(n) ? fallback : n
-  }
-
   build() {
     Stack() {
       this.programFrame()
-      // Drawn over the program, by the renderer, from the row the host is about
+      // Drawn over the program, by the renderer, from the call the host is about
       // to send. The program supplies no text here and cannot dismiss it.
       if (this.pending !== null) {
         this.consentSheet(this.pending!)
@@ -752,9 +696,7 @@ export struct VeraPreview {
           .borderRadius(8)
         // Said plainly, because it is the part a person cannot check for
         // themselves: this call was written by a program, not by them.
-        Text((effect.spec === null
-          ? 'This app wrote this call itself. Nothing has checked what it does.'
-          : 'This app is asking to change something on your phone.') +
+        Text('This app wrote this call itself. Nothing has checked what it does.' +
           ' Allow it and this app stops asking for this one.')
           .fontSize(12)
           .fontColor(this.t().inkSoft)

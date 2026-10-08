@@ -29,7 +29,7 @@
  */
 
 import storageStatistics from '@ohos.file.storageStatistics'
-import { AbilityContext } from './VeraCalendar'
+import { AbilityContext } from './VeraPermissions'
 import camera from '@ohos.multimedia.camera'
 import audio from '@ohos.multimedia.audio'
 import fs from '@ohos.file.fs'
@@ -942,7 +942,7 @@ const ADAPTERS: Map<string, SdkAdapter> = new Map<string, SdkAdapter>([
   // this surface gets, which is why they're first. Needs
   // ohos.permission.STORAGE_MANAGER (module.json5), system_basic APL
   // (signing/UnsgnedReleasedProfileTemplate.json) -- both already true of
-  // this app for std/intent's own sake.
+  // this app.
   // CameraManager is a class (VeraSdkIndex scopeKind: interface), not a
   // namespace -- the one shape excluded from tools/select-sdk-backend-
   // candidates.py wholesale, because most classes need an instance built in

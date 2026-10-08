@@ -11,8 +11,6 @@ import {
   HostEnvironment,
   RuntimeTrap,
 } from './VeraInterpreter'
-import { IntentSpec, intentByName } from './VeraIntentCatalog'
-import { calendarFnByName } from './VeraCalendarCatalog'
 
 export class VeraUiNode {
   id: number = 0
@@ -321,32 +319,30 @@ function invokeStdStrings(name: string, args: RuntimeValue[]): RuntimeValue {
 }
 
 /**
- * One intent the program asked for, waiting to be run.
+ * One sdk.call the program asked for, waiting to be run.
  *
  * The VM is synchronous -- invoke() has to return a value on the spot -- while
- * the platform answers with a promise. So the call does not run the intent; it
+ * the platform answers with a promise. So the call does not run itself; it
  * records the request, and whoever drives the VM runs it afterwards and brings
  * the answer back through the ordinary handler path.
  */
 export class HostEffect {
   id: number
-  /** 'intent', 'calendar' or 'sdk' -- which host the request is for. */
+  /** Which host the request is for; only 'sdk' exists now. */
   kind: string
-  /** Which function of that host: the intent's row name, or addEvent/clearEvents/call. */
+  /** Which function of that host: always call. */
   fn: string
-  /** The intent's row; null for a raw or sdk call and for any other kind. */
-  spec: IntentSpec | null
   values: Map<string, string>
   resultHandler: string
-  /** intent.call and sdk.call: the target as the program wrote it. */
+  /** The target as the program wrote it. */
   rawTarget: string = ''
-  /** intent.call and sdk.call: the parameter names, in the order the program wrote them. */
+  /** The parameter names, in the order the program wrote them. */
   rawParams: string = ''
-  /** intent.call only: 'foreground' or 'background'; unused by sdk.call. */
+  /** 'foreground' or 'background'; only an intent-style target uses it. */
   rawMode: string = ''
-  constructor(id: number, kind: string, fn: string, spec: IntentSpec | null,
+  constructor(id: number, kind: string, fn: string,
       values: Map<string, string>, resultHandler: string) {
-    this.id = id; this.kind = kind; this.fn = fn; this.spec = spec
+    this.id = id; this.kind = kind; this.fn = fn
     this.values = values; this.resultHandler = resultHandler
   }
 }
@@ -367,8 +363,6 @@ export class UiHostEnvironment extends HostEnvironment {
     if (module === 'std/time') { return invokeStdTime(name, args) }
     if (module === 'std/math') { return invokeStdMath(name, args) }
     if (module === 'std/strings') { return invokeStdStrings(name, args) }
-    if (module === 'std/intent') { return this.queueIntent(name, args) }
-    if (module === 'std/calendar') { return this.queueCalendar(name, args) }
     if (module === 'std/sdk') { return this.queueSdk(args) }
     if (module !== 'std/ui') {
       throw new RuntimeTrap('R0015', `external function unavailable: ${module}.${name}`)
@@ -686,98 +680,6 @@ export class UiHostEnvironment extends HostEnvironment {
   }
 
   /**
-   * Records an intent request and hands the program back a request id.
-   *
-   * The program never names a platform parameter: it writes the record this
-   * intent's catalogue row declares, and the names and values in it are
-   * translated on the way out, in VeraIntents. An empty string is a field the
-   * program chose not to send -- the language has no optional record fields, so
-   * that is how an optional parameter is spelled.
-   */
-  private queueIntent(name: string, args: RuntimeValue[]): RuntimeValue {
-    if (name === 'call') { return this.queueRawIntent(args) }
-    let spec = intentByName(name)
-    if (spec === null) {
-      throw new RuntimeTrap('R0015', `unknown std/intent function: ${name}`)
-    }
-    if (!this.effectsAllowed) {
-      throw new RuntimeTrap('R0026',
-        `intent.${name} may only be called from a handler, not from view`)
-    }
-    if (!(args[0] instanceof VeraObjectValue)) {
-      throw new RuntimeTrap('R0020', 'expected a parameter record')
-    }
-    let record = args[0] as VeraObjectValue
-    let values = new Map<string, string>()
-    for (let p of spec!.params) {
-      let field = record.fields.get(p.name)
-      if (field === undefined) { continue }
-      let value = field as RuntimeValue
-      if (value instanceof VeraStringValue) {
-        values.set(p.name, (value as VeraStringValue).value)
-      } else if (value instanceof VeraIntValue) {
-        values.set(p.name, (value as VeraIntValue).value.toString())
-      }
-    }
-    let id = this.nextEffectId
-    this.nextEffectId = id + 1
-    this.pendingEffects.push(new HostEffect(id, 'intent', name, spec!, values, asString(args[1])))
-    return new VeraIntValue(id)
-  }
-
-  /**
-   * An intent the catalogue never heard of: the program names the target and
-   * writes the platform's own parameters.
-   *
-   * Nothing is translated on the way out, because there is nothing to translate
-   * it against. The payload is passed on as the program wrote it, and what
-   * comes back is whatever the target said. The person confirms the call before
-   * it runs -- that check lives in the renderer, where a dialog can be drawn
-   * that the program cannot touch.
-   */
-  private queueRawIntent(args: RuntimeValue[]): RuntimeValue {
-    if (!this.effectsAllowed) {
-      throw new RuntimeTrap('R0026',
-        'intent.call may only be called from a handler, not from view')
-    }
-    let target = asString(args[0]).trim()
-    if (target.split('/').length !== 4) {
-      throw new RuntimeTrap('R0027',
-        'intent.call target must be "bundle/module/ability/IntentName"; got "' + target + '"')
-    }
-    let mode = asString(args[2])
-    if (mode !== 'foreground' && mode !== 'background') {
-      throw new RuntimeTrap('R0027',
-        'intent.call mode must be "foreground" or "background"; got "' + mode + '"')
-    }
-    // Name, value, name, value. Built here rather than trusted as JSON,
-    // because a program has no way to escape a string and would eventually
-    // write a payload that does not parse -- which is exactly what the first
-    // program to use this did.
-    let pairs = asArray(args[1]).elements
-    if (pairs.length % 2 !== 0) {
-      throw new RuntimeTrap('R0027',
-        'intent.call parameters are name and value in pairs; got ' + pairs.length.toString() + ' items')
-    }
-    let values = new Map<string, string>()
-    let order: string[] = []
-    for (let i = 0; i + 1 < pairs.length; i = i + 2) {
-      let key = asString(pairs[i]).trim()
-      if (key.length === 0) { continue }
-      values.set(key, asString(pairs[i + 1]))
-      order.push(key)
-    }
-    let id = this.nextEffectId
-    this.nextEffectId = id + 1
-    let effect = new HostEffect(id, 'intent', 'call', null, values, asString(args[3]))
-    effect.rawTarget = target
-    effect.rawParams = order.join(' ')
-    effect.rawMode = mode
-    this.pendingEffects.push(effect)
-    return new VeraIntValue(id)
-  }
-
-  /**
    * The unified raw escape hatch: an sdk index entry (found through
    * find_sdk_function) or, since VeraCompiler.buildStdSdkModule merged the
    * two, an intent address (found through find_intent_function) -- told
@@ -809,46 +711,11 @@ export class UiHostEnvironment extends HostEnvironment {
     let mode = args.length > 3 ? asString(args[3]) : 'background'
     let id = this.nextEffectId
     this.nextEffectId = id + 1
-    let effect = new HostEffect(id, 'sdk', 'call', null, values, asString(args[2]))
+    let effect = new HostEffect(id, 'sdk', 'call', values, asString(args[2]))
     effect.rawTarget = target
     effect.rawParams = order.join(' ')
     effect.rawMode = mode
     this.pendingEffects.push(effect)
-    return new VeraIntValue(id)
-  }
-
-  /**
-   * The same shape as queueIntent, for the calendar. The record is read by the
-   * field names the catalogue declares, so the program never has to know what
-   * Calendar Kit calls anything either.
-   */
-  private queueCalendar(name: string, args: RuntimeValue[]): RuntimeValue {
-    let fn = calendarFnByName(name)
-    if (fn === null) {
-      throw new RuntimeTrap('R0015', `unknown std/calendar function: ${name}`)
-    }
-    if (!this.effectsAllowed) {
-      throw new RuntimeTrap('R0026',
-        `calendar.${name} may only be called from a handler, not from view`)
-    }
-    if (!(args[0] instanceof VeraObjectValue)) {
-      throw new RuntimeTrap('R0020', 'expected a parameter record')
-    }
-    let record = args[0] as VeraObjectValue
-    let values = new Map<string, string>()
-    for (let p of fn!.params) {
-      let field = record.fields.get(p.name)
-      if (field === undefined) { continue }
-      let value = field as RuntimeValue
-      if (value instanceof VeraStringValue) {
-        values.set(p.name, (value as VeraStringValue).value)
-      } else if (value instanceof VeraIntValue) {
-        values.set(p.name, (value as VeraIntValue).value.toString())
-      }
-    }
-    let id = this.nextEffectId
-    this.nextEffectId = id + 1
-    this.pendingEffects.push(new HostEffect(id, 'calendar', name, null, values, asString(args[1])))
     return new VeraIntValue(id)
   }
 }

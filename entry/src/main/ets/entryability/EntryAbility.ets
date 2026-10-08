@@ -6,11 +6,13 @@ import hilog from '@ohos.hilog'
 import router from '@ohos.router'
 import { refreshForms } from '../vera/FormUpdater'
 import { settings } from '../vera/SettingsStore'
-import { requestCalendarPermissions, requestMicrophonePermission } from '../vera/VeraCalendar'
+import { requestCalendarPermissions, requestMicrophonePermission } from '../vera/VeraPermissions'
 import { runProbe } from '../vera/IntentProbe'
 import { runSdkProbe, requestSdkSearch } from '../vera/VeraSdkProbe'
 import { requestBenchmark } from '../vera/VeraSearchBenchmark'
 import { requestSdkEval } from '../vera/VeraSdkEval'
+import { requestUiEval } from '../vera/VeraUiEval'
+import { requestUiAb } from '../vera/VeraUiAb'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 
 const DOMAIN = 0x0000
@@ -36,6 +38,8 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkSearchProbe(want)
     this.extractBenchmark(want)
     this.extractSdkEval(want)
+    this.extractUiEval(want)
+    this.extractUiAb(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -49,6 +53,8 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkSearchProbe(want)
     this.extractBenchmark(want)
     this.extractSdkEval(want)
+    this.extractUiEval(want)
+    this.extractUiAb(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
     }
@@ -199,6 +205,32 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'VERA', 'VERA-SDKEVAL requested from launch parameter')
   }
 
+  /**
+   * Development only: scores the UI component selector on the gold prompts
+   * (VeraUiEval.ets). Sets a flag; GeneratePage.ets runs it once the embedding
+   * index is warm.
+   *
+   *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps veraUiEval 1
+   */
+  private extractUiEval(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraUiEval']
+    if (flag === null || flag === undefined) { return }
+    requestUiEval()
+    hilog.info(DOMAIN, 'VERA', 'VERA-UI-EVAL requested from launch parameter')
+  }
+
+  /** Development only: `--ps veraUiAb 1` compares the UI selection modes (VeraUiAb.ets). */
+  private extractUiAb(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraUiAb']
+    if (flag === null || flag === undefined) { return }
+    requestUiAb()
+    hilog.info(DOMAIN, 'VERA', 'VERA-UI-AB requested from launch parameter')
+  }
+
   private extractProjectId(want: Want): void {
     if (want.parameters !== null && want.parameters !== undefined) {
       let params = want.parameters as Record<string, Object>
@@ -212,10 +244,8 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onWindowStageCreate')
-    // std/calendar needs READ_CALENDAR and WRITE_CALENDAR, which are user_grant
-    // and so cannot come from the signature. Asked here rather than at the
-    // first calendar call, because a permission dialog appearing in the middle
-    // of a generated program's handler gives no clue what asked for it.
+    // READ_CALENDAR, WRITE_CALENDAR and MICROPHONE are user_grant and so cannot
+    // come from the signature. Asked here, not in the middle of a handler.
     requestCalendarPermissions(this.context).then((): Promise<void> => {
       return requestMicrophonePermission(this.context)
     })

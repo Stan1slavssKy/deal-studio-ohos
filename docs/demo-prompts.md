@@ -44,9 +44,10 @@ reminder, and the list below shows what is scheduled and what the calendar
 answered.
 ```
 
-Exercises `std/calendar`, which is Calendar Kit rather than an intent — the
-device's `CreateCalendarEvent` and its relatives declare no parameters and are
-not standard intent names, so their contract would have to be invented.
+There is no `std/calendar` any more: a program reaches the calendar only through
+`sdk.call`, and only for what `find_sdk_function` or `find_intent_function`
+returns. Whether the phone's calendar is reachable that way is the thing this
+prompt checks.
 
 **What to check.** Open the phone's Calendar app afterwards. The event is either
 there at the right time, repeating or not as asked, or it is not. The program's
@@ -78,8 +79,8 @@ calendar.
 Shanghai layover: I land at Pudong International Airport at 09:00 with 11 hours before my next flight. Plan the day hour by hour around the sights worth seeing, each stop with its name, how long to spend there and its coordinates, a button that starts navigation to it from the last stop I reached, a button that puts the stop in my phone's calendar with a reminder, and the latest time I must leave for the airport. Keep a note of which stops I actually reached, and give me a button that wipes every calendar event this app added and one that opens the phone's calendar.
 
 Exercises everything the device can reach at once: `navigateTo` for each leg,
-`calendar.addEvent` for each stop, `calendar.clearEvents` for the run before
-this one, and `openCalendar`, which launches the app rather than sending it an
+a calendar write for each stop and for clearing the run before this one (found
+through `find_sdk_function`), and `openCalendar`, which launches the app rather than sending it an
 intent.
 
 What the model actually wrote for it is kept verbatim in

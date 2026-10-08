@@ -12,17 +12,22 @@ import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
+import { ensureUiEmbeddings } from '../vera/VeraUiIndex'
 import { loadRegistry } from '../vera/VeraIntentRegistry'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
-import { describeCalendarForPrompt } from '../vera/VeraCalendarCatalog'
 import { loadSdkIndex } from '../vera/VeraSdkIndex'
 import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL } from '../vera/VeraEmbeddings'
 import { ensureSdkEmbeddings, sdkEmbeddingsReady } from '../vera/VeraSdkEmbeddingCache'
 import { ensureIntentEmbeddings, intentEmbeddingsReady } from '../vera/VeraIntentEmbeddingCache'
 import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchmark'
 import { sdkSearchRequested, runSdkSearchProbe } from '../vera/VeraSdkProbe'
+import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
+import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
+import { selectUiForPrompt, UI_SELECT_FULL, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 
+/** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
+const UI_SELECT_MODE: string = UI_SELECT_FULL
 const MAX_RETRIES: number = 3
 // vera-server's address is not written down here. It lives in settings, given
 // the same way as the API key -- `--ps veraServer http://host:port` -- because
@@ -215,8 +220,12 @@ struct GeneratePage {
   @State attempts: AttemptMetrics[] = []
   @State totalMs: number = 0
   private systemPrompt: string = ''
-  /** The skill with std/ui and std/calendar spliced in. */
+  /** The skill with std/ui spliced in. */
   private promptTemplate: string = ''
+  /** The skill before {{UI_CATALOG}} is filled in, so each request can choose what to describe. */
+  private skillText: string = ''
+  /** Components the current system prompt describes; empty means all of them. */
+  private uiSelected: string[] = []
   private grammar: string = ''
   private previousSource: string = ''
   private genStartTime: number = 0
@@ -268,14 +277,15 @@ struct GeneratePage {
           extra.problems.join('; '))
       }
       let skill = await loadRawfileText(mgr, 'vera-skill.txt')
-      // The UI and calendar catalogues are the same for every request, so
-      // they are spliced in once. The intent catalogue is not spliced at
+      // The UI catalogue is the same for every request, so it is spliced in
+      // once. The intent catalogue is not spliced at
       // all any more: find_intent_function (DeepSeekEngine.ets,
       // VeraIntentIndex.ets) looks it up, along with the raw device
       // registry, when the model decides it needs one.
+      this.skillText = skill
       this.promptTemplate = skill
         .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
-        .replace('{{CALENDAR_CATALOG}}', describeCalendarForPrompt())
+        .replace('{{UI_TOOL_NOTE}}\n', '')
       // The phone's own list of intents, read once. find_intent_function
       // reads it through VeraIntentRegistry.registryEntries(); without an
       // address the model would have to invent one, and an invented address
@@ -446,6 +456,7 @@ struct GeneratePage {
     sdkPromise.then(() => {
       console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
     })
+    let uiPromise = ensureUiEmbeddings(filesDir)
     let intentPromise = ensureIntentEmbeddings(filesDir)
     intentPromise.then(() => {
       console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
@@ -475,6 +486,14 @@ struct GeneratePage {
       // answer with nothing to find rather than a real ranking.
       await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
       await runSdkSearchProbe(search)
+    }
+    if (uiEvalRequested()) {
+      await uiPromise
+      await runUiEval(getContext(this).resourceManager)
+    }
+    if (uiAbRequested()) {
+      await uiPromise
+      await runUiAb(getContext(this).resourceManager)
     }
     if (sdkEvalRequested()) {
       await sdkPromise
@@ -544,7 +563,38 @@ struct GeneratePage {
     // itself, mid-generation, the first time either is worth calling.
     // JevSelector.ets is unchanged and still callable; nothing here calls it.
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
-    this.runAttempt(this.prompt.trim(), '')
+    this.startAttemptOne(this.prompt.trim())
+  }
+
+  /**
+   * Chooses which std/ui components the system prompt describes for this
+   * request, then makes the first attempt. Only DeepSeek mode selects; every
+   * other mode, and any failure on the way (no extraction, embeddings not
+   * ready), describes the whole catalogue. The choice is made once and kept for
+   * the retries, which only rewrite the user prompt.
+   */
+  private async startAttemptOne(userPrompt: string, label: string = 'Generating'): Promise<void> {
+    this.systemPrompt = this.promptTemplate
+    this.uiSelected = []
+    if (UI_SELECT_MODE !== UI_SELECT_FULL && this.mode === MODE_DEEPSEEK && this.skillText.length > 0) {
+      this.status = 'Choosing UI components...'
+      let selected = await selectUiForPrompt(UI_SELECT_MODE, userPrompt, this.previousSource)
+      if (this.cancelRequested) { return }
+      if (selected === null) {
+        console.info('VERA-UI-SELECT fallback to the whole catalogue')
+      } else {
+        let names: string[] = []
+        selected.forEach((n: string) => { names.push(n) })
+        this.uiSelected = names
+        this.systemPrompt = this.skillText
+          .replace('{{UI_CATALOG}}', describeCatalogForPrompt(selected))
+          .replace('{{UI_TOOL_NOTE}}\n', UI_TOOL_NOTE)
+        console.info('VERA-UI-SELECT mode=' + UI_SELECT_MODE + ' described=' + names.length.toString() +
+          ' promptChars=' + this.systemPrompt.length.toString() + ' fullChars=' + this.promptTemplate.length.toString())
+      }
+    }
+    this.status = label + ' (attempt 1/' + MAX_RETRIES + ')...'
+    this.runAttempt(userPrompt, '')
   }
 
   private async doServerGenerate(): Promise<void> {
@@ -662,6 +712,8 @@ struct GeneratePage {
 
     let request = new GenerateRequest()
     request.systemPrompt = this.systemPrompt
+    request.uiSelected = this.uiSelected
+    request.uiTool = this.uiSelected.length > 0
     request.grammar = this.grammar
     request.maxTokens = 2048
     request.temperature = 0.2
@@ -1066,7 +1118,7 @@ struct GeneratePage {
     this.genStartTime = Date.now()
     this.lastRequest = ask
     this.status = 'Refining (attempt 1/' + MAX_RETRIES + ')...'
-    this.runAttempt(ask, '')
+    this.startAttemptOne(ask, 'Refining')
   }
 
   private stopGeneration(): void {

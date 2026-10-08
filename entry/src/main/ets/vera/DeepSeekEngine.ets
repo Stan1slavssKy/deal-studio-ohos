@@ -42,6 +42,8 @@ import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
 import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
+import { findUiComponentsByEmbedding } from './VeraUiIndex'
+import { describeComponents, optionalComponents } from './VeraUiCatalog'
 
 const SDK_TOOL_NAME = 'find_sdk_function'
 // 16, not 8: on the gold set the right function sat at rank 9-16 often enough that
@@ -49,6 +51,16 @@ const SDK_TOOL_NAME = 'find_sdk_function'
 const SDK_SEARCH_LIMIT = 16
 const INTENT_TOOL_NAME = 'find_intent_function'
 const INTENT_SEARCH_LIMIT = 8
+const UI_TOOL_NAME = 'find_ui_component'
+const UI_SEARCH_LIMIT = 3
+
+/**
+ * The step before generation: what the app in the request needs on screen, as
+ * short phrases the component index can be searched with. Plain-language
+ * phrases, not component names -- the person's words and the catalogue's words
+ * are matched by the embeddings, not by this model.
+ */
+const UI_NEEDS_PROMPT = 'You read a request for a small phone app and list what must appear on its screen, as short English phrases of two to six words each, one per distinct kind of UI element or behaviour. Think of inputs (typing text, picking a number, choosing a time, a switch, a slider, a choice from a list), displays (a timeline of events, key facts, a progress bar, a picture, a drawing or an animated shape, a board or a grid, a divider, a scrolling page) and behaviour that moves on its own (a stopwatch, a countdown, a clock that updates). Give three to eight phrases. Answer with a JSON array of strings and nothing else.'
 /**
  * How many tool-call round trips one generation tolerates, across both
  * tools. Each round is a full request-response cycle against DeepSeek, so
@@ -126,7 +138,7 @@ function needParameter(description: string): Record<string, Object> {
 }
 
 /** The two tools DeepSeek is offered, each describing itself well enough to be found without a system-prompt mention. */
-function toolSchemas(): Record<string, Object>[] {
+function toolSchemas(withUiTool: boolean): Record<string, Object>[] {
   let sdkFn: Record<string, Object> = {}
   sdkFn['name'] = SDK_TOOL_NAME
   sdkFn['description'] = 'Looks up a platform SDK function by what it needs to do, out of thousands the phone offers with no built-in catalogue. Returns a few candidates with their target, parameters, return type and a plain description of what each does and what it is for. Pick the one that does what is needed, not the one whose name merely sounds closest. Never invent a target string: only use one returned by this tool.'
@@ -143,7 +155,15 @@ function toolSchemas(): Record<string, Object>[] {
   intentTool['type'] = 'function'
   intentTool['function'] = intentFn
 
-  return [sdkTool, intentTool]
+  let uiFn: Record<string, Object> = {}
+  uiFn['name'] = UI_TOOL_NAME
+  uiFn['description'] = 'Looks up a std/ui component that the component list in the system prompt does not describe, by what it must show or do. Returns its signature and when to use it. Use it before writing any ui.* constructor that is not in that list. Never write a constructor you did not see in the list or in this tool\'s answer.'
+  uiFn['parameters'] = needParameter('Plain-language description of the screen element needed, e.g. "a vertical timeline of events" or "a stopwatch that ticks".')
+  let uiTool: Record<string, Object> = {}
+  uiTool['type'] = 'function'
+  uiTool['function'] = uiFn
+
+  return withUiTool ? [sdkTool, intentTool, uiTool] : [sdkTool, intentTool]
 }
 
 /** find_sdk_function's answer, in the shape handed back as the tool result. */
@@ -151,7 +171,7 @@ function sdkResultsJson(entries: SdkEntry[]): string {
   let body: Record<string, Object> = {}
   if (entries.length === 0) {
     body['results'] = []
-    body['note'] = 'No sdk function matched. Try a different, more specific phrasing, or if nothing this specific exists, use what std/ui or std/calendar already offer instead.'
+    body['note'] = 'No sdk function matched. Try a different, more specific phrasing, or if nothing this specific exists, use what std/ui already offers instead.'
     return JSON.stringify(body)
   }
   let items: Record<string, Object>[] = []
@@ -185,6 +205,18 @@ function intentResultsJson(entries: IntentEntry[]): string {
     items.push(item)
   }
   body['results'] = items
+  return JSON.stringify(body)
+}
+
+/** find_ui_component's answer, in the shape handed back as the tool result. */
+function uiResultsJson(names: string[], note: string): string {
+  let body: Record<string, Object> = {}
+  if (names.length === 0) {
+    body['results'] = []
+    body['note'] = note
+    return JSON.stringify(body)
+  }
+  body['results'] = describeComponents(names)
   return JSON.stringify(body)
 }
 
@@ -260,6 +292,8 @@ export class DeepSeekEngine {
   private cacheHitTokens: number = 0
   private finishReason: string = ''
   private thinking: boolean = false
+  private uiToolOffered: boolean = true
+  private toolRounds: number = 0
   // Reasoning arrives as its own delta field and is billed as output, so a
   // thinking model looks like a long silence followed by an impossibly fast
   // stream unless the two are timed apart.
@@ -288,6 +322,9 @@ export class DeepSeekEngine {
     return this.firstContentAt - this.firstAnyAt
   }
   lastFinishReason(): string { return this.finishReason }
+  /** Tool-call round trips in the last generation. */
+  lastToolRounds(): number { return this.toolRounds }
+  lastInputTokens(): number { return this.inputTokens }
 
   async generate(request: GenerateRequest, onToken: TokenCallback): Promise<GenerateResult> {
     let key = settings.getApiKey()
@@ -302,6 +339,8 @@ export class DeepSeekEngine {
     this.finishReason = ''
     this.cancelled = false
     this.generating = true
+    this.uiToolOffered = request.uiTool
+    this.toolRounds = 0
     this.startedAt = Date.now()
     this.firstAnyAt = 0
     this.firstContentAt = 0
@@ -341,6 +380,7 @@ export class DeepSeekEngine {
         break
       }
       stillAsking = true
+      this.toolRounds = this.toolRounds + 1
       messages.push(assistantToolCallMessage(turn.toolCalls))
       for (let call of turn.toolCalls) {
         let callStartedAt = Date.now()
@@ -380,6 +420,25 @@ export class DeepSeekEngine {
           console.info('VERA-INTENT-TIMING need="' + need + '" tokenFullMs=' + tokenMs.toString() +
             ' embeddingFullMs=' + embedMs.toString() + ' callTotalMs=' + (Date.now() - callStartedAt).toString())
           messages.push(toolResultMessage(call.id, intentResultsJson(results)))
+        } else if (call.name === UI_TOOL_NAME) {
+          let shown = new Set<string>(request.uiSelected)
+          let names: string[] = []
+          let note = 'No further component matched. Use what the list already offers.'
+          if (request.uiSelected.length === 0) {
+            note = 'Every component is already described in the system prompt.'
+          } else {
+            let found = await findUiComponentsByEmbedding(need, UI_SEARCH_LIMIT, shown)
+            if (found !== null) {
+              names = found
+            } else {
+              // Index not ready: hand back every component not yet shown, so
+              // the model is never left without the one it asked for.
+              for (let c of optionalComponents()) { if (!shown.has(c.name)) { names.push(c.name) } }
+            }
+          }
+          console.info('VERA-UI-TOOL round=' + round.toString() + ' need="' + need + '" found=[' +
+            names.join(', ') + ']')
+          messages.push(toolResultMessage(call.id, uiResultsJson(names, note)))
         } else {
           let tokenStartedAt = Date.now()
           let tokenResults = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT)
@@ -425,6 +484,43 @@ export class DeepSeekEngine {
     result.inputTokens = this.inputTokens
     result.outputTokens = this.outputTokens
     return result
+  }
+
+  /**
+   * Phrases naming the UI elements a request needs, for VeraUiIndex to search
+   * with. null on any failure -- no key, no network, an answer that is not a
+   * JSON array -- and the caller then describes the whole catalogue.
+   */
+  async extractUiNeeds(userPrompt: string): Promise<string[] | null> {
+    if (!settings.hasApiKey()) { return null }
+    let messages: Record<string, Object>[] = []
+    messages.push(plainMessage('system', UI_NEEDS_PROMPT))
+    messages.push(plainMessage('user', userPrompt))
+    let savedThinking = this.thinking
+    this.thinking = false
+    this.cancelled = false
+    this.generating = true
+    let startedAt = Date.now()
+    try {
+      let turn = await this.streamOnce(messages, 0, 300, (_token: string): void => {}, false)
+      let text = extractVeraSource(turn.content)
+      let start = text.indexOf('[')
+      let end = text.lastIndexOf(']')
+      if (start < 0 || end <= start) { return null }
+      let parsed = JSON.parse(text.substring(start, end + 1)) as Object[]
+      let needs: string[] = []
+      for (let item of parsed) {
+        if (typeof item === 'string' && (item as string).trim().length > 0) { needs.push((item as string).trim()) }
+      }
+      console.info('VERA-UI-NEEDS ms=' + (Date.now() - startedAt).toString() + ' needs=[' + needs.join(' | ') + ']')
+      return needs.length > 0 ? needs : null
+    } catch (e) {
+      console.warn('VERA-UI-NEEDS failed: ' + (e as Error).message)
+      return null
+    } finally {
+      this.thinking = savedThinking
+      this.generating = false
+    }
   }
 
   stop(): void {
@@ -519,7 +615,7 @@ export class DeepSeekEngine {
     // Left off on the forced final round (generate()) so a model that would
     // otherwise keep asking has no way to -- it must answer with whatever
     // tool results it already has.
-    if (allowTools) { payload['tools'] = toolSchemas() }
+    if (allowTools) { payload['tools'] = toolSchemas(this.uiToolOffered) }
     return JSON.stringify(payload)
   }
 

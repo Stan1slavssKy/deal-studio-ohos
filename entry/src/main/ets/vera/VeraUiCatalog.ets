@@ -143,7 +143,8 @@ export const CATALOG: ComponentSpec[] = [
     [style('image'), new PropSpec('src', 'string'), new PropSpec('alt', 'string')], 'https image'),
   new ComponentSpec('Path', 'path',
     [style('path'), new PropSpec('commands', 'string'), new PropSpec('spinPeriodMs', 'int')],
-    'vector shape; spinPeriodMs > 0 rotates it'),
+    'vector shape; spinPeriodMs > 0 rotates it', '',
+    'Draws real vector graphics -- circles, gears, arrows, icons, chart shapes -- so use it whenever the user asks to draw something, instead of substituting a number and buttons. commands is an SVG path string using M L C Q A Z with absolute coordinates only. The drawing box is 0..100 in both axes; centre artwork on 50,50. There is no math at runtime: compute every coordinate yourself and write plain number literals. spinPeriodMs rotates the shape (0 is static, 2000 is one turn every 2 seconds) and needs no handler, state field or timer. A circle is "M50 10 A40 40 0 1 0 50 90 A40 40 0 1 0 50 10 Z".'),
   new ComponentSpec('Button', 'button',
     [style('button'), new PropSpec('text', 'string'), new PropSpec('action', 'string'),
       new PropSpec('value', 'int'), new PropSpec('enabled', 'boolean')], 'tappable button'),
@@ -172,10 +173,12 @@ export const CATALOG: ComponentSpec[] = [
     'pick a number in a range; the handler takes (state, value: int)', 'int'),
   new ComponentSpec('Canvas', 'canvas',
     [style('canvas'), new PropSpec('children', 'view[]')],
-    'one drawing: the ui.Path children share a single 0..100 field and overlap'),
+    'one drawing: the ui.Path children share a single 0..100 field and overlap', '',
+    'For a drawing made of several shapes -- a face, an animal, a scene, a chart. Each ui.Path child keeps the position and size you gave it and may have its own colour; give them back to front (the head before the ears, the face before the eyes). Outside a Canvas every ui.Path is centred alone in its own band, which is right only for a single icon.'),
   new ComponentSpec('Grid', 'grid',
     [style('grid'), new PropSpec('columns', 'int'), new PropSpec('children', 'view[]')],
-    'lays its children out in N equal columns, wrapping onto new rows'),
+    'lays its children out in N equal columns, wrapping onto new rows', '',
+    'For anything laid out in equal columns -- a board, a calendar, a keypad -- rather than building rows by hand.'),
   new ComponentSpec('ListItem', 'listitem',
     [style('listitem'), new PropSpec('text', 'string'), new PropSpec('label', 'string'),
       new PropSpec('value', 'string'), new PropSpec('action', 'string'),
@@ -185,7 +188,8 @@ export const CATALOG: ComponentSpec[] = [
   new ComponentSpec('Ticker', 'ticker',
     [style('ticker'), new PropSpec('id', 'string'), new PropSpec('intervalMs', 'int'),
       new PropSpec('running', 'boolean'), new PropSpec('action', 'string')],
-    'draws nothing; calls the handler every intervalMs with the elapsed ms', 'int'),
+    'draws nothing; calls the handler every intervalMs with the elapsed ms', 'int',
+    'Keeps a displayed time or a countdown moving -- never add a refresh button instead. The handler is onTick(state, elapsedMs: int), called every interval; use it to advance a stopwatch, a game or a clock. Accumulate the elapsed value it gives you: do not subtract two clock readings, because time.nowSeconds() only changes once a second. Match intervalMs to the precision shown: 1000 for whole seconds, 50 for hundredths. Example: ui.Ticker("default", "clock", 1000, true, "onTick").'),
   new ComponentSpec('Divider', 'divider', [style('divider')], 'a horizontal rule'),
   new ComponentSpec('Progress', 'progress',
     [style('progress'), new PropSpec('label', 'string'), new PropSpec('value', 'int'),
@@ -325,7 +329,7 @@ export const CATALOG: ComponentSpec[] = [
     [style('timeline'), new PropSpec('title', 'string'), new PropSpec('children', 'view[]')],
     'events in the order they happen, joined by a rail',
     '',
-    'For anything that runs in time -- an itinerary, a course of treatment, a history. Prefer it to ui.ListGroup whenever the order is chronological rather than merely grouped. Children are ui.TimelineItem; a ui.ActionBar may follow the entry it belongs to.'),
+    'For anything that runs in time -- an itinerary, a course of treatment, a history, a delivery. A list says these things belong together; a timeline says they follow one another. Prefer it to ui.ListGroup whenever the order is chronological rather than merely grouped. Children are ui.TimelineItem; a ui.ActionBar may follow the entry it belongs to.'),
   new ComponentSpec('TimelineItem', 'timelineitem',
     [style('timelineitem'), new PropSpec('title', 'string'), new PropSpec('subtitle', 'string'),
       new PropSpec('trailing', 'string'), new PropSpec('action', 'string'),
@@ -456,24 +460,123 @@ export function catalogKinds(): string[] {
 }
 
 /**
- * The catalogue section of the model's prompt, generated so it cannot drift from
- * what the compiler accepts and the renderer draws.
+ * Components the prompt always describes: the composition layer the skill's
+ * rules are written in terms of, the basic stacks, and the number components.
+ * Everything else is offered only when the request needs it -- see
+ * VeraUiIndex.ets.
  */
-export function describeCatalogForPrompt(): string {
+export const CORE_COMPONENTS: string[] = [
+  'Column', 'Row', 'Card', 'Text', 'Spacer', 'Button',
+  'AppTheme', 'Header', 'Section', 'SectionHeader', 'ListGroup', 'ListItem',
+  'IntListItem', 'ActionBar', 'IconButton', 'Badge', 'EmptyState', 'InsetBanner',
+  'Stat', 'IntStat', 'MetricGroup', 'IntText', 'ClockText',
+]
+
+/** Components that are described only when selected. */
+export function optionalComponents(): ComponentSpec[] {
+  let out: ComponentSpec[] = []
+  for (let c of CATALOG) {
+    if (CORE_COMPONENTS.indexOf(c.name) < 0) { out.push(c) }
+  }
+  return out
+}
+
+/** Pairs that make no sense apart: each is useless, or uncompilable, without the other. */
+const COMPANIONS: string[][] = [
+  ['Canvas', 'Path'],
+  ['Grid', 'Cell'],
+  ['Timeline', 'TimelineItem'],
+  ['KeyValueGroup', 'KeyValueItem'],
+]
+
+/**
+ * What the prompt should describe for a request: the core, whatever was picked,
+ * and whatever those need to be written correctly -- a parent brings the
+ * children it allows, and a companion brings the other half of its pair.
+ */
+export function selectUiComponents(picked: string[]): Set<string> {
+  let out = new Set<string>()
+  for (let n of CORE_COMPONENTS) { out.add(n) }
+  for (let n of picked) { out.add(n) }
+  let changed = true
+  while (changed) {
+    changed = false
+    for (let r of CHILD_RULES) {
+      if (!out.has(r.parent)) { continue }
+      for (let child of r.allowed) {
+        if (child !== 'When' && !out.has(child)) { out.add(child); changed = true }
+      }
+    }
+    for (let pair of COMPANIONS) {
+      if (out.has(pair[0]) !== out.has(pair[1])) {
+        out.add(pair[0]); out.add(pair[1]); changed = true
+      }
+    }
+  }
+  return out
+}
+
+/** Component names written as ui.<Name> in a program, so a refinement keeps what it already uses. */
+export function componentsUsedIn(source: string): string[] {
+  let found: string[] = []
+  for (let c of CATALOG) {
+    if (source.indexOf('ui.' + c.name + '(') >= 0) { found.push(c.name) }
+  }
+  return found
+}
+
+/** The text a component is embedded as. */
+export function componentEmbeddingText(c: ComponentSpec): string {
+  return c.name + ' -- ' + c.summary + (c.guidance.length > 0 ? ' ' + c.guidance : '')
+}
+
+function signatureLine(c: ComponentSpec): string {
+  let args: string[] = []
+  // A trailing optional argument is written in brackets, because it may be
+  // left off entirely.
+  for (let p of c.props) { args.push(p.optional ? '[' + p.name + ']' : p.name) }
+  return '  ui.' + c.name + '(' + args.join(', ') + ')  -- ' + c.summary
+}
+
+function hasIconProp(c: ComponentSpec): boolean {
+  for (let p of c.props) { if (p.kind === 'icon') { return true } }
+  return false
+}
+
+/**
+ * Signatures, styles and guidance for named components, as the answer to
+ * find_ui_component.
+ */
+export function describeComponents(names: string[]): string {
+  let lines: string[] = []
+  for (let c of CATALOG) {
+    if (names.indexOf(c.name) < 0) { continue }
+    lines.push(signatureLine(c))
+    let set = stylesFor(c.nodeKind)
+    if (set.length > 1) { lines.push('    styles: ' + set.join(' ')) }
+    if (c.guidance.length > 0) { lines.push('    ' + c.guidance) }
+  }
+  return lines.join('\n')
+}
+
+/**
+ * The catalogue section of the model's prompt, generated so it cannot drift from
+ * what the compiler accepts and the renderer draws. With a selection it
+ * describes only those components; without one, all of them.
+ */
+export function describeCatalogForPrompt(selected: Set<string> | null = null): string {
+  let shown: ComponentSpec[] = []
+  for (let c of CATALOG) {
+    if (selected === null || selected.has(c.name)) { shown.push(c) }
+  }
   let lines: string[] = []
   lines.push('UI constructors (all return ui.View):')
-  for (let c of CATALOG) {
-    let args: string[] = []
-    // A trailing optional argument is written in brackets, because it may be
-    // left off entirely.
-    for (let p of c.props) { args.push(p.optional ? '[' + p.name + ']' : p.name) }
-    lines.push('  ui.' + c.name + '(' + args.join(', ') + ')  -- ' + c.summary)
-  }
+  for (let c of shown) { lines.push(signatureLine(c)) }
   lines.push('  ui.When(condition, child)  -- child when true, nothing when false')
   lines.push('  ui.intToString(n), ui.numberToString(n), ui.booleanToString(b)')
   lines.push('')
   lines.push('Allowed styles:')
-  for (let c of CATALOG) {
+  for (let c of shown) {
     let set = stylesFor(c.nodeKind)
     if (set.length > 1) { lines.push('  ' + c.name + ': ' + set.join(' ')) }
   }
@@ -482,7 +585,7 @@ export function describeCatalogForPrompt(): string {
   // Text, because it could already do that and the signature does not say not
   // to.
   let guided: ComponentSpec[] = []
-  for (let c of CATALOG) { if (c.guidance.length > 0) { guided.push(c) } }
+  for (let c of shown) { if (c.guidance.length > 0) { guided.push(c) } }
   if (guided.length > 0) {
     lines.push('')
     lines.push('When to use each of these:')
@@ -490,19 +593,24 @@ export function describeCatalogForPrompt(): string {
       lines.push('  ui.' + c.name + ' -- ' + c.guidance)
     }
   }
-  lines.push('')
-  lines.push('Icon names (the only ones that exist):')
-  let names = iconNames()
-  let row: string[] = []
-  for (let n of names) {
-    row.push(n)
-    if (row.length === 8) { lines.push('  ' + row.join(' ')); row = [] }
+  let wantsIcons = false
+  for (let c of shown) { if (hasIconProp(c)) { wantsIcons = true } }
+  if (wantsIcons) {
+    lines.push('')
+    lines.push('Icon names (the only ones that exist):')
+    let names = iconNames()
+    let row: string[] = []
+    for (let n of names) {
+      row.push(n)
+      if (row.length === 8) { lines.push('  ' + row.join(' ')); row = [] }
+    }
+    if (row.length > 0) { lines.push('  ' + row.join(' ')) }
+    lines.push('  Pass "" where a component takes an icon and you do not want one.')
   }
-  if (row.length > 0) { lines.push('  ' + row.join(' ')) }
-  lines.push('  Pass "" where a component takes an icon and you do not want one.')
 
   let ruled: string[] = []
   for (let r of CHILD_RULES) {
+    if (selected !== null && !selected.has(r.parent)) { continue }
     if (r.allowed.length > 0) {
       ruled.push('  ' + r.parent + ' takes only ' + listWords(r.allowed) + ' children.')
     }

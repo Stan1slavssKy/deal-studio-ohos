@@ -30,6 +30,10 @@ export class GenerateRequest {
   topP: number = 0.95
   seed: number = 42
   previousSource: string = ''
+  /** std/ui components the system prompt describes; empty means all of them. */
+  uiSelected: string[] = []
+  /** Offer find_ui_component to the model. */
+  uiTool: boolean = true
 }
 
 export type TokenCallback = (token: string) => void

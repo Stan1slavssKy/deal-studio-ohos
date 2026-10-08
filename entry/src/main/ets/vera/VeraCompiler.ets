@@ -1,8 +1,6 @@
 import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter'
 import { CATALOG, ComponentSpec, ChildRule, stylesFor, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
 import { iconPath, iconNames } from './VeraIcons'
-import { IntentParam } from './VeraIntentCatalog'
-import { CALENDAR_CATALOG, calendarFnByName } from './VeraCalendarCatalog'
 import { isValidSdkTarget } from './VeraSdkIndex'
 
 // ===== AST Nodes =====
@@ -1196,13 +1194,11 @@ function buildStdStringsModule(): ModuleInterface {
 }
 
 /**
- * The one way a program reaches anything outside itself other than
- * std/calendar: the OpenHarmony system API surface (found through
+ * The one way a program reaches anything outside itself: the OpenHarmony system API surface (found through
  * find_sdk_function, VeraSdkIndex, built offline by tools/build-sdk-index.py
  * from interface_sdk-js) and device intents (found through
  * find_intent_function, VeraIntentIndex) -- both the curated, probed rows
- * that used to be a typed intent.<name> and the raw device registry that
- * always came back as intent.call. See docs/selector-design.md.
+ * and the raw device registry. See docs/selector-design.md.
  *
  *   sdk.call("CameraKit.CameraManager.setTorchMode", ["mode", "0"], "onAnswer")
  *   sdk.call("com.huawei.hmos.meetimeservice/phone_default/IntentUIAbility/SendTextMessage",
@@ -1244,32 +1240,6 @@ function buildStdSdkModule(): ModuleInterface {
       [STRING, new VeraArrayType(STRING), STRING, STRING], INT, false, 3)
   ]
   return new ModuleInterface('std/sdk', fns, [])
-}
-
-/**
- * The phone's calendar, generated from VeraCalendarCatalog.
- *
- * Deliberately not an intent: the device's CreateCalendarEvent and its
- * relatives declare no parameters and are not standard intent names, so their
- * contract would have to be invented. Calendar Kit is documented, needs no
- * system signing, and is therefore the better tool -- the same reasoning the
- * intent skill gives for preferring a public API when one exists.
- *
- * One function and one parameter class, shaped exactly like an intent row so
- * the program sees one idiom rather than two.
- */
-function buildStdCalendarModule(): ModuleInterface {
-  let fns: ExternalFunction[] = []
-  let classes: ExternalClass[] = []
-  for (let fn of CALENDAR_CATALOG) {
-    let paramsType = new VeraClassType('std/calendar:' + fn.paramsClass, fn.paramsClass)
-    for (let p of fn.params) {
-      paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
-    }
-    classes.push(new ExternalClass(fn.paramsClass, paramsType))
-    fns.push(new ExternalFunction(fn.name, [paramsType, STRING], INT, false))
-  }
-  return new ModuleInterface('std/calendar', fns, classes)
 }
 
 class Scope {
@@ -1355,7 +1325,6 @@ class Analyzer {
     registry.set('std/time', buildStdTimeModule())
     registry.set('std/math', buildStdMathModule())
     registry.set('std/strings', buildStdStringsModule())
-    registry.set('std/calendar', buildStdCalendarModule())
     registry.set('std/sdk', buildStdSdkModule())
     for (let decl of this.model.application.imports) {
       if (this.globals.find(decl.name) !== null) { this.addError('E2001', 'duplicate global ' + decl.name, decl.span); continue }
@@ -1706,7 +1675,6 @@ class Analyzer {
     }
     this.checkStyleArguments(expr, callee)
     this.checkComposition(expr, callee)
-    this.checkCalendarArguments(expr, callee)
     this.checkSdkArguments(expr, callee)
     return callee.result
   }
@@ -1775,7 +1743,7 @@ class Analyzer {
    * already been checked by the time this runs and checking them again would
    * report every mistake in them twice. The field name alone is enough: a
    * program cannot declare a namespace of its own, and no member of std/time,
-   * std/math, std/strings, std/intent or std/calendar shares a name with a
+   * std/math, std/strings or std/sdk shares a name with a
    * component.
    */
   private uiComponentName(expr: Expression): string {
@@ -1860,74 +1828,6 @@ class Analyzer {
   }
 
   /**
-   * The same idea as checkStyleArguments, for std/calendar.
-   *
-   * checkObject already rejects an unknown or missing field, so what is left is
-   * the two things a type cannot say: that a field's value comes from a closed
-   * set, and that the result handler exists and takes the answer. Both are
-   * caught here rather than at runtime, which matters more than usual -- a
-   * compile error goes back into the generation loop and the model fixes it,
-   * while a runtime trap surfaces minutes later, on a program that already
-   * looked finished.
-   *
-   * Used to also check std/intent's own typed catalogue the same way;
-   * removed along with that catalogue (buildStdIntentModule) in favour of
-   * sdk.call for every intent, catalogue row or not. checkSdkArguments is
-   * what checks an sdk.call now.
-   *
-   * Literal arguments only: a computed record or a computed handler name cannot
-   * be resolved here and is left alone.
-   */
-  private checkCalendarArguments(expr: CallExpression, callee: VeraFunctionType): void {
-    let label = ''
-    let params: IntentParam[] = []
-    const calendarPrefix = 'external:std/calendar:'
-    if (callee.identity.startsWith(calendarPrefix)) {
-      let name = callee.identity.substring(calendarPrefix.length)
-      let fn = calendarFnByName(name)
-      if (fn === null) return
-      label = 'calendar.' + name
-      params = fn!.params
-    } else {
-      return
-    }
-
-    if (expr.argumentsList.length > 0 && expr.argumentsList[0] instanceof ObjectExpression) {
-      let record = expr.argumentsList[0] as ObjectExpression
-      for (let prop of record.properties) {
-        if (!(prop.value instanceof StringExpression)) continue
-        let value = (prop.value as StringExpression).value
-        for (let p of params) {
-          if (p.name !== prop.name || p.values.length === 0) continue
-          // An empty string is how a record with no optional fields says
-          // "omit this parameter", so it is always allowed.
-          if (value.length === 0) continue
-          if (p.values.indexOf(value) < 0) {
-            this.addError('E2105', 'unknown ' + label + ' ' + p.name + ' "' + value +
-              '"; allowed: ' + p.values.join(' '), prop.value.span)
-          }
-        }
-      }
-    }
-    if (expr.argumentsList.length < 2 || !(expr.argumentsList[1] instanceof StringExpression)) return
-    let arg = expr.argumentsList[1]
-    let handlerName = (arg as StringExpression).value
-    let fn = this.model.functions.get(handlerName)
-    if (fn === undefined) {
-      this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span)
-      return
-    }
-    if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
-      this.addError('E2106', label + ' answers with a string, so "' +
-        handlerName + '" must take (state, value: string)', arg.span)
-    }
-  }
-
-  /**
-   * What little can be checked about intent.call.
-   */
-
-  /**
    * sdk.call covers two target shapes (VeraCompiler.buildStdSdkModule): an
    * intent address (bundle/module/ability/IntentName or, to just launch the
    * target, bundle/module/ability -- slash-separated and device-only, so only
@@ -1942,10 +1842,7 @@ class Analyzer {
    * loop (GeneratePage.runAttempt) gives it a chance to call the tool
    * instead. An intent-style target has no such closed set to check against
    * (the registry is read from the device, not a static artifact), so an
-   * invented one only fails silently on the phone -- the same risk a raw
-   * intent target always carried, and now every intent-style target carries
-   * it, catalogue-derived or not, since std/intent's typed catalogue no
-   * longer exists to check field values at compile time.
+   * invented one only fails silently on the phone.
    */
   private checkSdkArguments(expr: CallExpression, callee: VeraFunctionType): void {
     if (callee.identity !== 'external:std/sdk:call') return
