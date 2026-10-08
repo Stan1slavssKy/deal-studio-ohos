@@ -3,6 +3,7 @@
     "pages/Index",
     "pages/ProjectPage",
     "pages/RunnerPage",
-    "pages/GeneratePage"
+    "pages/GeneratePage",
+    "pages/ChatPage"
   ]
 }

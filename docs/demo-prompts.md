@@ -123,6 +123,58 @@ The flashlight flashes on each beat and goes off 80 ms later. The flashes are dr
 by the program's tick, not by the audio clock, so they can drift against the sound;
 check by ear and by eye. It is one button press, not a loop.
 
+## 5. Chat with widgets (a separate screen)
+
+Unlike the four above this is not typed into the Generate screen. It is the
+**Chat** button on the project list (`pages/ChatPage`): an ordinary assistant
+conversation in which a reply can carry a live mini-application, generated while
+the person waits and drawn inside the conversation, the way a chat answer can
+embed an interactive component instead of describing one.
+
+Messages to type, in one conversation:
+
+```
+We are four people and the bill is 187.40, we want to leave 12% tip. Who pays what?
+```
+```
+What is a good way to learn 20 Spanish words a week?
+```
+```
+I need to boil an egg, soft, the way I like it.
+```
+
+**How it works.** Each turn is a plain chat completion (`vera/VeraChat.ets`
+`chatReply`) whose system prompt lets the assistant end a reply with
+`<<app: ...>>`, a one-line English description of a widget. The text is shown at
+once. The description then goes through the same pipeline as the Generate screen
+(skill prompt, `find_sdk_function` / `find_intent_function`, compiler with up to
+three attempts) and the resulting program is rendered by `VeraPreview` in a
+fixed-height (520 vp) card under the message. Widget builds are queued, one at a time.
+
+**What to check, and what a phone run showed.**
+- The first message gives a text answer and a split-the-bill widget with 187.40,
+  four people and 12% already in it (total 209.88, 52.47 each, matching the
+  text). Tapping "+" on people moved 4 to 5 and the figures redrew. One build
+  failed to compile on the first attempt and passed on the second, so expect
+  about a minute.
+- The second is expected to get text, and a widget is acceptable: the model
+  usually adds a weekly tracker (Learned 0/20, four sets to tick off). The system
+  prompt says "never for something a sentence answers" and it does not reliably
+  hold; it was left as it is, as good enough for a demo.
+- The third gets a soft-boiled egg timer with presets and a countdown that really
+  ticks (337 s, then 321 s sixteen seconds later).
+- A failed build shows the error under the reply instead of leaving a spinner;
+  this was seen when the phone lost Wi-Fi mid-build. The conversation continues.
+- The conversation is not saved, and neither is a widget's state: leaving the
+  screen discards both.
+- The widget scrolls inside its 520 vp card, which sits inside the message list;
+  no fight between the two was seen on ordinary use, but drags were not stressed.
+  Generated layouts are not checked for fit, so a label can wrap badly ("Thursd /
+  ay" in a half-width tile).
+
+Run on a phone (debug-signed as a system app, DeepSeek key stored): the Chat
+button on the project list opens the screen.
+
 ## What none of the prompts say
 
 None of them mentions `intent`, `calendar`, a bundle name or a parameter. The model
