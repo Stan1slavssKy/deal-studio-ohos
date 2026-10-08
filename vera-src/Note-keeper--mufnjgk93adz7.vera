@@ -1,0 +1,183 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+import * as strings from "std/strings"
+import * as intent from "std/intent"
+
+@jsonable
+class Note {
+  title: string;
+  body: string;
+  month: int;
+  dayOfMonth: int;
+  minute: int;
+}
+
+@jsonable
+class AppState {
+  notes: Note[];
+  draftTitle: string;
+  draftBody: string;
+  selected: int;
+  lastResult: string;
+  lastShown: string;
+}
+
+function init(): AppState {
+  let empty: Note[] = [];
+  return {notes: empty, draftTitle: "", draftBody: "", selected: -1, lastResult: "", lastShown: ""};
+}
+
+function setTitle(state: AppState, value: string): AppState {
+  return {notes: state.notes, draftTitle: value, draftBody: state.draftBody, selected: state.selected, lastResult: state.lastResult, lastShown: state.lastShown};
+}
+
+function setBody(state: AppState, value: string): AppState {
+  return {notes: state.notes, draftTitle: state.draftTitle, draftBody: value, selected: state.selected, lastResult: state.lastResult, lastShown: state.lastShown};
+}
+
+function create(state: AppState, ignored: int): AppState {
+  if (state.draftTitle.length() === 0) {
+    return {notes: state.notes, draftTitle: state.draftTitle, draftBody: state.draftBody, selected: state.selected, lastResult: "Give the note a title first.", lastShown: state.lastShown};
+  }
+  let note: Note = {
+    title: state.draftTitle,
+    body: state.draftBody,
+    month: time.monthOfYear(),
+    dayOfMonth: time.dayOfMonth(),
+    minute: time.hourOfDay() * 60 + time.minuteOfHour()
+  };
+  state.notes.push(note);
+  return {notes: state.notes, draftTitle: "", draftBody: "", selected: state.notes.length() - 1, lastResult: "Note saved.", lastShown: state.lastShown};
+}
+
+function select(state: AppState, index: int): AppState {
+  if (index < 0 || index >= state.notes.length()) {
+    return state;
+  }
+  let n: Note = state.notes[index];
+  return {notes: state.notes, draftTitle: n.title, draftBody: n.body, selected: index, lastResult: "Editing \"" + n.title + "\".", lastShown: state.lastShown};
+}
+
+function update(state: AppState, ignored: int): AppState {
+  if (state.selected < 0 || state.selected >= state.notes.length()) {
+    return {notes: state.notes, draftTitle: state.draftTitle, draftBody: state.draftBody, selected: state.selected, lastResult: "Pick a note to change first.", lastShown: state.lastShown};
+  }
+  let old: Note = state.notes[state.selected];
+  let changed: Note = {
+    title: state.draftTitle,
+    body: state.draftBody,
+    month: old.month,
+    dayOfMonth: old.dayOfMonth,
+    minute: old.minute
+  };
+  state.notes[state.selected] = changed;
+  return {notes: state.notes, draftTitle: state.draftTitle, draftBody: state.draftBody, selected: state.selected, lastResult: "Note changed.", lastShown: state.lastShown};
+}
+
+function remove(state: AppState, ignored: int): AppState {
+  if (state.selected < 0 || state.selected >= state.notes.length()) {
+    return {notes: state.notes, draftTitle: state.draftTitle, draftBody: state.draftBody, selected: state.selected, lastResult: "Pick a note to throw away first.", lastShown: state.lastShown};
+  }
+  let kept: Note[] = [];
+  let i: int = 0;
+  while (i < state.notes.length()) {
+    if (i !== state.selected) {
+      kept.push(state.notes[i]);
+    }
+    i = i + 1;
+  }
+  return {notes: kept, draftTitle: "", draftBody: "", selected: -1, lastResult: "Note thrown away.", lastShown: ""};
+}
+
+function recall(state: AppState, ignored: int): AppState {
+  if (state.selected < 0 || state.selected >= state.notes.length()) {
+    return {notes: state.notes, draftTitle: state.draftTitle, draftBody: state.draftBody, selected: state.selected, lastResult: "Pick a note to read again first.", lastShown: state.lastShown};
+  }
+  let n: Note = state.notes[state.selected];
+  let text: string = n.title + " -- " + n.body;
+  return {notes: state.notes, draftTitle: state.draftTitle, draftBody: state.draftBody, selected: state.selected, lastResult: "Reading it back.", lastShown: text};
+}
+
+function share(state: AppState, ignored: int): AppState {
+  if (state.selected < 0 || state.selected >= state.notes.length()) {
+    return {notes: state.notes, draftTitle: state.draftTitle, draftBody: state.draftBody, selected: state.selected, lastResult: "Pick a note to pass on first.", lastShown: state.lastShown};
+  }
+  let n: Note = state.notes[state.selected];
+  intent.call("com.huawei.hmos.notepad/NotepadPhone/InsightIntentAbility/CreateNote",
+    ["title", n.title, "content", n.body], "background", "onShareAnswer");
+  return {notes: state.notes, draftTitle: state.draftTitle, draftBody: state.draftBody, selected: state.selected, lastResult: "Passing the note on...", lastShown: state.lastShown};
+}
+
+function onShareAnswer(state: AppState, value: string): AppState {
+  return {notes: state.notes, draftTitle: state.draftTitle, draftBody: state.draftBody, selected: state.selected, lastResult: value, lastShown: state.lastShown};
+}
+
+function view(state: AppState): ui.View {
+  let count: int = state.notes.length();
+
+  let rows: ui.View[] = [];
+  let i: int = count - 1;
+  while (i >= 0) {
+    let n: Note = state.notes[i];
+    let subtitle: string = n.body;
+    if (strings.length(subtitle) > 40) {
+      subtitle = strings.substring(subtitle, 0, 40) + "...";
+    }
+    rows.push(ui.ListItem("default", n.title, subtitle,
+      ui.intToString(n.month) + "/" + ui.intToString(n.dayOfMonth),
+      "select", i, true, "list"));
+    i = i - 1;
+  }
+
+  let editing: boolean = state.selected >= 0 && state.selected < count;
+
+  let editorLabel: string = "New note";
+  if (editing) {
+    editorLabel = "Changing note " + ui.intToString(state.selected + 1);
+  }
+
+  return ui.AppTheme("editorial", "", [
+    ui.Header("default", "Note keeper", "NOTES", "Write it, change it, read it again, pass it on, throw it away", "list"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.IntStat("default", "Notes", count, "", "", 1, "", "list"),
+        ui.IntStat("accent", "Editing", state.selected + 1, "#", "", 1, "", "check")
+      ])
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", editorLabel, "Type a title and some words", ""),
+      ui.TextField("default", "Title", state.draftTitle, "setTitle"),
+      ui.TextField("multiline", "Words", state.draftBody, "setBody"),
+      ui.ActionBar("end", [
+        ui.Button("primary", "Make a note", "create", 0, true)
+      ])
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "The note in hand", "Change it, read it again, pass it on, throw it away", ""),
+      ui.When(!editing,
+        ui.InsetBanner("default", "No note picked", "Tap a note below to change it, read it again, pass it on or throw it away.", "", "", "info")),
+      ui.When(editing,
+        ui.ActionBar("end", [
+          ui.IconButton("secondary", "trash", "Throw away", "remove", 0, true),
+          ui.IconButton("secondary", "navigate", "Pass on", "share", 0, true),
+          ui.IconButton("secondary", "list", "Read it again", "recall", 0, true),
+          ui.Button("primary", "Change note", "update", 0, true)
+        ])),
+      ui.When(state.lastShown.length() > 0,
+        ui.Card("surface", [
+          ui.SectionHeader("accent", "Read again", "The note as it stands", ""),
+          ui.Text("body", state.lastShown),
+          ui.ClockText("caption", state.notes[state.selected].minute, "saved at ", "")
+        ])),
+      ui.When(state.lastResult.length() > 0,
+        ui.InsetBanner("default", "Last action", state.lastResult, "", "", "info"))
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "All notes", "Newest first", ui.intToString(count)),
+      ui.When(count === 0,
+        ui.EmptyState("default", "No notes yet",
+          "Type a title and some words, then make your first note.", "", "", "list")),
+      ui.When(count > 0, ui.ListGroup("default", "", rows))
+    ])
+  ]);
+}

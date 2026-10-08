@@ -1,0 +1,208 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+
+@jsonable
+class AppState {
+  timerTotal: int;
+  timerRemaining: int;
+  timerRunning: boolean;
+  stopwatchMs: int;
+  stopwatchRunning: boolean;
+  lastAnswer: string;
+}
+
+function init(): AppState {
+  return {
+    timerTotal: 300,
+    timerRemaining: 300,
+    timerRunning: false,
+    stopwatchMs: 0,
+    stopwatchRunning: false,
+    lastAnswer: ""
+  };
+}
+
+function setTimer(state: AppState, value: int): AppState {
+  return {
+    timerTotal: value,
+    timerRemaining: value,
+    timerRunning: false,
+    stopwatchMs: state.stopwatchMs,
+    stopwatchRunning: state.stopwatchRunning,
+    lastAnswer: state.lastAnswer
+  };
+}
+
+function startTimer(state: AppState, ignored: int): AppState {
+  return {
+    timerTotal: state.timerTotal,
+    timerRemaining: state.timerRemaining,
+    timerRunning: true,
+    stopwatchMs: state.stopwatchMs,
+    stopwatchRunning: state.stopwatchRunning,
+    lastAnswer: state.lastAnswer
+  };
+}
+
+function pauseTimer(state: AppState, ignored: int): AppState {
+  return {
+    timerTotal: state.timerTotal,
+    timerRemaining: state.timerRemaining,
+    timerRunning: false,
+    stopwatchMs: state.stopwatchMs,
+    stopwatchRunning: state.stopwatchRunning,
+    lastAnswer: state.lastAnswer
+  };
+}
+
+function resetTimer(state: AppState, ignored: int): AppState {
+  return {
+    timerTotal: state.timerTotal,
+    timerRemaining: state.timerTotal,
+    timerRunning: false,
+    stopwatchMs: state.stopwatchMs,
+    stopwatchRunning: state.stopwatchRunning,
+    lastAnswer: state.lastAnswer
+  };
+}
+
+function discardTimer(state: AppState, ignored: int): AppState {
+  return {
+    timerTotal: 0,
+    timerRemaining: 0,
+    timerRunning: false,
+    stopwatchMs: state.stopwatchMs,
+    stopwatchRunning: state.stopwatchRunning,
+    lastAnswer: state.lastAnswer
+  };
+}
+
+function startStopwatch(state: AppState, ignored: int): AppState {
+  return {
+    timerTotal: state.timerTotal,
+    timerRemaining: state.timerRemaining,
+    timerRunning: state.timerRunning,
+    stopwatchMs: state.stopwatchMs,
+    stopwatchRunning: true,
+    lastAnswer: state.lastAnswer
+  };
+}
+
+function pauseStopwatch(state: AppState, ignored: int): AppState {
+  return {
+    timerTotal: state.timerTotal,
+    timerRemaining: state.timerRemaining,
+    timerRunning: state.timerRunning,
+    stopwatchMs: state.stopwatchMs,
+    stopwatchRunning: false,
+    lastAnswer: state.lastAnswer
+  };
+}
+
+function resetStopwatch(state: AppState, ignored: int): AppState {
+  return {
+    timerTotal: state.timerTotal,
+    timerRemaining: state.timerRemaining,
+    timerRunning: state.timerRunning,
+    stopwatchMs: 0,
+    stopwatchRunning: false,
+    lastAnswer: state.lastAnswer
+  };
+}
+
+function onTick(state: AppState, elapsedMs: int): AppState {
+  let remaining: int = state.timerRemaining;
+  let running: boolean = state.timerRunning;
+  if (running) {
+    remaining = remaining - elapsedMs;
+    if (remaining <= 0) {
+      remaining = 0;
+      running = false;
+    }
+  }
+
+  let sw: int = state.stopwatchMs;
+  if (state.stopwatchRunning) {
+    sw = sw + elapsedMs;
+  }
+
+  return {
+    timerTotal: state.timerTotal,
+    timerRemaining: remaining,
+    timerRunning: running,
+    stopwatchMs: sw,
+    stopwatchRunning: state.stopwatchRunning,
+    lastAnswer: state.lastAnswer
+  };
+}
+
+function view(state: AppState): ui.View {
+  let totalSeconds: int = state.timerRemaining / 1000;
+  let totalMinutes: int = totalSeconds / 60;
+  let secondsPart: int = totalSeconds % 60;
+
+  let swSeconds: int = state.stopwatchMs / 1000;
+  let swTenths: int = (state.stopwatchMs % 1000) / 100;
+  let swMinutes: int = swSeconds / 60;
+  let swSecs: int = swSeconds % 60;
+
+  let timerStatus: string = "Paused";
+  if (state.timerRunning) {
+    timerStatus = "Running";
+  }
+  if (state.timerTotal === 0) {
+    timerStatus = "No timer set";
+  }
+
+  let swStatus: string = "Paused";
+  if (state.stopwatchRunning) {
+    swStatus = "Running";
+  }
+
+  return ui.AppTheme("technical", "", [
+    ui.Header("default", "Kitchen Timer", "TIMERS", "A countdown and a stopwatch, side by side", "clock"),
+    ui.Ticker("default", "tick", 100, true, "onTick"),
+
+    ui.Section("hero", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.IntStat("accent", "Timer left", totalSeconds, "", " s", 1, timerStatus, "clock"),
+        ui.IntStat("default", "Stopwatch", swSeconds, "", " s", 1, swStatus, "chart")
+      ])
+    ]),
+
+    ui.Section("content", "Timer", "Counts down the minutes you set", [
+      ui.IntField("default", "Minutes", state.timerTotal / 60000, 1, 180, "setTimer"),
+      ui.Row("spacious", [
+        ui.Text("caption", "Remaining"),
+        ui.IntText("metric", totalMinutes, "", ":", 2),
+        ui.IntText("metric", secondsPart, "", "", 2)
+      ]),
+      ui.Progress("accent", "", state.timerTotal - state.timerRemaining, state.timerTotal),
+      ui.ActionBar("end", [
+        ui.IconButton("secondary", "close", "Throw the timer away", "discardTimer", 0, true),
+        ui.IconButton("secondary", "minus", "Reset the timer", "resetTimer", 0, true),
+        ui.Button("secondary", "Pause", "pauseTimer", 0, state.timerRunning),
+        ui.Button("primary", "Start", "startTimer", 0, !state.timerRunning && state.timerTotal > 0)
+      ])
+    ]),
+
+    ui.Section("content", "Stopwatch", "Counts up until you stop it", [
+      ui.Row("spacious", [
+        ui.IntText("metric", swMinutes, "", ":", 2),
+        ui.IntText("metric", swSecs, "", "", 2),
+        ui.IntText("metric", swTenths, ".", "", 1)
+      ]),
+      ui.ActionBar("end", [
+        ui.IconButton("secondary", "minus", "Reset the stopwatch", "resetStopwatch", 0, true),
+        ui.Button("secondary", "Pause", "pauseStopwatch", 0, state.stopwatchRunning),
+        ui.Button("primary", "Start", "startStopwatch", 0, !state.stopwatchRunning)
+      ])
+    ]),
+
+    ui.Section("supporting", "", "", [
+      ui.InsetBanner("default", "How it works",
+        "The timer counts down from the minutes you set and stops at zero. The stopwatch counts up. Both keep running while the app is closed.",
+        "", "", "info")
+    ])
+  ]);
+}

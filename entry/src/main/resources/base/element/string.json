@@ -17,6 +17,10 @@
       "value": "Read your calendar so a generated app can show what is already scheduled"
     },
     {
+      "name": "record_audio_reason",
+      "value": "Record audio to a private file when a generated app asks"
+    },
+    {
       "name": "write_calendar_reason",
       "value": "Add reminders to your calendar when a generated app asks"
     }

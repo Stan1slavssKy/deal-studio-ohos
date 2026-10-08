@@ -145,6 +145,28 @@ function modeName(mode: number): string {
   return mode === 0 ? 'foreground' : mode === 1 ? 'background' : 'other'
 }
 
+/**
+ * The words of a request, for matching against an intent name.
+ *
+ * Splitting on spaces alone is not enough, and the difference is not small: a
+ * request ending "look through my contacts, and add one" carries the token
+ * "contacts," which is a substring of nothing, so all eight of the Contacts
+ * app's intents score zero and none of them reaches the prompt. Every sentence
+ * a person writes has commas in it, and the keyword is usually the last word of
+ * its clause, which is exactly where the comma goes.
+ *
+ * So anything that is not a letter or a digit separates words. Short words are
+ * still dropped by the caller, not here.
+ */
+export function requestWords(request: string): string[] {
+  let cleaned = request.toLowerCase().replace(new RegExp('[^a-z0-9]+', 'g'), ' ')
+  let words: string[] = []
+  for (let word of cleaned.split(' ')) {
+    if (word.length > 0) { words.push(word) }
+  }
+  return words
+}
+
 /** How many intents were found, for the log and the status line. */
 export function registrySize(): number { return cache.length }
 
@@ -177,8 +199,9 @@ export function describeTargetsForPrompt(chosen: string[], request: string,
       lines.push(line); used = used + line.length; taken.push(target)
     }
   }
-  // The lexical tail, ranked the way it always was.
-  let words = request.toLowerCase().split(' ')
+  // The lexical tail: every word of the request that is long enough to mean
+  // something, scored against the name and the bundle.
+  let words = requestWords(request)
   let scored: RegistryEntry[] = []
   let scores: Map<string, number> = new Map<string, number>()
   for (let entry of cache) {
@@ -241,7 +264,7 @@ export function describeRegistryForPrompt(domains: string[], request: string, li
     if (domains.length === 0 || domains.indexOf(entry.domain) >= 0) { wanted.push(entry) }
   }
   if (wanted.length === 0) { return '' }
-  let words = request.toLowerCase().split(' ')
+  let words = requestWords(request)
   let scored: RegistryEntry[] = []
   let scores: Map<string, number> = new Map<string, number>()
   for (let entry of wanted) {

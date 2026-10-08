@@ -22,3 +22,16 @@ rows.ets.txt
 *.hap
 *.hsp
 insight_intent*.db
+
+# Python bytecode from the host-side tools.
+__pycache__/
+
+# llama.cpp source -- cloned per entry/src/main/cpp/CMakeLists.txt's own
+# comment (`git clone --depth 1 https://github.com/ggml-org/llama.cpp`), not
+# vendored. Same for its native build cache.
+entry/src/main/cpp/llama.cpp/
+entry/src/main/cpp/build-host/
+
+# GGUF model weights -- downloaded on first run (LlamaEngine.ets,
+# VeraEmbeddings.ets), never committed.
+*.gguf

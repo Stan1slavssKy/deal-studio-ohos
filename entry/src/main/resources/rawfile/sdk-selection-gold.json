@@ -1,0 +1,281 @@
+[
+ {
+  "id": "b01",
+  "split": "dev",
+  "need": "read the current battery level",
+  "gold": {
+   "BasicServicesKit.Battery.getStatus": 1
+  },
+  "note": "deprecated; batteryInfo.batterySOC is a constant, not in the index"
+ },
+ {
+  "id": "b02",
+  "split": "dev",
+  "need": "turn on the phone flashlight torch",
+  "gold": {
+   "CameraKit.CameraManager.setTorchMode": 2
+  },
+  "note": ""
+ },
+ {
+  "id": "b03",
+  "split": "dev",
+  "need": "turn Bluetooth on or off",
+  "gold": {
+   "ConnectivityKit.access.enableBluetooth": 2,
+   "ConnectivityKit.access.enableBluetoothAsync": 2,
+   "ConnectivityKit.access.disableBluetooth": 2,
+   "ConnectivityKit.bluetooth.enableBluetooth": 1,
+   "ConnectivityKit.bluetoothManager.enableBluetooth": 1
+  },
+  "note": "needs an on and an off call"
+ },
+ {
+  "id": "b04",
+  "split": "dev",
+  "need": "take a photo with the camera",
+  "gold": {
+   "CameraKit.PhotoOutput.capture": 2
+  },
+  "note": ""
+ },
+ {
+  "id": "b05",
+  "split": "dev",
+  "need": "start turn by turn navigation to a destination address",
+  "gold": {},
+  "note": "no SDK call; belongs to find_intent_function"
+ },
+ {
+  "id": "b06",
+  "split": "dev",
+  "need": "read the current weather forecast for my location",
+  "gold": {},
+  "note": "no weather API in the index"
+ },
+ {
+  "id": "b07a",
+  "split": "dev",
+  "need": "scan a QR code with the camera and return the decoded text",
+  "gold": {},
+  "note": "no scanner API in the index"
+ },
+ {
+  "id": "b07b",
+  "split": "dev",
+  "need": "scan a barcode or QR code using the camera",
+  "gold": {},
+  "note": "no scanner API in the index"
+ },
+ {
+  "id": "b08a",
+  "split": "dev",
+  "need": "vibrate the phone",
+  "gold": {
+   "SensorServiceKit.vibrator.startVibration": 2,
+   "SensorServiceKit.Vibrator.vibrate": 1
+  },
+  "note": ""
+ },
+ {
+  "id": "b08b",
+  "split": "dev",
+  "need": "show a notification",
+  "gold": {
+   "NotificationKit.notificationManager.publish": 2
+  },
+  "note": ""
+ },
+ {
+  "id": "b09",
+  "split": "dev",
+  "need": "check whether the phone is currently connected to WiFi",
+  "gold": {
+   "ConnectivityKit.wifiManager.getLinkedInfo": 2,
+   "ConnectivityKit.wifiManager.isWifiActive": 1
+  },
+  "note": "isWifiActive means Wi-Fi is on, not connected"
+ },
+ {
+  "id": "b10a",
+  "split": "dev",
+  "need": "record a short voice memo from the microphone",
+  "gold": {
+   "AudioKit.audio.createAudioCapturer": 2,
+   "AudioKit.AudioCapturer.start": 1,
+   "MediaKit.media.createAVRecorder": 1
+  },
+  "note": ""
+ },
+ {
+  "id": "b10b",
+  "split": "dev",
+  "need": "play back a recorded audio file",
+  "gold": {
+   "MediaKit.media.createAVPlayer": 2,
+   "MediaKit.AVPlayer.play": 1
+  },
+  "note": ""
+ },
+ {
+  "id": "g01",
+  "split": "test",
+  "need": "turn Bluetooth on",
+  "gold": {
+   "ConnectivityKit.access.enableBluetooth": 2,
+   "ConnectivityKit.access.enableBluetoothAsync": 2,
+   "ConnectivityKit.bluetooth.enableBluetooth": 1,
+   "ConnectivityKit.bluetoothManager.enableBluetooth": 1
+  },
+  "note": ""
+ },
+ {
+  "id": "g02",
+  "split": "test",
+  "need": "turn Bluetooth off",
+  "gold": {
+   "ConnectivityKit.access.disableBluetooth": 2
+  },
+  "note": ""
+ },
+ {
+  "id": "g03",
+  "split": "test",
+  "need": "read the current location",
+  "gold": {
+   "LocationKit.geoLocationManager.getCurrentLocation": 2,
+   "LocationKit.geolocation.getCurrentLocation": 1
+  },
+  "note": ""
+ },
+ {
+  "id": "g04",
+  "split": "test",
+  "need": "set the media volume",
+  "gold": {
+   "AudioKit.AudioManager.setVolume": 1
+  },
+  "note": "only deprecated option; the non-deprecated one is system-only"
+ },
+ {
+  "id": "t01",
+  "split": "test",
+  "need": "copy text to the clipboard",
+  "gold": {
+   "BasicServicesKit.SystemPasteboard.setData": 2
+  },
+  "note": ""
+ },
+ {
+  "id": "t02",
+  "split": "test",
+  "need": "read the text on the clipboard",
+  "gold": {
+   "BasicServicesKit.SystemPasteboard.getData": 2
+  },
+  "note": ""
+ },
+ {
+  "id": "t03",
+  "split": "test",
+  "need": "show the name of the Wi-Fi network I am connected to",
+  "gold": {
+   "ConnectivityKit.wifiManager.getLinkedInfo": 2
+  },
+  "note": ""
+ },
+ {
+  "id": "t04",
+  "split": "test",
+  "need": "make a phone call to a number",
+  "gold": {
+   "TelephonyKit.call.makeCall": 2
+  },
+  "note": ""
+ },
+ {
+  "id": "t05",
+  "split": "test",
+  "need": "cancel a notification I showed earlier",
+  "gold": {
+   "NotificationKit.notificationManager.cancel": 2
+  },
+  "note": ""
+ },
+ {
+  "id": "t06",
+  "split": "test",
+  "need": "check whether the phone is charging",
+  "gold": {
+   "BasicServicesKit.Battery.getStatus": 1
+  },
+  "note": "same caveat as b01"
+ },
+ {
+  "id": "t07",
+  "split": "test",
+  "need": "show how much free storage space is left",
+  "gold": {},
+  "note": "only systemapi (getFreeSizeSync) exists; no app-usable answer"
+ },
+ {
+  "id": "t08",
+  "split": "test",
+  "need": "send a text message to a contact",
+  "gold": {},
+  "note": "no SMS API in the index; belongs to the intent side"
+ },
+ {
+  "id": "t09",
+  "split": "test",
+  "need": "set the screen brightness",
+  "gold": {},
+  "note": "only systemapi setValue; no app-usable answer"
+ },
+ {
+  "id": "n01",
+  "split": "test",
+  "need": "a counter that adds one each time the button is tapped",
+  "gold": {},
+  "note": "negative: no SDK"
+ },
+ {
+  "id": "n02",
+  "split": "test",
+  "need": "a timer that counts down from sixty seconds",
+  "gold": {},
+  "note": "negative: no SDK"
+ },
+ {
+  "id": "n03",
+  "split": "test",
+  "need": "change the background colour of the screen to blue",
+  "gold": {},
+  "note": "negative: UI only"
+ },
+ {
+  "id": "n04",
+  "split": "test",
+  "need": "show a scrollable list of items with a search box",
+  "gold": {},
+  "note": "negative: UI only"
+ },
+ {
+  "id": "a01",
+  "split": "dev",
+  "need": "play a beep or tone through the speaker",
+  "gold": {
+   "AudioKit.AudioRenderer.write": 1
+  },
+  "note": "added after a generation picked AVPlayer.play (needs a url) for 'SOS signal music'; write is deprecated since 11 (writeData event), but it is the one with an adapter that takes generated samples"
+ },
+ {
+  "id": "a02",
+  "split": "dev",
+  "need": "play an audio file from a url",
+  "gold": {
+   "MediaKit.AVPlayer.play": 2
+  },
+  "note": "added with a01; the counterpart that AVPlayer.play is right for"
+ }
+]

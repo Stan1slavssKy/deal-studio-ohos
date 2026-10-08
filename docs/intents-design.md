@@ -1,10 +1,13 @@
 # Intents: how VERA uses them, what can go wrong, how the model learns them
 
-A generated program reaches other apps through `std/intent`. This note says how
-that mechanism works on the device, what the device actually offers, why it is
-not safe on its own, and how the model is told which intents exist and what
-they take. It is a design, not a description of what is built: section 8 lists
-what the current code already does and what is still to do.
+A generated program reaches other apps through `sdk.call` (`std/sdk`) -- until
+a later commit retired it, this was `std/intent`'s own typed catalogue and its
+raw `call`, and most of what follows still describes the same underlying
+mechanism under that older name. This note says how that mechanism works on
+the device, what the device actually offers, why it is not safe on its own,
+and how the model is told which intents exist and what they take. It is a
+design, not a description of what is built: section 8 lists what the current
+code already does and what is still to do.
 
 Decided so far:
 

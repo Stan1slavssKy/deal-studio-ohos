@@ -1,0 +1,1 @@
+Note keeper: I type a title and some words, and buttons make a note of it, change that note, see it again, pass it on and throw it away.

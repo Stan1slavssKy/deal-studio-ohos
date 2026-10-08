@@ -1,0 +1,169 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+import * as calendar from "std/calendar"
+
+@jsonable
+class AppState {
+  pickupMinute: int;
+  elapsedMs: int;
+  running: boolean;
+  calMessage: string;
+  day: int;
+}
+
+function init(): AppState {
+  let nowMinute: int = time.hourOfDay() * 60 + time.minuteOfHour();
+  return {
+    pickupMinute: nowMinute + 20,
+    elapsedMs: 0,
+    running: true,
+    calMessage: "",
+    day: time.daysSinceEpoch()
+  };
+}
+
+function onTick(state: AppState, elapsed: int): AppState {
+  let today: int = time.daysSinceEpoch();
+  if (today !== state.day) {
+    let freshMinute: int = time.hourOfDay() * 60 + time.minuteOfHour();
+    return {
+      pickupMinute: freshMinute + 20,
+      elapsedMs: 0,
+      running: true,
+      calMessage: state.calMessage,
+      day: today
+    };
+  }
+  if (!state.running) {
+    return state;
+  }
+  let total: int = state.elapsedMs + elapsed;
+  if (total > 1200000) {
+    total = 1200000;
+  }
+  return {
+    pickupMinute: state.pickupMinute,
+    elapsedMs: total,
+    running: state.running,
+    calMessage: state.calMessage,
+    day: state.day
+  };
+}
+
+function setPickup(state: AppState, value: int): AppState {
+  return {
+    pickupMinute: value,
+    elapsedMs: state.elapsedMs,
+    running: state.running,
+    calMessage: state.calMessage,
+    day: state.day
+  };
+}
+
+function toggleRun(state: AppState, value: boolean): AppState {
+  return {
+    pickupMinute: state.pickupMinute,
+    elapsedMs: state.elapsedMs,
+    running: value,
+    calMessage: state.calMessage,
+    day: state.day
+  };
+}
+
+function reset(state: AppState, ignored: int): AppState {
+  let nowMinute: int = time.hourOfDay() * 60 + time.minuteOfHour();
+  return {
+    pickupMinute: nowMinute + 20,
+    elapsedMs: 0,
+    running: true,
+    calMessage: state.calMessage,
+    day: time.daysSinceEpoch()
+  };
+}
+
+function addToCalendar(state: AppState, ignored: int): AppState {
+  calendar.addEvent({
+    title: "Забрать ребёнка",
+    hour: state.pickupMinute / 60,
+    minute: state.pickupMinute % 60,
+    durationMinutes: 20,
+    remindBefore: 10,
+    repeat: "once"
+  }, "onCalendarAnswer");
+  return state;
+}
+
+function onCalendarAnswer(state: AppState, value: string): AppState {
+  return {
+    pickupMinute: state.pickupMinute,
+    elapsedMs: state.elapsedMs,
+    running: state.running,
+    calMessage: value,
+    day: state.day
+  };
+}
+
+function view(state: AppState): ui.View {
+  let totalSeconds: int = state.elapsedMs / 1000;
+  let remainingSeconds: int = 1200 - totalSeconds;
+  if (remainingSeconds < 0) {
+    remainingSeconds = 0;
+  }
+  let remainingMinutes: int = remainingSeconds / 60;
+  let remainingSecs: int = remainingSeconds % 60;
+
+  let leaveMinute: int = state.pickupMinute - 10;
+  let nowMinute: int = time.hourOfDay() * 60 + time.minuteOfHour();
+  let minutesToLeave: int = leaveMinute - nowMinute;
+
+  let statusText: string = "Запас есть — можно не спешить";
+  if (remainingSeconds <= 300) {
+    statusText = "Пора собираться и выходить";
+  }
+  if (remainingSeconds === 0) {
+    statusText = "Время вышло";
+  }
+
+  return ui.AppTheme("soft", "", [
+    ui.Ticker("default", "clock", 1000, state.running, "onTick"),
+    ui.Header("default", "Забрать ребёнка", "СЕГОДНЯ",
+      "Главное сейчас — не опоздать", "clock"),
+
+    ui.Section("hero", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.IntStat("accent", "Осталось минут", remainingMinutes, "", "", 1, "", "clock"),
+        ui.IntStat("default", "Секунд", remainingSecs, "", "", 2, "", "")
+      ]),
+      ui.Progress("accent", "", totalSeconds, 1200),
+      ui.Text("body", statusText)
+    ]),
+
+    ui.Section("supporting", "", "", [
+      ui.Row("split", [
+        ui.Text("caption", "Забрать ребёнка в"),
+        ui.ClockText("heading", state.pickupMinute, "", "")
+      ]),
+      ui.Row("split", [
+        ui.Text("caption", "Выйти из дома не позже"),
+        ui.ClockText("heading", leaveMinute, "", "")
+      ]),
+      ui.Spacer("small"),
+      ui.When(minutesToLeave <= 10,
+        ui.InsetBanner("warning", "Скоро выходить",
+          "До выхода осталось " + ui.intToString(minutesToLeave) + " мин.",
+          "", "", "warning")),
+      ui.When(state.calMessage !== "",
+        ui.InsetBanner("default", "Календарь", state.calMessage, "", "", "calendar"))
+    ]),
+
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Настройки", "Время можно поправить", ""),
+      ui.TimeField("default", "Когда забрать", state.pickupMinute, "setPickup"),
+      ui.Toggle("default", "Отсчёт идёт", state.running, "toggleRun"),
+      ui.ActionBar("end", [
+        ui.IconButton("secondary", "calendar", "Напомнить в календаре", "addToCalendar", 0, true),
+        ui.Button("primary", "Начать заново", "reset", 0, true)
+      ])
+    ])
+  ]);
+}

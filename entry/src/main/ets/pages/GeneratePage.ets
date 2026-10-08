@@ -12,12 +12,22 @@ import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
-import { describeIntentsForPrompt } from '../vera/VeraIntentCatalog'
-import { selectDomains, selectTargets, Selection, TargetChoice, everything } from '../vera/JevSelector'
-import { loadRegistry, describeTargetsForPrompt, registrySize } from '../vera/VeraIntentRegistry'
+import { ensureUiEmbeddings } from '../vera/VeraUiIndex'
+import { loadRegistry } from '../vera/VeraIntentRegistry'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
-import { describeCalendarForPrompt } from '../vera/VeraCalendarCatalog'
+import { loadSdkIndex } from '../vera/VeraSdkIndex'
+import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL } from '../vera/VeraEmbeddings'
+import { ensureSdkEmbeddings, sdkEmbeddingsReady } from '../vera/VeraSdkEmbeddingCache'
+import { ensureIntentEmbeddings, intentEmbeddingsReady } from '../vera/VeraIntentEmbeddingCache'
+import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchmark'
+import { sdkSearchRequested, runSdkSearchProbe } from '../vera/VeraSdkProbe'
+import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
+import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
+import { selectUiForPrompt, UI_SELECT_FULL, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
+import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 
+/** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
+const UI_SELECT_MODE: string = UI_SELECT_FULL
 const MAX_RETRIES: number = 3
 // vera-server's address is not written down here. It lives in settings, given
 // the same way as the API key -- `--ps veraServer http://host:port` -- because
@@ -210,10 +220,12 @@ struct GeneratePage {
   @State attempts: AttemptMetrics[] = []
   @State totalMs: number = 0
   private systemPrompt: string = ''
-  /** The skill with every catalogue but the intents spliced in. */
+  /** The skill with std/ui spliced in. */
   private promptTemplate: string = ''
-  /** What the selection step decided, shown while generating. */
-  @State selectionNote: string = ''
+  /** The skill before {{UI_CATALOG}} is filled in, so each request can choose what to describe. */
+  private skillText: string = ''
+  /** Components the current system prompt describes; empty means all of them. */
+  private uiSelected: string[] = []
   private grammar: string = ''
   private previousSource: string = ''
   private genStartTime: number = 0
@@ -265,23 +277,51 @@ struct GeneratePage {
           extra.problems.join('; '))
       }
       let skill = await loadRawfileText(mgr, 'vera-skill.txt')
-      // The UI and calendar catalogues are the same for every request, so they
-      // are spliced in once. The intent catalogue is not: which rows a request
-      // needs depends on what the person asked for, and that is decided per
-      // generation, in startGenerate below. {{INTENT_CATALOG}} therefore stays
-      // in the template until then.
+      // The UI catalogue is the same for every request, so it is spliced in
+      // once. The intent catalogue is not spliced at
+      // all any more: find_intent_function (DeepSeekEngine.ets,
+      // VeraIntentIndex.ets) looks it up, along with the raw device
+      // registry, when the model decides it needs one.
+      this.skillText = skill
       this.promptTemplate = skill
         .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
-        .replace('{{CALENDAR_CATALOG}}', describeCalendarForPrompt())
-      // The phone's own list of intents, read once. It is what makes
-      // intent.call usable: without an address the model would have to invent
-      // one, and an invented address fails silently.
+        .replace('{{UI_TOOL_NOTE}}\n', '')
+      // The phone's own list of intents, read once. find_intent_function
+      // reads it through VeraIntentRegistry.registryEntries(); without an
+      // address the model would have to invent one, and an invented address
+      // fails silently.
       loadRegistry().then((count: number) => {
-        console.info('VERA-REGISTRY ' + count.toString() + ' intents available to intent.call')
+        console.info('VERA-REGISTRY ' + count.toString() + ' intents available to find_intent_function')
+        // ensureEmbeddingsReady() below races this same read (its own,
+        // independent async device call) and can run first -- re-checking
+        // here, now that the registry has actually finished, is what picks
+        // up the raw entries that were still missing at that point.
+        ensureIntentEmbeddings(getContext(this).filesDir).then(() => {
+          console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
+        })
       })
+      // The sdk selector's index (docs/selector-design.md): loaded once here
+      // so it's ready before DeepSeekEngine's find_sdk_function tool call
+      // needs it mid-generation.
+      loadSdkIndex(mgr).then((count: number) => {
+        console.info('VERA-SDK ' + count.toString() + ' sdk functions available to search')
+        // Same reasoning as the loadRegistry() callback above: ensureSdkEmbeddings()
+        // can run before this rawfile read finishes, in which case its first
+        // pass sees an empty index and does nothing -- re-checking here,
+        // now that the index is actually loaded, is what starts the real build.
+        ensureSdkEmbeddings(getContext(this).filesDir, mgr).then(() => {
+          console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
+        })
+      })
+      // The embedding corpus caches: downloads EmbeddingGemma once if
+      // missing, loads it through the native llama.cpp binding, then builds
+      // or loads the sdk and intent corpus caches -- fire-and-forget, same
+      // as loadRegistry()/loadSdkIndex() above. find_sdk_function/
+      // find_intent_function (DeepSeekEngine.ets) fall back to today's token
+      // search whenever any step here isn't ready, so this never blocks or
+      // regresses a generation.
+      this.ensureEmbeddingsReady()
       this.systemPrompt = this.promptTemplate
-        .replace('{{INTENT_CATALOG}}', describeIntentsForPrompt())
-        .replace('{{DEVICE_INTENTS}}', '  (the list is read from the phone when you generate)')
       this.grammar = await loadRawfileText(mgr, 'vera.gbnf')
       this.status = 'Resources loaded'
     } catch (e) {
@@ -392,6 +432,102 @@ struct GeneratePage {
     }
   }
 
+  /**
+   * Downloads EmbeddingGemma straight from Hugging Face (no vera-server hop
+   * -- unlike downloadModel() above, this one is small and public), loads it
+   * through the native binding, then builds or loads the two corpus caches.
+   * Entirely best-effort: a failure at any step just leaves the embedding
+   * search unavailable for this session, and every caller already treats
+   * that the same as "not ready yet".
+   */
+  private async ensureEmbeddingsReady(): Promise<void> {
+    let filesDir = getContext(this).filesDir
+    if (!embedModelExists(filesDir)) {
+      await this.downloadEmbedModel(filesDir)
+    }
+    if (!embedModelExists(filesDir)) { return }
+    let ok = await loadEmbeddingModel(filesDir)
+    if (!ok) { return }
+    // Fire-and-forget, same as before -- both proceed concurrently and the
+    // page never blocks on either. benchmarkRequested() below awaits these
+    // same promises without changing that: a second consumer of an
+    // already-in-flight promise doesn't delay or re-trigger it.
+    let sdkPromise = ensureSdkEmbeddings(filesDir, getContext(this).resourceManager)
+    sdkPromise.then(() => {
+      console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
+    })
+    let uiPromise = ensureUiEmbeddings(filesDir)
+    let intentPromise = ensureIntentEmbeddings(filesDir)
+    intentPromise.then(() => {
+      console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
+    })
+    if (benchmarkRequested()) {
+      await sdkPromise
+      await intentPromise
+      // loadRegistry()/loadSdkIndex() are separate, independent async
+      // reads (see the race-condition comments on ensureSdkEmbeddings/
+      // ensureIntentEmbeddings themselves) and may still be mid-flight
+      // even after the two awaits above settle with whatever was cached
+      // at that moment -- a few seconds' margin, then one more
+      // ensureIntentEmbeddings call (safe to repeat; coalesces with an
+      // in-flight one, re-checks missing keys otherwise) picks up a
+      // registry read that only finished in between. Only this opt-in
+      // path waits at all; an ordinary launch is unaffected.
+      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
+      await ensureIntentEmbeddings(filesDir)
+      await runSearchBenchmark()
+    }
+    let search = sdkSearchRequested()
+    if (search !== null) {
+      await sdkPromise
+      // Same race, same margin as the benchmark path above: loadSdkIndex()
+      // is a separate, independent async read that sdkPromise alone
+      // doesn't wait for, and an empty live index makes both searches
+      // answer with nothing to find rather than a real ranking.
+      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
+      await runSdkSearchProbe(search)
+    }
+    if (uiEvalRequested()) {
+      await uiPromise
+      await runUiEval(getContext(this).resourceManager)
+    }
+    if (uiAbRequested()) {
+      await uiPromise
+      await runUiAb(getContext(this).resourceManager)
+    }
+    if (sdkEvalRequested()) {
+      await sdkPromise
+      // Same race and margin as the search probe above.
+      await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
+      await runSdkEval(getContext(this).resourceManager)
+    }
+  }
+
+  private async downloadEmbedModel(filesDir: string): Promise<void> {
+    try {
+      fs.mkdirSync(filesDir + '/models', true)
+    } catch (_e) {}
+    console.info('VERA-EMBED downloading model (one-time, ~236MB)...')
+    try {
+      let task = await request.downloadFile(getContext(this), {
+        url: EMBED_MODEL_URL,
+        filePath: embedModelPath(filesDir)
+      })
+      task.on('progress', (received: number, total: number): void => {
+        if (total > 0) {
+          console.info('VERA-EMBED downloading ' + Math.floor(received * 100 / total).toString() + '%')
+        }
+      })
+      await new Promise<void>((resolve, reject) => {
+        task.on('complete', (): void => { resolve() })
+        task.on('fail', (err: number): void => { reject(new Error('download failed, code ' + err.toString())) })
+      })
+      console.info('VERA-EMBED model downloaded')
+    } catch (e) {
+      console.warn('VERA-EMBED model download failed: ' + (e as Error).message)
+    }
+  }
+
   private doGenerate(): void {
     if (this.prompt.trim().length === 0) { return }
     if (this.mode === MODE_SERVER) {
@@ -422,50 +558,43 @@ struct GeneratePage {
     this.startRun(this.prompt.trim())
     this.genStartTime = Date.now()
     this.lastRequest = this.prompt.trim()
-    this.status = 'Choosing which intents this needs...'
-    this.applySelection(this.prompt.trim()).then(() => {
-      this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')... ' + this.selectionNote
-      this.runAttempt(this.prompt.trim(), '')
-    })
+    // No pre-generation intent selection step any more: find_intent_function
+    // and find_sdk_function (DeepSeekEngine.ets) are looked up by the model
+    // itself, mid-generation, the first time either is worth calling.
+    // JevSelector.ets is unchanged and still callable; nothing here calls it.
+    this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
+    this.startAttemptOne(this.prompt.trim())
   }
 
   /**
-   * Picks the intent rows this request needs and splices them into the prompt.
-   *
-   * Runs once per generation rather than once per attempt: the request does not
-   * change between retries, and a retry is already the slow path.
-   *
-   * The chosen domains go into the status line because a selection that dropped
-   * something is otherwise invisible -- the app would simply come back without
-   * the feature, a minute later, with nothing to point at.
+   * Chooses which std/ui components the system prompt describes for this
+   * request, then makes the first attempt. Only DeepSeek mode selects; every
+   * other mode, and any failure on the way (no extraction, embeddings not
+   * ready), describes the whole catalogue. The choice is made once and kept for
+   * the retries, which only rewrite the user prompt.
    */
-  private async applySelection(userPrompt: string): Promise<void> {
-    if (this.promptTemplate.length === 0) { return }
-    let selection: Selection = everything('all intents')
-    try {
-      selection = await selectDomains(userPrompt, settings.getSelectorKey())
-    } catch (_e) {
-      // selectDomains does not throw, but a generation must not depend on that.
-      selection = everything('all intents (selector failed)')
-    }
-    // Two questions, two jobs. The domains decide which catalogue rows are
-    // described, and they are good at that: a row belongs to one part of the
-    // phone and says so. The addresses are picked intent by intent, because a
-    // domain cannot tell a torch from a camera and the registry has no words
-    // to match on beyond the intent's own name.
-    let picked: TargetChoice = new TargetChoice([], 'no pick')
-    try {
-      picked = await selectTargets(userPrompt, settings.getSelectorKey())
-    } catch (_e) {
-    }
-    let registry = describeTargetsForPrompt(picked.targets, userPrompt)
+  private async startAttemptOne(userPrompt: string, label: string = 'Generating'): Promise<void> {
     this.systemPrompt = this.promptTemplate
-      .replace('{{INTENT_CATALOG}}', describeIntentsForPrompt(selection.domains))
-      .replace('{{DEVICE_INTENTS}}', registry.length > 0
-        ? registry
-        : '  (none found on this phone -- use the checked list above)')
-    this.selectionNote = selection.note + ' | ' + picked.note +
-      (registry.length > 0 ? ' | ' + registry.length.toString() + ' chars of addresses' : '')
+    this.uiSelected = []
+    if (UI_SELECT_MODE !== UI_SELECT_FULL && this.mode === MODE_DEEPSEEK && this.skillText.length > 0) {
+      this.status = 'Choosing UI components...'
+      let selected = await selectUiForPrompt(UI_SELECT_MODE, userPrompt, this.previousSource)
+      if (this.cancelRequested) { return }
+      if (selected === null) {
+        console.info('VERA-UI-SELECT fallback to the whole catalogue')
+      } else {
+        let names: string[] = []
+        selected.forEach((n: string) => { names.push(n) })
+        this.uiSelected = names
+        this.systemPrompt = this.skillText
+          .replace('{{UI_CATALOG}}', describeCatalogForPrompt(selected))
+          .replace('{{UI_TOOL_NOTE}}\n', UI_TOOL_NOTE)
+        console.info('VERA-UI-SELECT mode=' + UI_SELECT_MODE + ' described=' + names.length.toString() +
+          ' promptChars=' + this.systemPrompt.length.toString() + ' fullChars=' + this.promptTemplate.length.toString())
+      }
+    }
+    this.status = label + ' (attempt 1/' + MAX_RETRIES + ')...'
+    this.runAttempt(userPrompt, '')
   }
 
   private async doServerGenerate(): Promise<void> {
@@ -583,6 +712,8 @@ struct GeneratePage {
 
     let request = new GenerateRequest()
     request.systemPrompt = this.systemPrompt
+    request.uiSelected = this.uiSelected
+    request.uiTool = this.uiSelected.length > 0
     request.grammar = this.grammar
     request.maxTokens = 2048
     request.temperature = 0.2
@@ -987,7 +1118,7 @@ struct GeneratePage {
     this.genStartTime = Date.now()
     this.lastRequest = ask
     this.status = 'Refining (attempt 1/' + MAX_RETRIES + ')...'
-    this.runAttempt(ask, '')
+    this.startAttemptOne(ask, 'Refining')
   }
 
   private stopGeneration(): void {

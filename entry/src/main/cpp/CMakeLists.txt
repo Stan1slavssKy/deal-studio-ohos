@@ -10,20 +10,50 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp)
 
 if(EXISTS ${LLAMA_DIR}/CMakeLists.txt)
-  # Build llama.cpp as a static library
-  set(LLAMA_STATIC ON CACHE BOOL "Build llama as static lib")
+  # Build llama.cpp (and ggml) as static libs, so the NAPI wrapper is the one
+  # and only .so produced -- the option is BUILD_SHARED_LIBS in current
+  # llama.cpp (LLAMA_STATIC, named here before, does not exist and was
+  # silently ignored as an unused cache var).
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build ggml/llama as static libs")
   set(LLAMA_BUILD_TESTS OFF CACHE BOOL "")
   set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "")
   set(LLAMA_BUILD_SERVER OFF CACHE BOOL "")
+  set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "")
+  set(LLAMA_BUILD_APP OFF CACHE BOOL "")
+  # ggml defaults to OpenMP (-fopenmp=libomp) when the toolchain has it, which
+  # the OHOS clang's does for compiling -- but libomp.so itself is not part
+  # of the device's system libs and is not bundled in the HAP, so the one
+  # output .so fails to even load ("Error loading shared library libomp.so"),
+  # confirmed on-device this session. ggml's own pthread-based thread pool
+  # (used when this is off) needs nothing beyond libc, matching the
+  # fully-static, dependency-free .so BUILD_SHARED_LIBS=OFF above is already
+  # going for.
+  set(GGML_OPENMP OFF CACHE BOOL "Use ggml's own thread pool, not libomp")
+  # ggml's own CMakeLists.txt only defines _GNU_SOURCE when
+  # CMAKE_SYSTEM_NAME matches "Linux" or "Android" (ggml/src/CMakeLists.txt);
+  # the OHOS toolchain sets CMAKE_SYSTEM_NAME to "OHOS", so that guard never
+  # fires even though the compiler target (aarch64-linux-ohos, musl libc)
+  # does define __linux__ and takes ggml-cpu.c's `#elif defined(__linux__)`
+  # affinity-setting branch -- which then fails to compile for want of
+  # cpu_set_t/CPU_SET/CPU_ZERO/pthread_setaffinity_np, all of which musl's
+  # headers only expose under _GNU_SOURCE. Defined here, before
+  # add_subdirectory, so it reaches every target ggml/llama.cpp build below
+  # without editing their vendored source.
+  add_compile_definitions(_GNU_SOURCE)
   add_subdirectory(${LLAMA_DIR} llama_build)
 
-  # NAPI wrapper
-  add_library(llama SHARED napi_llama.cpp)
-  target_include_directories(llama PRIVATE
+  # NAPI wrapper -- target renamed from "llama" (it collided with llama.cpp's
+  # own internal target of the same name, added by add_subdirectory above);
+  # OUTPUT_NAME keeps the produced file libllama.so, which is the name
+  # LlamaEngine.ets's `import nativeLlama from 'libllama.so'` expects.
+  add_library(llama_napi SHARED napi_llama.cpp)
+  set_target_properties(llama_napi PROPERTIES OUTPUT_NAME "llama")
+  target_include_directories(llama_napi PRIVATE
     ${LLAMA_DIR}/include
     ${LLAMA_DIR}/ggml/include
+    ${LLAMA_DIR}/common
   )
-  target_link_libraries(llama PRIVATE
+  target_link_libraries(llama_napi PRIVATE
     llama
     ggml
     libace_napi.z.so

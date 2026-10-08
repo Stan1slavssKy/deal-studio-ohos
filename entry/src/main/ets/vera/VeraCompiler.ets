@@ -1,9 +1,7 @@
 import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter'
 import { CATALOG, ComponentSpec, ChildRule, stylesFor, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
 import { iconPath, iconNames } from './VeraIcons'
-import { INTENT_CATALOG, intentByName } from './VeraIntentCatalog'
-import { IntentParam } from './VeraIntentCatalog'
-import { CALENDAR_CATALOG, calendarFnByName } from './VeraCalendarCatalog'
+import { isValidSdkTarget } from './VeraSdkIndex'
 
 // ===== AST Nodes =====
 
@@ -1196,82 +1194,52 @@ function buildStdStringsModule(): ModuleInterface {
 }
 
 /**
- * The platform's intents, generated from VeraIntentCatalog.
+ * The one way a program reaches anything outside itself: the OpenHarmony system API surface (found through
+ * find_sdk_function, VeraSdkIndex, built offline by tools/build-sdk-index.py
+ * from interface_sdk-js) and device intents (found through
+ * find_intent_function, VeraIntentIndex) -- both the curated, probed rows
+ * and the raw device registry. See docs/selector-design.md.
  *
- * Each row yields two names: a class holding the intent's parameters and the
- * function that takes it. A record rather than positional arguments because
- * almost every intent parameter is a string -- swap two of them positionally
- * and the call still compiles and still runs, just wrongly. As fields they are
- * checked: an unknown one is E2022, a missing one E2024.
+ *   sdk.call("CameraKit.CameraManager.setTorchMode", ["mode", "0"], "onAnswer")
+ *   sdk.call("com.huawei.hmos.meetimeservice/phone_default/IntentUIAbility/SendTextMessage",
+ *            [], "onAnswer", "background")
+ *   sdk.call("com.huawei.hmos.calendar/phone/MainAbility", [], "onAnswer")
  *
- * The second argument is the name of the handler the answer comes back to,
- * spelled the way ui.Button spells its action. The result is an int request id,
- * because the call is an effect: the VM is synchronous and the platform is not.
+ * One function, two target shapes, told apart by checkSdkArguments on
+ * whether the target has slashes (an intent address) or dots (an sdk index
+ * entry) -- the same distinction the two tools already encode in what they
+ * hand back. An intent-style target is itself two shapes, told apart by
+ * whether it has three or four slash-separated parts: three
+ * (bundle/module/ability) just launches the target, the way opening the
+ * calendar app does; four (...ability/IntentName) goes through
+ * insightIntentDriver with a name and parameters. See runRawIntent in
+ * VeraIntents.ets. The trailing `mode` is optional and only means anything
+ * for the four-part shape. Execution branches the same way
+ * (VeraPreview.runEffect): an intent-style target gets real dispatch through
+ * runRawIntent, an sdk-style one is real for whatever VeraSdkBackend.ets has
+ * a row for and the same honest stub as always otherwise.
+ *
+ * What used to be std/intent's typed catalogue cannot check any more (the
+ * closed set of allowed values for a field, e.g. startNavigate's traffic
+ * type) once its rows are reached through this raw call instead: the model
+ * is shown every allowed value, translated to the platform's own spelling,
+ * in find_intent_function's own answer, but nothing here can catch it writing
+ * a value that was not on that list. That is a real, accepted cost of
+ * retiring the typed catalogue (see the commit that removed
+ * buildStdIntentModule, revert it if this turns out to matter) -- sdk-style
+ * targets already carried exactly this risk, and now intent-style ones do
+ * too. What this can still check, for an sdk-style target, that a
+ * device-only registry entry never could: the index it's checked against is
+ * a static artifact, not read from the phone, so a target the model invented
+ * instead of asking is a compile error here rather than a silent no-op on
+ * the phone.
  */
-function buildStdIntentModule(): ModuleInterface {
-  let fns: ExternalFunction[] = []
-  let classes: ExternalClass[] = []
-  for (let spec of INTENT_CATALOG) {
-    let paramsType = new VeraClassType('std/intent:' + spec.paramsClass, spec.paramsClass)
-    for (let p of spec.params) {
-      paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
-    }
-    classes.push(new ExternalClass(spec.paramsClass, paramsType))
-    fns.push(new ExternalFunction(spec.name, [paramsType, STRING], INT, false))
-  }
-  // The way out of the catalogue, for an intent nobody has written a row for.
-  //
-  // Every row above is a promise: the parameters were read out of a contract
-  // and the call was watched working on a phone. This one promises nothing. The
-  // program names the target and writes the platform's own parameter keys, and
-  // the compiler can check neither -- the phone has 810 intents and 734 of them
-  // declare no parameters at all, so there is nothing to check against.
-  //
-  // It exists because the alternative is worse: a catalogue that will never
-  // cover the phone, and a program that cannot even try. The cost is paid at
-  // the other end -- the person confirms every one of these before it runs,
-  // with the target and the payload in front of them, because nothing else in
-  // this system knows whether the call is a volume change or a payment.
-  //
-  // Parameters are pairs rather than JSON, and that is not a style choice: the
-  // first program written against a JSON string built one by concatenation, put
-  // a line break in it, and the payload never parsed. The language has no way
-  // to escape a string, so asking a program for JSON is asking it to be wrong
-  // eventually. Pairs it writes correctly by construction, and the host builds
-  // the object -- including a dotted key like "dstLocation.latitude", which
-  // nests exactly as a catalogue row's platformName does.
-  //
-  //   intent.call("com.huawei.hmos.settings/phone_settings/DefaultIntentBackgroundUiAbility/GetSettingSwitch",
-  //               ["itemName", "bluetooth"], "background", "onAnswer")
-  fns.push(new ExternalFunction('call',
-    [STRING, new VeraArrayType(STRING), STRING, STRING], INT, false))
-  return new ModuleInterface('std/intent', fns, classes)
-}
-
-/**
- * The phone's calendar, generated from VeraCalendarCatalog.
- *
- * Deliberately not an intent: the device's CreateCalendarEvent and its
- * relatives declare no parameters and are not standard intent names, so their
- * contract would have to be invented. Calendar Kit is documented, needs no
- * system signing, and is therefore the better tool -- the same reasoning the
- * intent skill gives for preferring a public API when one exists.
- *
- * One function and one parameter class, shaped exactly like an intent row so
- * the program sees one idiom rather than two.
- */
-function buildStdCalendarModule(): ModuleInterface {
-  let fns: ExternalFunction[] = []
-  let classes: ExternalClass[] = []
-  for (let fn of CALENDAR_CATALOG) {
-    let paramsType = new VeraClassType('std/calendar:' + fn.paramsClass, fn.paramsClass)
-    for (let p of fn.params) {
-      paramsType.fields.set(p.name, p.kind === 'int' ? INT : STRING)
-    }
-    classes.push(new ExternalClass(fn.paramsClass, paramsType))
-    fns.push(new ExternalFunction(fn.name, [paramsType, STRING], INT, false))
-  }
-  return new ModuleInterface('std/calendar', fns, classes)
+function buildStdSdkModule(): ModuleInterface {
+  let fns: ExternalFunction[] = [
+    new ExternalFunction('call',
+      [STRING, new VeraArrayType(STRING), STRING, STRING], INT, false, 3)
+  ]
+  return new ModuleInterface('std/sdk', fns, [])
 }
 
 class Scope {
@@ -1357,8 +1325,7 @@ class Analyzer {
     registry.set('std/time', buildStdTimeModule())
     registry.set('std/math', buildStdMathModule())
     registry.set('std/strings', buildStdStringsModule())
-    registry.set('std/intent', buildStdIntentModule())
-    registry.set('std/calendar', buildStdCalendarModule())
+    registry.set('std/sdk', buildStdSdkModule())
     for (let decl of this.model.application.imports) {
       if (this.globals.find(decl.name) !== null) { this.addError('E2001', 'duplicate global ' + decl.name, decl.span); continue }
       let found = registry.get(decl.specifier)
@@ -1708,7 +1675,7 @@ class Analyzer {
     }
     this.checkStyleArguments(expr, callee)
     this.checkComposition(expr, callee)
-    this.checkIntentArguments(expr, callee)
+    this.checkSdkArguments(expr, callee)
     return callee.result
   }
 
@@ -1776,7 +1743,7 @@ class Analyzer {
    * already been checked by the time this runs and checking them again would
    * report every mistake in them twice. The field name alone is enough: a
    * program cannot declare a namespace of its own, and no member of std/time,
-   * std/math, std/strings, std/intent or std/calendar shares a name with a
+   * std/math, std/strings or std/sdk shares a name with a
    * component.
    */
   private uiComponentName(expr: Expression): string {
@@ -1861,127 +1828,68 @@ class Analyzer {
   }
 
   /**
-   * The same idea as checkStyleArguments, for std/intent.
+   * sdk.call covers two target shapes (VeraCompiler.buildStdSdkModule): an
+   * intent address (bundle/module/ability/IntentName or, to just launch the
+   * target, bundle/module/ability -- slash-separated and device-only, so only
+   * the shape can be checked) or an sdk index entry (kit.module.name,
+   * dot-separated, a static artifact built offline from interface_sdk-js, so
+   * checked against a real closed set built by tools/build-sdk-index.py).
+   * Told apart by whether the literal target has a slash in it -- the same
+   * test a person would use reading it.
    *
-   * checkObject already rejects an unknown or missing field, so what is left is
-   * the two things a type cannot say: that a field's value comes from a closed
-   * set, and that the result handler exists and takes the answer. Both are
-   * caught here rather than at runtime, which matters more than usual -- a
-   * compile error goes back into the generation loop and the model fixes it,
-   * while a runtime trap surfaces minutes later, on a program that already
-   * looked finished.
-   *
-   * Literal arguments only: a computed record or a computed handler name cannot
-   * be resolved here and is left alone.
+   * An sdk-style target the model invented instead of calling
+   * find_sdk_function is a compile error here (E2110) -- the existing retry
+   * loop (GeneratePage.runAttempt) gives it a chance to call the tool
+   * instead. An intent-style target has no such closed set to check against
+   * (the registry is read from the device, not a static artifact), so an
+   * invented one only fails silently on the phone.
    */
-  private checkIntentArguments(expr: CallExpression, callee: VeraFunctionType): void {
-    // Both host-backed modules take (record, handlerName) and both want the
-    // same two checks, so they share one implementation. Only the table of
-    // field specs differs.
-    let label = ''
-    let params: IntentParam[] = []
-    const intentPrefix = 'external:std/intent:'
-    const calendarPrefix = 'external:std/calendar:'
-    if (callee.identity === intentPrefix + 'call') {
-      this.checkRawIntentArguments(expr)
-      return
-    }
-    if (callee.identity.startsWith(intentPrefix)) {
-      let name = callee.identity.substring(intentPrefix.length)
-      let spec = intentByName(name)
-      if (spec === null) return
-      label = 'intent.' + name
-      params = spec!.params
-    } else if (callee.identity.startsWith(calendarPrefix)) {
-      let name = callee.identity.substring(calendarPrefix.length)
-      let fn = calendarFnByName(name)
-      if (fn === null) return
-      label = 'calendar.' + name
-      params = fn!.params
-    } else {
-      return
-    }
-
-    if (expr.argumentsList.length > 0 && expr.argumentsList[0] instanceof ObjectExpression) {
-      let record = expr.argumentsList[0] as ObjectExpression
-      for (let prop of record.properties) {
-        if (!(prop.value instanceof StringExpression)) continue
-        let value = (prop.value as StringExpression).value
-        for (let p of params) {
-          if (p.name !== prop.name || p.values.length === 0) continue
-          // An empty string is how a record with no optional fields says
-          // "omit this parameter", so it is always allowed.
-          if (value.length === 0) continue
-          if (p.values.indexOf(value) < 0) {
-            this.addError('E2105', 'unknown ' + label + ' ' + p.name + ' "' + value +
-              '"; allowed: ' + p.values.join(' '), prop.value.span)
-          }
-        }
-      }
-    }
-    if (expr.argumentsList.length < 2 || !(expr.argumentsList[1] instanceof StringExpression)) return
-    let arg = expr.argumentsList[1]
-    let handlerName = (arg as StringExpression).value
-    let fn = this.model.functions.get(handlerName)
-    if (fn === undefined) {
-      this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span)
-      return
-    }
-    if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
-      this.addError('E2106', label + ' answers with a string, so "' +
-        handlerName + '" must take (state, value: string)', arg.span)
-    }
-  }
-
-  /**
-   * What little can be checked about intent.call.
-   *
-   * Not the parameters -- that is the whole point of the escape hatch, and the
-   * phone has no contract to check them against. But the shape of the target,
-   * the mode and the payload are checkable when they are written out, and each
-   * of them is a mistake the model makes and the platform answers with silence:
-   * a target with a missing segment goes nowhere, a mode that is not one of the
-   * two is ignored, and a payload that is not an object never reaches the
-   * target as parameters at all.
-   *
-   * A computed argument is left alone, as everywhere else here.
-   */
-  private checkRawIntentArguments(expr: CallExpression): void {
+  private checkSdkArguments(expr: CallExpression, callee: VeraFunctionType): void {
+    if (callee.identity !== 'external:std/sdk:call') return
     if (expr.argumentsList.length > 0 && expr.argumentsList[0] instanceof StringExpression) {
       let arg = expr.argumentsList[0]
       let target = (arg as StringExpression).value
-      let parts = target.split('/')
-      let empty = false
-      for (let part of parts) { if (part.trim().length === 0) { empty = true } }
-      if (parts.length !== 4 || empty) {
-        this.addError('E2109', 'intent.call target must be ' +
-          '"bundle/module/ability/IntentName", four parts, none empty; got "' + target + '"', arg.span)
+      if (target.indexOf('/') >= 0) {
+        let parts = target.split('/')
+        let empty = false
+        for (let part of parts) { if (part.trim().length === 0) { empty = true } }
+        if ((parts.length !== 4 && parts.length !== 3) || empty) {
+          this.addError('E2109', 'an intent-style sdk.call target must be ' +
+            '"bundle/module/ability/IntentName", or "bundle/module/ability" to just launch it; got "' +
+            target + '"', arg.span)
+        }
+      } else if (!isValidSdkTarget(target)) {
+        this.addError('E2110', 'sdk.call target "' + target + '" is not one find_sdk_function ' +
+          'returned; call it first and use a target exactly as it came back', arg.span)
       }
     }
     if (expr.argumentsList.length > 1 && expr.argumentsList[1] instanceof ArrayExpression) {
       let arg = expr.argumentsList[1]
       let items = (arg as ArrayExpression).elements
       if (items.length % 2 !== 0) {
-        this.addError('E2109', 'intent.call parameters are name and value in pairs, so the ' +
+        this.addError('E2111', 'sdk.call parameters are name and value in pairs, so the ' +
           'array must have an even number of items; got ' + items.length.toString(), arg.span)
       }
       for (let i = 0; i + 1 < items.length; i = i + 2) {
         if (!(items[i] instanceof StringExpression)) { continue }
         if ((items[i] as StringExpression).value.trim().length === 0) {
-          this.addError('E2109', 'intent.call parameter names cannot be empty', items[i].span)
+          this.addError('E2111', 'sdk.call parameter names cannot be empty', items[i].span)
         }
       }
     }
-    if (expr.argumentsList.length > 2 && expr.argumentsList[2] instanceof StringExpression) {
-      let arg = expr.argumentsList[2]
+    // Trailing and optional: only meaningful for an intent-style target, but
+    // checked whenever it's written, since a stray "forground" typo is worth
+    // catching even if the target turns out to be an sdk one.
+    if (expr.argumentsList.length > 3 && expr.argumentsList[3] instanceof StringExpression) {
+      let arg = expr.argumentsList[3]
       let mode = (arg as StringExpression).value
       if (mode !== 'foreground' && mode !== 'background') {
-        this.addError('E2109', 'intent.call mode must be "foreground" or "background"; got "' +
+        this.addError('E2109', 'sdk.call mode must be "foreground" or "background"; got "' +
           mode + '"', arg.span)
       }
     }
-    if (expr.argumentsList.length < 4 || !(expr.argumentsList[3] instanceof StringExpression)) return
-    let arg = expr.argumentsList[3]
+    if (expr.argumentsList.length < 3 || !(expr.argumentsList[2] instanceof StringExpression)) return
+    let arg = expr.argumentsList[2]
     let handlerName = (arg as StringExpression).value
     let fn = this.model.functions.get(handlerName)
     if (fn === undefined) {
@@ -1989,7 +1897,7 @@ class Analyzer {
       return
     }
     if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
-      this.addError('E2106', 'intent.call answers with a string, so "' + handlerName +
+      this.addError('E2106', 'sdk.call answers with a string, so "' + handlerName +
         '" must take (state, value: string)', arg.span)
     }
   }

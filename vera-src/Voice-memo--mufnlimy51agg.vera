@@ -1,0 +1,64 @@
+import * as ui from "std/ui"
+import * as intent from "std/intent"
+
+@jsonable
+class AppState {
+  lastAnswer: string;
+  calls: int;
+}
+
+function init(): AppState {
+  return {lastAnswer: "", calls: 0};
+}
+
+function startRecord(state: AppState, ignored: int): AppState {
+  intent.call("com.huawei.hmos.soundrecorder/phone/MainAbility/StartRecord", [], "background", "onAnswer");
+  return {lastAnswer: state.lastAnswer, calls: state.calls + 1};
+}
+
+function pauseRecord(state: AppState, ignored: int): AppState {
+  intent.call("com.huawei.hmos.soundrecorder/phone/MainAbility/PauseRecord", [], "background", "onAnswer");
+  return {lastAnswer: state.lastAnswer, calls: state.calls + 1};
+}
+
+function resumeRecord(state: AppState, ignored: int): AppState {
+  intent.call("com.huawei.hmos.soundrecorder/phone/MainAbility/ResumeRecord", [], "background", "onAnswer");
+  return {lastAnswer: state.lastAnswer, calls: state.calls + 1};
+}
+
+function endRecord(state: AppState, ignored: int): AppState {
+  intent.call("com.huawei.hmos.soundrecorder/phone/MainAbility/EndRecord", [], "background", "onAnswer");
+  return {lastAnswer: state.lastAnswer, calls: state.calls + 1};
+}
+
+function onAnswer(state: AppState, value: string): AppState {
+  return {lastAnswer: value, calls: state.calls};
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Header("default", "Voice memo", "RECORDER", "Control the sound recorder from here", "clock"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.IntStat("default", "Commands sent", state.calls, "", "", 1, "", "list"),
+        ui.Stat("accent", "Last answer", state.lastAnswer, "", "info")
+      ])
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Recorder", "What the recorder answered", ""),
+      ui.When(state.lastAnswer === "",
+        ui.InsetBanner("default", "No answer yet", "Tap Start to begin recording.", "", "", "info")),
+      ui.When(state.lastAnswer !== "",
+        ui.InsetBanner("accent", "Recorder answered", state.lastAnswer, "", "", "check"))
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Controls", "", ""),
+      ui.ActionBar("center", [
+        ui.Button("primary", "Start", "startRecord", 0, true),
+        ui.Button("secondary", "Pause", "pauseRecord", 0, true),
+        ui.Button("secondary", "Resume", "resumeRecord", 0, true),
+        ui.Button("danger", "End", "endRecord", 0, true)
+      ])
+    ])
+  ]);
+}

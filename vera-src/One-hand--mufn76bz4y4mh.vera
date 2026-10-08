@@ -1,0 +1,95 @@
+import * as ui from "std/ui"
+import * as intent from "std/intent"
+
+@jsonable
+class AppState {
+  singleHand: boolean;
+  immersive: int;
+  lastResult: string;
+  changes: int;
+}
+
+function init(): AppState {
+  return {singleHand: false, immersive: 0, lastResult: "", changes: 0};
+}
+
+function setSingleHand(state: AppState, value: boolean): AppState {
+  if (value) {
+    intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOnSingleHandMode", [], "background", "onAnswer");
+  } else {
+    intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOffSingleHandMode", [], "background", "onAnswer");
+  }
+  return {singleHand: value, immersive: state.immersive, lastResult: state.lastResult, changes: state.changes + 1};
+}
+
+function setImmersive(state: AppState, value: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/SetImmersiveLevel",
+    ["level", ui.intToString(value)], "background", "onAnswer");
+  return {singleHand: state.singleHand, immersive: value, lastResult: state.lastResult, changes: state.changes + 1};
+}
+
+function lockOrientation(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/LockScreenOrientation", [], "background", "onAnswer");
+  return {singleHand: state.singleHand, immersive: state.immersive, lastResult: state.lastResult, changes: state.changes + 1};
+}
+
+function unlockOrientation(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/UnlockScreenOrientation", [], "background", "onAnswer");
+  return {singleHand: state.singleHand, immersive: state.immersive, lastResult: state.lastResult, changes: state.changes + 1};
+}
+
+function splitScreen(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/ViewSplitScreen", [], "background", "onAnswer");
+  return {singleHand: state.singleHand, immersive: state.immersive, lastResult: state.lastResult, changes: state.changes + 1};
+}
+
+function openSettings(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/EntrySingleHandModeSettingPage", [], "foreground", "onAnswer");
+  return {singleHand: state.singleHand, immersive: state.immersive, lastResult: state.lastResult, changes: state.changes + 1};
+}
+
+function onAnswer(state: AppState, value: string): AppState {
+  return {singleHand: state.singleHand, immersive: state.immersive, lastResult: value, changes: state.changes};
+}
+
+function view(state: AppState): ui.View {
+  let mode: string = "Off";
+  if (state.singleHand) {
+    mode = "On";
+  }
+
+  return ui.AppTheme("technical", "", [
+    ui.Header("default", "One Hand", "REACHABILITY", "Single-handed use, orientation and immersive level", "navigate"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.IntStat("accent", "Changes", state.changes, "", "", 1, "this session", "chart"),
+        ui.IntStat("default", "Immersive", state.immersive, "", "", 1, "level", "star")
+      ]),
+      ui.Badge("default", mode, "check")
+    ]),
+    ui.Section("content", "Single hand", "Turn the one-handed layout on or off", [
+      ui.Toggle("default", "Single-handed mode", state.singleHand, "setSingleHand"),
+      ui.ActionBar("end", [
+        ui.IconButton("secondary", "navigate", "Open single-hand settings", "openSettings", 0, true)
+      ])
+    ]),
+    ui.Section("content", "Immersive level", "How far the screen reaches into the edges", [
+      ui.Slider("default", "Level", state.immersive, 0, 10, "setImmersive")
+    ]),
+    ui.Section("content", "Orientation", "Lock the screen or let it turn", [
+      ui.ActionBar("spread", [
+        ui.Button("primary", "Lock", "lockOrientation", 0, true),
+        ui.Button("secondary", "Unlock", "unlockOrientation", 0, true)
+      ])
+    ]),
+    ui.Section("content", "Split screen", "Put two apps side by side", [
+      ui.ActionBar("end", [
+        ui.Button("primary", "Split screen", "splitScreen", 0, true)
+      ])
+    ]),
+    ui.When(state.lastResult !== "",
+      ui.Section("supporting", "", "", [
+        ui.InsetBanner("default", "Last result", state.lastResult, "", "", "info")
+      ]))
+  ]);
+}

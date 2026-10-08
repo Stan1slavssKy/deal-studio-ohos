@@ -1,0 +1,1 @@
+Wallpaper roulette: a button to see which theme I have, a button to put on a theme, a button to put up a specific wallpaper, one that adds an art signature to it, and one that hands the wallpaper to the theme editor.

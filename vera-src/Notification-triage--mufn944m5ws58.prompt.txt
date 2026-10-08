@@ -1,0 +1,1 @@
+Triage: I name an app and the program tells me every way that app may notify me, and lets me change each one.

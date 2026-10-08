@@ -30,6 +30,10 @@ export class GenerateRequest {
   topP: number = 0.95
   seed: number = 42
   previousSource: string = ''
+  /** std/ui components the system prompt describes; empty means all of them. */
+  uiSelected: string[] = []
+  /** Offer find_ui_component to the model. */
+  uiTool: boolean = true
 }
 
 export type TokenCallback = (token: string) => void
@@ -51,6 +55,10 @@ interface NativeLlama {
   llamaGenerate(paramsJson: string, callback: (token: string) => void): NativeGenerateResult
   llamaStop(): void
   llamaFree(): void
+  llamaEmbedInit(configJson: string): boolean
+  llamaEmbedBatch(texts: string[]): number[][]
+  llamaEmbedFree(): void
+  llamaScanCorpus(query: number[], corpus: Float32Array, dimension: number, count: number): Float32Array
 }
 
 let native: NativeLlama | null = null
@@ -60,6 +68,37 @@ function getNative(): NativeLlama {
     native = nativeLlama as NativeLlama
   }
   return native!
+}
+
+/**
+ * Passthroughs to the embedding half of the same native module, for
+ * VeraEmbeddings.ets -- not a second `import ... from 'libllama.so'` (that
+ * fails at runtime: "Load native module failed, ModuleName:
+ * @normalized:Y&&&libllama.so&", confirmed on-device this session), and not
+ * a forwarded reference to the module object either (confirmed separately:
+ * the import only resolves to a real object at a call site inside *this*
+ * file -- handing the reference itself to another file comes back
+ * undefined). One import, one place; everything else calls through here.
+ */
+export function nativeEmbedInit(configJson: string): boolean {
+  return getNative().llamaEmbedInit(configJson)
+}
+
+export function nativeEmbedBatch(texts: string[]): number[][] {
+  return getNative().llamaEmbedBatch(texts)
+}
+
+export function nativeEmbedFree(): void {
+  getNative().llamaEmbedFree()
+}
+
+/** Dot product of `query` against each of `count` `dimension`-wide rows of
+ * `corpus`, in native C++ -- see napi_llama.cpp's LlamaScanCorpus for why
+ * this moved out of ArkTS, and why `count` is passed explicitly rather
+ * than left for the native side to infer from the typed array alone.
+ * Returns one score per row, in corpus order. */
+export function nativeScanCorpus(query: number[], corpus: Float32Array, dimension: number, count: number): Float32Array {
+  return getNative().llamaScanCorpus(query, corpus, dimension, count)
 }
 
 export class LlamaEngine {

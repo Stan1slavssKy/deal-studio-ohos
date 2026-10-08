@@ -1,0 +1,69 @@
+10-06 17:39:17.423 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH requested from launch parameter
+10-06 17:39:29.503 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH start sdkReady=true intentReady=true sdkCorpusSize=16511
+10-06 17:39:29.808 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=1 pass=1 need="read the current battery level" tokenMs=162 embeddingFullMs=142 tokenFound=8 embeddingFound=8
+10-06 17:39:29.968 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=2 pass=1 need="turn on the phone flashlight torch" tokenMs=34 embeddingFullMs=126 tokenFound=8 embeddingFound=8
+10-06 17:39:30.150 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=3 pass=1 need="turn Bluetooth on or off" tokenMs=54 embeddingFullMs=128 tokenFound=8 embeddingFound=8
+10-06 17:39:30.327 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=4 pass=1 need="take a photo with the camera" tokenMs=44 embeddingFullMs=133 tokenFound=8 embeddingFound=8
+10-06 17:39:30.533 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=5 pass=1 need="start turn by turn navigation to a destination address" tokenMs=58 embeddingFullMs=148 tokenFound=8 embeddingFound=8
+10-06 17:39:30.730 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=6 pass=1 need="read the current weather forecast for my location" tokenMs=65 embeddingFullMs=132 tokenFound=8 embeddingFound=8
+10-06 17:39:30.969 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=7a pass=1 need="scan a QR code with the camera and return the decoded text" tokenMs=83 embeddingFullMs=156 tokenFound=8 embeddingFound=8
+10-06 17:39:31.171 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=7b pass=1 need="scan a barcode or QR code using the camera" tokenMs=56 embeddingFullMs=146 tokenFound=8 embeddingFound=8
+10-06 17:39:31.331 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=8a pass=1 need="vibrate the phone" tokenMs=36 embeddingFullMs=123 tokenFound=8 embeddingFound=8
+10-06 17:39:31.482 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=8b pass=1 need="show a notification" tokenMs=33 embeddingFullMs=118 tokenFound=8 embeddingFound=8
+10-06 17:39:31.689 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=9 pass=1 need="check whether the phone is currently connected to WiFi" tokenMs=62 embeddingFullMs=145 tokenFound=8 embeddingFound=8
+10-06 17:39:31.870 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=10a pass=1 need="record a short voice memo from the microphone" tokenMs=47 embeddingFullMs=134 tokenFound=8 embeddingFound=8
+10-06 17:39:32.074 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=10b pass=1 need="play back a recorded audio file" tokenMs=69 embeddingFullMs=135 tokenFound=8 embeddingFound=8
+10-06 17:39:32.240 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=2 pass=1 need="turn on the phone flashlight torch" tokenMs=2 embeddingFullMs=164 tokenFound=8 embeddingFound=8
+10-06 17:39:32.374 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=3 pass=1 need="open Bluetooth settings" tokenMs=3 embeddingFullMs=131 tokenFound=8 embeddingFound=8
+10-06 17:39:32.526 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=4 pass=1 need="take a photo with the camera" tokenMs=2 embeddingFullMs=150 tokenFound=8 embeddingFound=8
+10-06 17:39:32.686 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=5 pass=1 need="start turn by turn navigation to an address" tokenMs=1 embeddingFullMs=159 tokenFound=8 embeddingFound=8
+10-06 17:39:32.842 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=6 pass=1 need="send a text message to a contact" tokenMs=1 embeddingFullMs=155 tokenFound=8 embeddingFound=8
+10-06 17:39:33.002 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=7a pass=1 need="open a web link in the browser" tokenMs=2 embeddingFullMs=158 tokenFound=8 embeddingFound=8
+10-06 17:39:33.170 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=7b pass=1 need="open a URL or web page in the web browser" tokenMs=2 embeddingFullMs=166 tokenFound=8 embeddingFound=8
+10-06 17:39:33.321 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=9 pass=1 need="open the WiFi settings screen" tokenMs=3 embeddingFullMs=148 tokenFound=8 embeddingFound=8
+10-06 17:39:33.483 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=10 pass=1 need="record a voice memo with the sound recorder app" tokenMs=2 embeddingFullMs=160 tokenFound=8 embeddingFound=8
+10-06 17:39:33.689 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=1 pass=2 need="read the current battery level" tokenMs=73 embeddingFullMs=133 tokenFound=8 embeddingFound=8
+10-06 17:39:33.878 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=2 pass=2 need="turn on the phone flashlight torch" tokenMs=48 embeddingFullMs=141 tokenFound=8 embeddingFound=8
+10-06 17:39:34.073 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=3 pass=2 need="turn Bluetooth on or off" tokenMs=61 embeddingFullMs=134 tokenFound=8 embeddingFound=8
+10-06 17:39:34.269 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=4 pass=2 need="take a photo with the camera" tokenMs=56 embeddingFullMs=140 tokenFound=8 embeddingFound=8
+10-06 17:39:34.494 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=5 pass=2 need="start turn by turn navigation to a destination address" tokenMs=72 embeddingFullMs=153 tokenFound=8 embeddingFound=8
+10-06 17:39:34.711 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=6 pass=2 need="read the current weather forecast for my location" tokenMs=67 embeddingFullMs=150 tokenFound=8 embeddingFound=8
+10-06 17:39:35.027 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=7a pass=2 need="scan a QR code with the camera and return the decoded text" tokenMs=149 embeddingFullMs=167 tokenFound=8 embeddingFound=8
+10-06 17:39:35.260 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=7b pass=2 need="scan a barcode or QR code using the camera" tokenMs=82 embeddingFullMs=151 tokenFound=8 embeddingFound=8
+10-06 17:39:35.417 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=8a pass=2 need="vibrate the phone" tokenMs=30 embeddingFullMs=127 tokenFound=8 embeddingFound=8
+10-06 17:39:35.577 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=8b pass=2 need="show a notification" tokenMs=39 embeddingFullMs=121 tokenFound=8 embeddingFound=8
+10-06 17:39:35.831 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=9 pass=2 need="check whether the phone is currently connected to WiFi" tokenMs=98 embeddingFullMs=156 tokenFound=8 embeddingFound=8
+10-06 17:39:36.034 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=10a pass=2 need="record a short voice memo from the microphone" tokenMs=57 embeddingFullMs=146 tokenFound=8 embeddingFound=8
+10-06 17:39:36.253 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=10b pass=2 need="play back a recorded audio file" tokenMs=79 embeddingFullMs=140 tokenFound=8 embeddingFound=8
+10-06 17:39:36.403 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=2 pass=2 need="turn on the phone flashlight torch" tokenMs=2 embeddingFullMs=148 tokenFound=8 embeddingFound=8
+10-06 17:39:36.547 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=3 pass=2 need="open Bluetooth settings" tokenMs=3 embeddingFullMs=141 tokenFound=8 embeddingFound=8
+10-06 17:39:36.702 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=4 pass=2 need="take a photo with the camera" tokenMs=2 embeddingFullMs=153 tokenFound=8 embeddingFound=8
+10-06 17:39:36.865 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=5 pass=2 need="start turn by turn navigation to an address" tokenMs=1 embeddingFullMs=162 tokenFound=8 embeddingFound=8
+10-06 17:39:37.023 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=6 pass=2 need="send a text message to a contact" tokenMs=3 embeddingFullMs=155 tokenFound=8 embeddingFound=8
+10-06 17:39:37.180 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=7a pass=2 need="open a web link in the browser" tokenMs=1 embeddingFullMs=156 tokenFound=8 embeddingFound=8
+10-06 17:39:37.346 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=7b pass=2 need="open a URL or web page in the web browser" tokenMs=2 embeddingFullMs=164 tokenFound=8 embeddingFound=8
+10-06 17:39:37.499 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=9 pass=2 need="open the WiFi settings screen" tokenMs=4 embeddingFullMs=149 tokenFound=8 embeddingFound=8
+10-06 17:39:37.665 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=10 pass=2 need="record a voice memo with the sound recorder app" tokenMs=2 embeddingFullMs=164 tokenFound=8 embeddingFound=8
+10-06 17:39:37.869 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=1 pass=3 need="read the current battery level" tokenMs=67 embeddingFullMs=137 tokenFound=8 embeddingFound=8
+10-06 17:39:38.052 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=2 pass=3 need="turn on the phone flashlight torch" tokenMs=45 embeddingFullMs=138 tokenFound=8 embeddingFound=8
+10-06 17:39:38.248 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=3 pass=3 need="turn Bluetooth on or off" tokenMs=60 embeddingFullMs=136 tokenFound=8 embeddingFound=8
+10-06 17:39:38.447 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=4 pass=3 need="take a photo with the camera" tokenMs=57 embeddingFullMs=142 tokenFound=8 embeddingFound=8
+10-06 17:39:38.669 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=5 pass=3 need="start turn by turn navigation to a destination address" tokenMs=69 embeddingFullMs=153 tokenFound=8 embeddingFound=8
+10-06 17:39:38.883 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=6 pass=3 need="read the current weather forecast for my location" tokenMs=66 embeddingFullMs=148 tokenFound=8 embeddingFound=8
+10-06 17:39:39.165 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=7a pass=3 need="scan a QR code with the camera and return the decoded text" tokenMs=117 embeddingFullMs=165 tokenFound=8 embeddingFound=8
+10-06 17:39:39.402 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=7b pass=3 need="scan a barcode or QR code using the camera" tokenMs=81 embeddingFullMs=156 tokenFound=8 embeddingFound=8
+10-06 17:39:39.568 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=8a pass=3 need="vibrate the phone" tokenMs=34 embeddingFullMs=132 tokenFound=8 embeddingFound=8
+10-06 17:39:39.730 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=8b pass=3 need="show a notification" tokenMs=36 embeddingFullMs=126 tokenFound=8 embeddingFound=8
+10-06 17:39:39.958 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=9 pass=3 need="check whether the phone is currently connected to WiFi" tokenMs=77 embeddingFullMs=151 tokenFound=8 embeddingFound=8
+10-06 17:39:40.162 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=10a pass=3 need="record a short voice memo from the microphone" tokenMs=57 embeddingFullMs=147 tokenFound=8 embeddingFound=8
+10-06 17:39:40.386 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-SDK prompt=10b pass=3 need="play back a recorded audio file" tokenMs=82 embeddingFullMs=142 tokenFound=8 embeddingFound=8
+10-06 17:39:40.539 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=2 pass=3 need="turn on the phone flashlight torch" tokenMs=2 embeddingFullMs=151 tokenFound=8 embeddingFound=8
+10-06 17:39:40.681 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=3 pass=3 need="open Bluetooth settings" tokenMs=3 embeddingFullMs=139 tokenFound=8 embeddingFound=8
+10-06 17:39:40.832 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=4 pass=3 need="take a photo with the camera" tokenMs=1 embeddingFullMs=150 tokenFound=8 embeddingFound=8
+10-06 17:39:40.991 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=5 pass=3 need="start turn by turn navigation to an address" tokenMs=3 embeddingFullMs=156 tokenFound=8 embeddingFound=8
+10-06 17:39:41.150 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=6 pass=3 need="send a text message to a contact" tokenMs=2 embeddingFullMs=156 tokenFound=8 embeddingFound=8
+10-06 17:39:41.302 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=7a pass=3 need="open a web link in the browser" tokenMs=1 embeddingFullMs=151 tokenFound=8 embeddingFound=8
+10-06 17:39:41.470 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=7b pass=3 need="open a URL or web page in the web browser" tokenMs=2 embeddingFullMs=165 tokenFound=8 embeddingFound=8
+10-06 17:39:41.621 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=9 pass=3 need="open the WiFi settings screen" tokenMs=3 embeddingFullMs=147 tokenFound=8 embeddingFound=8
+10-06 17:39:41.793 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH-INTENT prompt=10 pass=3 need="record a voice memo with the sound recorder app" tokenMs=2 embeddingFullMs=170 tokenFound=8 embeddingFound=8
+10-06 17:39:41.793 33390 33390 I A00000/com.vera.probe.dyn/VERA: VERA-BENCH done

@@ -1,0 +1,187 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+import * as calendar from "std/calendar"
+
+@jsonable
+class Dose {
+  month: int;
+  dayOfMonth: int;
+  dayNumber: int;
+  minute: int;
+  onTime: boolean;
+}
+
+@jsonable
+class AppState {
+  doses: Dose[];
+  windowMinutes: int;
+  lastAnswer: string;
+}
+
+function init(): AppState {
+  let empty: Dose[] = [];
+  return {doses: empty, windowMinutes: 30, lastAnswer: ""};
+}
+
+function setWindow(state: AppState, value: int): AppState {
+  return {doses: state.doses, windowMinutes: value, lastAnswer: state.lastAnswer};
+}
+
+function takeDose(state: AppState, ignored: int): AppState {
+  let nowMinute: int = time.hourOfDay() * 60 + time.minuteOfHour();
+  let today: int = time.daysSinceEpoch();
+  let count: int = state.doses.length();
+  let onTime: boolean = true;
+  if (count > 0) {
+    let last: Dose = state.doses[count - 1];
+    if (last.dayNumber === today) {
+      if (nowMinute - last.minute > state.windowMinutes) {
+        onTime = false;
+      }
+    }
+  }
+  let entry: Dose = {
+    month: time.monthOfYear(),
+    dayOfMonth: time.dayOfMonth(),
+    dayNumber: today,
+    minute: nowMinute,
+    onTime: onTime
+  };
+  state.doses.push(entry);
+  return {doses: state.doses, windowMinutes: state.windowMinutes, lastAnswer: ""};
+}
+
+function markLate(state: AppState, ignored: int): AppState {
+  let nowMinute: int = time.hourOfDay() * 60 + time.minuteOfHour();
+  let entry: Dose = {
+    month: time.monthOfYear(),
+    dayOfMonth: time.dayOfMonth(),
+    dayNumber: time.daysSinceEpoch(),
+    minute: nowMinute,
+    onTime: false
+  };
+  state.doses.push(entry);
+  return {doses: state.doses, windowMinutes: state.windowMinutes, lastAnswer: ""};
+}
+
+function clearAll(state: AppState, ignored: int): AppState {
+  let empty: Dose[] = [];
+  return {doses: empty, windowMinutes: state.windowMinutes, lastAnswer: ""};
+}
+
+function onCalendarAnswer(state: AppState, value: string): AppState {
+  return {doses: state.doses, windowMinutes: state.windowMinutes, lastAnswer: value};
+}
+
+function remind(state: AppState, ignored: int): AppState {
+  calendar.addEvent({
+    title: "饭后服药",
+    hour: 12,
+    minute: 30,
+    durationMinutes: 30,
+    remindBefore: 5,
+    repeat: "daily"
+  }, "onCalendarAnswer");
+  return {doses: state.doses, windowMinutes: state.windowMinutes, lastAnswer: "已请求添加每日提醒"};
+}
+
+function view(state: AppState): ui.View {
+  let count: int = state.doses.length();
+  let onTimeCount: int = 0;
+  let lateCount: int = 0;
+  let today: int = time.daysSinceEpoch();
+  let todayCount: int = 0;
+  for (let d: Dose of state.doses) {
+    if (d.onTime) {
+      onTimeCount = onTimeCount + 1;
+    } else {
+      lateCount = lateCount + 1;
+    }
+    if (d.dayNumber === today) {
+      todayCount = todayCount + 1;
+    }
+  }
+
+  let rate: int = 0;
+  if (count > 0) {
+    rate = onTimeCount * 100 / count;
+  }
+
+  let weeks: int = 0;
+  if (count > 0) {
+    weeks = count / 7;
+  }
+
+  let lastMinute: int = 0;
+  if (count > 0) {
+    lastMinute = state.doses[count - 1].minute;
+  }
+
+  let rows: ui.View[] = [];
+  let lateRows: ui.View[] = [];
+  let i: int = count - 1;
+  while (i >= 0 && i > count - 30) {
+    let d: Dose = state.doses[i];
+    let title: string = ui.intToString(d.month) + "月" + ui.intToString(d.dayOfMonth) + "日";
+    let status: string = "按时";
+    let icon: string = "check";
+    if (!d.onTime) {
+      status = "超时";
+      icon = "warning";
+      lateRows.push(ui.TimelineItem("warning", title, "超出 " + ui.intToString(state.windowMinutes) + " 分钟窗口", "", "", 0, false, "warning"));
+    }
+    rows.push(ui.ListItem("default", title, status, "", "", 0, false, icon));
+    i = i - 1;
+  }
+
+  return ui.AppTheme("soft", "", [
+    ui.Header("default", "服药管理", "每日一颗", "饭后半小时内服药，并记录每一次", "clock"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 3, [
+        ui.IntStat("default", "总记录", count, "", " 次", 1, "约 " + ui.intToString(weeks) + " 周", "list"),
+        ui.IntStat("accent", "按时率", rate, "", "%", 1, "按时 " + ui.intToString(onTimeCount) + " 次", "check"),
+        ui.IntStat("warning", "超时", lateCount, "", " 次", 1, "需要留意", "warning")
+      ]),
+      ui.When(count > 0, ui.ClockText("caption", lastMinute, "最近一次 ", ""))
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "今天", "记录今天的服药情况", ui.intToString(todayCount) + " 次"),
+      ui.When(todayCount === 0,
+        ui.EmptyState("default", "今天还没有记录",
+          "饭后半小时内服药后，点击下方按钮记录一次。", "", "", "clock")),
+      ui.When(todayCount > 0,
+        ui.InsetBanner("success", "今天已记录", "今天已服药 " + ui.intToString(todayCount) + " 次。", "", "", "check")),
+      ui.ActionBar("end", [
+        ui.Button("primary", "按时服药", "takeDose", 0, true),
+        ui.Button("secondary", "补记超时", "markLate", 0, true)
+      ])
+    ]),
+    ui.Section("supporting", "", "", [
+      ui.SectionHeader("default", "提醒设置", "设置饭后服药的时间窗口", ""),
+      ui.IntField("default", "允许的窗口（分钟）", state.windowMinutes, 5, 120, "setWindow"),
+      ui.ActionBar("end", [
+        ui.Button("secondary", "添加每日提醒", "remind", 0, true)
+      ]),
+      ui.When(state.lastAnswer !== "",
+        ui.InsetBanner("default", "提醒状态", state.lastAnswer, "", "", "info"))
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "给医生的记录", "近 30 次，最新在前", ui.intToString(count) + " 次"),
+      ui.When(count === 0,
+        ui.EmptyState("default", "还没有任何记录",
+          "每次服药后记录一次，历史会在这里累积，方便复诊时查看。", "", "", "list")),
+      ui.When(count > 0,
+        ui.Card("surface", [
+          ui.Text("body", "共记录 " + ui.intToString(count) + " 次，按时 " + ui.intToString(onTimeCount) + " 次，超时 " + ui.intToString(lateCount) + " 次，按时率 " + ui.intToString(rate) + "%。")
+        ])),
+      ui.When(count > 0, ui.ListGroup("default", "", rows)),
+      ui.When(lateCount > 0,
+        ui.SectionHeader("muted", "超时的记录", "复诊时可向医生说明", ui.intToString(lateCount) + " 次")),
+      ui.When(lateCount > 0, ui.Timeline("compact", "", lateRows)),
+      ui.When(count > 0,
+        ui.ActionBar("end", [
+          ui.Button("danger", "清空记录", "clearAll", 0, true)
+        ]))
+    ])
+  ]);
+}

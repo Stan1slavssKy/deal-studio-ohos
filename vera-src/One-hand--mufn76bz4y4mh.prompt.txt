@@ -1,0 +1,1 @@
+One hand: a toggle for single handed use, buttons for the orientation, a slider for the immersive level, and a button for the split.

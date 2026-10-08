@@ -6,8 +6,13 @@ import hilog from '@ohos.hilog'
 import router from '@ohos.router'
 import { refreshForms } from '../vera/FormUpdater'
 import { settings } from '../vera/SettingsStore'
-import { requestCalendarPermissions } from '../vera/VeraCalendar'
+import { requestCalendarPermissions, requestMicrophonePermission } from '../vera/VeraPermissions'
 import { runProbe } from '../vera/IntentProbe'
+import { runSdkProbe, requestSdkSearch } from '../vera/VeraSdkProbe'
+import { requestBenchmark } from '../vera/VeraSearchBenchmark'
+import { requestSdkEval } from '../vera/VeraSdkEval'
+import { requestUiEval } from '../vera/VeraUiEval'
+import { requestUiAb } from '../vera/VeraUiAb'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 
 const DOMAIN = 0x0000
@@ -29,6 +34,12 @@ export default class EntryAbility extends UIAbility {
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
+    this.extractSdkProbe(want)
+    this.extractSdkSearchProbe(want)
+    this.extractBenchmark(want)
+    this.extractSdkEval(want)
+    this.extractUiEval(want)
+    this.extractUiAb(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -38,6 +49,12 @@ export default class EntryAbility extends UIAbility {
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
+    this.extractSdkProbe(want)
+    this.extractSdkSearchProbe(want)
+    this.extractBenchmark(want)
+    this.extractSdkEval(want)
+    this.extractUiEval(want)
+    this.extractUiAb(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
     }
@@ -117,6 +134,103 @@ export default class EntryAbility extends UIAbility {
       mode !== null && mode !== undefined && typeof mode === 'string' ? (mode as string) : 'background')
   }
 
+  /**
+   * Development only, same shape as extractProbe: calls one sdk.call target
+   * directly against VeraSdkBackend.ets's ADAPTERS, so a new adapter can be
+   * tried without going through a real generation. See VeraSdkProbe.ets.
+   *
+   * Reachable only from a launch parameter, so only from a shell on the device.
+   */
+  private extractSdkProbe(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let target = params['probeSdkTarget']
+    if (target === null || target === undefined || typeof target !== 'string') { return }
+    let payload = params['probeSdkParams']
+    runSdkProbe((target as string).trim(),
+      payload !== null && payload !== undefined && typeof payload === 'string' ? (payload as string) : '')
+  }
+
+  /**
+   * Development only: runs find_sdk_function's own search (both token and
+   * embedding) for one `need` string, so a ranking change can be checked
+   * without a real generation. Only sets a flag here, same reasoning as
+   * extractBenchmark -- embedding search needs the SDK corpus cache already
+   * warm, which only happens inside GeneratePage.ets's own resource
+   * loading. See VeraSdkProbe.ets.
+   */
+  private extractSdkSearchProbe(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let need = params['probeSdkSearch']
+    if (need === null || need === undefined || typeof need !== 'string') { return }
+    requestSdkSearch((need as string).trim())
+  }
+
+  /**
+   * Development only, same shape as extractProbe: requests the search
+   * timing benchmark (VeraSearchBenchmark.ets) on this launch --
+   *
+   *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn \
+   *     --ps veraBenchmark 1
+   *
+   * Only sets a flag here, not run directly: the benchmark needs both
+   * corpus caches already warm, which only happens inside
+   * GeneratePage.ets's own resource loading, not at this point.
+   * GeneratePage.ensureEmbeddingsReady() is what actually calls
+   * runSearchBenchmark(), once ready.
+   */
+  private extractBenchmark(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraBenchmark']
+    if (flag === null || flag === undefined) { return }
+    requestBenchmark()
+    hilog.info(DOMAIN, 'VERA', 'VERA-BENCH requested from launch parameter')
+  }
+
+  /**
+   * Development only: dumps find_sdk_function's token and embedding rankings
+   * for the gold `need` strings (VeraSdkEval.ets). Sets a flag here, same as
+   * extractBenchmark; GeneratePage.ets runs it once the embedding caches are warm.
+   *
+   *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps veraSdkEval 1
+   */
+  private extractSdkEval(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraSdkEval']
+    if (flag === null || flag === undefined) { return }
+    requestSdkEval()
+    hilog.info(DOMAIN, 'VERA', 'VERA-SDKEVAL requested from launch parameter')
+  }
+
+  /**
+   * Development only: scores the UI component selector on the gold prompts
+   * (VeraUiEval.ets). Sets a flag; GeneratePage.ets runs it once the embedding
+   * index is warm.
+   *
+   *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps veraUiEval 1
+   */
+  private extractUiEval(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraUiEval']
+    if (flag === null || flag === undefined) { return }
+    requestUiEval()
+    hilog.info(DOMAIN, 'VERA', 'VERA-UI-EVAL requested from launch parameter')
+  }
+
+  /** Development only: `--ps veraUiAb 1` compares the UI selection modes (VeraUiAb.ets). */
+  private extractUiAb(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraUiAb']
+    if (flag === null || flag === undefined) { return }
+    requestUiAb()
+    hilog.info(DOMAIN, 'VERA', 'VERA-UI-AB requested from launch parameter')
+  }
+
   private extractProjectId(want: Want): void {
     if (want.parameters !== null && want.parameters !== undefined) {
       let params = want.parameters as Record<string, Object>
@@ -130,11 +244,11 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onWindowStageCreate')
-    // std/calendar needs READ_CALENDAR and WRITE_CALENDAR, which are user_grant
-    // and so cannot come from the signature. Asked here rather than at the
-    // first calendar call, because a permission dialog appearing in the middle
-    // of a generated program's handler gives no clue what asked for it.
-    requestCalendarPermissions(this.context)
+    // READ_CALENDAR, WRITE_CALENDAR and MICROPHONE are user_grant and so cannot
+    // come from the signature. Asked here, not in the middle of a handler.
+    requestCalendarPermissions(this.context).then((): Promise<void> => {
+      return requestMicrophonePermission(this.context)
+    })
     windowStage.loadContent('pages/Index', (err): void => {
       if (err?.code) {
         hilog.error(DOMAIN, 'VERA', 'loadContent failed')

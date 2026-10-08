@@ -1,0 +1,172 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+
+@jsonable
+class Dose {
+  month: int;
+  dayOfMonth: int;
+  dayNumber: int;
+  minute: int;
+  taken: boolean;
+}
+
+@jsonable
+class AppState {
+  doses: Dose[];
+  mealMinute: int;
+  windowMinutes: int;
+}
+
+function init(): AppState {
+  let empty: Dose[] = [];
+  return {doses: empty, mealMinute: 720, windowMinutes: 30};
+}
+
+function setMeal(state: AppState, value: int): AppState {
+  return {doses: state.doses, mealMinute: value, windowMinutes: state.windowMinutes};
+}
+
+function setWindow(state: AppState, value: int): AppState {
+  return {doses: state.doses, mealMinute: state.mealMinute, windowMinutes: value};
+}
+
+function logDose(state: AppState, ignored: int): AppState {
+  let d: Dose = {
+    month: time.monthOfYear(),
+    dayOfMonth: time.dayOfMonth(),
+    dayNumber: time.daysSinceEpoch(),
+    minute: time.hourOfDay() * 60 + time.minuteOfHour(),
+    taken: true
+  };
+  state.doses.push(d);
+  return {doses: state.doses, mealMinute: state.mealMinute, windowMinutes: state.windowMinutes};
+}
+
+function markMissed(state: AppState, ignored: int): AppState {
+  let d: Dose = {
+    month: time.monthOfYear(),
+    dayOfMonth: time.dayOfMonth(),
+    dayNumber: time.daysSinceEpoch(),
+    minute: time.hourOfDay() * 60 + time.minuteOfHour(),
+    taken: false
+  };
+  state.doses.push(d);
+  return {doses: state.doses, mealMinute: state.mealMinute, windowMinutes: state.windowMinutes};
+}
+
+function clearAll(state: AppState, ignored: int): AppState {
+  let empty: Dose[] = [];
+  return {doses: empty, mealMinute: state.mealMinute, windowMinutes: state.windowMinutes};
+}
+
+function view(state: AppState): ui.View {
+  let total: int = state.doses.length();
+  let takenCount: int = 0;
+  let missedCount: int = 0;
+  let onTimeCount: int = 0;
+  let lateCount: int = 0;
+
+  for (let d: Dose of state.doses) {
+    if (d.taken) {
+      takenCount = takenCount + 1;
+      let diff: int = d.minute - state.mealMinute;
+      if (diff < 0) {
+        diff = 0 - diff;
+      }
+      if (diff <= state.windowMinutes) {
+        onTimeCount = onTimeCount + 1;
+      } else {
+        lateCount = lateCount + 1;
+      }
+    } else {
+      missedCount = missedCount + 1;
+    }
+  }
+
+  let adherence: int = 0;
+  if (total > 0) {
+    adherence = onTimeCount * 100 / total;
+  }
+
+  let today: int = time.daysSinceEpoch();
+  let todayTaken: boolean = false;
+  let todayMissed: boolean = false;
+  for (let d: Dose of state.doses) {
+    if (d.dayNumber === today) {
+      if (d.taken) {
+        todayTaken = true;
+      } else {
+        todayMissed = true;
+      }
+    }
+  }
+
+  let rows: ui.View[] = [];
+  let i: int = total - 1;
+  while (i >= 0 && i > total - 31) {
+    let d: Dose = state.doses[i];
+    let label: string = ui.intToString(d.month) + "/" + ui.intToString(d.dayOfMonth);
+    let status: string = "Missed";
+    let icon: string = "warning";
+    if (d.taken) {
+      let diff: int = d.minute - state.mealMinute;
+      if (diff < 0) {
+        diff = 0 - diff;
+      }
+      if (diff <= state.windowMinutes) {
+        status = "On time";
+        icon = "check";
+      } else {
+        status = "Late";
+        icon = "clock";
+      }
+    }
+    rows.push(ui.ListItem("default", label, status, "", "", 0, false, icon));
+    i = i - 1;
+  }
+
+  let report: string = "Total doses: " + ui.intToString(total) + ", on time: " + ui.intToString(onTimeCount) + ", late: " + ui.intToString(lateCount) + ", missed: " + ui.intToString(missedCount) + ". Adherence " + ui.intToString(adherence) + "%.";
+
+  return ui.AppTheme("soft", "", [
+    ui.Header("default", "Medication Tracker", "DAILY", "One pill within 30 minutes after each meal", "clock"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 3, [
+        ui.IntStat("accent", "On time", onTimeCount, "", "", 1, "of " + ui.intToString(total), "check"),
+        ui.IntStat("warning", "Late", lateCount, "", "", 1, "", "clock"),
+        ui.IntStat("danger", "Missed", missedCount, "", "", 1, "", "warning")
+      ]),
+      ui.Progress("accent", "Adherence", adherence, 100)
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Today", "", ""),
+      ui.When(todayTaken, ui.InsetBanner("success", "Dose logged", "You recorded a dose today.", "", "", "check")),
+      ui.When(todayMissed, ui.InsetBanner("warning", "Missed dose", "You marked today's dose as missed.", "", "", "warning")),
+      ui.When(!todayTaken && !todayMissed, ui.InsetBanner("default", "Not logged yet", "Record your dose after your meal.", "", "", "info"))
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Settings", "Meal time and allowed window", ""),
+      ui.TimeField("default", "Meal time", state.mealMinute, "setMeal"),
+      ui.IntField("default", "Window (minutes)", state.windowMinutes, 5, 120, "setWindow")
+    ]),
+    ui.Section("content", "", "", [
+      ui.ActionBar("end", [
+        ui.Button("primary", "I took it", "logDose", 0, true),
+        ui.Button("secondary", "I missed it", "markMissed", 0, true)
+      ])
+    ]),
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "History", "Newest first", ui.intToString(total)),
+      ui.When(total === 0,
+        ui.EmptyState("default", "No doses recorded",
+          "Tap \"I took it\" after your meal to start tracking.", "", "", "list")),
+      ui.When(total > 0, ui.ListGroup("default", "", rows))
+    ]),
+    ui.Section("supporting", "", "", [
+      ui.SectionHeader("default", "Report for your doctor", "", ""),
+      ui.Text("body", report),
+      ui.ActionBar("end", [
+        ui.Button("danger", "Clear all records", "clearAll", 0, true)
+      ])
+    ])
+  ]);
+}

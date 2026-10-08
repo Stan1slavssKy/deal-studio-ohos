@@ -1,0 +1,99 @@
+import * as ui from "std/ui"
+import * as intent from "std/intent"
+
+@jsonable
+class AppState {
+  aggregationOn: boolean;
+  smartOn: boolean;
+  lastAnswer: string;
+  lastWhat: string;
+}
+
+function init(): AppState {
+  return {aggregationOn: false, smartOn: false, lastAnswer: "", lastWhat: ""};
+}
+
+function checkAggregation(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/CheckAggregationNotification", [], "foreground", "onAggregationAnswer");
+  return {aggregationOn: state.aggregationOn, smartOn: state.smartOn, lastAnswer: state.lastAnswer, lastWhat: "Checking aggregation"};
+}
+
+function turnOnAggregation(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOnAggregationNotification", [], "foreground", "onAggregationAnswer");
+  return {aggregationOn: state.aggregationOn, smartOn: state.smartOn, lastAnswer: state.lastAnswer, lastWhat: "Turning aggregation on"};
+}
+
+function turnOffAggregation(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOffAggregationNotification", [], "foreground", "onAggregationAnswer");
+  return {aggregationOn: state.aggregationOn, smartOn: state.smartOn, lastAnswer: state.lastAnswer, lastWhat: "Turning aggregation off"};
+}
+
+function onAggregationAnswer(state: AppState, value: string): AppState {
+  let on: boolean = state.aggregationOn;
+  if (value === "ok") {
+    on = true;
+  }
+  return {aggregationOn: on, smartOn: state.smartOn, lastAnswer: value, lastWhat: "Aggregation"};
+}
+
+function checkSmart(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/CheckSmartNotificationService", [], "foreground", "onSmartAnswer");
+  return {aggregationOn: state.aggregationOn, smartOn: state.smartOn, lastAnswer: state.lastAnswer, lastWhat: "Checking smart notifications"};
+}
+
+function turnOnSmart(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOnSmartNotificationService", [], "foreground", "onSmartAnswer");
+  return {aggregationOn: state.aggregationOn, smartOn: state.smartOn, lastAnswer: state.lastAnswer, lastWhat: "Turning smart notifications on"};
+}
+
+function turnOffSmart(state: AppState, ignored: int): AppState {
+  intent.call("com.ohos.sceneboard/phone_sceneboard/ScbIntentUIAbility/TurnOffSmartNotificationService", [], "foreground", "onSmartAnswer");
+  return {aggregationOn: state.aggregationOn, smartOn: state.smartOn, lastAnswer: state.lastAnswer, lastWhat: "Turning smart notifications off"};
+}
+
+function onSmartAnswer(state: AppState, value: string): AppState {
+  let on: boolean = state.smartOn;
+  if (value === "ok") {
+    on = true;
+  }
+  return {aggregationOn: state.aggregationOn, smartOn: on, lastAnswer: value, lastWhat: "Smart notifications"};
+}
+
+function view(state: AppState): ui.View {
+  let aggText: string = "Off";
+  if (state.aggregationOn) {
+    aggText = "On";
+  }
+  let smartText: string = "Off";
+  if (state.smartOn) {
+    smartText = "On";
+  }
+
+  return ui.AppTheme("clean", "", [
+    ui.Header("default", "Notifications", "QUIET", "Two switches, and what each is set to now", "info"),
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.Stat("default", "Aggregation", aggText, "grouped notifications", "list"),
+        ui.Stat("default", "Smart service", smartText, "quiet delivery", "info")
+      ])
+    ]),
+    ui.Section("content", "Aggregation", "Groups notifications so fewer arrive at once", [
+      ui.ActionBar("end", [
+        ui.IconButton("secondary", "info", "Check aggregation setting", "checkAggregation", 0, true),
+        ui.Button("secondary", "Turn on", "turnOnAggregation", 0, true),
+        ui.Button("secondary", "Turn off", "turnOffAggregation", 0, true)
+      ])
+    ]),
+    ui.Section("content", "Smart notifications", "Holds back what can wait", [
+      ui.ActionBar("end", [
+        ui.IconButton("secondary", "info", "Check smart notification setting", "checkSmart", 0, true),
+        ui.Button("secondary", "Turn on", "turnOnSmart", 0, true),
+        ui.Button("secondary", "Turn off", "turnOffSmart", 0, true)
+      ])
+    ]),
+    ui.Section("supporting", "", "", [
+      ui.When(state.lastAnswer !== "",
+        ui.InsetBanner("default", state.lastWhat, state.lastAnswer, "", "", "info"))
+    ])
+  ]);
+}

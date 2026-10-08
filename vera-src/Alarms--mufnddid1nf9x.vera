@@ -1,0 +1,278 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+import * as intent from "std/intent"
+
+@jsonable
+class Alarm {
+  id: int;
+  hour: int;
+  minute: int;
+  label: string;
+  enabled: boolean;
+}
+
+@jsonable
+class AppState {
+  alarms: Alarm[];
+  nextId: int;
+  editHour: int;
+  editMinute: int;
+  editLabel: string;
+  editingId: int;
+  ringingId: int;
+  lastResult: string;
+}
+
+function init(): AppState {
+  let empty: Alarm[] = [];
+  return {
+    alarms: empty,
+    nextId: 1,
+    editHour: 7,
+    editMinute: 0,
+    editLabel: "",
+    editingId: 0,
+    ringingId: 0,
+    lastResult: ""
+  };
+}
+
+function setHour(state: AppState, value: int): AppState {
+  return {
+    alarms: state.alarms, nextId: state.nextId,
+    editHour: value, editMinute: state.editMinute,
+    editLabel: state.editLabel, editingId: state.editingId,
+    ringingId: state.ringingId, lastResult: state.lastResult
+  };
+}
+
+function setMinute(state: AppState, value: int): AppState {
+  return {
+    alarms: state.alarms, nextId: state.nextId,
+    editHour: state.editHour, editMinute: value,
+    editLabel: state.editLabel, editingId: state.editingId,
+    ringingId: state.ringingId, lastResult: state.lastResult
+  };
+}
+
+function setLabel(state: AppState, value: string): AppState {
+  return {
+    alarms: state.alarms, nextId: state.nextId,
+    editHour: state.editHour, editMinute: state.editMinute,
+    editLabel: value, editingId: state.editingId,
+    ringingId: state.ringingId, lastResult: state.lastResult
+  };
+}
+
+function saveAlarm(state: AppState, ignored: int): AppState {
+  let out: Alarm[] = [];
+  let found: boolean = false;
+  for (let a: Alarm of state.alarms) {
+    if (a.id === state.editingId) {
+      out.push({
+        id: a.id, hour: state.editHour, minute: state.editMinute,
+        label: state.editLabel, enabled: a.enabled
+      });
+      found = true;
+    } else {
+      out.push(a);
+    }
+  }
+  let newId: int = state.nextId;
+  if (!found) {
+    out.push({
+      id: state.nextId, hour: state.editHour, minute: state.editMinute,
+      label: state.editLabel, enabled: true
+    });
+    newId = state.nextId + 1;
+  }
+  return {
+    alarms: out, nextId: newId,
+    editHour: state.editHour, editMinute: state.editMinute,
+    editLabel: "", editingId: 0,
+    ringingId: state.ringingId, lastResult: state.lastResult
+  };
+}
+
+function editAlarm(state: AppState, id: int): AppState {
+  let h: int = state.editHour;
+  let m: int = state.editMinute;
+  let l: string = state.editLabel;
+  for (let a: Alarm of state.alarms) {
+    if (a.id === id) {
+      h = a.hour;
+      m = a.minute;
+      l = a.label;
+    }
+  }
+  return {
+    alarms: state.alarms, nextId: state.nextId,
+    editHour: h, editMinute: m, editLabel: l, editingId: id,
+    ringingId: state.ringingId, lastResult: state.lastResult
+  };
+}
+
+function cancelEdit(state: AppState, ignored: int): AppState {
+  return {
+    alarms: state.alarms, nextId: state.nextId,
+    editHour: state.editHour, editMinute: state.editMinute,
+    editLabel: "", editingId: 0,
+    ringingId: state.ringingId, lastResult: state.lastResult
+  };
+}
+
+function deleteAlarm(state: AppState, id: int): AppState {
+  let out: Alarm[] = [];
+  for (let a: Alarm of state.alarms) {
+    if (a.id !== id) {
+      out.push(a);
+    }
+  }
+  let editing: int = state.editingId;
+  if (editing === id) {
+    editing = 0;
+  }
+  return {
+    alarms: out, nextId: state.nextId,
+    editHour: state.editHour, editMinute: state.editMinute,
+    editLabel: state.editLabel, editingId: editing,
+    ringingId: state.ringingId, lastResult: state.lastResult
+  };
+}
+
+function toggleAlarm(state: AppState, id: int): AppState {
+  let out: Alarm[] = [];
+  for (let a: Alarm of state.alarms) {
+    if (a.id === id) {
+      out.push({
+        id: a.id, hour: a.hour, minute: a.minute,
+        label: a.label, enabled: !a.enabled
+      });
+    } else {
+      out.push(a);
+    }
+  }
+  return {
+    alarms: out, nextId: state.nextId,
+    editHour: state.editHour, editMinute: state.editMinute,
+    editLabel: state.editLabel, editingId: state.editingId,
+    ringingId: state.ringingId, lastResult: state.lastResult
+  };
+}
+
+function snooze(state: AppState, ignored: int): AppState {
+  intent.call("com.huawei.hmos.clock/entry/com.huawei.hmos.clock.phone/DelayAlarmRing",
+    [], "background", "onClockAnswer");
+  return {
+    alarms: state.alarms, nextId: state.nextId,
+    editHour: state.editHour, editMinute: state.editMinute,
+    editLabel: state.editLabel, editingId: state.editingId,
+    ringingId: 0, lastResult: "Snoozing for nine minutes..."
+  };
+}
+
+function silence(state: AppState, ignored: int): AppState {
+  intent.call("com.huawei.hmos.clock/entry/com.huawei.hmos.clock.phone/StopAlarmRing",
+    [], "background", "onClockAnswer");
+  return {
+    alarms: state.alarms, nextId: state.nextId,
+    editHour: state.editHour, editMinute: state.editMinute,
+    editLabel: state.editLabel, editingId: state.editingId,
+    ringingId: 0, lastResult: "Silencing..."
+  };
+}
+
+function onClockAnswer(state: AppState, value: string): AppState {
+  return {
+    alarms: state.alarms, nextId: state.nextId,
+    editHour: state.editHour, editMinute: state.editMinute,
+    editLabel: state.editLabel, editingId: state.editingId,
+    ringingId: state.ringingId, lastResult: value
+  };
+}
+
+function view(state: AppState): ui.View {
+  let count: int = state.alarms.length();
+  let enabledCount: int = 0;
+  for (let a: Alarm of state.alarms) {
+    if (a.enabled) {
+      enabledCount = enabledCount + 1;
+    }
+  }
+
+  let rows: ui.View[] = [];
+  for (let a: Alarm of state.alarms) {
+    let title: string = "";
+    if (a.label === "") {
+      title = "Alarm";
+    } else {
+      title = a.label;
+    }
+    let sub: string = "";
+    if (a.enabled) {
+      sub = "On";
+    } else {
+      sub = "Off";
+    }
+    rows.push(ui.IntListItem("default", title, sub,
+      a.hour * 60 + a.minute, "", "", 1,
+      "editAlarm", a.id, true, "clock"));
+  }
+
+  let editTitle: string = "New alarm";
+  if (state.editingId !== 0) {
+    editTitle = "Edit alarm";
+  }
+
+  return ui.AppTheme("clean", "", [
+    ui.Header("default", "Alarms", "CLOCK", "Set, change and silence your alarms", "clock"),
+
+    ui.When(state.ringingId !== 0, ui.Section("warning", "", "", [
+      ui.InsetBanner("warning", "Alarm ringing", "An alarm is going off right now.",
+        "", "", "warning"),
+      ui.ActionBar("end", [
+        ui.Button("secondary", "Snooze 9 min", "snooze", 0, true),
+        ui.Button("primary", "Silence", "silence", 0, true)
+      ])
+    ])),
+
+    ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 2, [
+        ui.IntStat("default", "Alarms", count, "", "", 1, "", "list"),
+        ui.IntStat("accent", "Enabled", enabledCount, "", "", 1, "", "check")
+      ])
+    ]),
+
+    ui.Section("content", editTitle, "", [
+      ui.TimeField("default", "Time", state.editHour * 60 + state.editMinute, "setTime"),
+      ui.TextField("default", "Label", state.editLabel, "setLabel"),
+      ui.ActionBar("end", [
+        ui.When(state.editingId !== 0,
+          ui.Button("secondary", "Cancel", "cancelEdit", 0, true)),
+        ui.Button("primary", "Save", "saveAlarm", 0, true)
+      ])
+    ]),
+
+    ui.Section("content", "", "", [
+      ui.SectionHeader("default", "Your alarms", "", ui.intToString(count)),
+      ui.When(count === 0,
+        ui.EmptyState("default", "No alarms yet",
+          "Pick a time above and save your first alarm.", "", "", "clock")),
+      ui.When(count > 0, ui.ListGroup("default", "", rows))
+    ]),
+
+    ui.When(state.lastResult !== "",
+      ui.Section("supporting", "", "", [
+        ui.InsetBanner("default", "Last action", state.lastResult, "", "", "info")
+      ]))
+  ]);
+}
+
+function setTime(state: AppState, value: int): AppState {
+  return {
+    alarms: state.alarms, nextId: state.nextId,
+    editHour: value / 60, editMinute: value % 60,
+    editLabel: state.editLabel, editingId: state.editingId,
+    ringingId: state.ringingId, lastResult: state.lastResult
+  };
+}
