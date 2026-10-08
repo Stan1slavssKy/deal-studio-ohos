@@ -142,6 +142,9 @@ What is a good way to learn 20 Spanish words a week?
 ```
 I need to boil an egg, soft, the way I like it.
 ```
+```
+My room is pitch dark and I cannot find my keys. Give me a button to turn the flashlight on and one to turn it off.
+```
 
 **How it works.** Each turn is a plain chat completion (`vera/VeraChat.ets`
 `chatReply`) whose system prompt lets the assistant end a reply with
@@ -163,6 +166,18 @@ fixed-height (520 vp) card under the message. Widget builds are queued, one at a
   hold; it was left as it is, as good enough for a demo.
 - The third gets a soft-boiled egg timer with presets and a countdown that really
   ticks (337 s, then 321 s sixteen seconds later).
+- The fourth uses a system intent. The assistant answers briefly and offers a
+  widget with Turn On / Turn Off buttons and a "Last platform answer" panel; the
+  buttons reach the phone's torch through `sdk.call` (found with
+  `find_intent_function`, `sceneboard/OpenFlashlight` and `CloseFlashlight`).
+  Confirmed on a phone by watching the torch light and go out, which is the only
+  check that counts: the panel says `ok` either way. The widget also shows
+  counters ("Times switched on 10") that the model seeded rather than measured.
+  Without the capability sentence in the chat system prompt the assistant
+  refused ("I can't control your phone's flashlight"), and an alarm prompt ("flight
+  at 08:40, help me not oversleep") built a planner that told the person to set
+  the alarms by hand; the sentence that lets widgets act on the phone is what
+  changed that.
 - A failed build shows the error under the reply instead of leaving a spinner;
   this was seen when the phone lost Wi-Fi mid-build. The conversation continues.
 - The conversation is not saved, and neither is a widget's state: leaving the
