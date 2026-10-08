@@ -6,7 +6,7 @@ Generated from `entry/src/main/ets/vera/VeraUiCatalog.ets` -- the same table tha
 module interface, the validator's rules and the catalogue section of the model's prompt, so nothing here can
 drift from what the phone runs. Anything not in this file is not in the language: the compiler rejects it.
 
-44 components, 33 of them with a style set, 8 that hand a value back to a handler, 16 icons, 7 composition rules.
+49 components, 36 of them with a style set, 9 that hand a value back to a handler, 16 icons, 7 composition rules.
 
 A program picks a component and one style name from a closed set. It cannot set a colour, a padding or a
 size: those come from `VeraTheme.ets` and the renderer.
@@ -59,6 +59,11 @@ size: those come from `VeraTheme.ets` and the renderer.
 | `ui.KeyValueItem` | Composition | One labelled fact: label above, value below |
 | `ui.InsetBanner` | Composition | A standing status or guidance note in a tone, with one optional action |
 | `ui.EmptyState` | Composition | What to show where a collection is empty: title, message, one way forward |
+| `ui.Skeleton` | Feedback | A placeholder box the size of the content that has not arrived yet |
+| `ui.Spinner` | Feedback | A small spinning indicator that something is in progress |
+| `ui.Snackbar` | Feedback | A one-line status strip the program raised itself, with one optional action |
+| `ui.Sparkline` | Chart | A small line chart from a series of whole numbers |
+| `ui.BackHandler` | Navigation | Draws nothing; calls the handler on the system back gesture |
 | `ui.When` | — | Draws the child when the condition is true, nothing when it is false |
 | `ui.intToString` | — | A whole number as text |
 | `ui.numberToString` | — | A fractional number as text |
@@ -244,13 +249,15 @@ The row of buttons for a screen or a section.
 
 > Gather the actions into one of these instead of leaving buttons loose in a Column. It takes ui.Button, ui.IconButton and ui.Badge. One action is primary and the rest are not.
 
-### `ui.TextField(style: string, label: string, value: string, action: string): View`
+### `ui.TextField(style: string, label: string, value: string, action: string, [keyboardType: string], [required: boolean], [requiredMessage: string], [minLength: int], [minLengthMessage: string], [maxLength: int], [maxLengthMessage: string], [pattern: string], [patternMessage: string], [email: boolean], [emailMessage: string]): View`
 
 Text the user types; the handler takes (state, value: string).
 
 **Styles:** `default` `multiline`
 
 **Handler receives:** `string`
+
+> `keyboardType` is `""`, `"number"`, `"phone"` or `"email"` and only changes which keys the on-screen keyboard offers — it never rejects a character. `required`, `minLength`, `maxLength`, `pattern` (a regex) and `email` each turn on one check, shown under the field in its own words via the matching `...Message` prop (a sensible default is used if left blank). None of them stop what reaches the handler — VERA has no way to refuse a value once typed, so these are guidance shown to the person, not enforcement.
 
 ### `ui.IntField(style: string, label: string, value: int, minimum: int, maximum: int, action: string): View`
 
@@ -427,6 +434,56 @@ What to show where a collection is empty: title, message, one way forward.
 **Styles:** `default` `muted`
 
 > State starts empty, so this is the first thing the person sees. Put one behind ui.When(list.length() === 0, ...) for every collection the app keeps. Pass actionText "" and action "" when there is nothing to tap; the handler, if you name one, is called with 0.
+
+## Feedback
+
+*loading and transient status*
+
+### `ui.Skeleton(style: string, width: int, height: int, [rounded: boolean]): View`
+
+A placeholder box the size of the content that has not arrived yet.
+
+> Put one where real content will appear once it is ready, instead of leaving that space blank or showing a zero. width and height are the box in points; rounded softens the corners for anything that will end up looking like a chip or an avatar.
+
+### `ui.Spinner(style: string, [label: string]): View`
+
+A small spinning indicator that something is in progress.
+
+**Styles:** `default` `accent`
+
+> For a wait with no useful progress number to show -- reach for ui.Progress instead when there is one. label is shown beside it and may be "".
+
+### `ui.Snackbar(style: string, message: string, actionText: string, action: string): View`
+
+A one-line status strip the program raised itself, with one optional action.
+
+**Styles:** `default` `success` `warning` `danger`
+
+> For something that just happened and does not need to stay on screen -- "Saved", "Undo", a result the person did not have to ask for. Unlike ui.InsetBanner this is not meant to persist: put it behind ui.When(state.showX, ...) and have the handler that triggered it set state.showX true, and whatever dismisses it (a timer, the action button, the next tap) set it back to false. Pass actionText "" and action "" for no action; the handler, if named, is called with 0.
+
+## Chart
+
+*a series of numbers, drawn*
+
+### `ui.Sparkline(style: string, series: int[], maximum: int, label: string): View`
+
+A small line chart from a series of whole numbers.
+
+**Styles:** `default` `accent` `success` `warning` `danger`
+
+> For a trend at a glance -- steps across a week, a balance over time -- rather than a table of numbers nobody will read. series is drawn left to right in the order given; maximum bounds the vertical scale, and a value past it is clamped rather than redrawing everything else smaller. label is shown with the chart and may be "".
+
+## Navigation
+
+*the system back gesture*
+
+### `ui.BackHandler(action: string): View`
+
+Draws nothing; calls the handler, with 0, on the system back gesture.
+
+**Handler receives:** `int`
+
+> VERA has no separate navigation stack -- "screens" are just a state.screen-style field and ui.When choosing which View to draw. Add one ui.BackHandler wherever a screen other than the first is showing, so the hardware/system back gesture does something sensible (return to the previous screen, close a dialog) instead of the OS default, which exits the app. Leave it out of the first screen so back still exits normally. Only one should be live at a time; if several are drawn in the same frame the last one decoded wins.
 
 ## Beyond the components
 

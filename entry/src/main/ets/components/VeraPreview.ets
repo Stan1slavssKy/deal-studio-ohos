@@ -86,6 +86,23 @@ export struct VeraPreview {
    * takes the height it needs and has no scrolling of its own.
    */
   @Prop embedded: boolean = false
+  /**
+   * Bumped by the hosting page's onBackPressed() every time the system back
+   * gesture should be handed to the program. A counter rather than a boolean:
+   * the value itself carries no meaning, only the fact that it changed, so two
+   * back-presses in a row -- the normal case -- are both seen.
+   */
+  @Prop @Watch('onBackPressSignal') backPressSignal: number = 0
+  /**
+   * Told whether a ui.BackHandler is currently part of the tree, so the
+   * hosting page's onBackPress() can return the right thing synchronously --
+   * swallow the gesture and bump backPressSignal, or let the system handle it
+   * (pop the page, in RunnerPage's case) -- without waiting on a dispatch.
+   * A plain field, not @Prop: a callback's identity never changes, so there is
+   * nothing here for ArkUI to watch.
+   */
+  onBackHandlerChanged: (active: boolean) => void = () => {}
+  private backHandlerAction: string = ''
   // The live tree is mutated in place, so it is not @State: its own @Trace
   // fields are what drive the re-render. See VeraLiveTree.
   @State hasRoot: boolean = false
@@ -170,7 +187,7 @@ export struct VeraPreview {
     'emptystate', 'stat', 'metricgroup',
     'inttext', 'intstat', 'intfield', 'timefield', 'intlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
-    'timeline', 'timelineitem']
+    'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler']
 
   aboutToAppear(): void {
     let missing: string[] = []
@@ -296,6 +313,37 @@ export struct VeraPreview {
     return 0
   }
 
+  /**
+   * Keep backHandlerAction in step with the frame just produced, and tell the
+   * hosting page when a handler starts or stops being there -- not on every
+   * frame, only on that transition, since that is the only thing the page
+   * needs to decide what its own onBackPress() should do next time.
+   */
+  private reconcileBackHandler(root: VeraUiNode | null): void {
+    let action = root !== null ? this.findBackHandlerAction(root!) : ''
+    let had = this.backHandlerAction.length > 0
+    this.backHandlerAction = action
+    let has = action.length > 0
+    if (has !== had) { this.onBackHandlerChanged(has) }
+  }
+
+  /** Last one in the tree wins, matching the catalogue's own stated rule. */
+  private findBackHandlerAction(node: VeraUiNode): string {
+    let found = node.kind === 'backhandler' ? node.action : ''
+    for (let child of node.children) {
+      let childFound = this.findBackHandlerAction(child)
+      if (childFound.length > 0) { found = childFound }
+    }
+    return found
+  }
+
+  /** The system back gesture, relayed by the hosting page via backPressSignal. */
+  onBackPressSignal(): void {
+    if (this.backHandlerAction.length > 0) {
+      this.dispatch(this.backHandlerAction, new VeraIntValue(0))
+    }
+  }
+
   private collectTickers(node: VeraUiNode, wanted: Map<string, number>,
       actions: Map<string, string>): void {
     if (node.kind === 'ticker' && node.checked && node.minimum > 0 &&
@@ -418,6 +466,7 @@ export struct VeraPreview {
       this.revision += 1
       this.reconcileTimers(root)
       this.reconcileSpin(root)
+      this.reconcileBackHandler(root)
     } catch (e) {
       this.error = 'View error: ' + (e as Error).message
     }
@@ -911,6 +960,115 @@ export struct VeraPreview {
     let h = Math.floor(m / 60)
     let mm = m % 60
     return (h < 10 ? '0' : '') + h.toString() + ':' + (mm < 10 ? '0' : '') + mm.toString()
+  }
+
+  /**
+   * A ui.Sparkline's series as an SVG path, in the same 0..100 box every
+   * icon is drawn in. maximum bounds the vertical scale; a value past it is
+   * clamped rather than drawn off the top, since the program named maximum
+   * itself and a point above it is the program's own figure being wrong, not
+   * a reason to redraw everything else smaller.
+   */
+  private sparklineCommands(node: LiveNode): string {
+    let series = node.series
+    if (series.length === 0) { return '' }
+    let max = node.maximum > 0 ? node.maximum : 1
+    let n = series.length
+    let cmds: string[] = []
+    for (let i = 0; i < n; i++) {
+      let x = n > 1 ? (i / (n - 1)) * 100 : 50
+      let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
+      let y = 100 - (v / max) * 100
+      cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
+    }
+    return cmds.join(' ')
+  }
+
+  /**
+   * sparklineCommands's own points, closed down to the bottom edge of the
+   * same 0..100 box and back to the start -- the area a chart's fill reads
+   * against, computed from the line itself rather than left to an implicit
+   * close the way the plain 'path' branch's fill is.
+   */
+  private sparklineAreaCommands(node: LiveNode): string {
+    let series = node.series
+    if (series.length === 0) { return '' }
+    let max = node.maximum > 0 ? node.maximum : 1
+    let n = series.length
+    let cmds: string[] = []
+    let firstX = 0
+    let lastX = 100
+    for (let i = 0; i < n; i++) {
+      let x = n > 1 ? (i / (n - 1)) * 100 : 50
+      let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
+      let y = 100 - (v / max) * 100
+      if (i === 0) { firstX = x }
+      if (i === n - 1) { lastX = x }
+      cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
+    }
+    cmds.push('L ' + lastX.toFixed(2) + ' 100')
+    cmds.push('L ' + firstX.toFixed(2) + ' 100')
+    cmds.push('Z')
+    return cmds.join(' ')
+  }
+
+  /** ui.Select's current choice, for the trigger row -- '' if it has no options at all. */
+  private selectDisplayText(node: LiveNode): string {
+    let i = node.eventValue
+    if (i >= 0 && i < node.options.length) { return node.options[i] }
+    return node.options.length > 0 ? node.options[0] : ''
+  }
+
+  /** ui.Select's options as the overlay bindMenu opens, one MenuElement each. */
+  private selectMenuItems(node: LiveNode): MenuElement[] {
+    let items: MenuElement[] = []
+    for (let i = 0; i < node.options.length; i++) {
+      let index = i
+      items.push({
+        value: node.options[i],
+        action: () => {
+          if (node.action.length > 0) { this.handleAction(node.action, index) }
+        }
+      })
+    }
+    return items
+  }
+
+  /**
+   * ui.TextField's checks, in a fixed order, as the one message to show under
+   * the field or '' if it currently has none. VERA has no way to refuse a
+   * value once typed, so this never stops anything reaching the handler --
+   * it only tells the person what is wrong, the same thing a host test runs
+   * against the same inputs to confirm before this ever touches ArkUI.
+   */
+  private textFieldIssue(node: LiveNode): string {
+    let v = node.value
+    if (node.required && v.length === 0) {
+      return node.requiredMessage.length > 0 ? node.requiredMessage : 'Required'
+    }
+    if (v.length === 0) { return '' }
+    if (node.minLength > 0 && v.length < node.minLength) {
+      return node.minLengthMessage.length > 0 ? node.minLengthMessage
+        : 'Enter at least ' + node.minLength.toString() + ' characters'
+    }
+    if (node.maxLength >= 0 && v.length > node.maxLength) {
+      return node.maxLengthMessage.length > 0 ? node.maxLengthMessage
+        : 'Enter at most ' + node.maxLength.toString() + ' characters'
+    }
+    if (node.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+      return node.emailMessage.length > 0 ? node.emailMessage : 'Enter a valid email address'
+    }
+    if (node.pattern.length > 0 && !new RegExp(node.pattern).test(v)) {
+      return node.patternMessage.length > 0 ? node.patternMessage : 'Invalid format'
+    }
+    return ''
+  }
+
+  private textFieldKeyboard(node: LiveNode): InputType {
+    if (node.keyboardType === 'number') { return InputType.Number }
+    if (node.keyboardType === 'phone') { return InputType.PhoneNumber }
+    if (node.keyboardType === 'email') { return InputType.Email }
+    return InputType.Normal
   }
 
   /**
@@ -1775,6 +1933,58 @@ export struct VeraPreview {
                  top: this.t().gapTight - 1, bottom: this.t().gapTight - 1 })
       .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
       .borderRadius(this.t().radiusSmall)
+    } else if (node.kind === 'skeleton') {
+      // width/height/rounded ride minimum/maximum/checked -- the same field
+      // reuse Ticker already does for intervalMs/running, so decode needed
+      // no new case.
+      Column()
+        .width(node.minimum > 0 ? node.minimum : 120)
+        .height(node.maximum > 0 ? node.maximum : 16)
+        .backgroundColor(this.t().surfaceDisabled)
+        .borderRadius(node.checked ? (node.maximum > 0 ? node.maximum : 16) / 2 : this.t().radiusSmall)
+    } else if (node.kind === 'spinner') {
+      // ArkUI's own LoadingProgress animates on its own -- no extra timer or
+      // @Trace angle needed, unlike ui.Path's hand-rolled spin.
+      Row({ space: this.t().gapTight }) {
+        LoadingProgress()
+          .width(this.t().sizeHeading)
+          .height(this.t().sizeHeading)
+          .color(toneInk(this.t(), node.style, this.t().primary))
+        if (node.label.length > 0) {
+          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft)
+        }
+      }
+      .alignItems(VerticalAlign.Center)
+    } else if (node.kind === 'snackbar') {
+      // message/actionText/action ride text/value/action -- the same shape
+      // ui.InsetBanner already uses, so decode needed no new case here
+      // either. Meant to come and go behind ui.When, not to persist like a
+      // banner: see the catalogue guidance.
+      Row({ space: this.t().gapBase }) {
+        Text(node.text)
+          .fontSize(this.t().sizeBody)
+          .fontFamily(this.textFamily())
+          .fontColor(toneInk(this.t(), node.style, this.t().onPrimary))
+          .layoutWeight(1)
+        if (node.value.length > 0) {
+          Button(node.value)
+            .height(this.t().chipHeight)
+            .fontSize(this.t().sizeCaption + 1)
+            .fontFamily(this.textFamily())
+            .type(ButtonType.Capsule)
+            .backgroundColor('#00000000')
+            .fontColor(toneInk(this.t(), node.style, this.t().onPrimary))
+            .onClick(() => {
+              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
+            })
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .padding(this.t().padBase)
+      .backgroundColor(toneEdge(this.t(), node.style, this.t().inkStrong))
+      .borderRadius(this.t().radiusControl)
+      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'button') {
       Button(node.text.length === 0 ? ' ' : node.text)
         .height(this.t().controlHeight)
@@ -1831,10 +2041,14 @@ export struct VeraPreview {
           .height(node.style === 'multiline' ? this.t().controlHeight * 2 : this.t().controlHeight)
           .width('100%')
           .enabled(node.enabled)
+          .type(this.textFieldKeyboard(node))
           .onSubmit((_key: EnterKeyType, _event: SubmitEvent) => {})
           .onChange((v: string) => {
             if (node.action.length > 0) { this.handleStringAction(node.action, v) }
           })
+        if (this.textFieldIssue(node).length > 0) {
+          Text(this.textFieldIssue(node)).fontSize(this.t().sizeCaption).fontColor(this.t().danger)
+        }
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
@@ -1893,22 +2107,29 @@ export struct VeraPreview {
         if (node.label.length > 0) {
           Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
         }
-        Row({ space: this.t().padRow }) {
-          ForEach(node.options, (opt: string, index: number) => {
-            Button(opt)
-              .height(this.t().chipHeight)
-              .fontSize(this.t().sizeCaption + 1)
-              .fontFamily(this.textFamily())
-              .type(ButtonType.Capsule)
-              .enabled(node.enabled)
-              .backgroundColor(index === node.eventValue ? this.t().primary : this.t().secondaryFill)
-              .fontColor(index === node.eventValue ? this.t().onPrimary : this.t().secondaryInk)
-              .onClick(() => {
-                if (node.action.length > 0) { this.handleAction(node.action, index) }
-              })
-          }, (opt: string, index: number) => index.toString() + opt)
+        // A single trigger showing the current choice, with the rest of the
+        // options in a system overlay menu rather than always on screen. The
+        // chip row this replaced drew every option whether or not it was the
+        // one picked, which is what ran a five-plus-option Select off the
+        // right edge before Flex-wrap fixed the overflow -- this removes the
+        // row entirely rather than giving it more room to wrap into.
+        Row({ space: this.t().gapTight }) {
+          Text(this.selectDisplayText(node))
+            .fontSize(this.t().sizeBody)
+            .fontColor(node.enabled ? this.t().ink : this.t().inkMuted)
+            .fontFamily(this.textFamily())
+            .layoutWeight(1)
+          Row() { this.drawIcon('chevron-right', this.t().sizeCaption, this.t().inkSoft) }
+            .rotate({ angle: 90 })
         }
         .width('100%')
+        .height(this.t().controlHeight)
+        .padding({ left: this.t().padRow, right: this.t().padRow })
+        .borderRadius(this.t().radiusControl)
+        .backgroundColor(this.t().secondaryFill)
+        .opacity(node.enabled ? 1 : 0.5)
+        .enabled(node.enabled)
+        .bindMenu(this.selectMenuItems(node))
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
@@ -1977,6 +2198,9 @@ export struct VeraPreview {
     } else if (node.kind === 'ticker') {
       // Draws nothing: it exists so the host will call the program on a timer.
       Blank().height(0).width(0)
+    } else if (node.kind === 'backhandler') {
+      // Draws nothing: see reconcileBackHandler, which is what actually acts on it.
+      Blank().height(0).width(0)
     } else if (node.kind === 'divider') {
       Divider().strokeWidth(this.t().borderWidth).color(this.t().line)
         .margin({ top: this.t().padRow, bottom: this.t().padRow })
@@ -1992,6 +2216,40 @@ export struct VeraPreview {
         })
           .width('100%')
           .color(toneEdge(this.t(), node.style, this.t().primary))
+      }
+      .width('100%')
+      .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'sparkline') {
+      // Drawn the same way an icon is: a path in a fixed 0..100 box, mapped
+      // onto the real box with viewPort so the unit stays px throughout (see
+      // drawIcon's own comment on why 'px' and not a bare number). The
+      // renderer does the normalising -- the program hands raw values and a
+      // scale, not a pre-computed string, which is the point of series
+      // travelling as int[] rather than as text.
+      Column({ space: 2 }) {
+        if (node.label.length > 0) {
+          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
+        }
+        Shape() {
+          // The same line, closed down to the bottom edge and filled with
+          // the tone's soft background -- this is why it reads as a chart
+          // rather than a bare line, and unlike the plain 'path' branch
+          // above, the fill traces exactly the points this shape itself
+          // drew, not an open shape closed by accident.
+          Path({ commands: this.sparklineAreaCommands(node) })
+            .fill(toneFill(this.t(), node.style, this.t().primaryFill))
+            .fillOpacity(0.4)
+            .stroke(Color.Transparent)
+          Path({ commands: this.sparklineCommands(node) })
+            .fill(Color.Transparent)
+            .stroke(toneEdge(this.t(), node.style, this.t().primary))
+            .strokeWidth('2px')
+            .strokeLineCap(LineCapStyle.Round)
+            .strokeLineJoin(LineJoinStyle.Round)
+        }
+        .viewPort({ x: ICON_ORIGIN, y: ICON_ORIGIN, width: ICON_VIEWPORT, height: ICON_VIEWPORT })
+        .width('100%')
+        .height(200)
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })

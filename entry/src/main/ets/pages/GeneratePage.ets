@@ -23,11 +23,11 @@ import { benchmarkRequested, runSearchBenchmark } from '../vera/VeraSearchBenchm
 import { sdkSearchRequested, runSdkSearchProbe } from '../vera/VeraSdkProbe'
 import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
 import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
-import { selectUiForPrompt, UI_SELECT_FULL, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
+import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
-const UI_SELECT_MODE: string = UI_SELECT_FULL
+const UI_SELECT_MODE: string = UI_SELECT_PROMPT
 const MAX_RETRIES: number = 3
 // vera-server's address is not written down here. It lives in settings, given
 // the same way as the API key -- `--ps veraServer http://host:port` -- because
