@@ -969,7 +969,7 @@ export struct VeraPreview {
    * takes it as a parameter instead of assuming a fixed square, the way
    * SPARKLINE_HEIGHT alone would.
    */
-  private static readonly SPARKLINE_HEIGHT: number = 200
+  private static readonly SPARKLINE_HEIGHT: number = 260
 
   /**
    * A ui.Sparkline's series as an SVG path, directly in vp -- x across
@@ -1050,7 +1050,7 @@ export struct VeraPreview {
     let h = VeraPreview.SPARKLINE_HEIGHT
     let n = series.length
     let spacing = n > 1 ? width / (n - 1) : width
-    let barWidth = Math.min(spacing * 0.6, width * 0.2)
+    let barWidth = Math.min(spacing * 0.7, width * 0.22)
     let rects: string[] = []
     for (let i = 0; i < n; i++) {
       let cx = n > 1 ? (i / (n - 1)) * width : width / 2
@@ -2349,9 +2349,10 @@ export struct VeraPreview {
       // renderer does the normalising -- the program hands raw values and a
       // scale, not a pre-computed string, which is the point of series
       // travelling as int[] rather than as text.
-      Column({ space: 2 }) {
+      Column({ space: 4 }) {
         if (node.label.length > 0) {
-          Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
+          Text(node.label).fontSize(this.t().sizeBody).fontFamily(this.textFamily())
+            .fontColor(this.t().inkSoft).width('100%')
         }
         Shape() {
           if (node.bars) {
@@ -2378,7 +2379,7 @@ export struct VeraPreview {
             Path({ commands: this.sparklineCommands(node, this.chartWidth()) })
               .fill(Color.Transparent)
               .stroke(toneEdge(this.t(), node.style, this.t().primary))
-              .strokeWidth('2px')
+              .strokeWidth('3px')
               .strokeLineCap(LineCapStyle.Round)
               .strokeLineJoin(LineJoinStyle.Round)
           }
