@@ -259,7 +259,12 @@ async function webSearch(query: string): Promise<string> {
       readTimeout: 20000
     })
     if (resp.responseCode !== 200) {
-      console.info('VERA-CHAT search failed: HTTP ' + resp.responseCode.toString() + ' ' + String(resp.result).substring(0, 240).split('\n').join(' '))
+      let page = String(resp.result)
+      let at = page.indexOf('<title>')
+      let head = at >= 0 ? page.substring(at, at + 160) : page.substring(0, 160)
+      let code = page.indexOf('Error code')
+      let detail = code >= 0 ? page.substring(code, code + 40) : ''
+      console.info('VERA-CHAT search failed: HTTP ' + resp.responseCode.toString() + ' ' + head.split('\n').join(' ') + ' ' + detail)
       return 'Search failed: HTTP ' + resp.responseCode.toString()
     }
     let parsed = JSON.parse(resp.result as string) as Record<string, Object>
