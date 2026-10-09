@@ -160,6 +160,14 @@ export struct VeraPreview {
    */
   @State viewportWidth: number = 0
   /**
+   * A ui.Sparkline's own plotting box width, measured directly on its own
+   * Shape (see chartWidth's own comment on why not viewportWidth). @State
+   * for the same reason viewportWidth is: the first frame draws at a guess,
+   * the real area arrives after layout, and the chart redraws at its actual
+   * size once it does.
+   */
+  @State sparklineWidth: number = 0
+  /**
    * The call waiting for the person to allow it, and the calls queued behind it.
    *
    * A generated program may ask the phone to do things it cannot undo, and
@@ -1032,56 +1040,44 @@ export struct VeraPreview {
     return cmds.join(' ')
   }
 
+
   /**
-   * ui.Sparkline with bars: true -- the same clamped points sparklineCommands
-   * computes, directly in vp, but one closed rectangle per value. Returns one
-   * path-data string per bar (rather than several M..Z subpaths joined into
-   * one Path's commands) because a single multi-subpath Path's own measured
-   * box also came out wrong on device, independently of the viewPort problem
-   * above. One Path per bar, the same shape ui.Canvas already draws several
-   * of side by side, sidesteps that rather than chasing it inside a single
-   * Path. Each bar is centred on the point's own x, at a fraction of the
-   * spacing between points so bars never touch.
+   * The real width to draw a ui.Sparkline's path commands in, in vp.
+   *
+   * This used to reuse viewportWidth -- the whole program's own outer content
+   * box, measured once near the root (onAreaChange several screens up from
+   * here) -- on the reasoning that a chart a little too wide would read
+   * better than one squeezed into a sliver. Measured on device: wrong in the
+   * other direction and worse than that reasoning expected. A chart nested
+   * inside a ui.Section sits well inside viewportWidth -- the section's own
+   * padding, plus this preview's own page padding counted on top of it a
+   * second time -- so the bars drew at a small fraction of the real box and
+   * sat flush left in it rather than centred, nowhere near "a little wide".
+   * sparklineWidth is measured on the chart's own Shape instead (see its
+   * own onAreaChange in the 'sparkline' branch), so it needs no guess about
+   * how many padded containers sit between this chart and the page edge.
+   * 300 is a plain guess for the first frame, before any area has been
+   * measured.
    */
-  private sparklineBarRects(node: LiveNode, width: number): string[] {
-    let series = node.series
-    if (series.length === 0) { return [] }
-    let max = node.maximum > 0 ? node.maximum : 1
-    let h = VeraPreview.SPARKLINE_HEIGHT
-    let n = series.length
-    let spacing = n > 1 ? width / (n - 1) : width
-    let barWidth = Math.min(spacing * 0.7, width * 0.22)
-    let rects: string[] = []
-    for (let i = 0; i < n; i++) {
-      let cx = n > 1 ? (i / (n - 1)) * width : width / 2
-      let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
-      let y = h - (v / max) * h
-      let x0 = cx - barWidth / 2
-      let x1 = cx + barWidth / 2
-      let cmds: string[] = []
-      cmds.push('M ' + x0.toFixed(2) + ' ' + h.toFixed(2))
-      cmds.push('L ' + x0.toFixed(2) + ' ' + y.toFixed(2))
-      cmds.push('L ' + x1.toFixed(2) + ' ' + y.toFixed(2))
-      cmds.push('L ' + x1.toFixed(2) + ' ' + h.toFixed(2))
-      cmds.push('Z')
-      rects.push(cmds.join(' '))
-    }
-    return rects
+  private chartWidth(): number {
+    return this.sparklineWidth > 0 ? this.sparklineWidth : 300
   }
 
   /**
-   * The real width to draw a ui.Sparkline's path commands in, in vp --
-   * viewportWidth is the one already measured for the whole program's own
-   * content box (onAreaChange two screens up from here) and reused as-is.
-   * It can overshoot a chart nested inside a padded ui.Section or ui.Card by
-   * that container's own padding, since this does not walk back up to find
-   * the chart's actual parent box -- a chart a little wider than its frame
-   * reads far better than one squeezed into a sliver at the left, which is
-   * what drawing in a fixed 0..100 box scaled by Shape.viewPort did. 300 is
-   * a plain guess for the first frame, before any area has been measured.
+   * ui.Sparkline with bars: true -- every value's bar height, in vp, clamped
+   * to maximum the same way sparklineCommands clamps a line's points. Called
+   * once as the 'sparkline' branch's ForEach data source, not from inside
+   * its item builder -- see that branch's own comment for why that distinction
+   * is exactly what makes every bar draw, not only the tallest.
    */
-  private chartWidth(): number {
-    return this.viewportWidth > 0 ? this.viewportWidth : 300
+  private barHeights(node: LiveNode): number[] {
+    let max = node.maximum > 0 ? node.maximum : 1
+    let heights: number[] = []
+    for (let v of node.series) {
+      let clamped = v < 0 ? 0 : (v > max ? max : v)
+      heights.push((clamped / max) * VeraPreview.SPARKLINE_HEIGHT)
+    }
+    return heights
   }
 
   /** ui.Select's current choice, for the trigger row -- '' if it has no options at all. */
@@ -2343,30 +2339,54 @@ export struct VeraPreview {
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'sparkline') {
-      // Drawn the same way an icon is: a path in a fixed 0..100 box, mapped
-      // onto the real box with viewPort so the unit stays px throughout (see
-      // drawIcon's own comment on why 'px' and not a bare number). The
-      // renderer does the normalising -- the program hands raw values and a
-      // scale, not a pre-computed string, which is the point of series
-      // travelling as int[] rather than as text.
+      // The path commands are written directly in this box's own real vp
+      // (chartWidth's own comment has the full story on why, and on the
+      // viewPort-based approach this replaced). The renderer does the
+      // normalising -- the program hands raw values and a scale, not a
+      // pre-computed string, which is the point of series travelling as
+      // int[] rather than as text.
       Column({ space: 4 }) {
         if (node.label.length > 0) {
           Text(node.label).fontSize(this.t().sizeBody).fontFamily(this.textFamily())
             .fontColor(this.t().inkSoft).width('100%')
         }
-        Shape() {
-          if (node.bars) {
-            // One Path per bar (see sparklineBarRects's own comment on why
-            // not one Path with several subpaths), solid-filled in the
-            // tone's own saturated colour (toneEdge -- "a rail, a bar, a
-            // border", the same helper ui.Progress's own fill already uses)
-            // rather than the soft tinted toneFill a card background wants.
-            ForEach(this.sparklineBarRects(node, this.chartWidth()), (rect: string, index: number) => {
-              Path({ commands: rect })
-                .fill(toneEdge(this.t(), node.style, this.t().primary))
-                .stroke(Color.Transparent)
-            }, (rect: string, index: number) => index.toString())
-          } else {
+        if (node.bars) {
+          // Plain flex layout instead of Shape/Path -- one column per value,
+          // each ui.ListItem/Table cell's own .layoutWeight(1) trick stretches
+          // it to its even share of the row, no path coordinates and no
+          // measured width needed at all. See chartWidth's own comment for
+          // why that measurement is what made the line branch below unsafe
+          // to trust for this: bars do not have to share that risk when
+          // ArkUI's own flex layout already divides the width correctly.
+          Row({ space: 6 }) {
+            // barHeights is called once here, to build the array this
+            // ForEach iterates -- not from inside its item builder. That
+            // distinction is the whole fix: renderNode is @Builder, and
+            // five shapes of this ForEach's item builder reading node.max-
+            // imum itself -- a let before the loop, a @Component method
+            // call, a bare function call, and two hand-written inline
+            // expressions, all reading node.maximum alongside the item's
+            // own v -- each compiled clean but left every bar but the
+            // tallest missing from the render tree on device (confirmed
+            // with uitest dumpLayout each time). Only node.series' own
+            // values, read straight by the ForEach above with nothing
+            // else touched per item, ever drew right. barHeights reads
+            // node.maximum exactly once, outside any item builder, and
+            // hands ForEach the one thing already proven safe inside one:
+            // each item's own plain closure variable.
+            ForEach(this.barHeights(node), (h: number, index: number) => {
+              Column()
+                .layoutWeight(1)
+                .height(h)
+                .borderRadius(2)
+                .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
+            }, (h: number, index: number) => index.toString())
+          }
+          .width('100%')
+          .height(VeraPreview.SPARKLINE_HEIGHT)
+          .alignItems(VerticalAlign.Bottom)
+        } else {
+          Shape() {
             // The same line, closed down to the bottom edge and filled with
             // the tone's soft background -- this is why it reads as a chart
             // rather than a bare line, and unlike the plain 'path' branch
@@ -2383,12 +2403,16 @@ export struct VeraPreview {
               .strokeLineCap(LineCapStyle.Round)
               .strokeLineJoin(LineJoinStyle.Round)
           }
+          .width('100%')
+          .height(VeraPreview.SPARKLINE_HEIGHT)
+          // Measures this chart's own box, the way the whole page measures
+          // its own for viewportWidth two screens up -- see chartWidth's own
+          // comment on why this chart cannot just reuse that one.
+          .onAreaChange((_old: Area, now: Area) => {
+            let w = now.width as number
+            if (Math.abs(w - this.sparklineWidth) >= 1) { this.sparklineWidth = w }
+          })
         }
-        // No .viewPort(): see chartWidth's and sparklineCommands's own
-        // comments on why the path commands are written directly in this
-        // box's own vp (0..chartWidth(), 0..SPARKLINE_HEIGHT) instead.
-        .width('100%')
-        .height(VeraPreview.SPARKLINE_HEIGHT)
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
