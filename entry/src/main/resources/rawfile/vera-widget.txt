@@ -49,3 +49,9 @@ Use the requested rounding rule. If none is supplied, use integer truncation for
 For example, 18740 * 12 / 100 produces 2248 cents, displayed as $22.48.
 Check zero, positive, and negative values. The helper must show -1 as -$0.01 and -105 as -$1.05.
 Avoid overflow in intermediate multiplication. Limit controls or use explicit number conversions when necessary.
+
+Pictures. When the line gives an https image address, show it with
+ui.Image("default", "<that exact address>", "<what it shows>") at the top of the
+widget, above the figures. Copy the address character for character. Never write
+an address the line did not give you, and never add a picture the line did not
+ask for: with no address in the line, there is no ui.Image.

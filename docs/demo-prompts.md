@@ -182,6 +182,14 @@ fixed-height (420 vp) card under the message. Widget builds are queued, one at a
   at 08:40, help me not oversleep") built a planner that told the person to set
   the alarms by hand; the sentence that lets widgets act on the phone is what
   changed that.
+- A fifth, with web search and a photo: "Show me the Pushkin Museum of Fine Arts in
+  Moscow with a photo of it and its opening hours." Needs an Exa key
+  (`--ps exaKey ...`) and a network Exa does not block (it blocks Russian
+  addresses). The assistant searches (once for the hours, once for a photo), cites
+  the source in its text, and the widget shows the photo through `ui.Image` with
+  the address, hours and a Directions button. The image address must be one the
+  search returned; the one in the run above was checked against Exa's own
+  results. Without the key there is no search and no photo.
 - A failed build shows the error under the reply instead of leaving a spinner;
   this was seen when the phone lost Wi-Fi mid-build. The conversation continues.
 - The conversation is not saved, and neither is a widget's state: leaving the
