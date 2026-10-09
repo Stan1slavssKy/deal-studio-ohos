@@ -301,7 +301,7 @@ struct GeneratePage {
         // independent async device call) and can run first -- re-checking
         // here, now that the registry has actually finished, is what picks
         // up the raw entries that were still missing at that point.
-        ensureIntentEmbeddings(getContext(this).filesDir).then(() => {
+        ensureIntentEmbeddings(getContext(this).filesDir, mgr).then(() => {
           console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
         })
       })
@@ -462,7 +462,7 @@ struct GeneratePage {
       console.info('VERA-SDK-EMBED ready=' + sdkEmbeddingsReady().toString())
     })
     let uiPromise = ensureUiEmbeddings(filesDir)
-    let intentPromise = ensureIntentEmbeddings(filesDir)
+    let intentPromise = ensureIntentEmbeddings(filesDir, getContext(this).resourceManager)
     intentPromise.then(() => {
       console.info('VERA-INTENT-EMBED ready=' + intentEmbeddingsReady().toString())
     })
@@ -479,7 +479,7 @@ struct GeneratePage {
       // registry read that only finished in between. Only this opt-in
       // path waits at all; an ordinary launch is unaffected.
       await new Promise<void>((resolve: () => void) => { setTimeout(resolve, 3000) })
-      await ensureIntentEmbeddings(filesDir)
+      await ensureIntentEmbeddings(filesDir, getContext(this).resourceManager)
       await runSearchBenchmark()
     }
     let search = sdkSearchRequested()

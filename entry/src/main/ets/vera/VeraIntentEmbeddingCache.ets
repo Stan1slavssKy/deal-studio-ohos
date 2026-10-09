@@ -20,7 +20,9 @@
 import fs from '@ohos.file.fs'
 import hilog from '@ohos.hilog'
 import { IntentEntry, allEntries } from './VeraIntentIndex'
-import { embedBatch, embedOne, embeddingModelReady } from './VeraEmbeddings'
+import { embedBatch, embedOne, embeddingModelReady, MODEL_FILE } from './VeraEmbeddings'
+import { loadRawfileText } from './LlamaEngine'
+import resourceManager from '@ohos.resourceManager'
 
 const DOMAIN = 0x0000
 // See VeraSdkEmbeddingCache.ets's own comment on this constant -- same
@@ -28,6 +30,7 @@ const DOMAIN = 0x0000
 // call blocks the main thread for about 1.2s, safely under the 3s warning
 // threshold HarmonyOS's freeze watchdog logs before a kill.
 const CHUNK_SIZE = 8
+const BUNDLED_RAWFILE = 'intent-embeddings.json'
 
 /** FNV-1a over the embedded text, so a description that changes (a new
  * summary, a reworded one) is a different key and gets embedded again. The
@@ -42,12 +45,20 @@ function textHash(s: string): string {
   return h.toString(16)
 }
 
-/** The intent's own name, then what it is for. Not the address: the bundle path
- * only adds noise to the vector and the summary already says which app. */
-function entryEmbeddingText(e: IntentEntry): string { return e.label + ' ' + e.description }
+/** The intent's own name, then what it is for -- the summary alone, as the SDK
+ * does (tools/build-intent-embeddings.py builds this exact text; keep them in
+ * step). Not the address, and not the appended parameter list: the bundle path
+ * only adds noise to the vector and the summary already says which app. An
+ * entry with no summary falls back to its description. */
+function entryEmbeddingText(e: IntentEntry): string {
+  return e.label + ' ' + (e.summary.length > 0 ? e.summary : e.description)
+}
 
+/** raw:bundle/IntentName#hash for a registry intent, so the host can compute the
+ * same key without knowing its module or ability; catalog rows keep their name. */
 function entryKey(e: IntentEntry): string {
-  return e.kind + ':' + e.name + '#' + textHash(entryEmbeddingText(e))
+  let id = e.summaryKey.length > 0 ? e.summaryKey : e.name
+  return e.kind + ':' + id + '#' + textHash(entryEmbeddingText(e))
 }
 
 /** key -> L2-normalized vector. Whatever's in here is usable; a key missing
@@ -56,6 +67,7 @@ function entryKey(e: IntentEntry): string {
 let vectors: Map<string, number[]> = new Map<string, number[]>()
 let dimension = 0
 let loadedFromDisk = false
+let bundledTried = false
 let building: Promise<void> | null = null
 
 export function intentEmbeddingsReady(): boolean { return vectors.size > 0 }
@@ -104,8 +116,58 @@ function writeCache(filesDir: string): void {
   }
 }
 
-async function build(filesDir: string): Promise<void> {
+/** FNV-1a over VeraEmbeddings.MODEL_FILE, the same number the SDK cache header
+ * carries; tools/build-intent-embeddings.py computes it identically. */
+function modelHash(): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < MODEL_FILE.length; i++) {
+    h = (h ^ MODEL_FILE.charCodeAt(i)) >>> 0
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h
+}
+
+/**
+ * Seeds `vectors` from the bundled rawfile (tools/build-intent-embeddings.py,
+ * run host-side against intent-summaries.json and the same GGUF), so a fresh
+ * install does not spend ~90 s embedding ~640 intents on the phone. Only what
+ * the device cache does not already hold is taken, and a file built with a
+ * different model is ignored outright -- its vectors live in another space.
+ * Returns how many vectors were added.
+ */
+async function readBundled(mgr: resourceManager.ResourceManager): Promise<number> {
+  if (bundledTried) { return 0 }
+  bundledTried = true
+  try {
+    let text = await loadRawfileText(mgr, BUNDLED_RAWFILE)
+    let obj = JSON.parse(text) as Record<string, Object>
+    if ((obj['modelHash'] as number) !== modelHash()) {
+      hilog.warn(DOMAIN, 'VERA', 'VERA-INTENT-EMBED bundled vectors built with another model -- ignored')
+      return 0
+    }
+    let dim = obj['dimension'] as number
+    if (dimension !== 0 && dimension !== dim) { return 0 }
+    let rows = obj['vectors'] as Record<string, Object>
+    let added = 0
+    for (let key of Object.keys(rows)) {
+      let v = rows[key] as number[]
+      if (v.length === dim && !vectors.has(key)) { vectors.set(key, v); added++ }
+    }
+    dimension = dim
+    hilog.info(DOMAIN, 'VERA', 'VERA-INTENT-EMBED bundled ' + added.toString() + ' vectors, dim=' + dim.toString())
+    return added
+  } catch (e) {
+    hilog.warn(DOMAIN, 'VERA', 'VERA-INTENT-EMBED no usable bundled vectors: ' + (e as Error).message)
+    return 0
+  }
+}
+
+async function build(filesDir: string, mgr: resourceManager.ResourceManager | null): Promise<void> {
   readCache(filesDir)
+  if (mgr !== null) {
+    let added = await readBundled(mgr)
+    if (added > 0) { writeCache(filesDir) }
+  }
   let entries = allEntries()
   let missing: IntentEntry[] = []
   for (let e of entries) {
@@ -163,9 +225,10 @@ async function build(filesDir: string): Promise<void> {
  * on-device this session: a first pass embedded only the 7 catalog rows
  * plus a handful of early raw entries, not the full ~640).
  */
-export function ensureIntentEmbeddings(filesDir: string): Promise<void> {
+export function ensureIntentEmbeddings(filesDir: string,
+    mgr: resourceManager.ResourceManager | null = null): Promise<void> {
   if (building === null) {
-    building = build(filesDir).then((): void => { building = null })
+    building = build(filesDir, mgr).then((): void => { building = null })
   }
   return building!
 }

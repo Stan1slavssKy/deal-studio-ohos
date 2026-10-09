@@ -59,6 +59,13 @@ export class IntentEntry {
   /** What the embedding is computed from, ahead of the description: the
    * intent's own name, not its address. */
   label: string = ''
+  /** What the intent is for, in plain words, without the appended parameter
+   * list or keywords -- the embedded text, like the SDK's. Empty when no
+   * summary exists, and then the embedding falls back to the description. */
+  summary: string = ''
+  /** bundle/IntentName, the key of intent-summaries.json and of the bundled
+   * intent-embeddings.json; empty for a catalog row. */
+  summaryKey: string = ''
   nameTokens: string[] = []
   descriptionTokens: string[] = []
 }
@@ -105,6 +112,7 @@ function catalogEntry(spec: IntentSpec): IntentEntry {
   e.kind = 'catalog'
   e.name = spec.name
   e.label = spec.name
+  e.summary = spec.summary
   e.domain = spec.domain
   let fields: string[] = []
   let pairs: string[] = []
@@ -139,6 +147,8 @@ function rawEntry(entry: RegistryEntry): IntentEntry {
   e.name = entry.target
   e.domain = entry.domain
   let summary = summaries.get(entry.bundle + '/' + entry.intentName)
+  e.summary = summary !== undefined ? summary as string : ''
+  e.summaryKey = entry.bundle + '/' + entry.intentName
   // With a summary the description is what the intent is for; without one it
   // is all the registry gave us -- the name and the app it lives in.
   let bits: string[] = [summary !== undefined ? summary as string : entry.intentName + ' (' + entry.bundle + ')']

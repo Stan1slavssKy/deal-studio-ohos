@@ -6,6 +6,10 @@ rawfile the app reads: entry/src/main/resources/rawfile/intent-summaries.json,
 no use for it -- so audits can still tell a summary written from celia's facts
 from one written from a name alone.
 
+Order: build-intent-summaries.py -> review-intent-summaries.py -> this ->
+build-intent-embeddings.py (writes rawfile intent-embeddings.json from the same
+summaries; rerun it whenever a summary changes).
+
 Run after tools/build-intent-summaries.py. Which intents exist is decided on
 the phone at run time (VeraIntentRegistry); this only supplies words for them.
 """
