@@ -146,13 +146,17 @@ I need to boil an egg, soft, the way I like it.
 My room is pitch dark and I cannot find my keys. Give me a button to turn the flashlight on and one to turn it off.
 ```
 
-**How it works.** Each turn is a plain chat completion (`vera/VeraChat.ets`
-`chatReply`) whose system prompt lets the assistant end a reply with
-`<<app: ...>>`, a one-line English description of a widget. The text is shown at
-once. The description then goes through the same pipeline as the Generate screen
-(skill prompt, `find_sdk_function` / `find_intent_function`, compiler with up to
-three attempts) and the resulting program is rendered by `VeraPreview` in a
-fixed-height (520 vp) card under the message. Widget builds are queued, one at a time.
+**How it works.** Each turn is a streamed chat completion (`vera/VeraChat.ets`
+`chatReply`: the words appear as they arrive) whose system prompt lets the assistant end a reply with
+`<<app: ...>>`, a one-line English description of a widget, anywhere in the
+reply: before the text, between two parts of it, or after it. The text streams in
+and the widget starts building the moment its line is closed, while the rest of
+the reply is still arriving. The description then goes through the same pipeline as the Generate screen
+(skill prompt plus `rawfile/vera-widget.txt`, a widget-mode section that asks
+for one purpose, no title block, results first and no scrolling, and shows money
+through a `money()` helper rather than as raw cents; `find_sdk_function` /
+`find_intent_function`, compiler with up to three attempts) and the resulting program is rendered by `VeraPreview` in a
+fixed-height (420 vp) card under the message. Widget builds are queued, one at a time.
 
 **What to check, and what a phone run showed.**
 - The first message gives a text answer and a split-the-bill widget with 187.40,

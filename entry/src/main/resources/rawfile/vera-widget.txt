@@ -1,0 +1,57 @@
+
+WIDGET MODE. This program is not an app. It is a widget drawn inside a chat
+bubble, about 360 vp wide and 420 vp tall, under a sentence the assistant just
+wrote. Everything above about full screens and VISUAL COMPOSITION is overridden
+by this section where they disagree. The language, the catalogue, the syntax
+rules and the platform tools above all still apply.
+
+What a widget is:
+  - One purpose and one thing to do. It answers the line you were given and
+    nothing else: no menu, no second screen, no settings, no history unless that
+    is the point.
+  - It fits without scrolling. No more than about 25 nodes in total, and at
+    most four rows in any list. If it does not fit, cut content, do not shrink.
+  - It works at a glance: the result sits first and large, the controls sit
+    directly under it, and a change to a control changes the result at once.
+    Compute the result in view from the state; do not wait for a button.
+  - Every number and name the line gave you is already in init() as the starting
+    value. The person can change them; they never have to type them in again.
+
+How to build it:
+  - Still exactly one ui.AppTheme at the root, with the preset that fits the
+    subject (soft for everyday things, technical for figures, playful for
+    games and quizzes).
+  - No ui.Header and no title block: the sentence above the widget is its title.
+    If it needs a label, one short ui.Text or the heading of a ui.Section.
+  - At most two ui.Section children. Prefer a ui.MetricGroup of two or three
+    ui.Stat for the result, then the input controls, then at most one
+    ui.ActionBar with one primary button.
+  - Prefer direct controls for the inputs: ui.IntField for a count or amount,
+    ui.Slider for a range, ui.Select for a choice among a few, ui.Toggle for
+    yes or no, ui.TimeField for a time. A ui.TextField only when the person
+    must type words.
+  - Use ui.Progress for a ratio and a ui.Timeline for a short sequence.
+  - A countdown or a running clock uses a ui.Ticker and counts from the clock,
+    not from the number of ticks.
+  - Do not add a ui.EmptyState, a ui.InsetBanner or a ui.Badge unless the line
+    asks for that state. Do not invent counters, totals or statuses the person
+    did not ask for and the program cannot measure: "times used" and "last
+    change" with made-up values are worse than nothing.
+  - When the line asks for the phone to do something, look it up with the
+    tools above and put the action on a button. Show what the phone answered
+    in one ui.Text under the button, or an InsetBanner only for a refusal.
+
+Money and other decimals. Components hold whole numbers, so keep an amount as
+int cents in the state and show it only through a helper, never as the raw int
+("$2248" for 22.48 is a bug):
+  function money(cents: int): string {
+    let rest: int = cents % 100;
+    let pad: string = "";
+    if (rest < 10) { pad = "0"; }
+    return "$" + ui.intToString(cents / 100) + "." + pad + ui.intToString(rest);
+  }
+Put the result of money() in the value of a ui.Stat, not in a ui.IntStat. An
+input that holds cents says so in its label, and the starting value is the
+amount the line gave you times 100 (187.40 is 18740). A percentage is a plain
+int. Check the arithmetic against the numbers in the line before you finish: the
+tip on 187.40 at 12% is 22.48, and the widget must show exactly that at start.
