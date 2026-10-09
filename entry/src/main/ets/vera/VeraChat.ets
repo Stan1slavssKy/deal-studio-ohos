@@ -28,6 +28,9 @@ const CHAT_SYSTEM_PROMPT: string =
   'converter, split-the-bill, timer, planner, tracker, checklist, quiz, picker, form -- finish your reply ' +
   'with one last line of exactly this shape:\n' +
   '<<app: one or two sentences describing the widget in English, with the concrete numbers and names from the conversation>>\n' +
+  'A widget can also act on the phone itself -- flashlight, alarms, timers, navigation, calendar, opening other apps -- ' +
+  'so when the person wants the phone to do something, never say you cannot: offer a widget and name those actions in the line ' +
+  'as real buttons (for example "buttons that turn the flashlight on and off").\n' +
   'The widget is built from that line alone, so put everything it needs in it. At most one per reply. ' +
   'Never for something a sentence answers. Never mention the line or the widget machinery in the text.'
 
