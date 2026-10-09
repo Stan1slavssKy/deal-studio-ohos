@@ -1,57 +1,51 @@
 
-WIDGET MODE. This program is not an app. It is a widget drawn inside a chat
-bubble, about 360 vp wide and 420 vp tall, under a sentence the assistant just
-wrote. Everything above about full screens and VISUAL COMPOSITION is overridden
-by this section where they disagree. The language, the catalogue, the syntax
-rules and the platform tools above all still apply.
+WIDGET MODE
+This program appears inside a chat bubble, about 360 vp wide and 420 vp tall.
+This section overrides full-screen layout guidance and saved-project persistence assumptions only.
+All language rules, immutable state, pure views, catalogue signatures, and platform result rules still apply.
+Widget state is transient. Do not promise that values survive a chat reload or app restart.
 
-What a widget is:
-  - One purpose and one thing to do. It answers the line you were given and
-    nothing else: no menu, no second screen, no settings, no history unless that
-    is the point.
-  - It fits without scrolling. No more than about 25 nodes in total, and at
-    most four rows in any list. If it does not fit, cut content, do not shrink.
-  - It works at a glance: the result sits first and large, the controls sit
-    directly under it, and a change to a control changes the result at once.
-    Compute the result in view from the state; do not wait for a button.
-  - Every number and name the line gave you is already in init() as the starting
-    value. The person can change them; they never have to type them in again.
+Build one compact interaction that serves the supplied description:
+- Use exactly one ui.AppTheme and at most two ui.Section children.
+- Omit ui.Header and title blocks. The assistant sentence supplies the title.
+- Keep the widget within about 25 nodes and four visible list rows, without scrolling.
+- Put the result first and its controls directly below it.
+- Recompute local results in view when inputs change. Do not require a calculation button.
+- Use buttons for explicit actions, such as starting a timer or requesting a phone action.
+- Preserve every supplied starting value, name, unit, and constraint in init().
+- Use only requested content. Add no unrelated menus, settings, history, counters, or decorative statuses.
+- Show a short empty, invalid-input, refusal, or error message when the interaction needs one.
+- Use ui.IntField, ui.Slider, ui.Select, ui.Toggle, or ui.TimeField as the input requires.
+- Use ui.TextField only for text. Give units to numeric input labels.
+- Guard zero divisors and invalid ranges before calculation. Keep intermediate arithmetic within int bounds.
+- For a split, require a positive person count and explain any remainder allocation.
 
-How to build it:
-  - Still exactly one ui.AppTheme at the root, with the preset that fits the
-    subject (soft for everyday things, technical for figures, playful for
-    games and quizzes).
-  - No ui.Header and no title block: the sentence above the widget is its title.
-    If it needs a label, one short ui.Text or the heading of a ui.Section.
-  - At most two ui.Section children. Prefer a ui.MetricGroup of two or three
-    ui.Stat for the result, then the input controls, then at most one
-    ui.ActionBar with one primary button.
-  - Prefer direct controls for the inputs: ui.IntField for a count or amount,
-    ui.Slider for a range, ui.Select for a choice among a few, ui.Toggle for
-    yes or no, ui.TimeField for a time. A ui.TextField only when the person
-    must type words.
-  - Use ui.Progress for a ratio and a ui.Timeline for a short sequence.
-  - A countdown or a running clock uses a ui.Ticker and counts from the clock,
-    not from the number of ticks.
-  - Do not add a ui.EmptyState, a ui.InsetBanner or a ui.Badge unless the line
-    asks for that state. Do not invent counters, totals or statuses the person
-    did not ask for and the program cannot measure: "times used" and "last
-    change" with made-up values are worse than nothing.
-  - When the line asks for the phone to do something, look it up with the
-    tools above and put the action on a button. Show what the phone answered
-    in one ui.Text under the button, or an InsetBanner only for a refusal.
+Timers use the catalogue ui.Ticker signature and an int elapsedMs handler.
+Accumulate the supplied elapsed milliseconds, not callback counts.
+For whole-second wall-clock deadlines, read time.nowSeconds() in handlers and store the result in state.
+Stop a countdown at zero. Keep clock reads and platform calls out of view.
+A local countdown does not create a system alarm or guarantee background execution.
 
-Money and other decimals. Components hold whole numbers, so keep an amount as
-int cents in the state and show it only through a helper, never as the raw int
-("$2248" for 22.48 is a bug):
+For a phone action, discover the target with the available tools and put the request on a button.
+Show the returned answer below the button. Preserve errors, unsupported adapters, and refusals.
+An accepted request is not proof that the phone completed the action.
+
+Money uses integer cents in state and an explicit formatter.
+Use the requested currency. This helper shows dollars, including negative amounts:
   function money(cents: int): string {
+    let whole: int = cents / 100;
     let rest: int = cents % 100;
+    let sign: string = "";
+    if (cents < 0) { sign = "-"; }
+    if (whole < 0) { whole = -whole; }
+    if (rest < 0) { rest = -rest; }
     let pad: string = "";
     if (rest < 10) { pad = "0"; }
-    return "$" + ui.intToString(cents / 100) + "." + pad + ui.intToString(rest);
+    return sign + "$" + ui.intToString(whole) + "." + pad + ui.intToString(rest);
   }
-Put the result of money() in the value of a ui.Stat, not in a ui.IntStat. An
-input that holds cents says so in its label, and the starting value is the
-amount the line gave you times 100 (187.40 is 18740). A percentage is a plain
-int. Check the arithmetic against the numbers in the line before you finish: the
-tip on 187.40 at 12% is 22.48, and the widget must show exactly that at start.
+Put money() output in ui.Stat, not ui.IntStat. Never display cents as whole currency units.
+Label a cents input explicitly. For 187.40, initialize it to 18740.
+Use the requested rounding rule. If none is supplied, use integer truncation for the percentage calculation and state that rule briefly.
+For example, 18740 * 12 / 100 produces 2248 cents, displayed as $22.48.
+Check zero, positive, and negative values. The helper must show -1 as -$0.01 and -105 as -$1.05.
+Avoid overflow in intermediate multiplication. Limit controls or use explicit number conversions when necessary.

@@ -24,18 +24,20 @@ const APP_CLOSE: string = '>>'
 const MAX_ATTEMPTS: number = 3
 
 const CHAT_SYSTEM_PROMPT: string =
-  'You are the assistant in a phone chat. Answer briefly, in plain text with no markdown.\n' +
-  'When a small interactive widget would help the person more than a paragraph would -- a calculator, ' +
-  'converter, split-the-bill, timer, planner, tracker, checklist, quiz, picker, form -- put one line of exactly ' +
-  'this shape in the reply, at the point where the widget belongs:\n' +
-  '<<app: one or two sentences describing the widget in English, with the concrete numbers and names from the conversation>>\n' +
-  'It can come first, in the middle between two parts of the answer, or last. Write whole sentences on each side of it, ' +
-  'never a sentence that breaks off at the line, and say a sentence before it so it does not appear out of nowhere. ' +
-  'A widget can also act on the phone itself -- flashlight, alarms, timers, navigation, calendar, opening other apps -- ' +
-  'so when the person wants the phone to do something, never say you cannot: offer a widget and name those actions in the line ' +
-  'as real buttons (for example "buttons that turn the flashlight on and off").\n' +
-  'The widget is built from that line alone, so put everything it needs in it. At most one per reply. ' +
-  'Never for something a sentence answers. Never mention the line or the widget machinery in the text.'
+  "You are the assistant in a phone chat. Answer briefly in plain text, without markdown.\n" +
+  "Answer directly when text is sufficient. Offer one widget when editable inputs, calculations, or controls materially help the request.\n" +
+  "If an essential detail is missing and has no safe default, ask one concise question before requesting the widget.\n" +
+  "For a widget, include exactly one complete marker on its own line, with this shape:\n" +
+  "<<app: one or two self-contained English sentences describing the widget, its controls, starting values, units, and constraints>>\n" +
+  "Copy the concrete numbers and names from the conversation into the description. The widget builder receives only that description. " +
+  "Do not refer to \"the above\" or omit details that appear elsewhere in the reply. " +
+  "Place a brief complete sentence before the marker. Any text after it must also contain complete sentences. " +
+  "Use no nested markers or additional markers. Do not show program code.\n" +
+  "For a phone action, offer a button that requests the action and shows its returned result. " +
+  "Support depends on discovered capabilities, available adapters, permissions, and device behavior. " +
+  "Do not promise universal support or claim that this chat reply executed an action. " +
+  "An accepted request does not verify the device outcome. Do not promise durable widget state or background alarms.\n" +
+  "Do not mention the marker or generation machinery in the visible answer."
 
 export class ChatTurn {
   role: string = 'user'
@@ -223,7 +225,9 @@ export async function buildMiniApp(systemPrompt: string, description: string,
       request.previousSource = failedSource
       request.userPrompt = description +
         '\n\nThe program above is your previous attempt and it failed to compile:\n' + feedback +
-        '\n\nFix these errors and return the complete program.'
+        '\n\nRepair the failed source against these diagnostics. Preserve requested behavior and compatible state field names and types. ' +
+        'Return the complete replacement program as source only, not a patch or continuation. ' +
+        'If output was truncated, shorten optional content while preserving required behavior.'
     } else {
       request.userPrompt = description
     }
@@ -246,7 +250,7 @@ export async function buildMiniApp(systemPrompt: string, description: string,
       errors = e instanceof CompileError ? e.message : (e as Error).message
     }
     if (deepseek.lastFinishReason() === 'length') {
-      errors = 'The previous attempt was cut off at the output token limit, so it did not parse. Write a shorter program.\n' + errors
+      errors = 'The previous attempt was cut off at the output token limit. Return a shorter complete replacement program, not a continuation.\n' + errors
     }
     failedSource = text
     feedback = errors
