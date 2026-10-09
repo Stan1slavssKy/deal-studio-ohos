@@ -20,11 +20,11 @@ export const ICONS: Map<string, string> = new Map<string, string>([
     ['chart', 'M 15 81.5 V 48.83 M 38.33 81.5 V 18.5 M 61.67 81.5 V 58.17 M 85 81.5 V 32.5'],
 ]);
 export function iconNames(): string[] {
-    let j91: string[] = [];
-    ICONS.forEach((k91: string, l91: string) => { j91.push(l91); });
-    return j91;
+    let a101: string[] = [];
+    ICONS.forEach((b101: string, c101: string) => { a101.push(c101); });
+    return a101;
 }
-export function iconPath(h91: string): string {
-    let i91 = ICONS.get(h91);
-    return i91 !== undefined ? i91 : '';
+export function iconPath(y100: string): string {
+    let z100 = ICONS.get(y100);
+    return z100 !== undefined ? z100 : '';
 }

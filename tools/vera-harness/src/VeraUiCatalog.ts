@@ -4,11 +4,11 @@ export class PropSpec {
     kind: string;
     styleSet: string;
     optional: boolean;
-    constructor(d174: string, e174: string, f174: string = '', g174: boolean = false) {
-        this.name = d174;
-        this.kind = e174;
-        this.styleSet = f174;
-        this.optional = g174;
+    constructor(r182: string, s182: string, t182: string = '', u182: boolean = false) {
+        this.name = r182;
+        this.kind = s182;
+        this.styleSet = t182;
+        this.optional = u182;
     }
 }
 export class ComponentSpec {
@@ -18,17 +18,17 @@ export class ComponentSpec {
     summary: string;
     payloadKind: string;
     guidance: string;
-    constructor(x173: string, y173: string, z173: PropSpec[], a174: string, b174: string = '', c174: string = '') {
-        this.name = x173;
-        this.nodeKind = y173;
-        this.props = z173;
-        this.summary = a174;
-        this.payloadKind = b174;
-        this.guidance = c174;
+    constructor(l182: string, m182: string, n182: PropSpec[], o182: string, p182: string = '', q182: string = '') {
+        this.name = l182;
+        this.nodeKind = m182;
+        this.props = n182;
+        this.summary = o182;
+        this.payloadKind = p182;
+        this.guidance = q182;
     }
 }
-function style(w173: string): PropSpec { return new PropSpec('style', 'string', w173); }
-function icon(v173: string): PropSpec { return new PropSpec(v173, 'icon', '', true); }
+function style(k182: string): PropSpec { return new PropSpec('style', 'string', k182); }
+function icon(j182: string): PropSpec { return new PropSpec(j182, 'icon', '', true); }
 export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
     ['column', ['default', 'compact', 'spacious', 'center', 'end', 'surface', 'accent']],
     ['row', ['default', 'compact', 'spacious', 'center', 'end', 'split', 'joined', 'surface', 'accent']],
@@ -42,7 +42,7 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
     ['field', ['default', 'multiline']],
     ['toggle', ['default']],
     ['checkbox', ['default']],
-    ['slider', ['default']],
+    ['slider', ['default', 'accent', 'success', 'warning', 'danger']],
     ['select', ['default']],
     ['divider', ['default']],
     ['progress', ['default', 'accent', 'success', 'warning', 'danger']],
@@ -72,6 +72,8 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
     ['badge', ['default', 'accent', 'success', 'warning', 'danger']],
     ['timeline', ['default', 'compact', 'comfortable']],
     ['timelineitem', ['default', 'accent', 'success', 'warning', 'danger']],
+    ['table', ['default']],
+    ['tablerow', ['default', 'accent', 'success', 'warning', 'danger']],
     ['skeleton', ['default']],
     ['spinner', ['default', 'accent']],
     ['snackbar', ['default', 'success', 'warning', 'danger']],
@@ -178,22 +180,25 @@ export const CATALOG: ComponentSpec[] = [
     new ComponentSpec('Badge', 'badge', [style('badge'), new PropSpec('text', 'string'), icon('icon')], 'a short status, drawn as a chip rather than a line of text', '', 'For the state of the thing next to it -- "Reached", "Overdue", "3 left". Pass icon "" for no icon. Do not use it for ordinary text.'),
     new ComponentSpec('KeyValueItem', 'kvitem', [style('kvitem'), new PropSpec('label', 'string'), new PropSpec('value', 'string'),
         new PropSpec('supporting', 'string')], 'one labelled fact: label above, value below', '', 'Only inside a ui.KeyValueGroup.'),
+    new ComponentSpec('Table', 'table', [style('table'), new PropSpec('headers', 'string[]'), new PropSpec('columns', 'int'),
+        new PropSpec('children', 'view[]')], 'rows and columns of text, with an optional header row', '', 'For data that genuinely has columns -- a list of orders with date, item and amount; a schedule with time and place. headers names each column and may be an empty array for no header row; columns must match both headers\' length (when given) and every ui.TableRow\'s own cells length. Children are ui.TableRow. Prefer ui.ListGroup when each row is really just a title with a trailing value -- a table is for three or more columns of data read down as well as across.'),
+    new ComponentSpec('TableRow', 'tablerow', [style('tablerow'), new PropSpec('cells', 'string[]')], 'one row of a ui.Table: one string per column, in order', '', 'Only inside a ui.Table, and always with as many cells as the table has columns. Give it a tone -- accent, success, warning, danger -- to call out one row, a total line or a problem entry, the same way a ui.ListItem can.'),
     new ComponentSpec('Skeleton', 'skeleton', [style('skeleton'), new PropSpec('width', 'int'), new PropSpec('height', 'int'),
         new PropSpec('rounded', 'boolean', '', true)], 'a placeholder box the size of the content that has not arrived yet', '', 'Put one where real content will appear once it is ready, instead of leaving that space blank or showing a zero. width and height are the box in points; rounded softens the corners for anything that will end up looking like a chip or an avatar.'),
     new ComponentSpec('Spinner', 'spinner', [style('spinner'), new PropSpec('label', 'string', '', true)], 'a small spinning indicator that something is in progress', '', 'For a wait with no useful progress number to show -- reach for ui.Progress instead when there is one. label is shown beside it and may be "".'),
     new ComponentSpec('Snackbar', 'snackbar', [style('snackbar'), new PropSpec('message', 'string'), new PropSpec('actionText', 'string'),
         new PropSpec('action', 'string')], 'a one-line status strip the program raised itself, with one optional action', '', 'For something that just happened and does not need to stay on screen -- "Saved", "Undo", a result the person did not have to ask for. Unlike ui.InsetBanner this is not meant to persist: put it behind ui.When(state.showX, ...) and have the handler that triggered it set state.showX true, and whatever dismisses it (a timer, the action button, the next tap) set it back to false. Pass actionText "" and action "" for no action; the handler, if named, is called with 0.'),
     new ComponentSpec('Sparkline', 'sparkline', [style('sparkline'), new PropSpec('series', 'int[]'), new PropSpec('maximum', 'int'),
-        new PropSpec('label', 'string', '', true)], 'a line chart of up to a few dozen values', '', 'For a trend -- a week of steps, a balance over time, a reading taken repeatedly. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the line does not jump every time a new point arrives). There is no x-axis label and no legend: say what the numbers are in label or in a ui.Text above it.'),
+        new PropSpec('label', 'string', '', true), new PropSpec('bars', 'boolean', '', true)], 'a line or bar chart of up to a few dozen values', '', 'For a trend -- a week of steps, a balance over time, a reading taken repeatedly -- leave bars false for a connected line. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the chart does not jump every time a new point arrives). There is no x-axis label and no legend: say what the numbers are in label or in a ui.Text above it.'),
 ];
 export class ChildRule {
     parent: string;
     allowed: string[];
     refusedInside: string[];
-    constructor(s173: string, t173: string[], u173: string[] = []) {
-        this.parent = s173;
-        this.allowed = t173;
-        this.refusedInside = u173;
+    constructor(g182: string, h182: string[], i182: string[] = []) {
+        this.parent = g182;
+        this.allowed = h182;
+        this.refusedInside = i182;
     }
 }
 export const CHILD_RULES: ChildRule[] = [
@@ -201,46 +206,47 @@ export const CHILD_RULES: ChildRule[] = [
     new ChildRule('MetricGroup', ['Stat', 'IntStat', 'When'], []),
     new ChildRule('KeyValueGroup', ['KeyValueItem', 'When'], []),
     new ChildRule('Timeline', ['TimelineItem', 'ActionBar', 'When'], []),
+    new ChildRule('Table', ['TableRow', 'When'], []),
     new ChildRule('ActionBar', ['Button', 'IconButton', 'Badge', 'When'], []),
     new ChildRule('Card', [], ['Card']),
     new ChildRule('AppTheme', [], ['AppTheme']),
 ];
-export function listWords(p173: string[]): string {
-    if (p173.length < 2) {
-        return p173.join('');
+export function listWords(d182: string[]): string {
+    if (d182.length < 2) {
+        return d182.join('');
     }
-    let q173: string[] = [];
-    for (let r173 = 0; r173 < p173.length - 1; r173++) {
-        q173.push(p173[r173]);
+    let e182: string[] = [];
+    for (let f182 = 0; f182 < d182.length - 1; f182++) {
+        e182.push(d182[f182]);
     }
-    return q173.join(', ') + ' or ' + p173[p173.length - 1];
+    return e182.join(', ') + ' or ' + d182[d182.length - 1];
 }
-export function childRuleFor(n173: string): ChildRule | null {
-    for (let o173 of CHILD_RULES) {
-        if (o173.parent === n173) {
-            return o173;
+export function childRuleFor(b182: string): ChildRule | null {
+    for (let c182 of CHILD_RULES) {
+        if (c182.parent === b182) {
+            return c182;
         }
     }
     return null;
 }
-export function payloadKindFor(l173: string): string {
-    for (let m173 of CATALOG) {
-        if (m173.nodeKind === l173) {
-            return m173.payloadKind;
+export function payloadKindFor(z181: string): string {
+    for (let a182 of CATALOG) {
+        if (a182.nodeKind === z181) {
+            return a182.payloadKind;
         }
     }
     return '';
 }
-export function stylesFor(j173: string): string[] {
-    let k173 = STYLE_SETS.get(j173);
-    return k173 !== undefined ? k173 : [];
+export function stylesFor(x181: string): string[] {
+    let y181 = STYLE_SETS.get(x181);
+    return y181 !== undefined ? y181 : [];
 }
 export function catalogKinds(): string[] {
-    let h173: string[] = [];
-    for (let i173 of CATALOG) {
-        h173.push(i173.nodeKind);
+    let v181: string[] = [];
+    for (let w181 of CATALOG) {
+        v181.push(w181.nodeKind);
     }
-    return h173;
+    return v181;
 }
 export const CORE_COMPONENTS: string[] = [
     'Column', 'Row', 'Card', 'Text', 'Spacer', 'Button',
@@ -249,172 +255,173 @@ export const CORE_COMPONENTS: string[] = [
     'Stat', 'IntStat', 'MetricGroup', 'IntText', 'ClockText',
 ];
 export function optionalComponents(): ComponentSpec[] {
-    let f173: ComponentSpec[] = [];
-    for (let g173 of CATALOG) {
-        if (CORE_COMPONENTS.indexOf(g173.name) < 0) {
-            f173.push(g173);
+    let t181: ComponentSpec[] = [];
+    for (let u181 of CATALOG) {
+        if (CORE_COMPONENTS.indexOf(u181.name) < 0) {
+            t181.push(u181);
         }
     }
-    return f173;
+    return t181;
 }
 const COMPANIONS: string[][] = [
     ['Canvas', 'Path'],
     ['Grid', 'Cell'],
     ['Timeline', 'TimelineItem'],
     ['KeyValueGroup', 'KeyValueItem'],
+    ['Table', 'TableRow'],
 ];
-export function selectUiComponents(x172: string[]): Set<string> {
-    let y172 = new Set<string>();
-    for (let e173 of CORE_COMPONENTS) {
-        y172.add(e173);
+export function selectUiComponents(l181: string[]): Set<string> {
+    let m181 = new Set<string>();
+    for (let s181 of CORE_COMPONENTS) {
+        m181.add(s181);
     }
-    for (let d173 of x172) {
-        y172.add(d173);
+    for (let r181 of l181) {
+        m181.add(r181);
     }
-    let z172 = true;
-    while (z172) {
-        z172 = false;
-        for (let b173 of CHILD_RULES) {
-            if (!y172.has(b173.parent)) {
+    let n181 = true;
+    while (n181) {
+        n181 = false;
+        for (let p181 of CHILD_RULES) {
+            if (!m181.has(p181.parent)) {
                 continue;
             }
-            for (let c173 of b173.allowed) {
-                if (c173 !== 'When' && !y172.has(c173)) {
-                    y172.add(c173);
-                    z172 = true;
+            for (let q181 of p181.allowed) {
+                if (q181 !== 'When' && !m181.has(q181)) {
+                    m181.add(q181);
+                    n181 = true;
                 }
             }
         }
-        for (let a173 of COMPANIONS) {
-            if (y172.has(a173[0]) !== y172.has(a173[1])) {
-                y172.add(a173[0]);
-                y172.add(a173[1]);
-                z172 = true;
+        for (let o181 of COMPANIONS) {
+            if (m181.has(o181[0]) !== m181.has(o181[1])) {
+                m181.add(o181[0]);
+                m181.add(o181[1]);
+                n181 = true;
             }
         }
     }
-    return y172;
+    return m181;
 }
-export function componentsUsedIn(u172: string): string[] {
-    let v172: string[] = [];
-    for (let w172 of CATALOG) {
-        if (u172.indexOf('ui.' + w172.name + '(') >= 0) {
-            v172.push(w172.name);
+export function componentsUsedIn(i181: string): string[] {
+    let j181: string[] = [];
+    for (let k181 of CATALOG) {
+        if (i181.indexOf('ui.' + k181.name + '(') >= 0) {
+            j181.push(k181.name);
         }
     }
-    return v172;
+    return j181;
 }
-export function componentEmbeddingText(t172: ComponentSpec): string {
-    return t172.name + ' -- ' + t172.summary + (t172.guidance.length > 0 ? ' ' + t172.guidance : '');
+export function componentEmbeddingText(h181: ComponentSpec): string {
+    return h181.name + ' -- ' + h181.summary + (h181.guidance.length > 0 ? ' ' + h181.guidance : '');
 }
-function signatureLine(q172: ComponentSpec): string {
-    let r172: string[] = [];
-    for (let s172 of q172.props) {
-        r172.push(s172.optional ? '[' + s172.name + ']' : s172.name);
+function signatureLine(e181: ComponentSpec): string {
+    let f181: string[] = [];
+    for (let g181 of e181.props) {
+        f181.push(g181.optional ? '[' + g181.name + ']' : g181.name);
     }
-    return '  ui.' + q172.name + '(' + r172.join(', ') + ')  -- ' + q172.summary;
+    return '  ui.' + e181.name + '(' + f181.join(', ') + ')  -- ' + e181.summary;
 }
-function hasIconProp(o172: ComponentSpec): boolean {
-    for (let p172 of o172.props) {
-        if (p172.kind === 'icon') {
+function hasIconProp(c181: ComponentSpec): boolean {
+    for (let d181 of c181.props) {
+        if (d181.kind === 'icon') {
             return true;
         }
     }
     return false;
 }
-export function describeComponents(k172: string[]): string {
-    let l172: string[] = [];
-    for (let m172 of CATALOG) {
-        if (k172.indexOf(m172.name) < 0) {
+export function describeComponents(y180: string[]): string {
+    let z180: string[] = [];
+    for (let a181 of CATALOG) {
+        if (y180.indexOf(a181.name) < 0) {
             continue;
         }
-        l172.push(signatureLine(m172));
-        let n172 = stylesFor(m172.nodeKind);
-        if (n172.length > 1) {
-            l172.push('    styles: ' + n172.join(' '));
+        z180.push(signatureLine(a181));
+        let b181 = stylesFor(a181.nodeKind);
+        if (b181.length > 1) {
+            z180.push('    styles: ' + b181.join(' '));
         }
-        if (m172.guidance.length > 0) {
-            l172.push('    ' + m172.guidance);
+        if (a181.guidance.length > 0) {
+            z180.push('    ' + a181.guidance);
         }
     }
-    return l172.join('\n');
+    return z180.join('\n');
 }
-export function describeCatalogForPrompt(r171: Set<string> | null = null): string {
-    let s171: ComponentSpec[] = [];
-    for (let j172 of CATALOG) {
-        if (r171 === null || r171.has(j172.name)) {
-            s171.push(j172);
+export function describeCatalogForPrompt(f180: Set<string> | null = null): string {
+    let g180: ComponentSpec[] = [];
+    for (let x180 of CATALOG) {
+        if (f180 === null || f180.has(x180.name)) {
+            g180.push(x180);
         }
     }
-    let t171: string[] = [];
-    t171.push('UI constructors (all return ui.View):');
-    for (let i172 of s171) {
-        t171.push(signatureLine(i172));
+    let h180: string[] = [];
+    h180.push('UI constructors (all return ui.View):');
+    for (let w180 of g180) {
+        h180.push(signatureLine(w180));
     }
-    t171.push('  ui.When(condition, child)  -- child when true, nothing when false');
-    t171.push('  ui.intToString(n), ui.numberToString(n), ui.booleanToString(b)');
-    t171.push('');
-    t171.push('Allowed styles:');
-    for (let g172 of s171) {
-        let h172 = stylesFor(g172.nodeKind);
-        if (h172.length > 1) {
-            t171.push('  ' + g172.name + ': ' + h172.join(' '));
+    h180.push('  ui.When(condition, child)  -- child when true, nothing when false');
+    h180.push('  ui.intToString(n), ui.numberToString(n), ui.booleanToString(b)');
+    h180.push('');
+    h180.push('Allowed styles:');
+    for (let u180 of g180) {
+        let v180 = stylesFor(u180.nodeKind);
+        if (v180.length > 1) {
+            h180.push('  ' + u180.name + ': ' + v180.join(' '));
         }
     }
-    let u171: ComponentSpec[] = [];
-    for (let f172 of s171) {
-        if (f172.guidance.length > 0) {
-            u171.push(f172);
+    let i180: ComponentSpec[] = [];
+    for (let t180 of g180) {
+        if (t180.guidance.length > 0) {
+            i180.push(t180);
         }
     }
-    if (u171.length > 0) {
-        t171.push('');
-        t171.push('When to use each of these:');
-        for (let e172 of u171) {
-            t171.push('  ui.' + e172.name + ' -- ' + e172.guidance);
+    if (i180.length > 0) {
+        h180.push('');
+        h180.push('When to use each of these:');
+        for (let s180 of i180) {
+            h180.push('  ui.' + s180.name + ' -- ' + s180.guidance);
         }
     }
-    let v171 = false;
-    for (let d172 of s171) {
-        if (hasIconProp(d172)) {
-            v171 = true;
+    let j180 = false;
+    for (let r180 of g180) {
+        if (hasIconProp(r180)) {
+            j180 = true;
         }
     }
-    if (v171) {
-        t171.push('');
-        t171.push('Icon names (the only ones that exist):');
-        let a172 = iconNames();
-        let b172: string[] = [];
-        for (let c172 of a172) {
-            b172.push(c172);
-            if (b172.length === 8) {
-                t171.push('  ' + b172.join(' '));
-                b172 = [];
+    if (j180) {
+        h180.push('');
+        h180.push('Icon names (the only ones that exist):');
+        let o180 = iconNames();
+        let p180: string[] = [];
+        for (let q180 of o180) {
+            p180.push(q180);
+            if (p180.length === 8) {
+                h180.push('  ' + p180.join(' '));
+                p180 = [];
             }
         }
-        if (b172.length > 0) {
-            t171.push('  ' + b172.join(' '));
+        if (p180.length > 0) {
+            h180.push('  ' + p180.join(' '));
         }
-        t171.push('  Pass "" where a component takes an icon and you do not want one.');
+        h180.push('  Pass "" where a component takes an icon and you do not want one.');
     }
-    let w171: string[] = [];
-    for (let y171 of CHILD_RULES) {
-        if (r171 !== null && !r171.has(y171.parent)) {
+    let k180: string[] = [];
+    for (let m180 of CHILD_RULES) {
+        if (f180 !== null && !f180.has(m180.parent)) {
             continue;
         }
-        if (y171.allowed.length > 0) {
-            w171.push('  ' + y171.parent + ' takes only ' + listWords(y171.allowed) + ' children.');
+        if (m180.allowed.length > 0) {
+            k180.push('  ' + m180.parent + ' takes only ' + listWords(m180.allowed) + ' children.');
         }
-        for (let z171 of y171.refusedInside) {
-            w171.push('  ' + y171.parent + ' may not contain another ' + z171 + '.');
-        }
-    }
-    if (w171.length > 0) {
-        t171.push('');
-        t171.push('Composition rules the compiler enforces:');
-        for (let x171 of w171) {
-            t171.push(x171);
+        for (let n180 of m180.refusedInside) {
+            k180.push('  ' + m180.parent + ' may not contain another ' + n180 + '.');
         }
     }
-    return t171.join('\n');
+    if (k180.length > 0) {
+        h180.push('');
+        h180.push('Composition rules the compiler enforces:');
+        for (let l180 of k180) {
+            h180.push(l180);
+        }
+    }
+    return h180.join('\n');
 }

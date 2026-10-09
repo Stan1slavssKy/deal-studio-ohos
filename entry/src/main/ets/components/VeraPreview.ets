@@ -187,7 +187,8 @@ export struct VeraPreview {
     'emptystate', 'stat', 'metricgroup',
     'inttext', 'intstat', 'intfield', 'timefield', 'intlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
-    'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler']
+    'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler',
+    'table', 'tablerow']
 
   aboutToAppear(): void {
     let missing: string[] = []
@@ -963,22 +964,40 @@ export struct VeraPreview {
   }
 
   /**
-   * A ui.Sparkline's series as an SVG path, in the same 0..100 box every
-   * icon is drawn in. maximum bounds the vertical scale; a value past it is
-   * clamped rather than drawn off the top, since the program named maximum
-   * itself and a point above it is the program's own figure being wrong, not
-   * a reason to redraw everything else smaller.
+   * ui.Sparkline's own plotting box height, in vp. Width is not a constant --
+   * see chartWidth's own comment -- so every sparkline-drawing method below
+   * takes it as a parameter instead of assuming a fixed square, the way
+   * SPARKLINE_HEIGHT alone would.
    */
-  private sparklineCommands(node: LiveNode): string {
+  private static readonly SPARKLINE_HEIGHT: number = 200
+
+  /**
+   * A ui.Sparkline's series as an SVG path, directly in vp -- x across
+   * 0..width, y across 0..SPARKLINE_HEIGHT. This used to be a fixed 0..100
+   * box mapped onto the real one with Shape.viewPort, the same device every
+   * icon's single, genuinely-square path uses -- measured wrong on device for
+   * a wide, short chart: viewPort scales uniformly to fit a 100x100 square
+   * inside a ~300x200 box, so the content came out squeezed into a sliver at
+   * the left rather than stretched to fill it. Writing real vp coordinates
+   * and dropping viewPort avoids the scaling step (and its aspect-ratio
+   * assumption) entirely, the same way sparklineBarRects now draws one Path
+   * per bar instead of trusting a multi-subpath Path's own measurement.
+   * maximum bounds the vertical scale; a value past it is clamped rather than
+   * drawn off the top, since the program named maximum itself and a point
+   * above it is the program's own figure being wrong, not a reason to redraw
+   * everything else smaller.
+   */
+  private sparklineCommands(node: LiveNode, width: number): string {
     let series = node.series
     if (series.length === 0) { return '' }
     let max = node.maximum > 0 ? node.maximum : 1
+    let h = VeraPreview.SPARKLINE_HEIGHT
     let n = series.length
     let cmds: string[] = []
     for (let i = 0; i < n; i++) {
-      let x = n > 1 ? (i / (n - 1)) * 100 : 50
+      let x = n > 1 ? (i / (n - 1)) * width : width / 2
       let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
-      let y = 100 - (v / max) * 100
+      let y = h - (v / max) * h
       cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
     }
     return cmds.join(' ')
@@ -986,30 +1005,83 @@ export struct VeraPreview {
 
   /**
    * sparklineCommands's own points, closed down to the bottom edge of the
-   * same 0..100 box and back to the start -- the area a chart's fill reads
-   * against, computed from the line itself rather than left to an implicit
-   * close the way the plain 'path' branch's fill is.
+   * same box and back to the start -- the area a chart's fill reads against,
+   * computed from the line itself rather than left to an implicit close the
+   * way the plain 'path' branch's fill is.
    */
-  private sparklineAreaCommands(node: LiveNode): string {
+  private sparklineAreaCommands(node: LiveNode, width: number): string {
     let series = node.series
     if (series.length === 0) { return '' }
     let max = node.maximum > 0 ? node.maximum : 1
+    let h = VeraPreview.SPARKLINE_HEIGHT
     let n = series.length
     let cmds: string[] = []
     let firstX = 0
-    let lastX = 100
+    let lastX = width
     for (let i = 0; i < n; i++) {
-      let x = n > 1 ? (i / (n - 1)) * 100 : 50
+      let x = n > 1 ? (i / (n - 1)) * width : width / 2
       let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
-      let y = 100 - (v / max) * 100
+      let y = h - (v / max) * h
       if (i === 0) { firstX = x }
       if (i === n - 1) { lastX = x }
       cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
     }
-    cmds.push('L ' + lastX.toFixed(2) + ' 100')
-    cmds.push('L ' + firstX.toFixed(2) + ' 100')
+    cmds.push('L ' + lastX.toFixed(2) + ' ' + h.toFixed(2))
+    cmds.push('L ' + firstX.toFixed(2) + ' ' + h.toFixed(2))
     cmds.push('Z')
     return cmds.join(' ')
+  }
+
+  /**
+   * ui.Sparkline with bars: true -- the same clamped points sparklineCommands
+   * computes, directly in vp, but one closed rectangle per value. Returns one
+   * path-data string per bar (rather than several M..Z subpaths joined into
+   * one Path's commands) because a single multi-subpath Path's own measured
+   * box also came out wrong on device, independently of the viewPort problem
+   * above. One Path per bar, the same shape ui.Canvas already draws several
+   * of side by side, sidesteps that rather than chasing it inside a single
+   * Path. Each bar is centred on the point's own x, at a fraction of the
+   * spacing between points so bars never touch.
+   */
+  private sparklineBarRects(node: LiveNode, width: number): string[] {
+    let series = node.series
+    if (series.length === 0) { return [] }
+    let max = node.maximum > 0 ? node.maximum : 1
+    let h = VeraPreview.SPARKLINE_HEIGHT
+    let n = series.length
+    let spacing = n > 1 ? width / (n - 1) : width
+    let barWidth = Math.min(spacing * 0.6, width * 0.2)
+    let rects: string[] = []
+    for (let i = 0; i < n; i++) {
+      let cx = n > 1 ? (i / (n - 1)) * width : width / 2
+      let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
+      let y = h - (v / max) * h
+      let x0 = cx - barWidth / 2
+      let x1 = cx + barWidth / 2
+      let cmds: string[] = []
+      cmds.push('M ' + x0.toFixed(2) + ' ' + h.toFixed(2))
+      cmds.push('L ' + x0.toFixed(2) + ' ' + y.toFixed(2))
+      cmds.push('L ' + x1.toFixed(2) + ' ' + y.toFixed(2))
+      cmds.push('L ' + x1.toFixed(2) + ' ' + h.toFixed(2))
+      cmds.push('Z')
+      rects.push(cmds.join(' '))
+    }
+    return rects
+  }
+
+  /**
+   * The real width to draw a ui.Sparkline's path commands in, in vp --
+   * viewportWidth is the one already measured for the whole program's own
+   * content box (onAreaChange two screens up from here) and reused as-is.
+   * It can overshoot a chart nested inside a padded ui.Section or ui.Card by
+   * that container's own padding, since this does not walk back up to find
+   * the chart's actual parent box -- a chart a little wider than its frame
+   * reads far better than one squeezed into a sliver at the left, which is
+   * what drawing in a fixed 0..100 box scaled by Shape.viewPort did. 300 is
+   * a plain guess for the first frame, before any area has been measured.
+   */
+  private chartWidth(): number {
+    return this.viewportWidth > 0 ? this.viewportWidth : 300
   }
 
   /** ui.Select's current choice, for the trigger row -- '' if it has no options at all. */
@@ -1891,6 +1963,57 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .padding(this.t().padBase)
+    } else if (node.kind === 'table') {
+      // Same one-frame-around-the-collection shape as 'listgroup': the table
+      // owns the border, the radius and the rule between rows, so a row
+      // (below) draws nothing of its own.
+      Column() {
+        if (node.options.length > 0) {
+          Row() {
+            ForEach(node.options, (h: string, index: number) => {
+              Text(h)
+                .fontSize(this.t().sizeCaption)
+                .fontFamily(this.textFamily())
+                .fontWeight(this.t().weightHeading)
+                .fontColor(this.t().inkMuted)
+                .layoutWeight(1)
+            }, (h: string, index: number) => index.toString() + ':' + h)
+          }
+          .width('100%')
+          .padding({ left: this.t().padListX, right: this.t().padListX,
+                     top: this.t().gapBase, bottom: this.t().gapTight })
+        }
+        ForEach(node.children, (child: LiveNode, index: number) => {
+          if (index > 0 && child.kind === 'tablerow') {
+            Divider().strokeWidth(this.t().borderWidth).color(this.t().lineSoft)
+              .margin({ left: this.t().padListX, right: this.t().padListX })
+          }
+          this.renderNode(child, 'table')
+        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .backgroundColor(this.t().surfaceRaised)
+      .border({ width: this.t().borderWidth, color: this.t().line })
+      .borderRadius(this.t().radiusCard)
+    } else if (node.kind === 'tablerow') {
+      // Each row's own cells (node.options) say how many columns it draws --
+      // not the table's columns prop, which exists for the model to keep
+      // every row and the header the same length, not for the renderer to
+      // enforce at runtime.
+      Row() {
+        ForEach(node.options, (cell: string, index: number) => {
+          Text(cell)
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
+            .fontColor(this.t().ink)
+            .layoutWeight(1)
+        }, (cell: string, index: number) => index.toString() + ':' + cell)
+      }
+      .width('100%')
+      .padding({ left: this.t().padListX, right: this.t().padListX,
+                 top: this.t().padListY, bottom: this.t().padListY })
+      .backgroundColor(toneFill(this.t(), node.style, '#00000000'))
     } else if (node.kind === 'icon') {
       this.drawIcon(node.icon, this.t().sizeHeading,
         toneInk(this.t(), node.style, this.t().inkStrong))
@@ -2089,7 +2212,7 @@ export struct VeraPreview {
         })
           .width('100%')
           .enabled(node.enabled)
-          .selectedColor(this.t().primary)
+          .selectedColor(toneEdge(this.t(), node.style, this.t().primary))
           .onChange((v: number, mode: SliderChangeMode) => {
             // Every position reaches the program, so the thing being controlled
             // follows the thumb instead of jumping when the finger lifts -- a
@@ -2231,25 +2354,40 @@ export struct VeraPreview {
           Text(node.label).fontSize(this.t().sizeCaption).fontColor(this.t().inkSoft).width('100%')
         }
         Shape() {
-          // The same line, closed down to the bottom edge and filled with
-          // the tone's soft background -- this is why it reads as a chart
-          // rather than a bare line, and unlike the plain 'path' branch
-          // above, the fill traces exactly the points this shape itself
-          // drew, not an open shape closed by accident.
-          Path({ commands: this.sparklineAreaCommands(node) })
-            .fill(toneFill(this.t(), node.style, this.t().primaryFill))
-            .fillOpacity(0.4)
-            .stroke(Color.Transparent)
-          Path({ commands: this.sparklineCommands(node) })
-            .fill(Color.Transparent)
-            .stroke(toneEdge(this.t(), node.style, this.t().primary))
-            .strokeWidth('2px')
-            .strokeLineCap(LineCapStyle.Round)
-            .strokeLineJoin(LineJoinStyle.Round)
+          if (node.bars) {
+            // One Path per bar (see sparklineBarRects's own comment on why
+            // not one Path with several subpaths), solid-filled in the
+            // tone's own saturated colour (toneEdge -- "a rail, a bar, a
+            // border", the same helper ui.Progress's own fill already uses)
+            // rather than the soft tinted toneFill a card background wants.
+            ForEach(this.sparklineBarRects(node, this.chartWidth()), (rect: string, index: number) => {
+              Path({ commands: rect })
+                .fill(toneEdge(this.t(), node.style, this.t().primary))
+                .stroke(Color.Transparent)
+            }, (rect: string, index: number) => index.toString())
+          } else {
+            // The same line, closed down to the bottom edge and filled with
+            // the tone's soft background -- this is why it reads as a chart
+            // rather than a bare line, and unlike the plain 'path' branch
+            // above, the fill traces exactly the points this shape itself
+            // drew, not an open shape closed by accident.
+            Path({ commands: this.sparklineAreaCommands(node, this.chartWidth()) })
+              .fill(toneFill(this.t(), node.style, this.t().primaryFill))
+              .fillOpacity(0.4)
+              .stroke(Color.Transparent)
+            Path({ commands: this.sparklineCommands(node, this.chartWidth()) })
+              .fill(Color.Transparent)
+              .stroke(toneEdge(this.t(), node.style, this.t().primary))
+              .strokeWidth('2px')
+              .strokeLineCap(LineCapStyle.Round)
+              .strokeLineJoin(LineJoinStyle.Round)
+          }
         }
-        .viewPort({ x: ICON_ORIGIN, y: ICON_ORIGIN, width: ICON_VIEWPORT, height: ICON_VIEWPORT })
+        // No .viewPort(): see chartWidth's and sparklineCommands's own
+        // comments on why the path commands are written directly in this
+        // box's own vp (0..chartWidth(), 0..SPARKLINE_HEIGHT) instead.
         .width('100%')
-        .height(200)
+        .height(VeraPreview.SPARKLINE_HEIGHT)
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })

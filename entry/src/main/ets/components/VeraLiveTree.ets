@@ -43,6 +43,7 @@ export class LiveNode {
   @Trace options: string[] = []
   // ui.Sparkline's raw values; see VeraUiNode.
   @Trace series: number[] = []
+  @Trace bars: boolean = false
   // The typed numeric layer; see VeraUiNode.
   @Trace intValue: number = 0
   @Trace prefix: string = ''
@@ -86,6 +87,7 @@ export function toLive(node: VeraUiNode): LiveNode {
   live.maximum = node.maximum
   live.options = node.options
   live.series = node.series
+  live.bars = node.bars
   live.intValue = node.intValue
   live.prefix = node.prefix
   live.suffix = node.suffix
@@ -149,6 +151,7 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.maximum !== next.maximum) { live.maximum = next.maximum }
   if (live.options.join('\u0000') !== next.options.join('\u0000')) { live.options = next.options }
   if (live.series.join(',') !== next.series.join(',')) { live.series = next.series }
+  if (live.bars !== next.bars) { live.bars = next.bars }
   if (live.intValue !== next.intValue) { live.intValue = next.intValue }
   if (live.prefix !== next.prefix) { live.prefix = next.prefix }
   if (live.suffix !== next.suffix) { live.suffix = next.suffix }

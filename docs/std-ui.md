@@ -6,7 +6,7 @@ Generated from `entry/src/main/ets/vera/VeraUiCatalog.ets` -- the same table tha
 module interface, the validator's rules and the catalogue section of the model's prompt, so nothing here can
 drift from what the phone runs. Anything not in this file is not in the language: the compiler rejects it.
 
-49 components, 36 of them with a style set, 9 that hand a value back to a handler, 16 icons, 7 composition rules.
+51 components, 38 of them with a style set, 9 that hand a value back to a handler, 16 icons, 8 composition rules.
 
 A program picks a component and one style name from a closed set. It cannot set a colour, a padding or a
 size: those come from `VeraTheme.ets` and the renderer.
@@ -59,6 +59,8 @@ size: those come from `VeraTheme.ets` and the renderer.
 | `ui.KeyValueItem` | Composition | One labelled fact: label above, value below |
 | `ui.InsetBanner` | Composition | A standing status or guidance note in a tone, with one optional action |
 | `ui.EmptyState` | Composition | What to show where a collection is empty: title, message, one way forward |
+| `ui.Table` | Table | Rows and columns of text, with an optional header row |
+| `ui.TableRow` | Table | One row of a ui.Table: one string per column, in order |
 | `ui.Skeleton` | Feedback | A placeholder box the size of the content that has not arrived yet |
 | `ui.Spinner` | Feedback | A small spinning indicator that something is in progress |
 | `ui.Snackbar` | Feedback | A one-line status strip the program raised itself, with one optional action |
@@ -79,11 +81,11 @@ Six types appear in the component signatures, and every one of them is checked a
 | type | what it is |
 |---|---|
 | `View` | what every `ui.*` call returns. A program can pass it and store it in an array, and nothing else: there is no way to read a view back, change it or ask it anything. |
-| `View[]` | the children of a container, written as an array literal or built with the array functions. 13 properties take one. |
+| `View[]` | the children of a container, written as an array literal or built with the array functions. 14 properties take one. |
 | `string` | text. Also the type of a `style`, an `icon` and an `action`, each with its own rule below. |
 | `int` | a whole number. Sizes, counts, minutes, slider values and the `value` a tap carries are all ints. |
 | `boolean` | `enabled`, `checked`, `running`. |
-| `string[]` | one property only: the `options` of `ui.Select`. |
+| `string[]` | the `options` of `ui.Select`, the `headers` of `ui.Table`, the `cells` of `ui.TableRow`. |
 | `number` | a fractional number. No component takes one: `ui.numberToString` is the only place it appears, and every component that holds a figure holds an `int`. |
 
 Three of the string-typed properties are not free text:
@@ -465,13 +467,31 @@ A one-line status strip the program raised itself, with one optional action.
 
 *a series of numbers, drawn*
 
-### `ui.Sparkline(style: string, series: int[], maximum: int, label: string): View`
+### `ui.Sparkline(style: string, series: int[], maximum: int, label: string, [bars: boolean]): View`
 
-A small line chart from a series of whole numbers.
+A small line or bar chart from a series of whole numbers.
 
 **Styles:** `default` `accent` `success` `warning` `danger`
 
-> For a trend at a glance -- steps across a week, a balance over time -- rather than a table of numbers nobody will read. series is drawn left to right in the order given; maximum bounds the vertical scale, and a value past it is clamped rather than redrawing everything else smaller. label is shown with the chart and may be "".
+> For a trend at a glance -- steps across a week, a balance over time -- rather than a table of numbers nobody will read. series is drawn left to right in the order given; maximum bounds the vertical scale, and a value past it is clamped rather than redrawing everything else smaller. label is shown with the chart and may be "". Leave bars false (the default) for a connected line; pass it true to draw separate bars instead, for a handful of categories compared side by side rather than a trend over time.
+
+## Table
+
+*rows and columns of text*
+
+### `ui.Table(style: string, headers: string[], columns: int, children: View[]): View`
+
+Rows and columns of text, with an optional header row.
+
+> For data that genuinely has columns -- a list of orders with date, item and amount; a schedule with time and place. headers names each column and may be an empty array for no header row; columns should match both headers' length (when given) and every ui.TableRow's own cells length. Children are ui.TableRow. Prefer ui.ListGroup when each row is really just a title with a trailing value -- a table is for three or more columns of data read down as well as across.
+
+### `ui.TableRow(style: string, cells: string[]): View`
+
+One row of a ui.Table: one string per column, in order.
+
+**Styles:** `default` `accent` `success` `warning` `danger`
+
+> Only inside a ui.Table, and always with as many cells as the table has columns. Give it a tone to call out one row, a total line or a problem entry, the same way a ui.ListItem can.
 
 ## Navigation
 
@@ -504,6 +524,7 @@ Banner, EmptyState, Header or Stat rather than a component of its own.
 - ListGroup takes only ListItem, IntListItem, SectionHeader, ActionBar or When children.
 - MetricGroup takes only Stat, IntStat or When children.
 - KeyValueGroup takes only KeyValueItem or When children.
+- Table takes only TableRow or When children.
 - Timeline takes only TimelineItem, ActionBar or When children.
 - ActionBar takes only Button, IconButton, Badge or When children.
 - Card may not contain another Card.

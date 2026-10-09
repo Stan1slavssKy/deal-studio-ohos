@@ -2,60 +2,60 @@ export abstract class RuntimeValue {
 }
 export class VeraIntValue extends RuntimeValue {
     value: number;
-    constructor(r105: number) { super(); this.value = r105; }
+    constructor(m116: number) { super(); this.value = m116; }
 }
 export class VeraNumberValue extends RuntimeValue {
     value: number;
-    constructor(q105: number) { super(); this.value = q105; }
+    constructor(l116: number) { super(); this.value = l116; }
 }
 export class VeraStringValue extends RuntimeValue {
     value: string;
-    constructor(p105: string) { super(); this.value = p105; }
+    constructor(k116: string) { super(); this.value = k116; }
 }
 export class VeraBooleanValue extends RuntimeValue {
     value: boolean;
-    constructor(o105: boolean) { super(); this.value = o105; }
+    constructor(j116: boolean) { super(); this.value = j116; }
 }
 export class VeraNullValue extends RuntimeValue {
 }
 export class VeraArrayValue extends RuntimeValue {
     elements: RuntimeValue[];
-    constructor(n105: RuntimeValue[]) { super(); this.elements = n105; }
+    constructor(i116: RuntimeValue[]) { super(); this.elements = i116; }
 }
 export class VeraObjectValue extends RuntimeValue {
     classIdentity: string;
     fields: Map<string, RuntimeValue> = new Map<string, RuntimeValue>();
-    constructor(l105: string, m105: Map<string, RuntimeValue>) {
+    constructor(g116: string, h116: Map<string, RuntimeValue>) {
         super();
-        this.classIdentity = l105;
-        this.fields = m105;
+        this.classIdentity = g116;
+        this.fields = h116;
     }
 }
 export class Cell {
     value: RuntimeValue;
-    constructor(k105: RuntimeValue) { this.value = k105; }
+    constructor(f116: RuntimeValue) { this.value = f116; }
 }
 export class FunctionValue extends RuntimeValue {
     name: string;
     captures: Cell[];
-    constructor(i105: string, j105: Cell[]) { super(); this.name = i105; this.captures = j105; }
+    constructor(d116: string, e116: Cell[]) { super(); this.name = d116; this.captures = e116; }
 }
 export class ExternalFunctionValue extends RuntimeValue {
     module: string;
     funcName: string;
-    constructor(g105: string, h105: string) { super(); this.module = g105; this.funcName = h105; }
+    constructor(b116: string, c116: string) { super(); this.module = b116; this.funcName = c116; }
 }
 export const NULL_VALUE: VeraNullValue = new VeraNullValue();
 export class RuntimeTrap extends Error {
     trapCode: string;
-    constructor(e105: string, f105: string) { super(f105); this.trapCode = e105; }
+    constructor(z115: string, a116: string) { super(a116); this.trapCode = z115; }
 }
 export abstract class HostEnvironment {
-    abstract invoke(a105: string, b105: string, c105: RuntimeValue[], d105: boolean): RuntimeValue;
+    abstract invoke(v115: string, w115: string, x115: RuntimeValue[], y115: boolean): RuntimeValue;
 }
 export class EmptyHostEnvironment extends HostEnvironment {
-    invoke(w104: string, x104: string, y104: RuntimeValue[], z104: boolean): RuntimeValue {
-        throw new RuntimeTrap('R0015', `external function unavailable: ${w104}.${x104}`);
+    invoke(r115: string, s115: string, t115: RuntimeValue[], u115: boolean): RuntimeValue {
+        throw new RuntimeTrap('R0015', `external function unavailable: ${r115}.${s115}`);
     }
 }
 export class Instruction {
@@ -75,7 +75,7 @@ export class Instruction {
     fields: string[] = [];
     functionName: string = '';
     captures: number[] = [];
-    constructor(v104: string) { this.op = v104; }
+    constructor(q115: string) { this.op = q115; }
 }
 export class BytecodeFunction {
     name: string;
@@ -83,20 +83,20 @@ export class BytecodeFunction {
     localCount: number;
     isAsync: boolean;
     instructions: Instruction[];
-    constructor(q104: string, r104: number, s104: number, t104: boolean, u104: Instruction[]) {
-        this.name = q104;
-        this.parameterCount = r104;
-        this.localCount = s104;
-        this.isAsync = t104;
-        this.instructions = u104;
+    constructor(l115: string, m115: number, n115: number, o115: boolean, p115: Instruction[]) {
+        this.name = l115;
+        this.parameterCount = m115;
+        this.localCount = n115;
+        this.isAsync = o115;
+        this.instructions = p115;
     }
 }
 export class BytecodeModule {
     functions: BytecodeFunction[];
     entryCandidates: string[];
-    constructor(o104: BytecodeFunction[], p104: string[]) {
-        this.functions = o104;
-        this.entryCandidates = p104;
+    constructor(j115: BytecodeFunction[], k115: string[]) {
+        this.functions = j115;
+        this.entryCandidates = k115;
     }
 }
 class Frame {
@@ -105,12 +105,12 @@ class Frame {
     pc: number = 0;
     fn: BytecodeFunction;
     captures: Cell[];
-    constructor(k104: BytecodeFunction, l104: Cell[], m104: RuntimeValue[]) {
-        this.fn = k104;
-        this.captures = l104;
+    constructor(f115: BytecodeFunction, g115: Cell[], h115: RuntimeValue[]) {
+        this.fn = f115;
+        this.captures = g115;
         this.locals = [];
-        for (let n104: number = 0; n104 < k104.localCount; n104++) {
-            this.locals.push(new Cell(n104 < m104.length ? m104[n104] : NULL_VALUE));
+        for (let i115: number = 0; i115 < f115.localCount; i115++) {
+            this.locals.push(new Cell(i115 < h115.length ? h115[i115] : NULL_VALUE));
         }
     }
 }
@@ -123,133 +123,133 @@ export class VirtualMachine {
     private host: HostEnvironment;
     private maxSteps: number;
     private steps: number = 0;
-    constructor(g104: BytecodeModule, h104: HostEnvironment = new EmptyHostEnvironment(), i104: number = 5000000) {
-        this.host = h104;
-        this.maxSteps = i104;
-        for (let j104 of g104.functions) {
-            this.functions.set(j104.name, j104);
+    constructor(b115: BytecodeModule, c115: HostEnvironment = new EmptyHostEnvironment(), d115: number = 5000000) {
+        this.host = c115;
+        this.maxSteps = d115;
+        for (let e115 of b115.functions) {
+            this.functions.set(e115.name, e115);
         }
     }
     stepsExecuted(): number { return this.steps; }
-    execute(d104: string, e104: RuntimeValue[] = []): RuntimeValue {
-        let f104 = this.functions.get(d104);
-        if (f104 == undefined) {
-            throw new RuntimeTrap('R0001', `entry function not found: ${d104}`);
+    execute(y114: string, z114: RuntimeValue[] = []): RuntimeValue {
+        let a115 = this.functions.get(y114);
+        if (a115 == undefined) {
+            throw new RuntimeTrap('R0001', `entry function not found: ${y114}`);
         }
         this.steps = 0;
-        return this.run(new Frame(f104, [], e104));
+        return this.run(new Frame(a115, [], z114));
     }
-    private run(a103: Frame): RuntimeValue {
-        while (a103.pc < a103.fn.instructions.length) {
+    private run(v113: Frame): RuntimeValue {
+        while (v113.pc < v113.fn.instructions.length) {
             this.steps += 1;
             if (this.steps > this.maxSteps) {
                 throw new RuntimeTrap('R0017', `execution exceeded ${this.maxSteps} steps`);
             }
-            let b103 = a103.fn.instructions[a103.pc];
-            a103.pc += 1;
-            switch (b103.op) {
+            let w113 = v113.fn.instructions[v113.pc];
+            v113.pc += 1;
+            switch (w113.op) {
                 case 'push-int':
-                    a103.stack.push(new VeraIntValue(this.checked(parseInt(b103.value))));
+                    v113.stack.push(new VeraIntValue(this.checked(parseInt(w113.value))));
                     break;
                 case 'push-number':
-                    a103.stack.push(new VeraNumberValue(b103.numValue));
+                    v113.stack.push(new VeraNumberValue(w113.numValue));
                     break;
                 case 'push-string':
-                    a103.stack.push(new VeraStringValue(b103.value));
+                    v113.stack.push(new VeraStringValue(w113.value));
                     break;
                 case 'push-boolean':
-                    a103.stack.push(new VeraBooleanValue(b103.boolValue));
+                    v113.stack.push(new VeraBooleanValue(w113.boolValue));
                     break;
                 case 'push-null':
-                    a103.stack.push(NULL_VALUE);
+                    v113.stack.push(NULL_VALUE);
                     break;
                 case 'load-local':
-                    a103.stack.push(this.cell(a103.locals, b103.slot).value);
+                    v113.stack.push(this.cell(v113.locals, w113.slot).value);
                     break;
                 case 'store-local':
-                    this.cell(a103.locals, b103.slot).value = this.pop(a103);
+                    this.cell(v113.locals, w113.slot).value = this.pop(v113);
                     break;
                 case 'load-capture':
-                    a103.stack.push(this.cell(a103.captures, b103.slot).value);
+                    v113.stack.push(this.cell(v113.captures, w113.slot).value);
                     break;
                 case 'store-capture':
-                    this.cell(a103.captures, b103.slot).value = this.pop(a103);
+                    this.cell(v113.captures, w113.slot).value = this.pop(v113);
                     break;
                 case 'load-function': {
-                    let c104 = this.functionValues.get(b103.name);
-                    if (c104 == undefined) {
-                        c104 = new FunctionValue(b103.name, []);
-                        this.functionValues.set(b103.name, c104);
+                    let x114 = this.functionValues.get(w113.name);
+                    if (x114 == undefined) {
+                        x114 = new FunctionValue(w113.name, []);
+                        this.functionValues.set(w113.name, x114);
                     }
-                    a103.stack.push(c104);
+                    v113.stack.push(x114);
                     break;
                 }
                 case 'load-external': {
-                    let a104 = `${b103.module}::${b103.name}`;
-                    let b104 = this.externalValues.get(a104);
-                    if (b104 == undefined) {
-                        b104 = new ExternalFunctionValue(b103.module, b103.name);
-                        this.externalValues.set(a104, b104);
+                    let v114 = `${w113.module}::${w113.name}`;
+                    let w114 = this.externalValues.get(v114);
+                    if (w114 == undefined) {
+                        w114 = new ExternalFunctionValue(w113.module, w113.name);
+                        this.externalValues.set(v114, w114);
                     }
-                    a103.stack.push(b104);
+                    v113.stack.push(w114);
                     break;
                 }
                 case 'pop':
-                    this.pop(a103);
+                    this.pop(v113);
                     break;
                 case 'duplicate':
-                    a103.stack.push(a103.stack[a103.stack.length - 1]);
+                    v113.stack.push(v113.stack[v113.stack.length - 1]);
                     break;
                 case 'unary':
-                    a103.stack.push(this.unary(b103.operator, this.pop(a103)));
+                    v113.stack.push(this.unary(w113.operator, this.pop(v113)));
                     break;
                 case 'binary': {
-                    let y103 = this.pop(a103);
-                    let z103 = this.pop(a103);
-                    a103.stack.push(this.binary(b103.operator, b103.integer, z103, y103));
+                    let t114 = this.pop(v113);
+                    let u114 = this.pop(v113);
+                    v113.stack.push(this.binary(w113.operator, w113.integer, u114, t114));
                     break;
                 }
                 case 'jump':
-                    a103.pc = b103.target;
+                    v113.pc = w113.target;
                     break;
                 case 'jump-if-false':
-                    if (!this.asBoolean(this.pop(a103))) {
-                        a103.pc = b103.target;
+                    if (!this.asBoolean(this.pop(v113))) {
+                        v113.pc = w113.target;
                     }
                     break;
                 case 'call':
-                    this.callInst(a103, b103);
+                    this.callInst(v113, w113);
                     break;
                 case 'return':
-                    return this.pop(a103);
+                    return this.pop(v113);
                 case 'make-array':
-                    a103.stack.push(new VeraArrayValue(this.take(a103, b103.count)));
+                    v113.stack.push(new VeraArrayValue(this.take(v113, w113.count)));
                     break;
                 case 'array-push': {
-                    let w103 = this.pop(a103);
-                    let x103 = this.asArray(this.pop(a103));
-                    if (x103.elements.length >= 4096) {
+                    let r114 = this.pop(v113);
+                    let s114 = this.asArray(this.pop(v113));
+                    if (s114.elements.length >= 4096) {
                         throw new RuntimeTrap('R0022', 'array length limit reached (4096)');
                     }
-                    x103.elements.push(w103);
-                    a103.stack.push(new VeraIntValue(x103.elements.length));
+                    s114.elements.push(r114);
+                    v113.stack.push(new VeraIntValue(s114.elements.length));
                     break;
                 }
                 case 'array-pop': {
-                    let v103 = this.asArray(this.pop(a103));
-                    if (v103.elements.length === 0) {
+                    let q114 = this.asArray(this.pop(v113));
+                    if (q114.elements.length === 0) {
                         throw new RuntimeTrap('R0023', 'pop from an empty array');
                     }
-                    a103.stack.push(v103.elements.pop() as RuntimeValue);
+                    v113.stack.push(q114.elements.pop() as RuntimeValue);
                     break;
                 }
                 case 'length': {
-                    let u103 = this.pop(a103);
-                    if (u103 instanceof VeraArrayValue) {
-                        a103.stack.push(new VeraIntValue(u103.elements.length));
+                    let p114 = this.pop(v113);
+                    if (p114 instanceof VeraArrayValue) {
+                        v113.stack.push(new VeraIntValue(p114.elements.length));
                     }
-                    else if (u103 instanceof VeraStringValue) {
-                        a103.stack.push(new VeraIntValue(u103.value.length));
+                    else if (p114 instanceof VeraStringValue) {
+                        v113.stack.push(new VeraIntValue(p114.value.length));
                     }
                     else {
                         throw new RuntimeTrap('R0008', 'expected array or string');
@@ -257,498 +257,498 @@ export class VirtualMachine {
                     break;
                 }
                 case 'string-symbols': {
-                    let r103 = this.pop(a103);
-                    if (!(r103 instanceof VeraStringValue)) {
+                    let m114 = this.pop(v113);
+                    if (!(m114 instanceof VeraStringValue)) {
                         throw new RuntimeTrap('R0008', 'expected string');
                     }
-                    let s103: RuntimeValue[] = [];
-                    for (let t103 of Array.from(r103.value)) {
-                        s103.push(new VeraStringValue(t103));
+                    let n114: RuntimeValue[] = [];
+                    for (let o114 of Array.from(m114.value)) {
+                        n114.push(new VeraStringValue(o114));
                     }
-                    a103.stack.push(new VeraArrayValue(s103));
+                    v113.stack.push(new VeraArrayValue(n114));
                     break;
                 }
                 case 'ensure-not-null': {
-                    let q103 = this.pop(a103);
-                    if (q103 instanceof VeraNullValue) {
+                    let l114 = this.pop(v113);
+                    if (l114 instanceof VeraNullValue) {
                         throw new RuntimeTrap('R0018', 'ensure-not-null failed');
                     }
-                    a103.stack.push(q103);
+                    v113.stack.push(l114);
                     break;
                 }
                 case 'load-index': {
-                    let o103 = this.index(this.pop(a103));
-                    let p103 = this.asArray(this.pop(a103));
-                    a103.stack.push(this.indexValue(p103, o103));
+                    let j114 = this.index(this.pop(v113));
+                    let k114 = this.asArray(this.pop(v113));
+                    v113.stack.push(this.indexValue(k114, j114));
                     break;
                 }
                 case 'store-index': {
-                    let l103 = this.pop(a103);
-                    let m103 = this.index(this.pop(a103));
-                    let n103 = this.asArray(this.pop(a103));
-                    this.indexValue(n103, m103);
-                    n103.elements[m103] = l103;
+                    let g114 = this.pop(v113);
+                    let h114 = this.index(this.pop(v113));
+                    let i114 = this.asArray(this.pop(v113));
+                    this.indexValue(i114, h114);
+                    i114.elements[h114] = g114;
                     break;
                 }
                 case 'make-object': {
-                    let i103 = this.take(a103, b103.fields.length);
-                    let j103 = new Map<string, RuntimeValue>();
-                    for (let k103: number = 0; k103 < b103.fields.length; k103++) {
-                        j103.set(b103.fields[k103], i103[k103]);
+                    let d114 = this.take(v113, w113.fields.length);
+                    let e114 = new Map<string, RuntimeValue>();
+                    for (let f114: number = 0; f114 < w113.fields.length; f114++) {
+                        e114.set(w113.fields[f114], d114[f114]);
                     }
-                    a103.stack.push(new VeraObjectValue(b103.classIdentity, j103));
+                    v113.stack.push(new VeraObjectValue(w113.classIdentity, e114));
                     break;
                 }
                 case 'load-field': {
-                    let g103 = this.asObject(this.pop(a103));
-                    let h103 = g103.fields.get(b103.name);
-                    if (h103 == undefined) {
-                        throw new RuntimeTrap('R0010', `missing field ${b103.name}`);
+                    let b114 = this.asObject(this.pop(v113));
+                    let c114 = b114.fields.get(w113.name);
+                    if (c114 == undefined) {
+                        throw new RuntimeTrap('R0010', `missing field ${w113.name}`);
                     }
-                    a103.stack.push(h103);
+                    v113.stack.push(c114);
                     break;
                 }
                 case 'store-field': {
-                    let e103 = this.pop(a103);
-                    let f103 = this.asObject(this.pop(a103));
-                    if (!f103.fields.has(b103.name)) {
-                        throw new RuntimeTrap('R0010', `missing field ${b103.name}`);
+                    let z113 = this.pop(v113);
+                    let a114 = this.asObject(this.pop(v113));
+                    if (!a114.fields.has(w113.name)) {
+                        throw new RuntimeTrap('R0010', `missing field ${w113.name}`);
                     }
-                    f103.fields.set(b103.name, e103);
+                    a114.fields.set(w113.name, z113);
                     break;
                 }
                 case 'make-closure': {
-                    let c103: Cell[] = [];
-                    for (let d103 of b103.captures) {
-                        if (d103 >= 0) {
-                            c103.push(this.cell(a103.locals, d103));
+                    let x113: Cell[] = [];
+                    for (let y113 of w113.captures) {
+                        if (y113 >= 0) {
+                            x113.push(this.cell(v113.locals, y113));
                         }
                         else {
-                            c103.push(this.cell(a103.captures, -d103 - 1));
+                            x113.push(this.cell(v113.captures, -y113 - 1));
                         }
                     }
-                    a103.stack.push(new FunctionValue(b103.functionName, c103));
+                    v113.stack.push(new FunctionValue(w113.functionName, x113));
                     break;
                 }
             }
         }
         throw new RuntimeTrap('R0012', 'function ended without return');
     }
-    private callInst(v102: Frame, w102: Instruction): void {
-        let x102 = this.take(v102, w102.count);
-        let y102 = this.pop(v102);
-        if (y102 instanceof FunctionValue) {
-            let z102 = this.functions.get(y102.name);
-            if (z102 == undefined) {
-                throw new RuntimeTrap('R0001', `function not found: ${y102.name}`);
+    private callInst(q113: Frame, r113: Instruction): void {
+        let s113 = this.take(q113, r113.count);
+        let t113 = this.pop(q113);
+        if (t113 instanceof FunctionValue) {
+            let u113 = this.functions.get(t113.name);
+            if (u113 == undefined) {
+                throw new RuntimeTrap('R0001', `function not found: ${t113.name}`);
             }
-            if (z102.isAsync !== w102.awaited) {
+            if (u113.isAsync !== r113.awaited) {
                 throw new RuntimeTrap('R0013', 'async call invariant');
             }
-            v102.stack.push(this.run(new Frame(z102, y102.captures, x102)));
+            q113.stack.push(this.run(new Frame(u113, t113.captures, s113)));
         }
-        else if (y102 instanceof ExternalFunctionValue) {
-            v102.stack.push(this.host.invoke(y102.module, y102.funcName, x102, w102.awaited));
+        else if (t113 instanceof ExternalFunctionValue) {
+            q113.stack.push(this.host.invoke(t113.module, t113.funcName, s113, r113.awaited));
         }
         else {
             throw new RuntimeTrap('R0014', 'value is not callable');
         }
     }
-    private unary(t102: string, u102: RuntimeValue): RuntimeValue {
-        if (t102 === '!') {
-            return new VeraBooleanValue(!this.asBoolean(u102));
+    private unary(o113: string, p113: RuntimeValue): RuntimeValue {
+        if (o113 === '!') {
+            return new VeraBooleanValue(!this.asBoolean(p113));
         }
-        if (u102 instanceof VeraIntValue) {
-            return new VeraIntValue(this.checked(-u102.value));
+        if (p113 instanceof VeraIntValue) {
+            return new VeraIntValue(this.checked(-p113.value));
         }
-        if (u102 instanceof VeraNumberValue) {
-            return new VeraNumberValue(-u102.value);
+        if (p113 instanceof VeraNumberValue) {
+            return new VeraNumberValue(-p113.value);
         }
         throw new RuntimeTrap('R0002', 'invalid unary operand');
     }
-    private binary(n102: string, o102: boolean, p102: RuntimeValue, q102: RuntimeValue): RuntimeValue {
-        if (n102 === '===') {
-            return new VeraBooleanValue(this.equal(p102, q102));
+    private binary(i113: string, j113: boolean, k113: RuntimeValue, l113: RuntimeValue): RuntimeValue {
+        if (i113 === '===') {
+            return new VeraBooleanValue(this.equal(k113, l113));
         }
-        if (n102 === '!==') {
-            return new VeraBooleanValue(!this.equal(p102, q102));
+        if (i113 === '!==') {
+            return new VeraBooleanValue(!this.equal(k113, l113));
         }
-        if (n102 === '&&') {
-            return new VeraBooleanValue(this.asBoolean(p102) && this.asBoolean(q102));
+        if (i113 === '&&') {
+            return new VeraBooleanValue(this.asBoolean(k113) && this.asBoolean(l113));
         }
-        if (n102 === '||') {
-            return new VeraBooleanValue(this.asBoolean(p102) || this.asBoolean(q102));
+        if (i113 === '||') {
+            return new VeraBooleanValue(this.asBoolean(k113) || this.asBoolean(l113));
         }
-        if (p102 instanceof VeraStringValue && q102 instanceof VeraStringValue) {
-            if (n102 === '+') {
-                return new VeraStringValue(p102.value + q102.value);
+        if (k113 instanceof VeraStringValue && l113 instanceof VeraStringValue) {
+            if (i113 === '+') {
+                return new VeraStringValue(k113.value + l113.value);
             }
-            return new VeraBooleanValue(this.compareStr(n102, p102.value, q102.value));
+            return new VeraBooleanValue(this.compareStr(i113, k113.value, l113.value));
         }
-        if (o102) {
-            return this.intBinary(n102, this.asInt(p102), this.asInt(q102));
+        if (j113) {
+            return this.intBinary(i113, this.asInt(k113), this.asInt(l113));
         }
-        let r102 = this.asNumber(p102);
-        let s102 = this.asNumber(q102);
-        if (n102 === '+') {
-            return new VeraNumberValue(r102 + s102);
+        let m113 = this.asNumber(k113);
+        let n113 = this.asNumber(l113);
+        if (i113 === '+') {
+            return new VeraNumberValue(m113 + n113);
         }
-        if (n102 === '-') {
-            return new VeraNumberValue(r102 - s102);
+        if (i113 === '-') {
+            return new VeraNumberValue(m113 - n113);
         }
-        if (n102 === '*') {
-            return new VeraNumberValue(r102 * s102);
+        if (i113 === '*') {
+            return new VeraNumberValue(m113 * n113);
         }
-        if (n102 === '/') {
-            return new VeraNumberValue(r102 / s102);
+        if (i113 === '/') {
+            return new VeraNumberValue(m113 / n113);
         }
-        return new VeraBooleanValue(this.compareNum(n102, r102, s102));
+        return new VeraBooleanValue(this.compareNum(i113, m113, n113));
     }
-    private intBinary(k102: string, l102: number, m102: number): RuntimeValue {
-        if (k102 === '+') {
-            return new VeraIntValue(this.checked(l102 + m102));
+    private intBinary(f113: string, g113: number, h113: number): RuntimeValue {
+        if (f113 === '+') {
+            return new VeraIntValue(this.checked(g113 + h113));
         }
-        if (k102 === '-') {
-            return new VeraIntValue(this.checked(l102 - m102));
+        if (f113 === '-') {
+            return new VeraIntValue(this.checked(g113 - h113));
         }
-        if (k102 === '*') {
-            return new VeraIntValue(this.checked(l102 * m102));
+        if (f113 === '*') {
+            return new VeraIntValue(this.checked(g113 * h113));
         }
-        if (k102 === '/') {
-            if (m102 === 0) {
+        if (f113 === '/') {
+            if (h113 === 0) {
                 throw new RuntimeTrap('R0003', 'integer division by zero');
             }
-            return new VeraIntValue(this.checked(Math.trunc(l102 / m102)));
+            return new VeraIntValue(this.checked(Math.trunc(g113 / h113)));
         }
-        if (k102 === '%') {
-            if (m102 === 0) {
+        if (f113 === '%') {
+            if (h113 === 0) {
                 throw new RuntimeTrap('R0004', 'integer modulo by zero');
             }
-            return new VeraIntValue(l102 % m102);
+            return new VeraIntValue(g113 % h113);
         }
-        if (k102 === '<') {
-            return new VeraBooleanValue(l102 < m102);
+        if (f113 === '<') {
+            return new VeraBooleanValue(g113 < h113);
         }
-        if (k102 === '<=') {
-            return new VeraBooleanValue(l102 <= m102);
+        if (f113 === '<=') {
+            return new VeraBooleanValue(g113 <= h113);
         }
-        if (k102 === '>') {
-            return new VeraBooleanValue(l102 > m102);
+        if (f113 === '>') {
+            return new VeraBooleanValue(g113 > h113);
         }
-        if (k102 === '>=') {
-            return new VeraBooleanValue(l102 >= m102);
+        if (f113 === '>=') {
+            return new VeraBooleanValue(g113 >= h113);
         }
-        throw new RuntimeTrap('R0005', `invalid comparison ${k102}`);
+        throw new RuntimeTrap('R0005', `invalid comparison ${f113}`);
     }
-    private compareNum(h102: string, i102: number, j102: number): boolean {
-        if (h102 === '<') {
-            return i102 < j102;
+    private compareNum(c113: string, d113: number, e113: number): boolean {
+        if (c113 === '<') {
+            return d113 < e113;
         }
-        if (h102 === '<=') {
-            return i102 <= j102;
+        if (c113 === '<=') {
+            return d113 <= e113;
         }
-        if (h102 === '>') {
-            return i102 > j102;
+        if (c113 === '>') {
+            return d113 > e113;
         }
-        if (h102 === '>=') {
-            return i102 >= j102;
+        if (c113 === '>=') {
+            return d113 >= e113;
         }
-        throw new RuntimeTrap('R0005', `invalid comparison ${h102}`);
+        throw new RuntimeTrap('R0005', `invalid comparison ${c113}`);
     }
-    private compareStr(e102: string, f102: string, g102: string): boolean {
-        if (e102 === '<') {
-            return f102 < g102;
+    private compareStr(z112: string, a113: string, b113: string): boolean {
+        if (z112 === '<') {
+            return a113 < b113;
         }
-        if (e102 === '<=') {
-            return f102 <= g102;
+        if (z112 === '<=') {
+            return a113 <= b113;
         }
-        if (e102 === '>') {
-            return f102 > g102;
+        if (z112 === '>') {
+            return a113 > b113;
         }
-        if (e102 === '>=') {
-            return f102 >= g102;
+        if (z112 === '>=') {
+            return a113 >= b113;
         }
-        throw new RuntimeTrap('R0005', `invalid comparison ${e102}`);
+        throw new RuntimeTrap('R0005', `invalid comparison ${z112}`);
     }
-    private equal(c102: RuntimeValue, d102: RuntimeValue): boolean {
-        if (c102 instanceof VeraNullValue || d102 instanceof VeraNullValue) {
-            return c102 instanceof VeraNullValue && d102 instanceof VeraNullValue;
+    private equal(x112: RuntimeValue, y112: RuntimeValue): boolean {
+        if (x112 instanceof VeraNullValue || y112 instanceof VeraNullValue) {
+            return x112 instanceof VeraNullValue && y112 instanceof VeraNullValue;
         }
-        if (c102 instanceof VeraIntValue && d102 instanceof VeraIntValue) {
-            return c102.value === d102.value;
+        if (x112 instanceof VeraIntValue && y112 instanceof VeraIntValue) {
+            return x112.value === y112.value;
         }
-        if (c102 instanceof VeraNumberValue && d102 instanceof VeraNumberValue) {
-            return c102.value === d102.value;
+        if (x112 instanceof VeraNumberValue && y112 instanceof VeraNumberValue) {
+            return x112.value === y112.value;
         }
-        if (c102 instanceof VeraStringValue && d102 instanceof VeraStringValue) {
-            return c102.value === d102.value;
+        if (x112 instanceof VeraStringValue && y112 instanceof VeraStringValue) {
+            return x112.value === y112.value;
         }
-        if (c102 instanceof VeraBooleanValue && d102 instanceof VeraBooleanValue) {
-            return c102.value === d102.value;
+        if (x112 instanceof VeraBooleanValue && y112 instanceof VeraBooleanValue) {
+            return x112.value === y112.value;
         }
-        if (c102 instanceof FunctionValue && d102 instanceof FunctionValue) {
-            return c102 === d102;
+        if (x112 instanceof FunctionValue && y112 instanceof FunctionValue) {
+            return x112 === y112;
         }
-        if (c102 instanceof ExternalFunctionValue && d102 instanceof ExternalFunctionValue) {
-            return c102 === d102;
+        if (x112 instanceof ExternalFunctionValue && y112 instanceof ExternalFunctionValue) {
+            return x112 === y112;
         }
         return false;
     }
-    private checked(b102: number): number {
-        if (b102 < MIN_INT || b102 > MAX_INT) {
+    private checked(w112: number): number {
+        if (w112 < MIN_INT || w112 > MAX_INT) {
             throw new RuntimeTrap('R0006', 'integer overflow');
         }
-        return b102;
+        return w112;
     }
-    private pop(z101: Frame): RuntimeValue {
-        let a102 = z101.stack.pop();
-        if (a102 == undefined) {
+    private pop(u112: Frame): RuntimeValue {
+        let v112 = u112.stack.pop();
+        if (v112 == undefined) {
             throw new RuntimeTrap('R0007', 'stack underflow');
         }
-        return a102;
+        return v112;
     }
-    private take(u101: Frame, v101: number): RuntimeValue[] {
-        if (u101.stack.length < v101) {
+    private take(p112: Frame, q112: number): RuntimeValue[] {
+        if (p112.stack.length < q112) {
             throw new RuntimeTrap('R0007', 'stack underflow');
         }
-        let w101: RuntimeValue[] = [];
-        let x101 = u101.stack.length - v101;
-        for (let y101 = x101; y101 < u101.stack.length; y101++) {
-            w101.push(u101.stack[y101]);
+        let r112: RuntimeValue[] = [];
+        let s112 = p112.stack.length - q112;
+        for (let t112 = s112; t112 < p112.stack.length; t112++) {
+            r112.push(p112.stack[t112]);
         }
-        while (u101.stack.length > x101) {
-            this.pop(u101);
+        while (p112.stack.length > s112) {
+            this.pop(p112);
         }
-        return w101;
+        return r112;
     }
-    private asInt(t101: RuntimeValue): number {
-        if (!(t101 instanceof VeraIntValue)) {
+    private asInt(o112: RuntimeValue): number {
+        if (!(o112 instanceof VeraIntValue)) {
             throw new RuntimeTrap('R0008', 'expected int');
         }
-        return (t101 as VeraIntValue).value;
+        return (o112 as VeraIntValue).value;
     }
-    private asNumber(s101: RuntimeValue): number {
-        if (!(s101 instanceof VeraNumberValue)) {
+    private asNumber(n112: RuntimeValue): number {
+        if (!(n112 instanceof VeraNumberValue)) {
             throw new RuntimeTrap('R0008', 'expected number');
         }
-        return (s101 as VeraNumberValue).value;
+        return (n112 as VeraNumberValue).value;
     }
-    private asBoolean(r101: RuntimeValue): boolean {
-        if (!(r101 instanceof VeraBooleanValue)) {
+    private asBoolean(m112: RuntimeValue): boolean {
+        if (!(m112 instanceof VeraBooleanValue)) {
             throw new RuntimeTrap('R0008', 'expected boolean');
         }
-        return (r101 as VeraBooleanValue).value;
+        return (m112 as VeraBooleanValue).value;
     }
-    private asArray(q101: RuntimeValue): VeraArrayValue {
-        if (!(q101 instanceof VeraArrayValue)) {
+    private asArray(l112: RuntimeValue): VeraArrayValue {
+        if (!(l112 instanceof VeraArrayValue)) {
             throw new RuntimeTrap('R0008', 'expected array');
         }
-        return q101 as VeraArrayValue;
+        return l112 as VeraArrayValue;
     }
-    private asObject(p101: RuntimeValue): VeraObjectValue {
-        if (!(p101 instanceof VeraObjectValue)) {
+    private asObject(k112: RuntimeValue): VeraObjectValue {
+        if (!(k112 instanceof VeraObjectValue)) {
             throw new RuntimeTrap('R0008', 'expected object');
         }
-        return p101 as VeraObjectValue;
+        return k112 as VeraObjectValue;
     }
-    private index(n101: RuntimeValue): number {
-        let o101 = this.asInt(n101);
-        if (o101 < 0 || o101 > MAX_INT) {
+    private index(i112: RuntimeValue): number {
+        let j112 = this.asInt(i112);
+        if (j112 < 0 || j112 > MAX_INT) {
             throw new RuntimeTrap('R0009', 'array index out of bounds');
         }
-        return o101;
+        return j112;
     }
-    private indexValue(l101: VeraArrayValue, m101: number): RuntimeValue {
-        if (m101 < 0 || m101 >= l101.elements.length) {
+    private indexValue(g112: VeraArrayValue, h112: number): RuntimeValue {
+        if (h112 < 0 || h112 >= g112.elements.length) {
             throw new RuntimeTrap('R0009', 'array index out of bounds');
         }
-        return l101.elements[m101];
+        return g112.elements[h112];
     }
-    private cell(j101: Cell[], k101: number): Cell {
-        if (k101 < 0 || k101 >= j101.length) {
+    private cell(e112: Cell[], f112: number): Cell {
+        if (f112 < 0 || f112 >= e112.length) {
             throw new RuntimeTrap('R0016', 'invalid slot');
         }
-        return j101[k101];
+        return e112[f112];
     }
 }
-export function formatRuntimeValue(f101: RuntimeValue): string {
-    if (f101 instanceof VeraIntValue) {
-        return f101.value.toString();
+export function formatRuntimeValue(a112: RuntimeValue): string {
+    if (a112 instanceof VeraIntValue) {
+        return a112.value.toString();
     }
-    if (f101 instanceof VeraNumberValue) {
-        return f101.value.toString();
+    if (a112 instanceof VeraNumberValue) {
+        return a112.value.toString();
     }
-    if (f101 instanceof VeraStringValue) {
-        return f101.value;
+    if (a112 instanceof VeraStringValue) {
+        return a112.value;
     }
-    if (f101 instanceof VeraBooleanValue) {
-        return f101.value ? 'true' : 'false';
+    if (a112 instanceof VeraBooleanValue) {
+        return a112.value ? 'true' : 'false';
     }
-    if (f101 instanceof VeraNullValue) {
+    if (a112 instanceof VeraNullValue) {
         return 'null';
     }
-    if (f101 instanceof VeraArrayValue) {
-        return '[' + f101.elements.map((i101: RuntimeValue) => formatRuntimeValue(i101)).join(', ') + ']';
+    if (a112 instanceof VeraArrayValue) {
+        return '[' + a112.elements.map((d112: RuntimeValue) => formatRuntimeValue(d112)).join(', ') + ']';
     }
-    if (f101 instanceof VeraObjectValue) {
-        let g101: string[] = [];
-        for (let h101 of f101.fields) {
-            g101.push(h101[0] + ': ' + formatRuntimeValue(h101[1]));
+    if (a112 instanceof VeraObjectValue) {
+        let b112: string[] = [];
+        for (let c112 of a112.fields) {
+            b112.push(c112[0] + ': ' + formatRuntimeValue(c112[1]));
         }
-        return '{' + g101.join(', ') + '}';
+        return '{' + b112.join(', ') + '}';
     }
-    if (f101 instanceof FunctionValue) {
-        return `<function ${f101.name}>`;
+    if (a112 instanceof FunctionValue) {
+        return `<function ${a112.name}>`;
     }
-    if (f101 instanceof ExternalFunctionValue) {
-        return `<external ${f101.module}.${f101.funcName}>`;
+    if (a112 instanceof ExternalFunctionValue) {
+        return `<external ${a112.module}.${a112.funcName}>`;
     }
     return '<unknown>';
 }
-export function encodeRuntimeValue(z100: RuntimeValue): Object {
-    if (z100 instanceof VeraIntValue) {
-        return ['i', (z100 as VeraIntValue).value] as Object;
+export function encodeRuntimeValue(u111: RuntimeValue): Object {
+    if (u111 instanceof VeraIntValue) {
+        return ['i', (u111 as VeraIntValue).value] as Object;
     }
-    if (z100 instanceof VeraNumberValue) {
-        return ['n', (z100 as VeraNumberValue).value] as Object;
+    if (u111 instanceof VeraNumberValue) {
+        return ['n', (u111 as VeraNumberValue).value] as Object;
     }
-    if (z100 instanceof VeraStringValue) {
-        return ['s', (z100 as VeraStringValue).value] as Object;
+    if (u111 instanceof VeraStringValue) {
+        return ['s', (u111 as VeraStringValue).value] as Object;
     }
-    if (z100 instanceof VeraBooleanValue) {
-        return ['b', (z100 as VeraBooleanValue).value] as Object;
+    if (u111 instanceof VeraBooleanValue) {
+        return ['b', (u111 as VeraBooleanValue).value] as Object;
     }
-    if (z100 instanceof VeraNullValue) {
+    if (u111 instanceof VeraNullValue) {
         return ['z'] as Object;
     }
-    if (z100 instanceof VeraArrayValue) {
-        let d101: Object[] = [];
-        for (let e101 of (z100 as VeraArrayValue).elements) {
-            d101.push(encodeRuntimeValue(e101));
+    if (u111 instanceof VeraArrayValue) {
+        let y111: Object[] = [];
+        for (let z111 of (u111 as VeraArrayValue).elements) {
+            y111.push(encodeRuntimeValue(z111));
         }
-        return ['a', d101] as Object;
+        return ['a', y111] as Object;
     }
-    if (z100 instanceof VeraObjectValue) {
-        let a101 = z100 as VeraObjectValue;
-        let b101: Object[] = [];
-        for (let c101 of a101.fields) {
-            b101.push([c101[0], encodeRuntimeValue(c101[1])] as Object);
+    if (u111 instanceof VeraObjectValue) {
+        let v111 = u111 as VeraObjectValue;
+        let w111: Object[] = [];
+        for (let x111 of v111.fields) {
+            w111.push([x111[0], encodeRuntimeValue(x111[1])] as Object);
         }
-        return ['o', a101.classIdentity, b101] as Object;
+        return ['o', v111.classIdentity, w111] as Object;
     }
-    throw new RuntimeTrap('R0024', 'value cannot be saved: ' + formatRuntimeValue(z100));
+    throw new RuntimeTrap('R0024', 'value cannot be saved: ' + formatRuntimeValue(u111));
 }
-export function decodeRuntimeValue(r100: Object): RuntimeValue {
-    let s100 = r100 as Object[];
-    let t100 = s100[0] as string;
-    if (t100 === 'i') {
-        return new VeraIntValue(s100[1] as number);
+export function decodeRuntimeValue(m111: Object): RuntimeValue {
+    let n111 = m111 as Object[];
+    let o111 = n111[0] as string;
+    if (o111 === 'i') {
+        return new VeraIntValue(n111[1] as number);
     }
-    if (t100 === 'n') {
-        return new VeraNumberValue(s100[1] as number);
+    if (o111 === 'n') {
+        return new VeraNumberValue(n111[1] as number);
     }
-    if (t100 === 's') {
-        return new VeraStringValue(s100[1] as string);
+    if (o111 === 's') {
+        return new VeraStringValue(n111[1] as string);
     }
-    if (t100 === 'b') {
-        return new VeraBooleanValue(s100[1] as boolean);
+    if (o111 === 'b') {
+        return new VeraBooleanValue(n111[1] as boolean);
     }
-    if (t100 === 'z') {
+    if (o111 === 'z') {
         return NULL_VALUE;
     }
-    if (t100 === 'a') {
-        let x100: RuntimeValue[] = [];
-        for (let y100 of s100[1] as Object[]) {
-            x100.push(decodeRuntimeValue(y100));
+    if (o111 === 'a') {
+        let s111: RuntimeValue[] = [];
+        for (let t111 of n111[1] as Object[]) {
+            s111.push(decodeRuntimeValue(t111));
         }
-        return new VeraArrayValue(x100);
+        return new VeraArrayValue(s111);
     }
-    if (t100 === 'o') {
-        let u100 = new Map<string, RuntimeValue>();
-        for (let v100 of s100[2] as Object[]) {
-            let w100 = v100 as Object[];
-            u100.set(w100[0] as string, decodeRuntimeValue(w100[1]));
+    if (o111 === 'o') {
+        let p111 = new Map<string, RuntimeValue>();
+        for (let q111 of n111[2] as Object[]) {
+            let r111 = q111 as Object[];
+            p111.set(r111[0] as string, decodeRuntimeValue(r111[1]));
         }
-        return new VeraObjectValue(s100[1] as string, u100);
+        return new VeraObjectValue(n111[1] as string, p111);
     }
-    throw new RuntimeTrap('R0025', 'unknown saved value tag: ' + t100);
+    throw new RuntimeTrap('R0025', 'unknown saved value tag: ' + o111);
 }
-export function deserializeVbc2(i100: string): BytecodeModule {
-    let j100 = JSON.parse(i100) as Object[];
-    if (!Array.isArray(j100) || j100[0] !== 'VBC2') {
+export function deserializeVbc2(d111: string): BytecodeModule {
+    let e111 = JSON.parse(d111) as Object[];
+    if (!Array.isArray(e111) || e111[0] !== 'VBC2') {
         throw new RuntimeTrap('VBC0004', 'unsupported VBC version');
     }
-    let k100 = j100[1] as string[];
-    let l100 = j100[2] as Object[][];
-    let m100: BytecodeFunction[] = [];
-    for (let n100 of l100) {
-        let o100 = n100[4] as Object[][];
-        let p100: Instruction[] = [];
-        for (let q100 of o100) {
-            p100.push(decodeInstruction(q100));
+    let f111 = e111[1] as string[];
+    let g111 = e111[2] as Object[][];
+    let h111: BytecodeFunction[] = [];
+    for (let i111 of g111) {
+        let j111 = i111[4] as Object[][];
+        let k111: Instruction[] = [];
+        for (let l111 of j111) {
+            k111.push(decodeInstruction(l111));
         }
-        m100.push(new BytecodeFunction(n100[0] as string, n100[1] as number, n100[2] as number, n100[3] as boolean, p100));
+        h111.push(new BytecodeFunction(i111[0] as string, i111[1] as number, i111[2] as number, i111[3] as boolean, k111));
     }
-    return new BytecodeModule(m100, k100);
+    return new BytecodeModule(h111, f111);
 }
-function decodeInstruction(f100: Object[]): Instruction {
-    let g100 = f100[0] as string;
-    let h100 = new Instruction(g100);
-    switch (g100) {
+function decodeInstruction(a111: Object[]): Instruction {
+    let b111 = a111[0] as string;
+    let c111 = new Instruction(b111);
+    switch (b111) {
         case 'push-int':
-            h100.value = f100[1] as string;
+            c111.value = a111[1] as string;
             break;
         case 'push-number':
-            h100.numValue = f100[1] as number;
+            c111.numValue = a111[1] as number;
             break;
         case 'push-string':
-            h100.value = f100[1] as string;
+            c111.value = a111[1] as string;
             break;
         case 'push-boolean':
-            h100.boolValue = f100[1] as boolean;
+            c111.boolValue = a111[1] as boolean;
             break;
         case 'push-null': break;
         case 'load-local':
-            h100.slot = f100[1] as number;
+            c111.slot = a111[1] as number;
             break;
         case 'store-local':
-            h100.slot = f100[1] as number;
+            c111.slot = a111[1] as number;
             break;
         case 'load-capture':
-            h100.slot = f100[1] as number;
+            c111.slot = a111[1] as number;
             break;
         case 'store-capture':
-            h100.slot = f100[1] as number;
+            c111.slot = a111[1] as number;
             break;
         case 'load-function':
-            h100.name = f100[1] as string;
+            c111.name = a111[1] as string;
             break;
         case 'load-external':
-            h100.module = f100[1] as string;
-            h100.name = f100[2] as string;
+            c111.module = a111[1] as string;
+            c111.name = a111[2] as string;
             break;
         case 'pop': break;
         case 'duplicate': break;
         case 'unary':
-            h100.operator = f100[1] as string;
+            c111.operator = a111[1] as string;
             break;
         case 'binary':
-            h100.operator = f100[1] as string;
-            h100.integer = f100[2] as boolean;
+            c111.operator = a111[1] as string;
+            c111.integer = a111[2] as boolean;
             break;
         case 'jump':
-            h100.target = f100[1] as number;
+            c111.target = a111[1] as number;
             break;
         case 'jump-if-false':
-            h100.target = f100[1] as number;
+            c111.target = a111[1] as number;
             break;
         case 'call':
-            h100.count = f100[1] as number;
-            h100.awaited = f100[2] as boolean;
+            c111.count = a111[1] as number;
+            c111.awaited = a111[2] as boolean;
             break;
         case 'return': break;
         case 'make-array':
-            h100.count = f100[1] as number;
+            c111.count = a111[1] as number;
             break;
         case 'array-push': break;
         case 'array-pop': break;
@@ -758,21 +758,21 @@ function decodeInstruction(f100: Object[]): Instruction {
         case 'load-index': break;
         case 'store-index': break;
         case 'make-object':
-            h100.classIdentity = f100[1] as string;
-            h100.fields = f100[2] as string[];
+            c111.classIdentity = a111[1] as string;
+            c111.fields = a111[2] as string[];
             break;
         case 'load-field':
-            h100.name = f100[1] as string;
+            c111.name = a111[1] as string;
             break;
         case 'store-field':
-            h100.name = f100[1] as string;
+            c111.name = a111[1] as string;
             break;
         case 'make-closure':
-            h100.functionName = f100[1] as string;
-            h100.captures = f100[2] as number[];
+            c111.functionName = a111[1] as string;
+            c111.captures = a111[2] as number[];
             break;
         default:
-            throw new RuntimeTrap('VBC0003', `unknown opcode: ${g100}`);
+            throw new RuntimeTrap('VBC0003', `unknown opcode: ${b111}`);
     }
-    return h100;
+    return c111;
 }

@@ -169,14 +169,78 @@ function layoutNode(node, maxWidth, selectWrap) {
   if (node.kind === 'sparkline') {
     const w = maxWidth, h = 72
     const max = Math.max(node.maximum || 100, ...(node.series || [0]))
-    const pts = (node.series || []).map((v, i) => {
-      const px = (i / Math.max(1, (node.series.length - 1))) * w
+    const series = node.series || []
+    const n = series.length
+    const color = colorFor(theme, node.style, theme.primary)
+    if (node.bars) {
+      const spacing = n > 1 ? w / (n - 1) : w
+      const barWidth = Math.min(spacing * 0.6, w * 0.2)
+      const rects = series.map((v, i) => {
+        const cx = n > 1 ? (i / (n - 1)) * w : w / 2
+        const py = h - (Math.min(v, max) / max) * h
+        return `<rect x="${(cx - barWidth / 2).toFixed(1)}" y="${py.toFixed(1)}" ` +
+          `width="${barWidth.toFixed(1)}" height="${(h - py).toFixed(1)}" fill="${color}"/>`
+      }).join('')
+      return { svg: rects, width: w, height: h }
+    }
+    const pts = series.map((v, i) => {
+      const px = n > 1 ? (i / (n - 1)) * w : w / 2
       const py = h - (Math.min(v, max) / max) * h
       return `${px.toFixed(1)},${py.toFixed(1)}`
     }).join(' ')
     return {
-      svg: `<polyline points="${pts}" fill="none" stroke="${theme.primary}" stroke-width="2"/>`,
+      svg: `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"/>`,
       width: w, height: h
+    }
+  }
+
+  if (node.kind === 'slider') {
+    const w = maxWidth, h = 20, trackY = 9, trackH = 4
+    const frac = Math.max(0, Math.min(1, ((node.eventValue - node.minimum) /
+      Math.max(1, (node.maximum - node.minimum)))))
+    const color = colorFor(theme, node.style, theme.primary)
+    const labelH = node.label ? 16 : 0
+    const label = node.label
+      ? `<text x="0" y="12" font-size="11" fill="${theme.inkMuted}">${esc(node.label)}</text>` : ''
+    return {
+      svg: `${label}<g transform="translate(0,${labelH})">` +
+        `<rect y="${trackY}" width="${w}" height="${trackH}" rx="2" fill="${theme.secondaryFill}"/>` +
+        `<rect y="${trackY}" width="${(w * frac).toFixed(1)}" height="${trackH}" rx="2" fill="${color}"/>` +
+        `<circle cx="${(w * frac).toFixed(1)}" cy="${trackY + trackH / 2}" r="7" fill="${color}"/>` +
+        `</g>`,
+      width: w, height: h + labelH
+    }
+  }
+
+  if (node.kind === 'table') {
+    const headers = node.options || []
+    const cols = Math.max(1, node.columns || headers.length || 1)
+    const colW = maxWidth / cols
+    let y = 0
+    let svg = ''
+    let bgs = ''
+    let text = ''
+    if (headers.length > 0) {
+      text += headers.map((hText, i) =>
+        `<text x="${(i * colW + 4).toFixed(1)}" y="12" font-size="11" font-weight="bold" ` +
+        `fill="${theme.inkMuted}">${esc(hText)}</text>`).join('')
+      y += 22
+    }
+    for (const row of node.children || []) {
+      const cells = row.options || []
+      const rowFill = colorFor(theme, row.style, null)
+      if (rowFill) {
+        bgs += `<rect y="${y}" width="${maxWidth}" height="22" fill="${rowFill}" opacity="0.25"/>`
+      }
+      text += cells.map((c, i) =>
+        `<text x="${(i * colW + 4).toFixed(1)}" y="${y + 14}" font-size="13" ` +
+        `fill="${theme.ink}">${esc(c)}</text>`).join('')
+      y += 22
+    }
+    return {
+      // Paint order: outer frame, then row tints, then text on top.
+      svg: `<rect width="${maxWidth}" height="${y}" fill="none" stroke="${theme.line}" rx="6"/>${bgs}${text}`,
+      width: maxWidth, height: y
     }
   }
 

@@ -7,44 +7,44 @@ class Position {
     offset: number;
     line: number;
     column: number;
-    constructor(z90: number, a91: number, b91: number) {
-        this.offset = z90;
-        this.line = a91;
-        this.column = b91;
+    constructor(f99: number, g99: number, h99: number) {
+        this.offset = f99;
+        this.line = g99;
+        this.column = h99;
     }
 }
 class Span {
     start: Position;
     end: Position;
     sourceName: string;
-    constructor(w90: Position, x90: Position, y90: string) {
-        this.start = w90;
-        this.end = x90;
-        this.sourceName = y90;
+    constructor(c99: Position, d99: Position, e99: string) {
+        this.start = c99;
+        this.end = d99;
+        this.sourceName = e99;
     }
 }
 abstract class Node {
     span: Span;
-    constructor(v90: Span) { this.span = v90; }
+    constructor(b99: Span) { this.span = b99; }
 }
 class TypeNode extends Node {
     name: string;
     parts: TypeNode[];
     nullable: boolean;
-    constructor(r90: Span, s90: string, t90: TypeNode[] = [], u90: boolean = false) {
-        super(r90);
-        this.name = s90;
-        this.parts = t90;
-        this.nullable = u90;
+    constructor(x98: Span, y98: string, z98: TypeNode[] = [], a99: boolean = false) {
+        super(x98);
+        this.name = y98;
+        this.parts = z98;
+        this.nullable = a99;
     }
 }
 class Parameter extends Node {
     name: string;
     type: TypeNode;
-    constructor(o90: Span, p90: string, q90: TypeNode) {
-        super(o90);
-        this.name = p90;
-        this.type = q90;
+    constructor(u98: Span, v98: string, w98: TypeNode) {
+        super(u98);
+        this.name = v98;
+        this.type = w98;
     }
 }
 abstract class Declaration extends Node {
@@ -52,10 +52,10 @@ abstract class Declaration extends Node {
 class ImportDeclaration extends Node {
     name: string;
     specifier: string;
-    constructor(l90: Span, m90: string, n90: string) {
-        super(l90);
-        this.name = m90;
-        this.specifier = n90;
+    constructor(r98: Span, s98: string, t98: string) {
+        super(r98);
+        this.name = s98;
+        this.specifier = t98;
     }
 }
 class FunctionDeclaration extends Declaration {
@@ -64,82 +64,82 @@ class FunctionDeclaration extends Declaration {
     returnType: TypeNode;
     body: BlockStatement;
     isAsync: boolean;
-    constructor(f90: Span, g90: string, h90: Parameter[], i90: TypeNode, j90: BlockStatement, k90: boolean) {
-        super(f90);
-        this.name = g90;
-        this.parameters = h90;
-        this.returnType = i90;
-        this.body = j90;
-        this.isAsync = k90;
+    constructor(l98: Span, m98: string, n98: Parameter[], o98: TypeNode, p98: BlockStatement, q98: boolean) {
+        super(l98);
+        this.name = m98;
+        this.parameters = n98;
+        this.returnType = o98;
+        this.body = p98;
+        this.isAsync = q98;
     }
 }
 class FieldDeclaration extends Node {
     name: string;
     type: TypeNode;
-    constructor(c90: Span, d90: string, e90: TypeNode) {
-        super(c90);
-        this.name = d90;
-        this.type = e90;
+    constructor(i98: Span, j98: string, k98: TypeNode) {
+        super(i98);
+        this.name = j98;
+        this.type = k98;
     }
 }
 class ClassDeclaration extends Declaration {
     name: string;
     fields: FieldDeclaration[];
     annotation: string | null;
-    constructor(y89: Span, z89: string, a90: FieldDeclaration[], b90: string | null) {
-        super(y89);
-        this.name = z89;
-        this.fields = a90;
-        this.annotation = b90;
+    constructor(e98: Span, f98: string, g98: FieldDeclaration[], h98: string | null) {
+        super(e98);
+        this.name = f98;
+        this.fields = g98;
+        this.annotation = h98;
     }
 }
 class Application extends Node {
     imports: ImportDeclaration[];
     declarations: Declaration[];
-    constructor(v89: Span, w89: ImportDeclaration[], x89: Declaration[]) {
-        super(v89);
-        this.imports = w89;
-        this.declarations = x89;
+    constructor(b98: Span, c98: ImportDeclaration[], d98: Declaration[]) {
+        super(b98);
+        this.imports = c98;
+        this.declarations = d98;
     }
 }
 abstract class Statement extends Node {
 }
 class BlockStatement extends Statement {
     statements: Statement[];
-    constructor(t89: Span, u89: Statement[]) {
-        super(t89);
-        this.statements = u89;
+    constructor(z97: Span, a98: Statement[]) {
+        super(z97);
+        this.statements = a98;
     }
 }
 class LetStatement extends Statement {
     name: string;
     type: TypeNode;
     initializer: Expression;
-    constructor(p89: Span, q89: string, r89: TypeNode, s89: Expression) {
-        super(p89);
-        this.name = q89;
-        this.type = r89;
-        this.initializer = s89;
+    constructor(v97: Span, w97: string, x97: TypeNode, y97: Expression) {
+        super(v97);
+        this.name = w97;
+        this.type = x97;
+        this.initializer = y97;
     }
 }
 class IfStatement extends Statement {
     condition: Expression;
     thenBranch: BlockStatement;
     elseBranch: Statement | null;
-    constructor(l89: Span, m89: Expression, n89: BlockStatement, o89: Statement | null) {
-        super(l89);
-        this.condition = m89;
-        this.thenBranch = n89;
-        this.elseBranch = o89;
+    constructor(r97: Span, s97: Expression, t97: BlockStatement, u97: Statement | null) {
+        super(r97);
+        this.condition = s97;
+        this.thenBranch = t97;
+        this.elseBranch = u97;
     }
 }
 class WhileStatement extends Statement {
     condition: Expression;
     body: BlockStatement;
-    constructor(i89: Span, j89: Expression, k89: BlockStatement) {
-        super(i89);
-        this.condition = j89;
-        this.body = k89;
+    constructor(o97: Span, p97: Expression, q97: BlockStatement) {
+        super(o97);
+        this.condition = p97;
+        this.body = q97;
     }
 }
 class ForOfStatement extends Statement {
@@ -147,12 +147,12 @@ class ForOfStatement extends Statement {
     type: TypeNode;
     iterable: Expression;
     body: BlockStatement;
-    constructor(d89: Span, e89: string, f89: TypeNode, g89: Expression, h89: BlockStatement) {
-        super(d89);
-        this.name = e89;
-        this.type = f89;
-        this.iterable = g89;
-        this.body = h89;
+    constructor(j97: Span, k97: string, l97: TypeNode, m97: Expression, n97: BlockStatement) {
+        super(j97);
+        this.name = k97;
+        this.type = l97;
+        this.iterable = m97;
+        this.body = n97;
     }
 }
 class BreakStatement extends Statement {
@@ -161,174 +161,174 @@ class ContinueStatement extends Statement {
 }
 class ReturnStatement extends Statement {
     value: Expression | null;
-    constructor(b89: Span, c89: Expression | null) {
-        super(b89);
-        this.value = c89;
+    constructor(h97: Span, i97: Expression | null) {
+        super(h97);
+        this.value = i97;
     }
 }
 class AssignStatement extends Statement {
     target: Expression;
     value: Expression;
-    constructor(y88: Span, z88: Expression, a89: Expression) {
-        super(y88);
-        this.target = z88;
-        this.value = a89;
+    constructor(e97: Span, f97: Expression, g97: Expression) {
+        super(e97);
+        this.target = f97;
+        this.value = g97;
     }
 }
 class ExpressionStatement extends Statement {
     expression: Expression;
-    constructor(w88: Span, x88: Expression) {
-        super(w88);
-        this.expression = x88;
+    constructor(c97: Span, d97: Expression) {
+        super(c97);
+        this.expression = d97;
     }
 }
 class TryStatement extends Statement {
     tryBlock: BlockStatement;
     catchName: string;
     catchBlock: BlockStatement;
-    constructor(s88: Span, t88: BlockStatement, u88: string, v88: BlockStatement) {
-        super(s88);
-        this.tryBlock = t88;
-        this.catchName = u88;
-        this.catchBlock = v88;
+    constructor(y96: Span, z96: BlockStatement, a97: string, b97: BlockStatement) {
+        super(y96);
+        this.tryBlock = z96;
+        this.catchName = a97;
+        this.catchBlock = b97;
     }
 }
 abstract class Expression extends Node {
 }
 class NameExpression extends Expression {
     name: string;
-    constructor(q88: Span, r88: string) { super(q88); this.name = r88; }
+    constructor(w96: Span, x96: string) { super(w96); this.name = x96; }
 }
 class IntExpression extends Expression {
     value: number;
-    constructor(o88: Span, p88: number) { super(o88); this.value = p88; }
+    constructor(u96: Span, v96: number) { super(u96); this.value = v96; }
 }
 class NumberExpression extends Expression {
     value: number;
-    constructor(m88: Span, n88: number) { super(m88); this.value = n88; }
+    constructor(s96: Span, t96: number) { super(s96); this.value = t96; }
 }
 class StringExpression extends Expression {
     value: string;
-    constructor(k88: Span, l88: string) { super(k88); this.value = l88; }
+    constructor(q96: Span, r96: string) { super(q96); this.value = r96; }
 }
 class BooleanExpression extends Expression {
     value: boolean;
-    constructor(i88: Span, j88: boolean) { super(i88); this.value = j88; }
+    constructor(o96: Span, p96: boolean) { super(o96); this.value = p96; }
 }
 class NullExpression extends Expression {
 }
 class UnaryExpression extends Expression {
     operator: string;
     operand: Expression;
-    constructor(f88: Span, g88: string, h88: Expression) {
-        super(f88);
-        this.operator = g88;
-        this.operand = h88;
+    constructor(l96: Span, m96: string, n96: Expression) {
+        super(l96);
+        this.operator = m96;
+        this.operand = n96;
     }
 }
 class BinaryExpression extends Expression {
     left: Expression;
     operator: string;
     right: Expression;
-    constructor(b88: Span, c88: Expression, d88: string, e88: Expression) {
-        super(b88);
-        this.left = c88;
-        this.operator = d88;
-        this.right = e88;
+    constructor(h96: Span, i96: Expression, j96: string, k96: Expression) {
+        super(h96);
+        this.left = i96;
+        this.operator = j96;
+        this.right = k96;
     }
 }
 class CallExpression extends Expression {
     callee: Expression;
     argumentsList: Expression[];
-    constructor(y87: Span, z87: Expression, a88: Expression[]) {
-        super(y87);
-        this.callee = z87;
-        this.argumentsList = a88;
+    constructor(e96: Span, f96: Expression, g96: Expression[]) {
+        super(e96);
+        this.callee = f96;
+        this.argumentsList = g96;
     }
 }
 class IndexExpression extends Expression {
     target: Expression;
     index: Expression;
-    constructor(v87: Span, w87: Expression, x87: Expression) {
-        super(v87);
-        this.target = w87;
-        this.index = x87;
+    constructor(b96: Span, c96: Expression, d96: Expression) {
+        super(b96);
+        this.target = c96;
+        this.index = d96;
     }
 }
 class SelectExpression extends Expression {
     target: Expression;
     field: string;
-    constructor(s87: Span, t87: Expression, u87: string) {
-        super(s87);
-        this.target = t87;
-        this.field = u87;
+    constructor(y95: Span, z95: Expression, a96: string) {
+        super(y95);
+        this.target = z95;
+        this.field = a96;
     }
 }
 class ArrayExpression extends Expression {
     elements: Expression[];
-    constructor(q87: Span, r87: Expression[]) {
-        super(q87);
-        this.elements = r87;
+    constructor(w95: Span, x95: Expression[]) {
+        super(w95);
+        this.elements = x95;
     }
 }
 class Property extends Node {
     name: string;
     value: Expression;
-    constructor(n87: Span, o87: string, p87: Expression) {
-        super(n87);
-        this.name = o87;
-        this.value = p87;
+    constructor(t95: Span, u95: string, v95: Expression) {
+        super(t95);
+        this.name = u95;
+        this.value = v95;
     }
 }
 class ObjectExpression extends Expression {
     properties: Property[];
-    constructor(l87: Span, m87: Property[]) {
-        super(l87);
-        this.properties = m87;
+    constructor(r95: Span, s95: Property[]) {
+        super(r95);
+        this.properties = s95;
     }
 }
 class LambdaExpression extends Expression {
     parameters: Parameter[];
     returnType: TypeNode;
     body: BlockStatement;
-    constructor(h87: Span, i87: Parameter[], j87: TypeNode, k87: BlockStatement) {
-        super(h87);
-        this.parameters = i87;
-        this.returnType = j87;
-        this.body = k87;
+    constructor(n95: Span, o95: Parameter[], p95: TypeNode, q95: BlockStatement) {
+        super(n95);
+        this.parameters = o95;
+        this.returnType = p95;
+        this.body = q95;
     }
 }
 class AwaitExpression extends Expression {
     operand: Expression;
-    constructor(f87: Span, g87: Expression) { super(f87); this.operand = g87; }
+    constructor(l95: Span, m95: Expression) { super(l95); this.operand = m95; }
 }
 class EnsureNotNullExpression extends Expression {
     operand: Expression;
-    constructor(d87: Span, e87: Expression) { super(d87); this.operand = e87; }
+    constructor(j95: Span, k95: Expression) { super(j95); this.operand = k95; }
 }
 abstract class VeraType {
     abstract display(): string;
 }
 class PrimitiveType extends VeraType {
     name: string;
-    constructor(c87: string) { super(); this.name = c87; }
+    constructor(i95: string) { super(); this.name = i95; }
     display(): string { return this.name; }
 }
 class VeraClassType extends VeraType {
     identity: string;
     name: string;
     fields: Map<string, VeraType> = new Map<string, VeraType>();
-    constructor(a87: string, b87: string) { super(); this.identity = a87; this.name = b87; }
+    constructor(g95: string, h95: string) { super(); this.identity = g95; this.name = h95; }
     display(): string { return this.name; }
 }
 class VeraArrayType extends VeraType {
     element: VeraType;
-    constructor(z86: VeraType) { super(); this.element = z86; }
+    constructor(f95: VeraType) { super(); this.element = f95; }
     display(): string { return this.element.display() + '[]'; }
 }
 class NullableType extends VeraType {
     base: VeraType;
-    constructor(y86: VeraType) { super(); this.base = y86; }
+    constructor(e95: VeraType) { super(); this.base = e95; }
     display(): string { return '(' + this.base.display() + ' | null)'; }
 }
 class VeraFunctionType extends VeraType {
@@ -337,26 +337,26 @@ class VeraFunctionType extends VeraType {
     isAsync: boolean;
     identity: string;
     required: number;
-    constructor(t86: VeraType[], u86: VeraType, v86: boolean, w86: string, x86: number = -1) {
+    constructor(z94: VeraType[], a95: VeraType, b95: boolean, c95: string, d95: number = -1) {
         super();
-        this.parameters = t86;
-        this.result = u86;
-        this.isAsync = v86;
-        this.identity = w86;
-        this.required = x86 < 0 ? t86.length : x86;
+        this.parameters = z94;
+        this.result = a95;
+        this.isAsync = b95;
+        this.identity = c95;
+        this.required = d95 < 0 ? z94.length : d95;
     }
     display(): string {
-        let r86: string[] = [];
-        for (let s86 = 0; s86 < this.parameters.length; s86++) {
-            r86.push(this.parameters[s86].display());
+        let x94: string[] = [];
+        for (let y94 = 0; y94 < this.parameters.length; y94++) {
+            x94.push(this.parameters[y94].display());
         }
-        return 'function (' + r86.join(', ') + '): ' + this.result.display();
+        return 'function (' + x94.join(', ') + '): ' + this.result.display();
     }
 }
 class NamespaceType extends VeraType {
     name: string;
     members: Map<string, VeraType>;
-    constructor(p86: string, q86: Map<string, VeraType>) { super(); this.name = p86; this.members = q86; }
+    constructor(v94: string, w94: Map<string, VeraType>) { super(); this.name = v94; this.members = w94; }
     display(): string { return 'namespace ' + this.name; }
 }
 class VeraNullType extends VeraType {
@@ -368,46 +368,46 @@ const BOOLEAN = new PrimitiveType('boolean');
 const STRING = new PrimitiveType('string');
 const VOID = new PrimitiveType('void');
 const NULL_TYPE = new VeraNullType();
-function identical(m86: VeraType, n86: VeraType): boolean {
-    if (m86 === n86)
+function identical(s94: VeraType, t94: VeraType): boolean {
+    if (s94 === t94)
         return true;
-    if (m86 instanceof VeraArrayType && n86 instanceof VeraArrayType)
-        return identical(m86.element, n86.element);
-    if (m86 instanceof NullableType && n86 instanceof NullableType)
-        return identical(m86.base, n86.base);
-    if (m86 instanceof VeraFunctionType && n86 instanceof VeraFunctionType) {
-        if (m86.isAsync !== n86.isAsync)
+    if (s94 instanceof VeraArrayType && t94 instanceof VeraArrayType)
+        return identical(s94.element, t94.element);
+    if (s94 instanceof NullableType && t94 instanceof NullableType)
+        return identical(s94.base, t94.base);
+    if (s94 instanceof VeraFunctionType && t94 instanceof VeraFunctionType) {
+        if (s94.isAsync !== t94.isAsync)
             return false;
-        if (m86.parameters.length !== n86.parameters.length)
+        if (s94.parameters.length !== t94.parameters.length)
             return false;
-        for (let o86 = 0; o86 < m86.parameters.length; o86++) {
-            if (!identical(m86.parameters[o86], n86.parameters[o86]))
+        for (let u94 = 0; u94 < s94.parameters.length; u94++) {
+            if (!identical(s94.parameters[u94], t94.parameters[u94]))
                 return false;
         }
-        return identical(m86.result, n86.result);
+        return identical(s94.result, t94.result);
     }
     return false;
 }
-function subtypeOf(j86: VeraType, k86: VeraType): boolean {
-    if (identical(j86, k86))
+function subtypeOf(p94: VeraType, q94: VeraType): boolean {
+    if (identical(p94, q94))
         return true;
-    if (k86 instanceof NullableType && (subtypeOf(j86, k86.base) || j86 instanceof VeraNullType))
+    if (q94 instanceof NullableType && (subtypeOf(p94, q94.base) || p94 instanceof VeraNullType))
         return true;
-    if (j86 instanceof VeraFunctionType && k86 instanceof VeraFunctionType) {
-        if (j86.isAsync !== k86.isAsync)
+    if (p94 instanceof VeraFunctionType && q94 instanceof VeraFunctionType) {
+        if (p94.isAsync !== q94.isAsync)
             return false;
-        if (j86.parameters.length > k86.parameters.length)
+        if (p94.parameters.length > q94.parameters.length)
             return false;
-        for (let l86 = 0; l86 < j86.parameters.length; l86++) {
-            if (!subtypeOf(k86.parameters[l86], j86.parameters[l86]))
+        for (let r94 = 0; r94 < p94.parameters.length; r94++) {
+            if (!subtypeOf(q94.parameters[r94], p94.parameters[r94]))
                 return false;
         }
-        return subtypeOf(j86.result, k86.result);
+        return subtypeOf(p94.result, q94.result);
     }
     return false;
 }
-function assignable(h86: VeraType, i86: VeraType): boolean {
-    return subtypeOf(h86, i86);
+function assignable(n94: VeraType, o94: VeraType): boolean {
+    return subtypeOf(n94, o94);
 }
 export class Diagnostic {
     code: string;
@@ -415,33 +415,33 @@ export class Diagnostic {
     span: Span;
     expected: string;
     actual: string;
-    constructor(c86: string, d86: string, e86: Span, f86: string = '', g86: string = '') {
-        this.code = c86;
-        this.message = d86;
-        this.span = e86;
-        this.expected = f86;
-        this.actual = g86;
+    constructor(i94: string, j94: string, k94: Span, l94: string = '', m94: string = '') {
+        this.code = i94;
+        this.message = j94;
+        this.span = k94;
+        this.expected = l94;
+        this.actual = m94;
     }
 }
 export class CompileError extends Error {
     diagnostics: Diagnostic[];
-    constructor(z85: Diagnostic[]) {
-        let a86: string[] = [];
-        for (let b86 of z85) {
-            a86.push(b86.span.start.line + ':' + b86.span.start.column + ' ' + b86.code + ' ' + b86.message);
+    constructor(f94: Diagnostic[]) {
+        let g94: string[] = [];
+        for (let h94 of f94) {
+            g94.push(h94.span.start.line + ':' + h94.span.start.column + ' ' + h94.code + ' ' + h94.message);
         }
-        super(a86.join('\n'));
-        this.diagnostics = z85;
+        super(g94.join('\n'));
+        this.diagnostics = f94;
     }
 }
 class Token {
     kind: string;
     text: string;
     span: Span;
-    constructor(w85: string, x85: string, y85: Span) {
-        this.kind = w85;
-        this.text = x85;
-        this.span = y85;
+    constructor(c94: string, d94: string, e94: Span) {
+        this.kind = c94;
+        this.text = d94;
+        this.span = e94;
     }
 }
 const KEYWORDS: string[] = [
@@ -449,14 +449,14 @@ const KEYWORDS: string[] = [
     'while', 'for', 'of', 'break', 'continue', 'return', 'true', 'false', 'null',
     'try', 'catch', 'new'
 ];
-function isAlpha(v85: string): boolean {
-    return (v85 >= 'a' && v85 <= 'z') || (v85 >= 'A' && v85 <= 'Z') || v85 === '_';
+function isAlpha(b94: string): boolean {
+    return (b94 >= 'a' && b94 <= 'z') || (b94 >= 'A' && b94 <= 'Z') || b94 === '_';
 }
-function isDigit(u85: string): boolean {
-    return u85 >= '0' && u85 <= '9';
+function isDigit(a94: string): boolean {
+    return a94 >= '0' && a94 <= '9';
 }
-function isAlnum(t85: string): boolean {
-    return isAlpha(t85) || isDigit(t85);
+function isAlnum(z93: string): boolean {
+    return isAlpha(z93) || isDigit(z93);
 }
 class Lexer {
     private source: string;
@@ -464,57 +464,57 @@ class Lexer {
     private pos: number = 0;
     private line: number = 1;
     private col: number = 1;
-    constructor(r85: string, s85: string) {
-        this.source = r85;
-        this.sourceName = s85;
+    constructor(x93: string, y93: string) {
+        this.source = x93;
+        this.sourceName = y93;
     }
     scan(): Token[] {
-        let o85: Token[] = [];
+        let u93: Token[] = [];
         while (this.pos < this.source.length) {
             this.skipWhitespaceAndComments();
             if (this.pos >= this.source.length)
                 break;
-            let p85 = this.makePos();
-            let q85 = this.source[this.pos];
-            if (isAlpha(q85)) {
-                o85.push(this.scanIdentifier(p85));
+            let v93 = this.makePos();
+            let w93 = this.source[this.pos];
+            if (isAlpha(w93)) {
+                u93.push(this.scanIdentifier(v93));
                 continue;
             }
-            if (isDigit(q85)) {
-                o85.push(this.scanNumber(p85));
+            if (isDigit(w93)) {
+                u93.push(this.scanNumber(v93));
                 continue;
             }
-            if (q85 === '"') {
-                o85.push(this.scanString(p85));
+            if (w93 === '"') {
+                u93.push(this.scanString(v93));
                 continue;
             }
-            if (q85 === '@') {
+            if (w93 === '@') {
                 this.pos++;
                 this.col++;
-                o85.push(this.scanIdentifier(p85));
-                o85[o85.length - 1].kind = 'annotation';
+                u93.push(this.scanIdentifier(v93));
+                u93[u93.length - 1].kind = 'annotation';
                 continue;
             }
-            o85.push(this.scanSymbol(p85));
+            u93.push(this.scanSymbol(v93));
         }
-        o85.push(new Token('eof', '', this.makeSpan(this.makePos())));
-        return o85;
+        u93.push(new Token('eof', '', this.makeSpan(this.makePos())));
+        return u93;
     }
     private skipWhitespaceAndComments(): void {
         while (this.pos < this.source.length) {
-            let n85 = this.source[this.pos];
-            if (n85 === ' ' || n85 === '\t' || n85 === '\r') {
+            let t93 = this.source[this.pos];
+            if (t93 === ' ' || t93 === '\t' || t93 === '\r') {
                 this.pos++;
                 this.col++;
                 continue;
             }
-            if (n85 === '\n') {
+            if (t93 === '\n') {
                 this.pos++;
                 this.line++;
                 this.col = 1;
                 continue;
             }
-            if (n85 === '/' && this.pos + 1 < this.source.length && this.source[this.pos + 1] === '/') {
+            if (t93 === '/' && this.pos + 1 < this.source.length && this.source[this.pos + 1] === '/') {
                 while (this.pos < this.source.length && this.source[this.pos] !== '\n') {
                     this.pos++;
                     this.col++;
@@ -524,30 +524,30 @@ class Lexer {
             break;
         }
     }
-    private scanIdentifier(i85: Position): Token {
-        let j85 = this.pos;
+    private scanIdentifier(o93: Position): Token {
+        let p93 = this.pos;
         while (this.pos < this.source.length && isAlnum(this.source[this.pos])) {
             this.pos++;
             this.col++;
         }
-        let k85 = this.source.substring(j85, this.pos);
-        let l85 = 'name';
-        if (k85 === 'true' || k85 === 'false')
-            l85 = 'boolean';
-        else if (k85 === 'null')
-            l85 = 'null';
+        let q93 = this.source.substring(p93, this.pos);
+        let r93 = 'name';
+        if (q93 === 'true' || q93 === 'false')
+            r93 = 'boolean';
+        else if (q93 === 'null')
+            r93 = 'null';
         else {
-            for (let m85 of KEYWORDS) {
-                if (m85 === k85) {
-                    l85 = k85;
+            for (let s93 of KEYWORDS) {
+                if (s93 === q93) {
+                    r93 = q93;
                     break;
                 }
             }
         }
-        return new Token(l85, k85, this.makeSpan(i85));
+        return new Token(r93, q93, this.makeSpan(o93));
     }
-    private scanNumber(g85: Position): Token {
-        let h85 = this.pos;
+    private scanNumber(m93: Position): Token {
+        let n93 = this.pos;
         while (this.pos < this.source.length && isDigit(this.source[this.pos])) {
             this.pos++;
             this.col++;
@@ -559,31 +559,31 @@ class Lexer {
                 this.pos++;
                 this.col++;
             }
-            return new Token('number', this.source.substring(h85, this.pos), this.makeSpan(g85));
+            return new Token('number', this.source.substring(n93, this.pos), this.makeSpan(m93));
         }
-        return new Token('integer', this.source.substring(h85, this.pos), this.makeSpan(g85));
+        return new Token('integer', this.source.substring(n93, this.pos), this.makeSpan(m93));
     }
-    private scanString(d85: Position): Token {
+    private scanString(j93: Position): Token {
         this.pos++;
         this.col++;
-        let e85 = '';
+        let k93 = '';
         while (this.pos < this.source.length && this.source[this.pos] !== '"') {
             if (this.source[this.pos] === '\\') {
                 this.pos++;
                 this.col++;
                 if (this.pos >= this.source.length)
                     break;
-                let f85 = this.source[this.pos];
-                if (f85 === 'n')
-                    e85 += '\n';
-                else if (f85 === 't')
-                    e85 += '\t';
-                else if (f85 === '\\')
-                    e85 += '\\';
-                else if (f85 === '"')
-                    e85 += '"';
+                let l93 = this.source[this.pos];
+                if (l93 === 'n')
+                    k93 += '\n';
+                else if (l93 === 't')
+                    k93 += '\t';
+                else if (l93 === '\\')
+                    k93 += '\\';
+                else if (l93 === '"')
+                    k93 += '"';
                 else
-                    e85 += f85;
+                    k93 += l93;
                 this.pos++;
                 this.col++;
             }
@@ -592,7 +592,7 @@ class Lexer {
                     this.line++;
                     this.col = 0;
                 }
-                e85 += this.source[this.pos];
+                k93 += this.source[this.pos];
                 this.pos++;
                 this.col++;
             }
@@ -601,165 +601,165 @@ class Lexer {
             this.pos++;
             this.col++;
         }
-        return new Token('string', e85, this.makeSpan(d85));
+        return new Token('string', k93, this.makeSpan(j93));
     }
-    private scanSymbol(a85: Position): Token {
-        let b85 = this.source[this.pos];
+    private scanSymbol(g93: Position): Token {
+        let h93 = this.source[this.pos];
         this.pos++;
         this.col++;
         if (this.pos < this.source.length) {
-            let c85 = b85 + this.source[this.pos];
-            if (c85 === '==') {
+            let i93 = h93 + this.source[this.pos];
+            if (i93 === '==') {
                 this.pos++;
                 this.col++;
                 if (this.pos < this.source.length && this.source[this.pos] === '=') {
                     this.pos++;
                     this.col++;
-                    return new Token('===', '===', this.makeSpan(a85));
+                    return new Token('===', '===', this.makeSpan(g93));
                 }
-                return new Token('==', '==', this.makeSpan(a85));
+                return new Token('==', '==', this.makeSpan(g93));
             }
-            if (c85 === '!=') {
+            if (i93 === '!=') {
                 this.pos++;
                 this.col++;
                 if (this.pos < this.source.length && this.source[this.pos] === '=') {
                     this.pos++;
                     this.col++;
-                    return new Token('!==', '!==', this.makeSpan(a85));
+                    return new Token('!==', '!==', this.makeSpan(g93));
                 }
-                return new Token('!=', '!=', this.makeSpan(a85));
+                return new Token('!=', '!=', this.makeSpan(g93));
             }
-            if (c85 === '&&' || c85 === '||' || c85 === '<=' || c85 === '>=') {
+            if (i93 === '&&' || i93 === '||' || i93 === '<=' || i93 === '>=') {
                 this.pos++;
                 this.col++;
-                return new Token(c85, c85, this.makeSpan(a85));
+                return new Token(i93, i93, this.makeSpan(g93));
             }
         }
-        return new Token(b85, b85, this.makeSpan(a85));
+        return new Token(h93, h93, this.makeSpan(g93));
     }
     private makePos(): Position { return new Position(this.pos, this.line, this.col); }
-    private makeSpan(z84: Position): Span { return new Span(z84, this.makePos(), this.sourceName); }
+    private makeSpan(f93: Position): Span { return new Span(f93, this.makePos(), this.sourceName); }
 }
 class Parser {
     private tokens: Token[];
     private pos: number = 0;
     private sourceName: string;
-    constructor(x84: string, y84: string) {
-        this.sourceName = y84;
-        this.tokens = new Lexer(x84, y84).scan();
+    constructor(d93: string, e93: string) {
+        this.sourceName = e93;
+        this.tokens = new Lexer(d93, e93).scan();
     }
     parse(): Application {
-        let t84 = this.current().span;
-        let u84: ImportDeclaration[] = [];
-        let v84: Declaration[] = [];
+        let z92 = this.current().span;
+        let a93: ImportDeclaration[] = [];
+        let b93: Declaration[] = [];
         while (!this.atEnd()) {
             if (this.check('import')) {
-                u84.push(this.parseImport());
+                a93.push(this.parseImport());
                 continue;
             }
             if (this.check('annotation')) {
-                let w84 = this.advance();
-                v84.push(this.parseClass(w84.text));
+                let c93 = this.advance();
+                b93.push(this.parseClass(c93.text));
                 continue;
             }
             if (this.check('class')) {
-                v84.push(this.parseClass(null));
+                b93.push(this.parseClass(null));
                 continue;
             }
             if (this.check('async')) {
-                v84.push(this.parseFunction());
+                b93.push(this.parseFunction());
                 continue;
             }
             if (this.check('function')) {
-                v84.push(this.parseFunction());
+                b93.push(this.parseFunction());
                 continue;
             }
             this.error('expected import, class, or function declaration');
         }
-        return new Application(this.span(t84), u84, v84);
+        return new Application(this.span(z92), a93, b93);
     }
     private parseImport(): ImportDeclaration {
-        let q84 = this.current().span;
+        let w92 = this.current().span;
         this.expect('import');
         this.expect('*');
         this.expect('as');
-        let r84 = this.expect('name').text;
+        let x92 = this.expect('name').text;
         this.expect('from');
-        let s84 = this.expect('string').text;
-        return new ImportDeclaration(this.span(q84), r84, s84);
+        let y92 = this.expect('string').text;
+        return new ImportDeclaration(this.span(w92), x92, y92);
     }
-    private parseClass(j84: string | null): ClassDeclaration {
-        let k84 = this.current().span;
+    private parseClass(p92: string | null): ClassDeclaration {
+        let q92 = this.current().span;
         this.expect('class');
-        let l84 = this.expect('name').text;
+        let r92 = this.expect('name').text;
         this.expect('{');
-        let m84: FieldDeclaration[] = [];
+        let s92: FieldDeclaration[] = [];
         while (!this.check('}') && !this.atEnd()) {
-            let n84 = this.current().span;
-            let o84 = this.expect('name').text;
+            let t92 = this.current().span;
+            let u92 = this.expect('name').text;
             this.expect(':');
-            let p84 = this.parseType();
+            let v92 = this.parseType();
             if (this.check(';'))
                 this.advance();
-            m84.push(new FieldDeclaration(this.span(n84), o84, p84));
+            s92.push(new FieldDeclaration(this.span(t92), u92, v92));
         }
         this.expect('}');
-        return new ClassDeclaration(this.span(k84), l84, m84, j84);
+        return new ClassDeclaration(this.span(q92), r92, s92, p92);
     }
     private parseFunction(): FunctionDeclaration {
-        let d84 = this.current().span;
-        let e84 = false;
+        let j92 = this.current().span;
+        let k92 = false;
         if (this.check('async')) {
             this.advance();
-            e84 = true;
+            k92 = true;
         }
         this.expect('function');
-        let f84 = this.expect('name').text;
+        let l92 = this.expect('name').text;
         this.expect('(');
-        let g84 = this.parseParameters();
+        let m92 = this.parseParameters();
         this.expect(')');
         this.expect(':');
-        let h84 = this.parseType();
-        let i84 = this.parseBlock();
-        return new FunctionDeclaration(this.span(d84), f84, g84, h84, i84, e84);
+        let n92 = this.parseType();
+        let o92 = this.parseBlock();
+        return new FunctionDeclaration(this.span(j92), l92, m92, n92, o92, k92);
     }
     private parseParameters(): Parameter[] {
-        let z83: Parameter[] = [];
+        let f92: Parameter[] = [];
         if (this.check(')'))
-            return z83;
+            return f92;
         while (true) {
-            let a84 = this.current().span;
-            let b84 = this.expect('name').text;
+            let g92 = this.current().span;
+            let h92 = this.expect('name').text;
             this.expect(':');
-            let c84 = this.parseType();
-            z83.push(new Parameter(this.span(a84), b84, c84));
+            let i92 = this.parseType();
+            f92.push(new Parameter(this.span(g92), h92, i92));
             if (!this.check(','))
                 break;
             this.advance();
         }
-        return z83;
+        return f92;
     }
     private parseType(): TypeNode {
-        let x83 = this.current().span;
-        let y83 = this.parseBaseType();
+        let d92 = this.current().span;
+        let e92 = this.parseBaseType();
         if (this.check('|')) {
             this.advance();
             this.expect('null');
-            y83 = new TypeNode(this.span(x83), y83.name, y83.parts, true);
+            e92 = new TypeNode(this.span(d92), e92.name, e92.parts, true);
         }
-        return y83;
+        return e92;
     }
     private parseBaseType(): TypeNode {
-        let n83 = this.current().span;
+        let t91 = this.current().span;
         if (this.check('(')) {
             this.advance();
-            let u83: TypeNode[] = [];
+            let a92: TypeNode[] = [];
             if (!this.check(')')) {
                 while (true) {
-                    let w83 = this.current().span;
+                    let c92 = this.current().span;
                     this.expect('name');
                     this.expect(':');
-                    u83.push(this.parseType());
+                    a92.push(this.parseType());
                     if (!this.check(','))
                         break;
                     this.advance();
@@ -768,20 +768,20 @@ class Parser {
             this.expect(')');
             this.expect('=');
             this.expect('>');
-            let v83 = this.parseType();
-            u83.push(v83);
-            return new TypeNode(this.span(n83), 'function', u83);
+            let b92 = this.parseType();
+            a92.push(b92);
+            return new TypeNode(this.span(t91), 'function', a92);
         }
         if (this.check('async')) {
             this.advance();
             this.expect('(');
-            let r83: TypeNode[] = [];
+            let x91: TypeNode[] = [];
             if (!this.check(')')) {
                 while (true) {
-                    let t83 = this.current().span;
+                    let z91 = this.current().span;
                     this.expect('name');
                     this.expect(':');
-                    r83.push(this.parseType());
+                    x91.push(this.parseType());
                     if (!this.check(','))
                         break;
                     this.advance();
@@ -790,33 +790,33 @@ class Parser {
             this.expect(')');
             this.expect('=');
             this.expect('>');
-            let s83 = this.parseType();
-            r83.push(s83);
-            return new TypeNode(this.span(n83), 'async-function', r83);
+            let y91 = this.parseType();
+            x91.push(y91);
+            return new TypeNode(this.span(t91), 'async-function', x91);
         }
-        let o83 = this.expect('name').text;
+        let u91 = this.expect('name').text;
         if (this.check('.')) {
             this.advance();
-            let q83 = this.expect('name').text;
-            o83 = o83 + '.' + q83;
+            let w91 = this.expect('name').text;
+            u91 = u91 + '.' + w91;
         }
         if (this.check('[')) {
             this.advance();
             this.expect(']');
-            let p83 = new TypeNode(this.span(n83), o83);
-            return new TypeNode(this.span(n83), 'array', [p83]);
+            let v91 = new TypeNode(this.span(t91), u91);
+            return new TypeNode(this.span(t91), 'array', [v91]);
         }
-        return new TypeNode(this.span(n83), o83);
+        return new TypeNode(this.span(t91), u91);
     }
     private parseBlock(): BlockStatement {
-        let l83 = this.current().span;
+        let r91 = this.current().span;
         this.expect('{');
-        let m83: Statement[] = [];
+        let s91: Statement[] = [];
         while (!this.check('}') && !this.atEnd()) {
-            m83.push(this.parseStatement());
+            s91.push(this.parseStatement());
         }
         this.expect('}');
-        return new BlockStatement(this.span(l83), m83);
+        return new BlockStatement(this.span(r91), s91);
     }
     private parseStatement(): Statement {
         if (this.check('let'))
@@ -828,18 +828,18 @@ class Parser {
         if (this.check('for'))
             return this.parseFor();
         if (this.check('break')) {
-            let k83 = this.current().span;
+            let q91 = this.current().span;
             this.advance();
             if (this.check(';'))
                 this.advance();
-            return new BreakStatement(this.span(k83));
+            return new BreakStatement(this.span(q91));
         }
         if (this.check('continue')) {
-            let j83 = this.current().span;
+            let p91 = this.current().span;
             this.advance();
             if (this.check(';'))
                 this.advance();
-            return new ContinueStatement(this.span(j83));
+            return new ContinueStatement(this.span(p91));
         }
         if (this.check('return'))
             return this.parseReturn();
@@ -850,278 +850,278 @@ class Parser {
         return this.parseExpressionOrAssign();
     }
     private parseLet(): LetStatement {
-        let f83 = this.current().span;
+        let l91 = this.current().span;
         this.expect('let');
-        let g83 = this.expect('name').text;
+        let m91 = this.expect('name').text;
         this.expect(':');
-        let h83 = this.parseType();
+        let n91 = this.parseType();
         this.expect('=');
-        let i83 = this.parseExpression();
+        let o91 = this.parseExpression();
         if (this.check(';'))
             this.advance();
-        return new LetStatement(this.span(f83), g83, h83, i83);
+        return new LetStatement(this.span(l91), m91, n91, o91);
     }
     private parseIf(): IfStatement {
-        let b83 = this.current().span;
+        let h91 = this.current().span;
         this.expect('if');
         this.expect('(');
-        let c83 = this.parseExpression();
+        let i91 = this.parseExpression();
         this.expect(')');
-        let d83 = this.parseBlock();
-        let e83: Statement | null = null;
+        let j91 = this.parseBlock();
+        let k91: Statement | null = null;
         if (this.check('else')) {
             this.advance();
             if (this.check('if'))
-                e83 = this.parseIf();
+                k91 = this.parseIf();
             else
-                e83 = this.parseBlock();
+                k91 = this.parseBlock();
         }
-        return new IfStatement(this.span(b83), c83, d83, e83);
+        return new IfStatement(this.span(h91), i91, j91, k91);
     }
     private parseWhile(): WhileStatement {
-        let y82 = this.current().span;
+        let e91 = this.current().span;
         this.expect('while');
         this.expect('(');
-        let z82 = this.parseExpression();
+        let f91 = this.parseExpression();
         this.expect(')');
-        let a83 = this.parseBlock();
-        return new WhileStatement(this.span(y82), z82, a83);
+        let g91 = this.parseBlock();
+        return new WhileStatement(this.span(e91), f91, g91);
     }
     private parseFor(): ForOfStatement {
-        let t82 = this.current().span;
+        let z90 = this.current().span;
         this.expect('for');
         this.expect('(');
         this.expect('let');
-        let u82 = this.expect('name').text;
+        let a91 = this.expect('name').text;
         this.expect(':');
-        let v82 = this.parseType();
+        let b91 = this.parseType();
         this.expect('of');
-        let w82 = this.parseExpression();
+        let c91 = this.parseExpression();
         this.expect(')');
-        let x82 = this.parseBlock();
-        return new ForOfStatement(this.span(t82), u82, v82, w82, x82);
+        let d91 = this.parseBlock();
+        return new ForOfStatement(this.span(z90), a91, b91, c91, d91);
     }
     private parseReturn(): ReturnStatement {
-        let r82 = this.current().span;
+        let x90 = this.current().span;
         this.expect('return');
-        let s82: Expression | null = null;
+        let y90: Expression | null = null;
         if (!this.check('}') && !this.check(';') && !this.atEnd()) {
-            s82 = this.parseExpression();
+            y90 = this.parseExpression();
         }
         if (this.check(';'))
             this.advance();
-        return new ReturnStatement(this.span(r82), s82);
+        return new ReturnStatement(this.span(x90), y90);
     }
     private parseTry(): TryStatement {
-        let n82 = this.current().span;
+        let t90 = this.current().span;
         this.expect('try');
-        let o82 = this.parseBlock();
+        let u90 = this.parseBlock();
         this.expect('catch');
         this.expect('(');
-        let p82 = this.expect('name').text;
+        let v90 = this.expect('name').text;
         this.expect(')');
-        let q82 = this.parseBlock();
-        return new TryStatement(this.span(n82), o82, p82, q82);
+        let w90 = this.parseBlock();
+        return new TryStatement(this.span(t90), u90, v90, w90);
     }
     private parseExpressionOrAssign(): Statement {
-        let k82 = this.current().span;
-        let l82 = this.parseExpression();
+        let q90 = this.current().span;
+        let r90 = this.parseExpression();
         if (this.check('=')) {
             this.advance();
-            let m82 = this.parseExpression();
+            let s90 = this.parseExpression();
             if (this.check(';'))
                 this.advance();
-            return new AssignStatement(this.span(k82), l82, m82);
+            return new AssignStatement(this.span(q90), r90, s90);
         }
         if (this.check(';'))
             this.advance();
-        return new ExpressionStatement(this.span(k82), l82);
+        return new ExpressionStatement(this.span(q90), r90);
     }
     private parseExpression(): Expression {
         return this.parseBinary(0);
     }
-    private parseBinary(e82: number): Expression {
-        let f82 = this.parseUnary();
+    private parseBinary(k90: number): Expression {
+        let l90 = this.parseUnary();
         while (true) {
-            let g82 = this.current().kind;
-            let h82 = this.precedence(g82);
-            if (h82 < 0 || h82 < e82)
+            let m90 = this.current().kind;
+            let n90 = this.precedence(m90);
+            if (n90 < 0 || n90 < k90)
                 break;
-            let i82 = f82.span;
+            let o90 = l90.span;
             this.advance();
-            let j82 = this.parseBinary(h82 + 1);
-            f82 = new BinaryExpression(this.span(i82), f82, g82, j82);
+            let p90 = this.parseBinary(n90 + 1);
+            l90 = new BinaryExpression(this.span(o90), l90, m90, p90);
         }
-        return f82;
+        return l90;
     }
-    private precedence(d82: string): number {
-        if (d82 === '||')
+    private precedence(j90: string): number {
+        if (j90 === '||')
             return 1;
-        if (d82 === '&&')
+        if (j90 === '&&')
             return 2;
-        if (d82 === '===' || d82 === '!==')
+        if (j90 === '===' || j90 === '!==')
             return 3;
-        if (d82 === '<' || d82 === '<=' || d82 === '>' || d82 === '>=')
+        if (j90 === '<' || j90 === '<=' || j90 === '>' || j90 === '>=')
             return 4;
-        if (d82 === '+' || d82 === '-')
+        if (j90 === '+' || j90 === '-')
             return 5;
-        if (d82 === '*' || d82 === '/' || d82 === '%')
+        if (j90 === '*' || j90 === '/' || j90 === '%')
             return 6;
         return -1;
     }
     private parseUnary(): Expression {
-        let z81 = this.current().span;
+        let f90 = this.current().span;
         if (this.check('-')) {
             this.advance();
-            let c82 = this.parseUnary();
-            return new UnaryExpression(this.span(z81), '-', c82);
+            let i90 = this.parseUnary();
+            return new UnaryExpression(this.span(f90), '-', i90);
         }
         if (this.check('!')) {
             this.advance();
-            let b82 = this.parseUnary();
-            return new UnaryExpression(this.span(z81), '!', b82);
+            let h90 = this.parseUnary();
+            return new UnaryExpression(this.span(f90), '!', h90);
         }
         if (this.check('await')) {
             this.advance();
-            let a82 = this.parseUnary();
-            return new AwaitExpression(this.span(z81), a82);
+            let g90 = this.parseUnary();
+            return new AwaitExpression(this.span(f90), g90);
         }
         return this.parsePostfix();
     }
     private parsePostfix(): Expression {
-        let r81 = this.parsePrimary();
+        let x89 = this.parsePrimary();
         while (true) {
             if (this.check('(')) {
-                let x81 = r81.span;
+                let d90 = x89.span;
                 this.advance();
-                let y81: Expression[] = [];
+                let e90: Expression[] = [];
                 if (!this.check(')')) {
                     while (true) {
-                        y81.push(this.parseExpression());
+                        e90.push(this.parseExpression());
                         if (!this.check(','))
                             break;
                         this.advance();
                     }
                 }
                 this.expect(')');
-                r81 = new CallExpression(this.span(x81), r81, y81);
+                x89 = new CallExpression(this.span(d90), x89, e90);
             }
             else if (this.check('[')) {
-                let v81 = r81.span;
+                let b90 = x89.span;
                 this.advance();
-                let w81 = this.parseExpression();
+                let c90 = this.parseExpression();
                 this.expect(']');
-                r81 = new IndexExpression(this.span(v81), r81, w81);
+                x89 = new IndexExpression(this.span(b90), x89, c90);
             }
             else if (this.check('.')) {
-                let t81 = r81.span;
+                let z89 = x89.span;
                 this.advance();
-                let u81 = this.expect('name').text;
-                r81 = new SelectExpression(this.span(t81), r81, u81);
+                let a90 = this.expect('name').text;
+                x89 = new SelectExpression(this.span(z89), x89, a90);
             }
             else if (this.check('!')) {
-                let s81 = r81.span;
+                let y89 = x89.span;
                 this.advance();
-                r81 = new EnsureNotNullExpression(this.span(s81), r81);
+                x89 = new EnsureNotNullExpression(this.span(y89), x89);
             }
             else {
                 break;
             }
         }
-        return r81;
+        return x89;
     }
     private parsePrimary(): Expression {
-        let d81 = this.current().span;
+        let j89 = this.current().span;
         if (this.check('name')) {
-            let q81 = this.advance().text;
-            return new NameExpression(this.span(d81), q81);
+            let w89 = this.advance().text;
+            return new NameExpression(this.span(j89), w89);
         }
         if (this.check('integer')) {
-            let o81 = this.advance().text;
-            let p81 = parseInt(o81);
-            return new IntExpression(this.span(d81), p81);
+            let u89 = this.advance().text;
+            let v89 = parseInt(u89);
+            return new IntExpression(this.span(j89), v89);
         }
         if (this.check('number')) {
-            let m81 = this.advance().text;
-            let n81 = parseFloat(m81);
-            return new NumberExpression(this.span(d81), n81);
+            let s89 = this.advance().text;
+            let t89 = parseFloat(s89);
+            return new NumberExpression(this.span(j89), t89);
         }
         if (this.check('string')) {
-            let l81 = this.advance().text;
-            return new StringExpression(this.span(d81), l81);
+            let r89 = this.advance().text;
+            return new StringExpression(this.span(j89), r89);
         }
         if (this.check('boolean')) {
-            let k81 = this.advance().text;
-            return new BooleanExpression(this.span(d81), k81 === 'true');
+            let q89 = this.advance().text;
+            return new BooleanExpression(this.span(j89), q89 === 'true');
         }
         if (this.check('null')) {
             this.advance();
-            return new NullExpression(this.span(d81));
+            return new NullExpression(this.span(j89));
         }
         if (this.check('(')) {
             this.advance();
             if (this.check(')') || this.isLambdaStart()) {
-                return this.parseLambda(d81);
+                return this.parseLambda(j89);
             }
-            let j81 = this.parseExpression();
+            let p89 = this.parseExpression();
             this.expect(')');
-            return j81;
+            return p89;
         }
         if (this.check('[')) {
             this.advance();
-            let i81: Expression[] = [];
+            let o89: Expression[] = [];
             if (!this.check(']')) {
                 while (true) {
-                    i81.push(this.parseExpression());
+                    o89.push(this.parseExpression());
                     if (!this.check(','))
                         break;
                     this.advance();
                 }
             }
             this.expect(']');
-            return new ArrayExpression(this.span(d81), i81);
+            return new ArrayExpression(this.span(j89), o89);
         }
         if (this.check('{')) {
             this.advance();
-            let e81: Property[] = [];
+            let k89: Property[] = [];
             if (!this.check('}')) {
                 while (true) {
-                    let f81 = this.current().span;
-                    let g81 = this.expect('name').text;
+                    let l89 = this.current().span;
+                    let m89 = this.expect('name').text;
                     this.expect(':');
-                    let h81 = this.parseExpression();
-                    e81.push(new Property(this.span(f81), g81, h81));
+                    let n89 = this.parseExpression();
+                    k89.push(new Property(this.span(l89), m89, n89));
                     if (!this.check(','))
                         break;
                     this.advance();
                 }
             }
             this.expect('}');
-            return new ObjectExpression(this.span(d81), e81);
+            return new ObjectExpression(this.span(j89), k89);
         }
         this.error('expected expression');
-        return new NullExpression(this.span(d81));
+        return new NullExpression(this.span(j89));
     }
     private isLambdaStart(): boolean {
-        let b81 = this.pos;
+        let h89 = this.pos;
         if (this.check('name')) {
             this.advance();
-            let c81 = this.check(':');
-            this.pos = b81;
-            return c81;
+            let i89 = this.check(':');
+            this.pos = h89;
+            return i89;
         }
-        this.pos = b81;
+        this.pos = h89;
         return false;
     }
-    private parseLambda(u80: Span): LambdaExpression {
-        let v80: Parameter[] = [];
+    private parseLambda(a89: Span): LambdaExpression {
+        let b89: Parameter[] = [];
         if (!this.check(')')) {
             while (true) {
-                let y80 = this.current().span;
-                let z80 = this.expect('name').text;
+                let e89 = this.current().span;
+                let f89 = this.expect('name').text;
                 this.expect(':');
-                let a81 = this.parseType();
-                v80.push(new Parameter(this.span(y80), z80, a81));
+                let g89 = this.parseType();
+                b89.push(new Parameter(this.span(e89), f89, g89));
                 if (!this.check(','))
                     break;
                 this.advance();
@@ -1129,25 +1129,25 @@ class Parser {
         }
         this.expect(')');
         this.expect(':');
-        let w80 = this.parseType();
+        let c89 = this.parseType();
         this.expect('=');
         this.expect('>');
-        let x80 = this.parseBlock();
-        return new LambdaExpression(this.span(u80), v80, w80, x80);
+        let d89 = this.parseBlock();
+        return new LambdaExpression(this.span(a89), b89, c89, d89);
     }
     private current(): Token { return this.tokens[this.pos]; }
     private atEnd(): boolean { return this.current().kind === 'eof'; }
-    private check(t80: string): boolean { return this.current().kind === t80; }
-    private advance(): Token { let s80 = this.current(); this.pos++; return s80; }
-    private expect(r80: string): Token {
-        if (!this.check(r80))
-            this.error('expected ' + r80 + ', found ' + this.current().kind);
+    private check(z88: string): boolean { return this.current().kind === z88; }
+    private advance(): Token { let y88 = this.current(); this.pos++; return y88; }
+    private expect(x88: string): Token {
+        if (!this.check(x88))
+            this.error('expected ' + x88 + ', found ' + this.current().kind);
         return this.advance();
     }
-    private span(q80: Span): Span { return new Span(q80.start, this.tokens[this.pos > 0 ? this.pos - 1 : 0].span.end, this.sourceName); }
-    private error(o80: string): never {
-        let p80 = this.current().span;
-        throw new CompileError([new Diagnostic('E1001', o80, p80)]);
+    private span(w88: Span): Span { return new Span(w88.start, this.tokens[this.pos > 0 ? this.pos - 1 : 0].span.end, this.sourceName); }
+    private error(u88: string): never {
+        let v88 = this.current().span;
+        throw new CompileError([new Diagnostic('E1001', u88, v88)]);
     }
 }
 class ExternalFunction {
@@ -1156,68 +1156,68 @@ class ExternalFunction {
     result: VeraType;
     isAsync: boolean;
     required: number;
-    constructor(j80: string, k80: VeraType[], l80: VeraType, m80: boolean, n80: number = -1) {
-        this.name = j80;
-        this.parameters = k80;
-        this.result = l80;
-        this.isAsync = m80;
-        this.required = n80 < 0 ? k80.length : n80;
+    constructor(p88: string, q88: VeraType[], r88: VeraType, s88: boolean, t88: number = -1) {
+        this.name = p88;
+        this.parameters = q88;
+        this.result = r88;
+        this.isAsync = s88;
+        this.required = t88 < 0 ? q88.length : t88;
     }
 }
 class ExternalClass {
     name: string;
     type: VeraClassType;
-    constructor(h80: string, i80: VeraClassType) {
-        this.name = h80;
-        this.type = i80;
+    constructor(n88: string, o88: VeraClassType) {
+        this.name = n88;
+        this.type = o88;
     }
 }
 class ModuleInterface {
     specifier: string;
     functions: ExternalFunction[];
     classes: ExternalClass[];
-    constructor(e80: string, f80: ExternalFunction[], g80: ExternalClass[]) {
-        this.specifier = e80;
-        this.functions = f80;
-        this.classes = g80;
+    constructor(k88: string, l88: ExternalFunction[], m88: ExternalClass[]) {
+        this.specifier = k88;
+        this.functions = l88;
+        this.classes = m88;
     }
 }
 function buildStdUiModule(): ModuleInterface {
-    let x79 = new VeraClassType('std/ui:View', 'View');
-    let y79 = new VeraArrayType(x79);
-    let z79: ExternalFunction[] = [];
-    for (let a80 of CATALOG) {
-        let b80: VeraType[] = [];
-        for (let d80 of a80.props) {
-            if (d80.kind === 'int')
-                b80.push(INT);
-            else if (d80.kind === 'boolean')
-                b80.push(BOOLEAN);
-            else if (d80.kind === 'view')
-                b80.push(x79);
-            else if (d80.kind === 'view[]')
-                b80.push(y79);
-            else if (d80.kind === 'string[]')
-                b80.push(new VeraArrayType(STRING));
-            else if (d80.kind === 'int[]')
-                b80.push(new VeraArrayType(INT));
+    let d88 = new VeraClassType('std/ui:View', 'View');
+    let e88 = new VeraArrayType(d88);
+    let f88: ExternalFunction[] = [];
+    for (let g88 of CATALOG) {
+        let h88: VeraType[] = [];
+        for (let j88 of g88.props) {
+            if (j88.kind === 'int')
+                h88.push(INT);
+            else if (j88.kind === 'boolean')
+                h88.push(BOOLEAN);
+            else if (j88.kind === 'view')
+                h88.push(d88);
+            else if (j88.kind === 'view[]')
+                h88.push(e88);
+            else if (j88.kind === 'string[]')
+                h88.push(new VeraArrayType(STRING));
+            else if (j88.kind === 'int[]')
+                h88.push(new VeraArrayType(INT));
             else
-                b80.push(STRING);
+                h88.push(STRING);
         }
-        let c80 = b80.length;
-        while (c80 > 0 && a80.props[c80 - 1].optional) {
-            c80 -= 1;
+        let i88 = h88.length;
+        while (i88 > 0 && g88.props[i88 - 1].optional) {
+            i88 -= 1;
         }
-        z79.push(new ExternalFunction(a80.name, b80, x79, false, c80));
+        f88.push(new ExternalFunction(g88.name, h88, d88, false, i88));
     }
-    z79.push(new ExternalFunction('When', [BOOLEAN, x79], x79, false));
-    z79.push(new ExternalFunction('intToString', [INT], STRING, false));
-    z79.push(new ExternalFunction('numberToString', [NUMBER], STRING, false));
-    z79.push(new ExternalFunction('booleanToString', [BOOLEAN], STRING, false));
-    return new ModuleInterface('std/ui', z79, [new ExternalClass('View', x79)]);
+    f88.push(new ExternalFunction('When', [BOOLEAN, d88], d88, false));
+    f88.push(new ExternalFunction('intToString', [INT], STRING, false));
+    f88.push(new ExternalFunction('numberToString', [NUMBER], STRING, false));
+    f88.push(new ExternalFunction('booleanToString', [BOOLEAN], STRING, false));
+    return new ModuleInterface('std/ui', f88, [new ExternalClass('View', d88)]);
 }
 function buildStdMathModule(): ModuleInterface {
-    let w79: ExternalFunction[] = [
+    let c88: ExternalFunction[] = [
         new ExternalFunction('intToNumber', [INT], NUMBER, false),
         new ExternalFunction('numberToInt', [NUMBER], INT, false),
         new ExternalFunction('pi', [], NUMBER, false),
@@ -1237,10 +1237,10 @@ function buildStdMathModule(): ModuleInterface {
         new ExternalFunction('randomStep', [INT], INT, false),
         new ExternalFunction('randomBelow', [INT, INT], INT, false),
     ];
-    return new ModuleInterface('std/math', w79, []);
+    return new ModuleInterface('std/math', c88, []);
 }
 function buildStdTimeModule(): ModuleInterface {
-    let v79: ExternalFunction[] = [
+    let b88: ExternalFunction[] = [
         new ExternalFunction('nowSeconds', [], INT, false),
         new ExternalFunction('millisOfDay', [], INT, false),
         new ExternalFunction('daysSinceEpoch', [], INT, false),
@@ -1251,10 +1251,10 @@ function buildStdTimeModule(): ModuleInterface {
         new ExternalFunction('monthOfYear', [], INT, false),
         new ExternalFunction('year', [], INT, false),
     ];
-    return new ModuleInterface('std/time', v79, []);
+    return new ModuleInterface('std/time', b88, []);
 }
 function buildStdStringsModule(): ModuleInterface {
-    let u79: ExternalFunction[] = [
+    let a88: ExternalFunction[] = [
         new ExternalFunction('length', [STRING], INT, false),
         new ExternalFunction('substring', [STRING, INT, INT], STRING, false),
         new ExternalFunction('contains', [STRING, STRING], BOOLEAN, false),
@@ -1264,24 +1264,24 @@ function buildStdStringsModule(): ModuleInterface {
         new ExternalFunction('split', [STRING, STRING], new VeraArrayType(STRING), false),
         new ExternalFunction('trim', [STRING], STRING, false),
     ];
-    return new ModuleInterface('std/strings', u79, []);
+    return new ModuleInterface('std/strings', a88, []);
 }
 function buildStdSdkModule(): ModuleInterface {
-    let t79: ExternalFunction[] = [
+    let z87: ExternalFunction[] = [
         new ExternalFunction('call', [STRING, new VeraArrayType(STRING), STRING, STRING], INT, false, 3)
     ];
-    return new ModuleInterface('std/sdk', t79, []);
+    return new ModuleInterface('std/sdk', z87, []);
 }
 class Scope {
     values: Map<string, VeraType> = new Map<string, VeraType>();
     parent: Scope | null;
-    constructor(s79: Scope | null) { this.parent = s79; }
-    find(q79: string): VeraType | null {
-        let r79 = this.values.get(q79);
-        if (r79 !== undefined)
-            return r79;
+    constructor(y87: Scope | null) { this.parent = y87; }
+    find(w87: string): VeraType | null {
+        let x87 = this.values.get(w87);
+        if (x87 !== undefined)
+            return x87;
         if (this.parent !== null)
-            return this.parent.find(q79);
+            return this.parent.find(w87);
         return null;
     }
 }
@@ -1292,12 +1292,12 @@ class SemanticModel {
     classes: Map<string, VeraClassType> = new Map<string, VeraClassType>();
     imports: Map<string, ModuleInterface> = new Map<string, ModuleInterface>();
     application: Application;
-    constructor(p79: Application) { this.application = p79; }
+    constructor(v87: Application) { this.application = v87; }
 }
 class Narrowing {
     whenTrue: Scope;
     whenFalse: Scope;
-    constructor(n79: Scope, o79: Scope) { this.whenTrue = n79; this.whenFalse = o79; }
+    constructor(t87: Scope, u87: Scope) { this.whenTrue = t87; this.whenFalse = u87; }
 }
 class Analyzer {
     private diagnostics: Diagnostic[] = [];
@@ -1307,499 +1307,499 @@ class Analyzer {
     private inAsyncFunction: boolean = false;
     private loopDepth: number = 0;
     private lambdaCount: number = 0;
-    constructor(m79: Application) {
-        this.model = new SemanticModel(m79);
+    constructor(s87: Application) {
+        this.model = new SemanticModel(s87);
     }
     analyze(): SemanticModel {
         this.collectImports();
-        for (let k79 of this.model.application.declarations) {
-            if (!(k79 instanceof ClassDeclaration) && !(k79 instanceof FunctionDeclaration))
+        for (let q87 of this.model.application.declarations) {
+            if (!(q87 instanceof ClassDeclaration) && !(q87 instanceof FunctionDeclaration))
                 continue;
-            if (this.globals.find(k79.name) !== null) {
-                this.addError('E2001', 'duplicate global ' + k79.name, k79.span);
+            if (this.globals.find(q87.name) !== null) {
+                this.addError('E2001', 'duplicate global ' + q87.name, q87.span);
                 continue;
             }
-            if (k79 instanceof ClassDeclaration) {
-                let l79 = new VeraClassType('local:' + k79.name, k79.name);
-                this.model.classes.set(k79.name, l79);
-                this.globals.values.set(k79.name, l79);
+            if (q87 instanceof ClassDeclaration) {
+                let r87 = new VeraClassType('local:' + q87.name, q87.name);
+                this.model.classes.set(q87.name, r87);
+                this.globals.values.set(q87.name, r87);
             }
             else {
-                this.globals.values.set(k79.name, new VeraFunctionType([], VOID, (k79 as FunctionDeclaration).isAsync, 'pending:' + k79.name));
+                this.globals.values.set(q87.name, new VeraFunctionType([], VOID, (q87 as FunctionDeclaration).isAsync, 'pending:' + q87.name));
             }
         }
-        for (let f79 of this.model.application.declarations) {
-            if (!(f79 instanceof FunctionDeclaration))
+        for (let l87 of this.model.application.declarations) {
+            if (!(l87 instanceof FunctionDeclaration))
                 continue;
-            let g79: VeraType[] = [];
-            for (let j79 of f79.parameters)
-                g79.push(this.resolveType(j79.type));
-            let h79 = this.resolveType(f79.returnType);
-            let i79 = new VeraFunctionType(g79, h79, f79.isAsync, 'function:' + f79.name);
-            this.model.functions.set(f79.name, i79);
-            this.globals.values.set(f79.name, i79);
+            let m87: VeraType[] = [];
+            for (let p87 of l87.parameters)
+                m87.push(this.resolveType(p87.type));
+            let n87 = this.resolveType(l87.returnType);
+            let o87 = new VeraFunctionType(m87, n87, l87.isAsync, 'function:' + l87.name);
+            this.model.functions.set(l87.name, o87);
+            this.globals.values.set(l87.name, o87);
         }
-        for (let e79 of this.model.application.declarations) {
-            if (e79 instanceof ClassDeclaration)
-                this.checkClass(e79);
+        for (let k87 of this.model.application.declarations) {
+            if (k87 instanceof ClassDeclaration)
+                this.checkClass(k87);
         }
         this.checkJsonableCycles();
-        for (let d79 of this.model.application.declarations) {
-            if (d79 instanceof FunctionDeclaration)
-                this.checkFunction(d79);
+        for (let j87 of this.model.application.declarations) {
+            if (j87 instanceof FunctionDeclaration)
+                this.checkFunction(j87);
         }
         if (this.diagnostics.length > 0)
             throw new CompileError(this.diagnostics);
         return this.model;
     }
     private collectImports(): void {
-        let w78 = new Map<string, ModuleInterface>();
-        w78.set('std/ui', buildStdUiModule());
-        w78.set('std/time', buildStdTimeModule());
-        w78.set('std/math', buildStdMathModule());
-        w78.set('std/strings', buildStdStringsModule());
-        w78.set('std/sdk', buildStdSdkModule());
-        for (let x78 of this.model.application.imports) {
-            if (this.globals.find(x78.name) !== null) {
-                this.addError('E2001', 'duplicate global ' + x78.name, x78.span);
+        let c87 = new Map<string, ModuleInterface>();
+        c87.set('std/ui', buildStdUiModule());
+        c87.set('std/time', buildStdTimeModule());
+        c87.set('std/math', buildStdMathModule());
+        c87.set('std/strings', buildStdStringsModule());
+        c87.set('std/sdk', buildStdSdkModule());
+        for (let d87 of this.model.application.imports) {
+            if (this.globals.find(d87.name) !== null) {
+                this.addError('E2001', 'duplicate global ' + d87.name, d87.span);
                 continue;
             }
-            let y78 = w78.get(x78.specifier);
-            let z78: ModuleInterface | null = y78 !== undefined ? y78 : null;
-            if (z78 === null) {
-                this.addError('E2002', 'module not found: ' + x78.specifier, x78.span);
+            let e87 = c87.get(d87.specifier);
+            let f87: ModuleInterface | null = e87 !== undefined ? e87 : null;
+            if (f87 === null) {
+                this.addError('E2002', 'module not found: ' + d87.specifier, d87.span);
                 continue;
             }
-            let a79 = new Map<string, VeraType>();
-            for (let c79 of z78.functions)
-                a79.set(c79.name, new VeraFunctionType(c79.parameters, c79.result, c79.isAsync, 'external:' + z78.specifier + ':' + c79.name, c79.required));
-            for (let b79 of z78.classes)
-                a79.set(b79.name, b79.type);
-            this.model.imports.set(x78.name, z78);
-            this.globals.values.set(x78.name, new NamespaceType(x78.name, a79));
+            let g87 = new Map<string, VeraType>();
+            for (let i87 of f87.functions)
+                g87.set(i87.name, new VeraFunctionType(i87.parameters, i87.result, i87.isAsync, 'external:' + f87.specifier + ':' + i87.name, i87.required));
+            for (let h87 of f87.classes)
+                g87.set(h87.name, h87.type);
+            this.model.imports.set(d87.name, f87);
+            this.globals.values.set(d87.name, new NamespaceType(d87.name, g87));
         }
     }
-    private checkClass(t78: ClassDeclaration): void {
-        let u78 = this.model.classes.get(t78.name);
-        if (u78 === undefined)
+    private checkClass(z86: ClassDeclaration): void {
+        let a87 = this.model.classes.get(z86.name);
+        if (a87 === undefined)
             return;
-        if (t78.annotation !== null && t78.annotation !== 'jsonable')
-            this.addError('E2039', 'unknown annotation ' + t78.annotation, t78.span);
-        for (let v78 of t78.fields) {
-            if (u78.fields.has(v78.name))
-                this.addError('E2003', 'duplicate field ' + v78.name, v78.span);
+        if (z86.annotation !== null && z86.annotation !== 'jsonable')
+            this.addError('E2039', 'unknown annotation ' + z86.annotation, z86.span);
+        for (let b87 of z86.fields) {
+            if (a87.fields.has(b87.name))
+                this.addError('E2003', 'duplicate field ' + b87.name, b87.span);
             else
-                u78.fields.set(v78.name, this.resolveType(v78.type));
+                a87.fields.set(b87.name, this.resolveType(b87.type));
         }
     }
     private checkJsonableCycles(): void {
-        let m78: ClassDeclaration[] = [];
-        for (let s78 of this.model.application.declarations) {
-            if (s78 instanceof ClassDeclaration && s78.annotation === 'jsonable')
-                m78.push(s78);
+        let s86: ClassDeclaration[] = [];
+        for (let y86 of this.model.application.declarations) {
+            if (y86 instanceof ClassDeclaration && y86.annotation === 'jsonable')
+                s86.push(y86);
         }
-        let n78 = new Set<string>();
-        let o78 = new Set<string>();
-        let p78 = new Set<string>();
-        for (let r78 of m78)
-            p78.add(r78.name);
-        for (let q78 of m78) {
-            if (this.visitJsonable(q78.name, p78, n78, o78)) {
-                this.addError('E2040', 'circular jsonable dependency involving ' + q78.name, q78.span);
+        let t86 = new Set<string>();
+        let u86 = new Set<string>();
+        let v86 = new Set<string>();
+        for (let x86 of s86)
+            v86.add(x86.name);
+        for (let w86 of s86) {
+            if (this.visitJsonable(w86.name, v86, t86, u86)) {
+                this.addError('E2040', 'circular jsonable dependency involving ' + w86.name, w86.span);
                 break;
             }
         }
     }
-    private visitJsonable(e78: string, f78: Set<string>, g78: Set<string>, h78: Set<string>): boolean {
-        if (g78.has(e78))
+    private visitJsonable(k86: string, l86: Set<string>, m86: Set<string>, n86: Set<string>): boolean {
+        if (m86.has(k86))
             return true;
-        if (h78.has(e78))
+        if (n86.has(k86))
             return false;
-        g78.add(e78);
-        let i78 = this.model.classes.get(e78);
-        if (i78 !== undefined) {
-            let j78 = Array.from(i78.fields.values());
-            for (let k78 of j78) {
-                let l78 = this.localClass(k78);
-                if (l78 !== null && f78.has(l78.name) && this.visitJsonable(l78.name, f78, g78, h78))
+        m86.add(k86);
+        let o86 = this.model.classes.get(k86);
+        if (o86 !== undefined) {
+            let p86 = Array.from(o86.fields.values());
+            for (let q86 of p86) {
+                let r86 = this.localClass(q86);
+                if (r86 !== null && l86.has(r86.name) && this.visitJsonable(r86.name, l86, m86, n86))
                     return true;
             }
         }
-        g78.delete(e78);
-        h78.add(e78);
+        m86.delete(k86);
+        n86.add(k86);
         return false;
     }
-    private localClass(d78: VeraType): VeraClassType | null {
-        if (d78 instanceof NullableType)
-            return this.localClass(d78.base);
-        if (d78 instanceof VeraArrayType)
-            return this.localClass(d78.element);
-        if (d78 instanceof VeraClassType && d78.identity.startsWith('local:'))
-            return d78;
+    private localClass(j86: VeraType): VeraClassType | null {
+        if (j86 instanceof NullableType)
+            return this.localClass(j86.base);
+        if (j86 instanceof VeraArrayType)
+            return this.localClass(j86.element);
+        if (j86 instanceof VeraClassType && j86.identity.startsWith('local:'))
+            return j86;
         return null;
     }
-    private checkFunction(v77: FunctionDeclaration): void {
-        let w77 = this.model.functions.get(v77.name);
-        if (w77 === undefined)
+    private checkFunction(b86: FunctionDeclaration): void {
+        let c86 = this.model.functions.get(b86.name);
+        if (c86 === undefined)
             return;
-        let x77 = this.returnType;
-        let y77 = this.inAsyncFunction;
-        this.returnType = w77.result;
-        this.inAsyncFunction = v77.isAsync;
-        let z77 = new Scope(this.globals);
-        for (let b78 = 0; b78 < v77.parameters.length; b78++) {
-            let c78 = v77.parameters[b78];
-            if (z77.find(c78.name) !== null)
-                this.addError('E2004', 'declaration ' + c78.name + ' shadows a visible entity', c78.span);
+        let d86 = this.returnType;
+        let e86 = this.inAsyncFunction;
+        this.returnType = c86.result;
+        this.inAsyncFunction = b86.isAsync;
+        let f86 = new Scope(this.globals);
+        for (let h86 = 0; h86 < b86.parameters.length; h86++) {
+            let i86 = b86.parameters[h86];
+            if (f86.find(i86.name) !== null)
+                this.addError('E2004', 'declaration ' + i86.name + ' shadows a visible entity', i86.span);
             else
-                z77.values.set(c78.name, w77.parameters[b78]);
+                f86.values.set(i86.name, c86.parameters[h86]);
         }
-        let a78 = this.checkBlock(v77.body, z77);
-        if (!identical(this.returnType, VOID) && !a78)
-            this.addError('E2018', 'function ' + v77.name + ' may not return a value', v77.body.span);
-        this.returnType = x77;
-        this.inAsyncFunction = y77;
+        let g86 = this.checkBlock(b86.body, f86);
+        if (!identical(this.returnType, VOID) && !g86)
+            this.addError('E2018', 'function ' + b86.name + ' may not return a value', b86.body.span);
+        this.returnType = d86;
+        this.inAsyncFunction = e86;
     }
-    private checkBlock(q77: BlockStatement, r77: Scope): boolean {
-        let s77 = new Scope(r77);
-        let t77 = false;
-        for (let u77 of q77.statements) {
-            if (this.checkStatement(u77, s77))
-                t77 = true;
+    private checkBlock(w85: BlockStatement, x85: Scope): boolean {
+        let y85 = new Scope(x85);
+        let z85 = false;
+        for (let a86 of w85.statements) {
+            if (this.checkStatement(a86, y85))
+                z85 = true;
         }
-        return t77;
+        return z85;
     }
-    private checkStatement(c77: Statement, d77: Scope): boolean {
-        if (c77 instanceof BlockStatement)
-            return this.checkBlock(c77, d77);
-        if (c77 instanceof LetStatement) {
-            let p77 = this.resolveType(c77.type);
-            this.checkExpression(c77.initializer, d77, p77);
-            if (d77.find(c77.name) !== null)
-                this.addError('E2004', 'declaration ' + c77.name + ' shadows a visible entity', c77.span);
+    private checkStatement(i85: Statement, j85: Scope): boolean {
+        if (i85 instanceof BlockStatement)
+            return this.checkBlock(i85, j85);
+        if (i85 instanceof LetStatement) {
+            let v85 = this.resolveType(i85.type);
+            this.checkExpression(i85.initializer, j85, v85);
+            if (j85.find(i85.name) !== null)
+                this.addError('E2004', 'declaration ' + i85.name + ' shadows a visible entity', i85.span);
             else
-                d77.values.set(c77.name, p77);
+                j85.values.set(i85.name, v85);
             return false;
         }
-        if (c77 instanceof AssignStatement) {
-            let o77 = this.checkAssignable(c77.target, d77);
-            this.checkExpression(c77.value, d77, o77);
+        if (i85 instanceof AssignStatement) {
+            let u85 = this.checkAssignable(i85.target, j85);
+            this.checkExpression(i85.value, j85, u85);
             return false;
         }
-        if (c77 instanceof ExpressionStatement) {
-            this.checkExpression(c77.expression, d77, null);
-            if (!(c77.expression instanceof CallExpression) && !(c77.expression instanceof AwaitExpression)) {
-                this.addError('E2005', 'expression statement must be a function call', c77.span);
+        if (i85 instanceof ExpressionStatement) {
+            this.checkExpression(i85.expression, j85, null);
+            if (!(i85.expression instanceof CallExpression) && !(i85.expression instanceof AwaitExpression)) {
+                this.addError('E2005', 'expression statement must be a function call', i85.span);
             }
             return false;
         }
-        if (c77 instanceof IfStatement) {
-            this.requireType(this.checkExpression(c77.condition, d77, BOOLEAN), BOOLEAN, c77.condition);
-            let l77 = this.narrow(c77.condition, d77);
-            let m77 = this.checkBlock(c77.thenBranch, l77.whenTrue);
-            let n77 = c77.elseBranch === null ? false : this.checkStatement(c77.elseBranch, l77.whenFalse);
-            return m77 && n77;
+        if (i85 instanceof IfStatement) {
+            this.requireType(this.checkExpression(i85.condition, j85, BOOLEAN), BOOLEAN, i85.condition);
+            let r85 = this.narrow(i85.condition, j85);
+            let s85 = this.checkBlock(i85.thenBranch, r85.whenTrue);
+            let t85 = i85.elseBranch === null ? false : this.checkStatement(i85.elseBranch, r85.whenFalse);
+            return s85 && t85;
         }
-        if (c77 instanceof WhileStatement) {
-            this.requireType(this.checkExpression(c77.condition, d77, BOOLEAN), BOOLEAN, c77.condition);
+        if (i85 instanceof WhileStatement) {
+            this.requireType(this.checkExpression(i85.condition, j85, BOOLEAN), BOOLEAN, i85.condition);
             this.loopDepth += 1;
-            this.checkBlock(c77.body, d77);
+            this.checkBlock(i85.body, j85);
             this.loopDepth -= 1;
             return false;
         }
-        if (c77 instanceof ForOfStatement) {
-            let h77 = this.checkExpression(c77.iterable, d77, null);
-            let i77 = this.resolveType(c77.type);
-            let j77: VeraType | null = null;
-            if (h77 instanceof VeraArrayType)
-                j77 = h77.element;
-            else if (identical(h77, STRING))
-                j77 = STRING;
+        if (i85 instanceof ForOfStatement) {
+            let n85 = this.checkExpression(i85.iterable, j85, null);
+            let o85 = this.resolveType(i85.type);
+            let p85: VeraType | null = null;
+            if (n85 instanceof VeraArrayType)
+                p85 = n85.element;
+            else if (identical(n85, STRING))
+                p85 = STRING;
             else
-                this.addError('E2006', 'for-of requires an array or string', c77.iterable.span);
-            if (j77 !== null && !identical(j77, i77))
-                this.typeError(c77.iterable, i77, j77);
-            let k77 = new Scope(d77);
-            if (k77.find(c77.name) !== null)
-                this.addError('E2004', 'declaration ' + c77.name + ' shadows a visible entity', c77.span);
+                this.addError('E2006', 'for-of requires an array or string', i85.iterable.span);
+            if (p85 !== null && !identical(p85, o85))
+                this.typeError(i85.iterable, o85, p85);
+            let q85 = new Scope(j85);
+            if (q85.find(i85.name) !== null)
+                this.addError('E2004', 'declaration ' + i85.name + ' shadows a visible entity', i85.span);
             else
-                k77.values.set(c77.name, i77);
+                q85.values.set(i85.name, o85);
             this.loopDepth += 1;
-            this.checkBlock(c77.body, k77);
+            this.checkBlock(i85.body, q85);
             this.loopDepth -= 1;
             return false;
         }
-        if (c77 instanceof BreakStatement || c77 instanceof ContinueStatement) {
+        if (i85 instanceof BreakStatement || i85 instanceof ContinueStatement) {
             if (this.loopDepth === 0)
-                this.addError('E2007', 'loop control used outside a loop', c77.span);
+                this.addError('E2007', 'loop control used outside a loop', i85.span);
             return false;
         }
-        if (c77 instanceof TryStatement) {
-            let e77 = this.checkBlock(c77.tryBlock, d77);
-            let f77 = new Scope(d77);
-            f77.values.set(c77.catchName, STRING);
-            let g77 = this.checkBlock(c77.catchBlock, f77);
-            return e77 && g77;
+        if (i85 instanceof TryStatement) {
+            let k85 = this.checkBlock(i85.tryBlock, j85);
+            let l85 = new Scope(j85);
+            l85.values.set(i85.catchName, STRING);
+            let m85 = this.checkBlock(i85.catchBlock, l85);
+            return k85 && m85;
         }
-        if (c77 instanceof ReturnStatement) {
-            if (c77.value === null) {
+        if (i85 instanceof ReturnStatement) {
+            if (i85.value === null) {
                 if (!identical(this.returnType, VOID))
-                    this.addError('E2008', 'return value required', c77.span);
+                    this.addError('E2008', 'return value required', i85.span);
             }
             else {
                 if (identical(this.returnType, VOID))
-                    this.addError('E2009', 'void function cannot return a value', c77.span);
+                    this.addError('E2009', 'void function cannot return a value', i85.span);
                 else
-                    this.checkExpression(c77.value, d77, this.returnType);
+                    this.checkExpression(i85.value, j85, this.returnType);
             }
             return true;
         }
         return false;
     }
-    private checkAssignable(z76: Expression, a77: Scope): VeraType {
-        if (z76 instanceof NameExpression) {
-            let b77 = a77.find(z76.name);
-            if (b77 === null || a77 === this.globals || b77 instanceof VeraFunctionType || b77 instanceof VeraClassType || b77 instanceof NamespaceType) {
-                this.addError('E2010', 'invalid assignment target', z76.span);
+    private checkAssignable(f85: Expression, g85: Scope): VeraType {
+        if (f85 instanceof NameExpression) {
+            let h85 = g85.find(f85.name);
+            if (h85 === null || g85 === this.globals || h85 instanceof VeraFunctionType || h85 instanceof VeraClassType || h85 instanceof NamespaceType) {
+                this.addError('E2010', 'invalid assignment target', f85.span);
                 return VOID;
             }
-            return b77;
+            return h85;
         }
-        if (z76 instanceof IndexExpression || z76 instanceof SelectExpression)
-            return this.checkExpression(z76, a77, null);
-        this.addError('E2010', 'invalid assignment target', z76.span);
+        if (f85 instanceof IndexExpression || f85 instanceof SelectExpression)
+            return this.checkExpression(f85, g85, null);
+        this.addError('E2010', 'invalid assignment target', f85.span);
         return VOID;
     }
-    private checkExpression(s76: Expression, t76: Scope, u76: VeraType | null): VeraType {
-        let v76: VeraType = VOID;
-        if (s76 instanceof IntExpression) {
-            if (s76.value > 2147483647)
-                this.addError('E2011', 'integer literal exceeds int32 range', s76.span);
-            v76 = (u76 !== null && identical(u76, NUMBER)) ? NUMBER : INT;
+    private checkExpression(y84: Expression, z84: Scope, a85: VeraType | null): VeraType {
+        let b85: VeraType = VOID;
+        if (y84 instanceof IntExpression) {
+            if (y84.value > 2147483647)
+                this.addError('E2011', 'integer literal exceeds int32 range', y84.span);
+            b85 = (a85 !== null && identical(a85, NUMBER)) ? NUMBER : INT;
         }
-        else if (s76 instanceof NumberExpression)
-            v76 = NUMBER;
-        else if (s76 instanceof StringExpression)
-            v76 = STRING;
-        else if (s76 instanceof BooleanExpression)
-            v76 = BOOLEAN;
-        else if (s76 instanceof NullExpression)
-            v76 = NULL_TYPE;
-        else if (s76 instanceof NameExpression) {
-            let y76 = t76.find(s76.name);
-            if (y76 !== null)
-                v76 = y76;
+        else if (y84 instanceof NumberExpression)
+            b85 = NUMBER;
+        else if (y84 instanceof StringExpression)
+            b85 = STRING;
+        else if (y84 instanceof BooleanExpression)
+            b85 = BOOLEAN;
+        else if (y84 instanceof NullExpression)
+            b85 = NULL_TYPE;
+        else if (y84 instanceof NameExpression) {
+            let e85 = z84.find(y84.name);
+            if (e85 !== null)
+                b85 = e85;
             else {
-                v76 = VOID;
-                this.addError('E2012', 'unknown name ' + s76.name, s76.span);
+                b85 = VOID;
+                this.addError('E2012', 'unknown name ' + y84.name, y84.span);
             }
         }
-        else if (s76 instanceof ArrayExpression)
-            v76 = this.checkArray(s76, t76, u76);
-        else if (s76 instanceof ObjectExpression)
-            v76 = this.checkObject(s76, t76, u76);
-        else if (s76 instanceof UnaryExpression)
-            v76 = this.checkUnary(s76, t76);
-        else if (s76 instanceof BinaryExpression)
-            v76 = this.checkBinary(s76, t76);
-        else if (s76 instanceof IndexExpression) {
-            let x76 = this.checkExpression(s76.target, t76, null);
-            this.requireType(this.checkExpression(s76.index, t76, INT), INT, s76.index);
-            if (x76 instanceof VeraArrayType)
-                v76 = x76.element;
+        else if (y84 instanceof ArrayExpression)
+            b85 = this.checkArray(y84, z84, a85);
+        else if (y84 instanceof ObjectExpression)
+            b85 = this.checkObject(y84, z84, a85);
+        else if (y84 instanceof UnaryExpression)
+            b85 = this.checkUnary(y84, z84);
+        else if (y84 instanceof BinaryExpression)
+            b85 = this.checkBinary(y84, z84);
+        else if (y84 instanceof IndexExpression) {
+            let d85 = this.checkExpression(y84.target, z84, null);
+            this.requireType(this.checkExpression(y84.index, z84, INT), INT, y84.index);
+            if (d85 instanceof VeraArrayType)
+                b85 = d85.element;
             else
-                this.addError('E2013', 'index target must be an array', s76.target.span);
+                this.addError('E2013', 'index target must be an array', y84.target.span);
         }
-        else if (s76 instanceof SelectExpression)
-            v76 = this.checkSelect(s76, t76);
-        else if (s76 instanceof EnsureNotNullExpression) {
-            let w76 = this.checkExpression(s76.operand, t76, null);
-            if (w76 instanceof NullableType)
-                v76 = w76.base;
+        else if (y84 instanceof SelectExpression)
+            b85 = this.checkSelect(y84, z84);
+        else if (y84 instanceof EnsureNotNullExpression) {
+            let c85 = this.checkExpression(y84.operand, z84, null);
+            if (c85 instanceof NullableType)
+                b85 = c85.base;
             else {
-                this.addError('E2041', 'ensure-not-null requires a nullable value', s76.span);
-                v76 = w76;
+                this.addError('E2041', 'ensure-not-null requires a nullable value', y84.span);
+                b85 = c85;
             }
         }
-        else if (s76 instanceof CallExpression)
-            v76 = this.checkCall(s76, t76, false);
-        else if (s76 instanceof AwaitExpression) {
+        else if (y84 instanceof CallExpression)
+            b85 = this.checkCall(y84, z84, false);
+        else if (y84 instanceof AwaitExpression) {
             if (!this.inAsyncFunction)
-                this.addError('E2014', 'await is valid only in an async function', s76.span);
-            if (!(s76.operand instanceof CallExpression)) {
-                this.addError('E2015', 'await requires an async function call', s76.span);
-                v76 = VOID;
+                this.addError('E2014', 'await is valid only in an async function', y84.span);
+            if (!(y84.operand instanceof CallExpression)) {
+                this.addError('E2015', 'await requires an async function call', y84.span);
+                b85 = VOID;
             }
             else
-                v76 = this.checkCall(s76.operand, t76, true);
+                b85 = this.checkCall(y84.operand, z84, true);
         }
-        else if (s76 instanceof LambdaExpression)
-            v76 = this.checkLambda(s76, t76);
-        this.model.expressionTypes.set(s76, v76);
-        if (u76 !== null && !assignable(v76, u76))
-            this.typeError(s76, u76, v76);
-        return v76;
+        else if (y84 instanceof LambdaExpression)
+            b85 = this.checkLambda(y84, z84);
+        this.model.expressionTypes.set(y84, b85);
+        if (a85 !== null && !assignable(b85, a85))
+            this.typeError(y84, a85, b85);
+        return b85;
     }
-    private checkArray(n76: ArrayExpression, o76: Scope, p76: VeraType | null): VeraType {
-        let q76 = p76 instanceof NullableType ? p76.base : p76;
-        if (!(q76 instanceof VeraArrayType)) {
-            this.addError('E2020', 'array literal requires array context', n76.span);
+    private checkArray(t84: ArrayExpression, u84: Scope, v84: VeraType | null): VeraType {
+        let w84 = v84 instanceof NullableType ? v84.base : v84;
+        if (!(w84 instanceof VeraArrayType)) {
+            this.addError('E2020', 'array literal requires array context', t84.span);
             return new VeraArrayType(VOID);
         }
-        for (let r76 of n76.elements)
-            this.checkExpression(r76, o76, q76.element);
-        return q76;
+        for (let x84 of t84.elements)
+            this.checkExpression(x84, u84, w84.element);
+        return w84;
     }
-    private checkObject(e76: ObjectExpression, f76: Scope, g76: VeraType | null): VeraType {
-        let h76 = g76 instanceof NullableType ? g76.base : g76;
-        if (!(h76 instanceof VeraClassType)) {
-            this.addError('E2021', 'object literal requires class context', e76.span);
+    private checkObject(k84: ObjectExpression, l84: Scope, m84: VeraType | null): VeraType {
+        let n84 = m84 instanceof NullableType ? m84.base : m84;
+        if (!(n84 instanceof VeraClassType)) {
+            this.addError('E2021', 'object literal requires class context', k84.span);
             return VOID;
         }
-        let i76 = new Set<string>();
-        for (let l76 of e76.properties) {
-            let m76 = h76.fields.get(l76.name);
-            if (m76 === undefined)
-                this.addError('E2022', 'unknown field ' + l76.name, l76.span);
+        let o84 = new Set<string>();
+        for (let r84 of k84.properties) {
+            let s84 = n84.fields.get(r84.name);
+            if (s84 === undefined)
+                this.addError('E2022', 'unknown field ' + r84.name, r84.span);
             else
-                this.checkExpression(l76.value, f76, m76);
-            if (i76.has(l76.name))
-                this.addError('E2023', 'duplicate property ' + l76.name, l76.span);
-            i76.add(l76.name);
+                this.checkExpression(r84.value, l84, s84);
+            if (o84.has(r84.name))
+                this.addError('E2023', 'duplicate property ' + r84.name, r84.span);
+            o84.add(r84.name);
         }
-        let j76 = Array.from(h76.fields.keys());
-        for (let k76 of j76) {
-            if (!i76.has(k76))
-                this.addError('E2024', 'missing field ' + k76, e76.span);
+        let p84 = Array.from(n84.fields.keys());
+        for (let q84 of p84) {
+            if (!o84.has(q84))
+                this.addError('E2024', 'missing field ' + q84, k84.span);
         }
-        return h76;
+        return n84;
     }
-    private checkUnary(b76: UnaryExpression, c76: Scope): VeraType {
-        if (b76.operator === '-' && b76.operand instanceof IntExpression && b76.operand.value === 2147483648) {
-            this.model.expressionTypes.set(b76.operand, INT);
+    private checkUnary(h84: UnaryExpression, i84: Scope): VeraType {
+        if (h84.operator === '-' && h84.operand instanceof IntExpression && h84.operand.value === 2147483648) {
+            this.model.expressionTypes.set(h84.operand, INT);
             return INT;
         }
-        let d76 = this.checkExpression(b76.operand, c76, null);
-        if (b76.operator === '!') {
-            this.requireType(d76, BOOLEAN, b76.operand);
+        let j84 = this.checkExpression(h84.operand, i84, null);
+        if (h84.operator === '!') {
+            this.requireType(j84, BOOLEAN, h84.operand);
             return BOOLEAN;
         }
-        if (!identical(d76, INT) && !identical(d76, NUMBER))
-            this.addError('E2025', 'unary minus requires int or number', b76.span);
-        return d76;
+        if (!identical(j84, INT) && !identical(j84, NUMBER))
+            this.addError('E2025', 'unary minus requires int or number', h84.span);
+        return j84;
     }
-    private checkBinary(s75: BinaryExpression, t75: Scope): VeraType {
-        let u75 = this.checkExpression(s75.left, t75, null);
-        let v75 = this.checkExpression(s75.right, t75, null);
-        let w75 = s75.operator;
-        if (w75 === '===' || w75 === '!==') {
-            let y75 = this.isNullableNullPair(u75, v75) || this.isNullableNullPair(v75, u75);
-            let z75 = u75 instanceof PrimitiveType && identical(u75, v75) && !identical(u75, VOID);
-            let a76 = u75 instanceof VeraFunctionType && v75 instanceof VeraFunctionType && (subtypeOf(u75, v75) || subtypeOf(v75, u75));
-            if (!y75 && !z75 && !a76)
-                this.addError('E2026', 'unsupported equality operands', s75.span);
+    private checkBinary(y83: BinaryExpression, z83: Scope): VeraType {
+        let a84 = this.checkExpression(y83.left, z83, null);
+        let b84 = this.checkExpression(y83.right, z83, null);
+        let c84 = y83.operator;
+        if (c84 === '===' || c84 === '!==') {
+            let e84 = this.isNullableNullPair(a84, b84) || this.isNullableNullPair(b84, a84);
+            let f84 = a84 instanceof PrimitiveType && identical(a84, b84) && !identical(a84, VOID);
+            let g84 = a84 instanceof VeraFunctionType && b84 instanceof VeraFunctionType && (subtypeOf(a84, b84) || subtypeOf(b84, a84));
+            if (!e84 && !f84 && !g84)
+                this.addError('E2026', 'unsupported equality operands', y83.span);
             return BOOLEAN;
         }
-        if (w75 === '&&' || w75 === '||') {
-            this.requireType(u75, BOOLEAN, s75.left);
-            this.requireType(v75, BOOLEAN, s75.right);
+        if (c84 === '&&' || c84 === '||') {
+            this.requireType(a84, BOOLEAN, y83.left);
+            this.requireType(b84, BOOLEAN, y83.right);
             return BOOLEAN;
         }
-        if (w75 === '<' || w75 === '<=' || w75 === '>' || w75 === '>=') {
-            if ((!identical(u75, INT) && !identical(u75, NUMBER) && !identical(u75, STRING)) || !identical(u75, v75)) {
-                this.addError('E2027', 'relational operands must be equal int, number, or string types', s75.span);
+        if (c84 === '<' || c84 === '<=' || c84 === '>' || c84 === '>=') {
+            if ((!identical(a84, INT) && !identical(a84, NUMBER) && !identical(a84, STRING)) || !identical(a84, b84)) {
+                this.addError('E2027', 'relational operands must be equal int, number, or string types', y83.span);
             }
             return BOOLEAN;
         }
-        if (!identical(u75, v75))
-            this.addError('E2028', 'arithmetic operands must have identical types', s75.span);
-        let x75 = identical(u75, INT) || identical(u75, NUMBER) || (w75 === '+' && identical(u75, STRING));
-        if (!x75 || (w75 === '%' && !identical(u75, INT)))
-            this.addError('E2029', 'operator ' + w75 + ' is invalid for ' + u75.display(), s75.span);
-        return u75;
+        if (!identical(a84, b84))
+            this.addError('E2028', 'arithmetic operands must have identical types', y83.span);
+        let d84 = identical(a84, INT) || identical(a84, NUMBER) || (c84 === '+' && identical(a84, STRING));
+        if (!d84 || (c84 === '%' && !identical(a84, INT)))
+            this.addError('E2029', 'operator ' + c84 + ' is invalid for ' + a84.display(), y83.span);
+        return a84;
     }
-    private checkSelect(m75: SelectExpression, n75: Scope): VeraType {
-        let o75 = this.checkExpression(m75.target, n75, null);
-        if (o75 instanceof NamespaceType) {
-            let r75 = o75.members.get(m75.field);
-            if (r75 === undefined)
-                this.addError('E2030', 'namespace has no member ' + m75.field, m75.span);
-            return r75 !== undefined ? r75 : VOID;
+    private checkSelect(s83: SelectExpression, t83: Scope): VeraType {
+        let u83 = this.checkExpression(s83.target, t83, null);
+        if (u83 instanceof NamespaceType) {
+            let x83 = u83.members.get(s83.field);
+            if (x83 === undefined)
+                this.addError('E2030', 'namespace has no member ' + s83.field, s83.span);
+            return x83 !== undefined ? x83 : VOID;
         }
-        if ((o75 instanceof VeraArrayType || identical(o75, STRING)) && m75.field === 'length') {
+        if ((u83 instanceof VeraArrayType || identical(u83, STRING)) && s83.field === 'length') {
             return new VeraFunctionType([], INT, false, 'intrinsic:length');
         }
-        if (o75 instanceof VeraArrayType) {
-            let q75 = (o75 as VeraArrayType).element;
-            if (m75.field === 'push') {
-                return new VeraFunctionType([q75], INT, false, 'intrinsic:push');
+        if (u83 instanceof VeraArrayType) {
+            let w83 = (u83 as VeraArrayType).element;
+            if (s83.field === 'push') {
+                return new VeraFunctionType([w83], INT, false, 'intrinsic:push');
             }
-            if (m75.field === 'pop') {
-                return new VeraFunctionType([], q75, false, 'intrinsic:pop');
+            if (s83.field === 'pop') {
+                return new VeraFunctionType([], w83, false, 'intrinsic:pop');
             }
         }
-        if (o75 instanceof VeraClassType) {
-            let p75 = o75.fields.get(m75.field);
-            if (p75 === undefined)
-                this.addError('E2031', 'class ' + o75.name + ' has no field ' + m75.field, m75.span);
-            return p75 !== undefined ? p75 : VOID;
+        if (u83 instanceof VeraClassType) {
+            let v83 = u83.fields.get(s83.field);
+            if (v83 === undefined)
+                this.addError('E2031', 'class ' + u83.name + ' has no field ' + s83.field, s83.span);
+            return v83 !== undefined ? v83 : VOID;
         }
-        if (o75 instanceof NullableType)
-            this.addError('E2032', 'nullable value must be narrowed before field access', m75.span);
+        if (u83 instanceof NullableType)
+            this.addError('E2032', 'nullable value must be narrowed before field access', s83.span);
         else
-            this.addError('E2033', 'field selection requires class, array, string, or namespace', m75.span);
+            this.addError('E2033', 'field selection requires class, array, string, or namespace', s83.span);
         return VOID;
     }
-    private checkCall(f75: CallExpression, g75: Scope, h75: boolean): VeraType {
-        let i75 = this.checkExpression(f75.callee, g75, null);
-        if (!(i75 instanceof VeraFunctionType)) {
-            this.addError('E2034', 'callee is not a function', f75.callee.span);
+    private checkCall(l83: CallExpression, m83: Scope, n83: boolean): VeraType {
+        let o83 = this.checkExpression(l83.callee, m83, null);
+        if (!(o83 instanceof VeraFunctionType)) {
+            this.addError('E2034', 'callee is not a function', l83.callee.span);
             return VOID;
         }
-        if (i75.isAsync !== h75)
-            this.addError('E2035', i75.isAsync ? 'async call must be awaited' : 'synchronous call cannot be awaited', f75.span);
-        if (f75.argumentsList.length < i75.required ||
-            f75.argumentsList.length > i75.parameters.length) {
-            let l75 = i75.required === i75.parameters.length
-                ? i75.parameters.length.toString()
-                : i75.required.toString() + ' to ' + i75.parameters.length.toString();
-            this.addError('E2036', 'expected ' + l75 + ' arguments, found ' +
-                f75.argumentsList.length, f75.span);
+        if (o83.isAsync !== n83)
+            this.addError('E2035', o83.isAsync ? 'async call must be awaited' : 'synchronous call cannot be awaited', l83.span);
+        if (l83.argumentsList.length < o83.required ||
+            l83.argumentsList.length > o83.parameters.length) {
+            let r83 = o83.required === o83.parameters.length
+                ? o83.parameters.length.toString()
+                : o83.required.toString() + ' to ' + o83.parameters.length.toString();
+            this.addError('E2036', 'expected ' + r83 + ' arguments, found ' +
+                l83.argumentsList.length, l83.span);
         }
-        for (let j75 = 0; j75 < f75.argumentsList.length; j75++) {
-            let k75 = j75 < i75.parameters.length ? i75.parameters[j75] : null;
-            this.checkExpression(f75.argumentsList[j75], g75, k75);
+        for (let p83 = 0; p83 < l83.argumentsList.length; p83++) {
+            let q83 = p83 < o83.parameters.length ? o83.parameters[p83] : null;
+            this.checkExpression(l83.argumentsList[p83], m83, q83);
         }
-        this.checkStyleArguments(f75, i75);
-        this.checkComposition(f75, i75);
-        this.checkSdkArguments(f75, i75);
-        return i75.result;
+        this.checkStyleArguments(l83, o83);
+        this.checkComposition(l83, o83);
+        this.checkSdkArguments(l83, o83);
+        return o83.result;
     }
-    private checkComposition(s74: CallExpression, t74: VeraFunctionType): void {
-        const u74 = 'external:std/ui:';
-        if (!t74.identity.startsWith(u74))
+    private checkComposition(y82: CallExpression, z82: VeraFunctionType): void {
+        const a83 = 'external:std/ui:';
+        if (!z82.identity.startsWith(a83))
             return;
-        let v74 = t74.identity.substring(u74.length);
-        let w74: ChildRule | null = childRuleFor(v74);
-        if (w74 === null)
+        let b83 = z82.identity.substring(a83.length);
+        let c83: ChildRule | null = childRuleFor(b83);
+        if (c83 === null)
             return;
-        if (w74!.allowed.length > 0) {
-            for (let a75 of CATALOG) {
-                if (a75.name !== v74)
+        if (c83!.allowed.length > 0) {
+            for (let g83 of CATALOG) {
+                if (g83.name !== b83)
                     continue;
-                for (let b75 = 0; b75 < a75.props.length && b75 < s74.argumentsList.length; b75++) {
-                    if (a75.props[b75].kind !== 'view[]')
+                for (let h83 = 0; h83 < g83.props.length && h83 < y82.argumentsList.length; h83++) {
+                    if (g83.props[h83].kind !== 'view[]')
                         continue;
-                    let c75 = s74.argumentsList[b75];
-                    if (!(c75 instanceof ArrayExpression))
+                    let i83 = y82.argumentsList[h83];
+                    if (!(i83 instanceof ArrayExpression))
                         break;
-                    for (let d75 of (c75 as ArrayExpression).elements) {
-                        let e75 = this.uiComponentName(d75);
-                        if (e75.length === 0)
+                    for (let j83 of (i83 as ArrayExpression).elements) {
+                        let k83 = this.uiComponentName(j83);
+                        if (k83.length === 0)
                             continue;
-                        if (w74!.allowed.indexOf(e75) < 0) {
-                            this.addError('E2107', v74 + ' takes only ' + listWords(w74!.allowed) +
-                                ' children, not ' + e75, d75.span);
+                        if (c83!.allowed.indexOf(k83) < 0) {
+                            this.addError('E2107', b83 + ' takes only ' + listWords(c83!.allowed) +
+                                ' children, not ' + k83, j83.span);
                         }
                     }
                     break;
@@ -1807,305 +1807,305 @@ class Analyzer {
                 break;
             }
         }
-        for (let x74 of w74!.refusedInside) {
-            for (let y74 of s74.argumentsList) {
-                let z74 = this.findUiDescendant(y74, x74);
-                if (z74 !== null) {
-                    this.addError('E2107', v74 + ' may not contain another ' + x74, z74!.span);
+        for (let d83 of c83!.refusedInside) {
+            for (let e83 of y82.argumentsList) {
+                let f83 = this.findUiDescendant(e83, d83);
+                if (f83 !== null) {
+                    this.addError('E2107', b83 + ' may not contain another ' + d83, f83!.span);
                     break;
                 }
             }
         }
     }
-    private uiComponentName(o74: Expression): string {
-        if (!(o74 instanceof CallExpression))
+    private uiComponentName(u82: Expression): string {
+        if (!(u82 instanceof CallExpression))
             return '';
-        let p74 = (o74 as CallExpression).callee;
-        if (!(p74 instanceof SelectExpression))
+        let v82 = (u82 as CallExpression).callee;
+        if (!(v82 instanceof SelectExpression))
             return '';
-        let q74 = (p74 as SelectExpression).field;
-        if (q74 === 'When')
+        let w82 = (v82 as SelectExpression).field;
+        if (w82 === 'When')
             return 'When';
-        for (let r74 of CATALOG) {
-            if (r74.name === q74)
-                return q74;
+        for (let x82 of CATALOG) {
+            if (x82.name === w82)
+                return w82;
         }
         return '';
     }
-    private findUiDescendant(i74: Expression, j74: string): Expression | null {
-        if (i74 instanceof ArrayExpression) {
-            for (let m74 of (i74 as ArrayExpression).elements) {
-                let n74 = this.findUiDescendant(m74, j74);
-                if (n74 !== null)
-                    return n74;
+    private findUiDescendant(o82: Expression, p82: string): Expression | null {
+        if (o82 instanceof ArrayExpression) {
+            for (let s82 of (o82 as ArrayExpression).elements) {
+                let t82 = this.findUiDescendant(s82, p82);
+                if (t82 !== null)
+                    return t82;
             }
             return null;
         }
-        if (i74 instanceof CallExpression) {
-            if (this.uiComponentName(i74) === j74)
-                return i74;
-            for (let k74 of (i74 as CallExpression).argumentsList) {
-                let l74 = this.findUiDescendant(k74, j74);
-                if (l74 !== null)
-                    return l74;
+        if (o82 instanceof CallExpression) {
+            if (this.uiComponentName(o82) === p82)
+                return o82;
+            for (let q82 of (o82 as CallExpression).argumentsList) {
+                let r82 = this.findUiDescendant(q82, p82);
+                if (r82 !== null)
+                    return r82;
             }
         }
         return null;
     }
-    private checkStyleArguments(z73: CallExpression, a74: VeraFunctionType): void {
-        const b74 = 'external:std/ui:';
-        if (!a74.identity.startsWith(b74))
+    private checkStyleArguments(f82: CallExpression, g82: VeraFunctionType): void {
+        const h82 = 'external:std/ui:';
+        if (!g82.identity.startsWith(h82))
             return;
-        let c74 = a74.identity.substring(b74.length);
-        for (let d74 of CATALOG) {
-            if (d74.name !== c74)
+        let i82 = g82.identity.substring(h82.length);
+        for (let j82 of CATALOG) {
+            if (j82.name !== i82)
                 continue;
-            for (let e74 = 0; e74 < d74.props.length && e74 < z73.argumentsList.length; e74++) {
-                let f74 = d74.props[e74];
-                if (f74.styleSet.length === 0)
+            for (let k82 = 0; k82 < j82.props.length && k82 < f82.argumentsList.length; k82++) {
+                let l82 = j82.props[k82];
+                if (l82.styleSet.length === 0)
                     continue;
-                let g74 = z73.argumentsList[e74];
-                if (!(g74 instanceof StringExpression))
+                let m82 = f82.argumentsList[k82];
+                if (!(m82 instanceof StringExpression))
                     continue;
-                let h74 = stylesFor(d74.nodeKind);
-                if (h74.length === 0)
+                let n82 = stylesFor(j82.nodeKind);
+                if (n82.length === 0)
                     continue;
-                if (h74.indexOf((g74 as StringExpression).value) < 0) {
-                    this.addError('E2105', 'unknown ' + d74.name + ' style "' + (g74 as StringExpression).value +
-                        '"; allowed: ' + h74.join(' '), g74.span);
+                if (n82.indexOf((m82 as StringExpression).value) < 0) {
+                    this.addError('E2105', 'unknown ' + j82.name + ' style "' + (m82 as StringExpression).value +
+                        '"; allowed: ' + n82.join(' '), m82.span);
                 }
             }
-            this.checkIconArguments(z73, d74);
-            this.checkHandlerSignature(z73, d74);
+            this.checkIconArguments(f82, j82);
+            this.checkHandlerSignature(f82, j82);
             return;
         }
     }
-    private checkIconArguments(u73: CallExpression, v73: ComponentSpec): void {
-        for (let w73 = 0; w73 < v73.props.length && w73 < u73.argumentsList.length; w73++) {
-            if (v73.props[w73].kind !== 'icon')
+    private checkIconArguments(a82: CallExpression, b82: ComponentSpec): void {
+        for (let c82 = 0; c82 < b82.props.length && c82 < a82.argumentsList.length; c82++) {
+            if (b82.props[c82].kind !== 'icon')
                 continue;
-            let x73 = u73.argumentsList[w73];
-            if (!(x73 instanceof StringExpression))
+            let d82 = a82.argumentsList[c82];
+            if (!(d82 instanceof StringExpression))
                 continue;
-            let y73 = (x73 as StringExpression).value;
-            if (y73.length === 0)
+            let e82 = (d82 as StringExpression).value;
+            if (e82.length === 0)
                 continue;
-            if (iconPath(y73).length === 0) {
-                this.addError('E2108', 'unknown icon "' + y73 + '"; the icons are: ' +
-                    iconNames().join(' '), x73.span);
+            if (iconPath(e82).length === 0) {
+                this.addError('E2108', 'unknown icon "' + e82 + '"; the icons are: ' +
+                    iconNames().join(' '), d82.span);
             }
         }
     }
-    private checkSdkArguments(f73: CallExpression, g73: VeraFunctionType): void {
-        if (g73.identity !== 'external:std/sdk:call')
+    private checkSdkArguments(l81: CallExpression, m81: VeraFunctionType): void {
+        if (m81.identity !== 'external:std/sdk:call')
             return;
-        if (f73.argumentsList.length > 0 && f73.argumentsList[0] instanceof StringExpression) {
-            let p73 = f73.argumentsList[0];
-            let q73 = (p73 as StringExpression).value;
-            if (q73.indexOf('/') >= 0) {
-                let r73 = q73.split('/');
-                let s73 = false;
-                for (let t73 of r73) {
-                    if (t73.trim().length === 0) {
-                        s73 = true;
+        if (l81.argumentsList.length > 0 && l81.argumentsList[0] instanceof StringExpression) {
+            let v81 = l81.argumentsList[0];
+            let w81 = (v81 as StringExpression).value;
+            if (w81.indexOf('/') >= 0) {
+                let x81 = w81.split('/');
+                let y81 = false;
+                for (let z81 of x81) {
+                    if (z81.trim().length === 0) {
+                        y81 = true;
                     }
                 }
-                if ((r73.length !== 4 && r73.length !== 3) || s73) {
+                if ((x81.length !== 4 && x81.length !== 3) || y81) {
                     this.addError('E2109', 'an intent-style sdk.call target must be ' +
-                        '"bundle/module/ability/IntentName", or "bundle/module/ability" to just launch it; got "' + q73 + '"', p73.span);
+                        '"bundle/module/ability/IntentName", or "bundle/module/ability" to just launch it; got "' + w81 + '"', v81.span);
                 }
             }
-            else if (!isValidSdkTarget(q73)) {
-                this.addError('E2110', 'sdk.call target "' + q73 + '" is not one find_sdk_function ' +
-                    'returned; call it first and use a target exactly as it came back', p73.span);
+            else if (!isValidSdkTarget(w81)) {
+                this.addError('E2110', 'sdk.call target "' + w81 + '" is not one find_sdk_function ' +
+                    'returned; call it first and use a target exactly as it came back', v81.span);
             }
         }
-        if (f73.argumentsList.length > 1 && f73.argumentsList[1] instanceof ArrayExpression) {
-            let m73 = f73.argumentsList[1];
-            let n73 = (m73 as ArrayExpression).elements;
-            if (n73.length % 2 !== 0) {
+        if (l81.argumentsList.length > 1 && l81.argumentsList[1] instanceof ArrayExpression) {
+            let s81 = l81.argumentsList[1];
+            let t81 = (s81 as ArrayExpression).elements;
+            if (t81.length % 2 !== 0) {
                 this.addError('E2111', 'sdk.call parameters are name and value in pairs, so the ' +
-                    'array must have an even number of items; got ' + n73.length.toString(), m73.span);
+                    'array must have an even number of items; got ' + t81.length.toString(), s81.span);
             }
-            for (let o73 = 0; o73 + 1 < n73.length; o73 = o73 + 2) {
-                if (!(n73[o73] instanceof StringExpression)) {
+            for (let u81 = 0; u81 + 1 < t81.length; u81 = u81 + 2) {
+                if (!(t81[u81] instanceof StringExpression)) {
                     continue;
                 }
-                if ((n73[o73] as StringExpression).value.trim().length === 0) {
-                    this.addError('E2111', 'sdk.call parameter names cannot be empty', n73[o73].span);
+                if ((t81[u81] as StringExpression).value.trim().length === 0) {
+                    this.addError('E2111', 'sdk.call parameter names cannot be empty', t81[u81].span);
                 }
             }
         }
-        if (f73.argumentsList.length > 3 && f73.argumentsList[3] instanceof StringExpression) {
-            let k73 = f73.argumentsList[3];
-            let l73 = (k73 as StringExpression).value;
-            if (l73 !== 'foreground' && l73 !== 'background') {
-                this.addError('E2109', 'sdk.call mode must be "foreground" or "background"; got "' + l73 + '"', k73.span);
+        if (l81.argumentsList.length > 3 && l81.argumentsList[3] instanceof StringExpression) {
+            let q81 = l81.argumentsList[3];
+            let r81 = (q81 as StringExpression).value;
+            if (r81 !== 'foreground' && r81 !== 'background') {
+                this.addError('E2109', 'sdk.call mode must be "foreground" or "background"; got "' + r81 + '"', q81.span);
             }
         }
-        if (f73.argumentsList.length < 3 || !(f73.argumentsList[2] instanceof StringExpression))
+        if (l81.argumentsList.length < 3 || !(l81.argumentsList[2] instanceof StringExpression))
             return;
-        let h73 = f73.argumentsList[2];
-        let i73 = (h73 as StringExpression).value;
-        let j73 = this.model.functions.get(i73);
-        if (j73 === undefined) {
-            this.addError('E2106', 'no handler named "' + i73 + '"', h73.span);
+        let n81 = l81.argumentsList[2];
+        let o81 = (n81 as StringExpression).value;
+        let p81 = this.model.functions.get(o81);
+        if (p81 === undefined) {
+            this.addError('E2106', 'no handler named "' + o81 + '"', n81.span);
             return;
         }
-        if (j73.parameters.length < 2 || !identical(j73.parameters[1], STRING)) {
-            this.addError('E2106', 'sdk.call answers with a string, so "' + i73 +
-                '" must take (state, value: string)', h73.span);
+        if (p81.parameters.length < 2 || !identical(p81.parameters[1], STRING)) {
+            this.addError('E2106', 'sdk.call answers with a string, so "' + o81 +
+                '" must take (state, value: string)', n81.span);
         }
     }
-    private checkHandlerSignature(w72: CallExpression, x72: ComponentSpec): void {
-        let y72 = payloadKindFor(x72.nodeKind);
-        if (y72.length === 0)
+    private checkHandlerSignature(c81: CallExpression, d81: ComponentSpec): void {
+        let e81 = payloadKindFor(d81.nodeKind);
+        if (e81.length === 0)
             return;
-        for (let z72 = 0; z72 < x72.props.length && z72 < w72.argumentsList.length; z72++) {
-            if (x72.props[z72].name !== 'action')
+        for (let f81 = 0; f81 < d81.props.length && f81 < c81.argumentsList.length; f81++) {
+            if (d81.props[f81].name !== 'action')
                 continue;
-            let a73 = w72.argumentsList[z72];
-            if (!(a73 instanceof StringExpression))
+            let g81 = c81.argumentsList[f81];
+            if (!(g81 instanceof StringExpression))
                 return;
-            let b73 = (a73 as StringExpression).value;
-            let c73 = this.model.functions.get(b73);
-            if (c73 === undefined) {
-                this.addError('E2106', 'no handler named "' + b73 + '"', a73.span);
+            let h81 = (g81 as StringExpression).value;
+            let i81 = this.model.functions.get(h81);
+            if (i81 === undefined) {
+                this.addError('E2106', 'no handler named "' + h81 + '"', g81.span);
                 return;
             }
-            let d73: VeraType = y72 === 'string' ? STRING : y72 === 'boolean' ? BOOLEAN : INT;
-            if (c73.parameters.length < 2 || !identical(c73.parameters[1], d73)) {
-                let e73 = y72 === 'int' ? 'an ' : 'a ';
-                this.addError('E2106', x72.name + ' hands its handler ' + e73 + y72 + ', so "' + b73 + '" must take (state, value: ' + y72 + ')', a73.span);
+            let j81: VeraType = e81 === 'string' ? STRING : e81 === 'boolean' ? BOOLEAN : INT;
+            if (i81.parameters.length < 2 || !identical(i81.parameters[1], j81)) {
+                let k81 = e81 === 'int' ? 'an ' : 'a ';
+                this.addError('E2106', d81.name + ' hands its handler ' + k81 + e81 + ', so "' + h81 + '" must take (state, value: ' + e81 + ')', g81.span);
             }
             return;
         }
     }
-    private checkLambda(k72: LambdaExpression, l72: Scope): VeraType {
-        let m72: VeraType[] = [];
-        for (let v72 of k72.parameters)
-            m72.push(this.resolveType(v72.type));
-        let n72 = this.resolveType(k72.returnType);
-        let o72 = new VeraFunctionType(m72, n72, false, 'lambda:' + this.lambdaCount++);
-        let p72 = new Scope(l72);
-        for (let t72 = 0; t72 < k72.parameters.length; t72++) {
-            let u72 = k72.parameters[t72];
-            if (p72.find(u72.name) !== null)
-                this.addError('E2004', 'declaration ' + u72.name + ' shadows a visible entity', u72.span);
+    private checkLambda(q80: LambdaExpression, r80: Scope): VeraType {
+        let s80: VeraType[] = [];
+        for (let b81 of q80.parameters)
+            s80.push(this.resolveType(b81.type));
+        let t80 = this.resolveType(q80.returnType);
+        let u80 = new VeraFunctionType(s80, t80, false, 'lambda:' + this.lambdaCount++);
+        let v80 = new Scope(r80);
+        for (let z80 = 0; z80 < q80.parameters.length; z80++) {
+            let a81 = q80.parameters[z80];
+            if (v80.find(a81.name) !== null)
+                this.addError('E2004', 'declaration ' + a81.name + ' shadows a visible entity', a81.span);
             else
-                p72.values.set(u72.name, m72[t72]);
+                v80.values.set(a81.name, s80[z80]);
         }
-        let q72 = this.returnType;
-        let r72 = this.inAsyncFunction;
-        this.returnType = n72;
+        let w80 = this.returnType;
+        let x80 = this.inAsyncFunction;
+        this.returnType = t80;
         this.inAsyncFunction = false;
-        let s72 = this.checkBlock(k72.body, p72);
-        this.returnType = q72;
-        this.inAsyncFunction = r72;
-        if (!identical(n72, VOID) && !s72)
-            this.addError('E2018', 'lambda may not return a value', k72.body.span);
-        return o72;
+        let y80 = this.checkBlock(q80.body, v80);
+        this.returnType = w80;
+        this.inAsyncFunction = x80;
+        if (!identical(t80, VOID) && !y80)
+            this.addError('E2018', 'lambda may not return a value', q80.body.span);
+        return u80;
     }
-    private narrow(c72: Expression, d72: Scope): Narrowing {
-        let e72 = new Scope(d72);
-        let f72 = new Scope(d72);
-        if (c72 instanceof BinaryExpression) {
-            let g72 = c72.operator;
-            if (g72 !== '===' && g72 !== '!==')
-                return new Narrowing(e72, f72);
-            let h72: NameExpression | null = null;
-            if (c72.left instanceof NameExpression && c72.right instanceof NullExpression)
-                h72 = c72.left;
-            else if (c72.right instanceof NameExpression && c72.left instanceof NullExpression)
-                h72 = c72.right;
-            if (h72 !== null) {
-                let i72 = d72.find(h72.name);
-                if (i72 !== null && i72 instanceof NullableType) {
-                    let j72 = g72 === '!==' ? e72 : f72;
-                    j72.values.set(h72.name, i72.base);
+    private narrow(i80: Expression, j80: Scope): Narrowing {
+        let k80 = new Scope(j80);
+        let l80 = new Scope(j80);
+        if (i80 instanceof BinaryExpression) {
+            let m80 = i80.operator;
+            if (m80 !== '===' && m80 !== '!==')
+                return new Narrowing(k80, l80);
+            let n80: NameExpression | null = null;
+            if (i80.left instanceof NameExpression && i80.right instanceof NullExpression)
+                n80 = i80.left;
+            else if (i80.right instanceof NameExpression && i80.left instanceof NullExpression)
+                n80 = i80.right;
+            if (n80 !== null) {
+                let o80 = j80.find(n80.name);
+                if (o80 !== null && o80 instanceof NullableType) {
+                    let p80 = m80 === '!==' ? k80 : l80;
+                    p80.values.set(n80.name, o80.base);
                 }
             }
         }
-        return new Narrowing(e72, f72);
+        return new Narrowing(k80, l80);
     }
-    resolveType(x71: TypeNode): VeraType {
-        let y71 = this.model.declaredTypes.get(x71);
-        if (y71 !== undefined)
-            return y71;
-        let z71: VeraType;
-        if (x71.name === 'int')
-            z71 = INT;
-        else if (x71.name === 'number')
-            z71 = NUMBER;
-        else if (x71.name === 'boolean')
-            z71 = BOOLEAN;
-        else if (x71.name === 'string')
-            z71 = STRING;
-        else if (x71.name === 'void')
-            z71 = VOID;
-        else if (x71.name === 'array')
-            z71 = new VeraArrayType(this.resolveType(x71.parts[0]));
-        else if (x71.name === 'function' || x71.name === 'async-function') {
-            let a72: VeraType[] = [];
-            for (let b72 of x71.parts)
-                a72.push(this.resolveType(b72));
-            z71 = new VeraFunctionType(a72.slice(0, -1), a72[a72.length - 1], x71.name === 'async-function', 'function-type');
+    resolveType(d80: TypeNode): VeraType {
+        let e80 = this.model.declaredTypes.get(d80);
+        if (e80 !== undefined)
+            return e80;
+        let f80: VeraType;
+        if (d80.name === 'int')
+            f80 = INT;
+        else if (d80.name === 'number')
+            f80 = NUMBER;
+        else if (d80.name === 'boolean')
+            f80 = BOOLEAN;
+        else if (d80.name === 'string')
+            f80 = STRING;
+        else if (d80.name === 'void')
+            f80 = VOID;
+        else if (d80.name === 'array')
+            f80 = new VeraArrayType(this.resolveType(d80.parts[0]));
+        else if (d80.name === 'function' || d80.name === 'async-function') {
+            let g80: VeraType[] = [];
+            for (let h80 of d80.parts)
+                g80.push(this.resolveType(h80));
+            f80 = new VeraFunctionType(g80.slice(0, -1), g80[g80.length - 1], d80.name === 'async-function', 'function-type');
         }
         else
-            z71 = this.resolveNamedType(x71.name, x71);
-        if (x71.nullable) {
-            if (identical(z71, VOID))
-                this.addError('E2037', 'void cannot be nullable', x71.span);
-            z71 = new NullableType(z71);
+            f80 = this.resolveNamedType(d80.name, d80);
+        if (d80.nullable) {
+            if (identical(f80, VOID))
+                this.addError('E2037', 'void cannot be nullable', d80.span);
+            f80 = new NullableType(f80);
         }
-        this.model.declaredTypes.set(x71, z71);
-        return z71;
+        this.model.declaredTypes.set(d80, f80);
+        return f80;
     }
-    private resolveNamedType(r71: string, s71: TypeNode): VeraType {
-        let t71 = r71.split('.');
-        let u71: VeraType | null = this.globals.find(t71[0]);
-        for (let v71 = 1; v71 < t71.length; v71++) {
-            if (u71 instanceof NamespaceType) {
-                let w71 = u71.members.get(t71[v71]);
-                u71 = w71 !== undefined ? w71 : null;
+    private resolveNamedType(x79: string, y79: TypeNode): VeraType {
+        let z79 = x79.split('.');
+        let a80: VeraType | null = this.globals.find(z79[0]);
+        for (let b80 = 1; b80 < z79.length; b80++) {
+            if (a80 instanceof NamespaceType) {
+                let c80 = a80.members.get(z79[b80]);
+                a80 = c80 !== undefined ? c80 : null;
             }
             else {
-                u71 = null;
+                a80 = null;
             }
         }
-        if (!(u71 instanceof VeraClassType)) {
-            this.addError('E2038', 'unknown class type ' + r71, s71.span);
+        if (!(a80 instanceof VeraClassType)) {
+            this.addError('E2038', 'unknown class type ' + x79, y79.span);
             return VOID;
         }
-        return u71;
+        return a80;
     }
-    private isNullableNullPair(p71: VeraType, q71: VeraType): boolean {
-        return p71 instanceof NullableType && q71 instanceof VeraNullType;
+    private isNullableNullPair(v79: VeraType, w79: VeraType): boolean {
+        return v79 instanceof NullableType && w79 instanceof VeraNullType;
     }
-    private requireType(m71: VeraType, n71: VeraType, o71: Expression): void {
-        if (!identical(m71, n71))
-            this.typeError(o71, n71, m71);
+    private requireType(s79: VeraType, t79: VeraType, u79: Expression): void {
+        if (!identical(s79, t79))
+            this.typeError(u79, t79, s79);
     }
-    private typeError(j71: Expression, k71: VeraType, l71: VeraType): void {
-        this.diagnostics.push(new Diagnostic('E2019', 'expected ' + k71.display() + ', found ' + l71.display(), j71.span, k71.display(), l71.display()));
+    private typeError(p79: Expression, q79: VeraType, r79: VeraType): void {
+        this.diagnostics.push(new Diagnostic('E2019', 'expected ' + q79.display() + ', found ' + r79.display(), p79.span, q79.display(), r79.display()));
     }
-    private addError(g71: string, h71: string, i71: Span): void {
-        this.diagnostics.push(new Diagnostic(g71, h71, i71));
+    private addError(m79: string, n79: string, o79: Span): void {
+        this.diagnostics.push(new Diagnostic(m79, n79, o79));
     }
 }
 class Binding {
     location: string;
     slot: number;
-    constructor(e71: string, f71: number) { this.location = e71; this.slot = f71; }
+    constructor(k79: string, l79: number) { this.location = k79; this.slot = l79; }
 }
 class LoopLabels {
     breaks: number[];
     continues: number[];
     continueTarget: number;
-    constructor(b71: number[], c71: number[], d71: number) {
-        this.breaks = b71;
-        this.continues = c71;
-        this.continueTarget = d71;
+    constructor(h79: number[], i79: number[], j79: number) {
+        this.breaks = h79;
+        this.continues = i79;
+        this.continueTarget = j79;
     }
 }
 class FunctionBuilder {
@@ -2116,458 +2116,458 @@ class FunctionBuilder {
     localCount: number = 0;
     name: string;
     parent: FunctionBuilder | null;
-    constructor(z70: string, a71: FunctionBuilder | null) {
-        this.name = z70;
-        this.parent = a71;
+    constructor(f79: string, g79: FunctionBuilder | null) {
+        this.name = f79;
+        this.parent = g79;
     }
-    emit(y70: Instruction): number {
-        this.instructions.push(y70);
+    emit(e79: Instruction): number {
+        this.instructions.push(e79);
         return this.instructions.length - 1;
     }
-    local(w70: string): number {
-        let x70 = this.localCount++;
-        this.bindings.set(w70, new Binding('local', x70));
-        return x70;
+    local(c79: string): number {
+        let d79 = this.localCount++;
+        this.bindings.set(c79, new Binding('local', d79));
+        return d79;
     }
 }
-function mkInst(v70: string): Instruction { return new Instruction(v70); }
-function mkPushInt(t70: string): Instruction { let u70 = mkInst('push-int'); u70.value = t70; return u70; }
-function mkPushNumber(r70: number): Instruction { let s70 = mkInst('push-number'); s70.numValue = r70; return s70; }
-function mkPushString(p70: string): Instruction { let q70 = mkInst('push-string'); q70.value = p70; return q70; }
-function mkPushBoolean(n70: boolean): Instruction { let o70 = mkInst('push-boolean'); o70.boolValue = n70; return o70; }
-function mkLoadLocal(l70: number): Instruction { let m70 = mkInst('load-local'); m70.slot = l70; return m70; }
-function mkStoreLocal(j70: number): Instruction { let k70 = mkInst('store-local'); k70.slot = j70; return k70; }
-function mkLoadCapture(h70: number): Instruction { let i70 = mkInst('load-capture'); i70.slot = h70; return i70; }
-function mkStoreCapture(f70: number): Instruction { let g70 = mkInst('store-capture'); g70.slot = f70; return g70; }
-function mkLoadFunction(d70: string): Instruction { let e70 = mkInst('load-function'); e70.name = d70; return e70; }
-function mkLoadExternal(a70: string, b70: string): Instruction { let c70 = mkInst('load-external'); c70.module = a70; c70.name = b70; return c70; }
-function mkUnary(y69: string): Instruction { let z69 = mkInst('unary'); z69.operator = y69; return z69; }
-function mkBinary(v69: string, w69: boolean): Instruction { let x69 = mkInst('binary'); x69.operator = v69; x69.integer = w69; return x69; }
-function mkJump(t69: number): Instruction { let u69 = mkInst('jump'); u69.target = t69; return u69; }
-function mkJumpIfFalse(r69: number): Instruction { let s69 = mkInst('jump-if-false'); s69.target = r69; return s69; }
-function mkCall(o69: number, p69: boolean): Instruction { let q69 = mkInst('call'); q69.count = o69; q69.awaited = p69; return q69; }
-function mkMakeArray(m69: number): Instruction { let n69 = mkInst('make-array'); n69.count = m69; return n69; }
-function mkMakeObject(j69: string, k69: string[]): Instruction {
-    let l69 = mkInst('make-object');
-    l69.classIdentity = j69;
-    l69.fields = k69;
-    return l69;
+function mkInst(b79: string): Instruction { return new Instruction(b79); }
+function mkPushInt(z78: string): Instruction { let a79 = mkInst('push-int'); a79.value = z78; return a79; }
+function mkPushNumber(x78: number): Instruction { let y78 = mkInst('push-number'); y78.numValue = x78; return y78; }
+function mkPushString(v78: string): Instruction { let w78 = mkInst('push-string'); w78.value = v78; return w78; }
+function mkPushBoolean(t78: boolean): Instruction { let u78 = mkInst('push-boolean'); u78.boolValue = t78; return u78; }
+function mkLoadLocal(r78: number): Instruction { let s78 = mkInst('load-local'); s78.slot = r78; return s78; }
+function mkStoreLocal(p78: number): Instruction { let q78 = mkInst('store-local'); q78.slot = p78; return q78; }
+function mkLoadCapture(n78: number): Instruction { let o78 = mkInst('load-capture'); o78.slot = n78; return o78; }
+function mkStoreCapture(l78: number): Instruction { let m78 = mkInst('store-capture'); m78.slot = l78; return m78; }
+function mkLoadFunction(j78: string): Instruction { let k78 = mkInst('load-function'); k78.name = j78; return k78; }
+function mkLoadExternal(g78: string, h78: string): Instruction { let i78 = mkInst('load-external'); i78.module = g78; i78.name = h78; return i78; }
+function mkUnary(e78: string): Instruction { let f78 = mkInst('unary'); f78.operator = e78; return f78; }
+function mkBinary(b78: string, c78: boolean): Instruction { let d78 = mkInst('binary'); d78.operator = b78; d78.integer = c78; return d78; }
+function mkJump(z77: number): Instruction { let a78 = mkInst('jump'); a78.target = z77; return a78; }
+function mkJumpIfFalse(x77: number): Instruction { let y77 = mkInst('jump-if-false'); y77.target = x77; return y77; }
+function mkCall(u77: number, v77: boolean): Instruction { let w77 = mkInst('call'); w77.count = u77; w77.awaited = v77; return w77; }
+function mkMakeArray(s77: number): Instruction { let t77 = mkInst('make-array'); t77.count = s77; return t77; }
+function mkMakeObject(p77: string, q77: string[]): Instruction {
+    let r77 = mkInst('make-object');
+    r77.classIdentity = p77;
+    r77.fields = q77;
+    return r77;
 }
-function mkLoadField(h69: string): Instruction { let i69 = mkInst('load-field'); i69.name = h69; return i69; }
-function mkStoreField(f69: string): Instruction { let g69 = mkInst('store-field'); g69.name = f69; return g69; }
-function mkMakeClosure(c69: string, d69: number[]): Instruction {
-    let e69 = mkInst('make-closure');
-    e69.functionName = c69;
-    e69.captures = d69;
-    return e69;
+function mkLoadField(n77: string): Instruction { let o77 = mkInst('load-field'); o77.name = n77; return o77; }
+function mkStoreField(l77: string): Instruction { let m77 = mkInst('store-field'); m77.name = l77; return m77; }
+function mkMakeClosure(i77: string, j77: number[]): Instruction {
+    let k77 = mkInst('make-closure');
+    k77.functionName = i77;
+    k77.captures = j77;
+    return k77;
 }
 class BytecodeCompiler {
     private functions: BytecodeFunction[] = [];
     private lambdaCount: number = 0;
     private model: SemanticModel;
-    constructor(b69: SemanticModel) { this.model = b69; }
+    constructor(h77: SemanticModel) { this.model = h77; }
     compile(): BytecodeModule {
-        for (let a69 of this.model.application.declarations) {
-            if (a69 instanceof FunctionDeclaration)
-                this.compileFunction(a69);
+        for (let g77 of this.model.application.declarations) {
+            if (g77 instanceof FunctionDeclaration)
+                this.compileFunction(g77);
         }
-        let x68: string[] = [];
-        let y68 = Array.from(this.model.functions.keys());
-        for (let z68 of y68)
-            x68.push(z68);
-        return new BytecodeModule(this.functions, x68);
+        let d77: string[] = [];
+        let e77 = Array.from(this.model.functions.keys());
+        for (let f77 of e77)
+            d77.push(f77);
+        return new BytecodeModule(this.functions, d77);
     }
-    private compileFunction(u68: FunctionDeclaration): void {
-        let v68 = new FunctionBuilder(u68.name, null);
-        for (let w68 of u68.parameters)
-            v68.local(w68.name);
-        this.block(u68.body, v68);
-        v68.emit(mkInst('push-null'));
-        v68.emit(mkInst('return'));
-        this.functions.push(new BytecodeFunction(u68.name, u68.parameters.length, v68.localCount, u68.isAsync, v68.instructions));
+    private compileFunction(a77: FunctionDeclaration): void {
+        let b77 = new FunctionBuilder(a77.name, null);
+        for (let c77 of a77.parameters)
+            b77.local(c77.name);
+        this.block(a77.body, b77);
+        b77.emit(mkInst('push-null'));
+        b77.emit(mkInst('return'));
+        this.functions.push(new BytecodeFunction(a77.name, a77.parameters.length, b77.localCount, a77.isAsync, b77.instructions));
     }
-    private block(r68: BlockStatement, s68: FunctionBuilder): void {
-        for (let t68 of r68.statements)
-            this.statement(t68, s68);
+    private block(x76: BlockStatement, y76: FunctionBuilder): void {
+        for (let z76 of x76.statements)
+            this.statement(z76, y76);
     }
-    private statement(h68: Statement, i68: FunctionBuilder): void {
-        if (h68 instanceof BlockStatement)
-            this.block(h68, i68);
-        else if (h68 instanceof LetStatement) {
-            this.expression(h68.initializer, i68);
-            i68.emit(mkStoreLocal(i68.local(h68.name)));
+    private statement(n76: Statement, o76: FunctionBuilder): void {
+        if (n76 instanceof BlockStatement)
+            this.block(n76, o76);
+        else if (n76 instanceof LetStatement) {
+            this.expression(n76.initializer, o76);
+            o76.emit(mkStoreLocal(o76.local(n76.name)));
         }
-        else if (h68 instanceof ExpressionStatement) {
-            this.expression(h68.expression, i68);
-            i68.emit(mkInst('pop'));
+        else if (n76 instanceof ExpressionStatement) {
+            this.expression(n76.expression, o76);
+            o76.emit(mkInst('pop'));
         }
-        else if (h68 instanceof AssignStatement)
-            this.assignment(h68, i68);
-        else if (h68 instanceof ReturnStatement) {
-            if (h68.value === null)
-                i68.emit(mkInst('push-null'));
+        else if (n76 instanceof AssignStatement)
+            this.assignment(n76, o76);
+        else if (n76 instanceof ReturnStatement) {
+            if (n76.value === null)
+                o76.emit(mkInst('push-null'));
             else
-                this.expression(h68.value, i68);
-            i68.emit(mkInst('return'));
+                this.expression(n76.value, o76);
+            o76.emit(mkInst('return'));
         }
-        else if (h68 instanceof IfStatement) {
-            this.expression(h68.condition, i68);
-            let p68 = i68.emit(mkJumpIfFalse(-1));
-            this.block(h68.thenBranch, i68);
-            if (h68.elseBranch !== null) {
-                let q68 = i68.emit(mkJump(-1));
-                this.patch(i68, p68, i68.instructions.length);
-                this.statement(h68.elseBranch, i68);
-                this.patch(i68, q68, i68.instructions.length);
+        else if (n76 instanceof IfStatement) {
+            this.expression(n76.condition, o76);
+            let v76 = o76.emit(mkJumpIfFalse(-1));
+            this.block(n76.thenBranch, o76);
+            if (n76.elseBranch !== null) {
+                let w76 = o76.emit(mkJump(-1));
+                this.patch(o76, v76, o76.instructions.length);
+                this.statement(n76.elseBranch, o76);
+                this.patch(o76, w76, o76.instructions.length);
             }
             else {
-                this.patch(i68, p68, i68.instructions.length);
+                this.patch(o76, v76, o76.instructions.length);
             }
         }
-        else if (h68 instanceof WhileStatement) {
-            let l68 = i68.instructions.length;
-            this.expression(h68.condition, i68);
-            let m68 = i68.emit(mkJumpIfFalse(-1));
-            let n68 = new LoopLabels([], [], l68);
-            i68.loops.push(n68);
-            this.block(h68.body, i68);
-            i68.emit(mkJump(l68));
-            let o68 = i68.instructions.length;
-            this.patch(i68, m68, o68);
-            this.finishLoop(i68, n68, o68, true);
+        else if (n76 instanceof WhileStatement) {
+            let r76 = o76.instructions.length;
+            this.expression(n76.condition, o76);
+            let s76 = o76.emit(mkJumpIfFalse(-1));
+            let t76 = new LoopLabels([], [], r76);
+            o76.loops.push(t76);
+            this.block(n76.body, o76);
+            o76.emit(mkJump(r76));
+            let u76 = o76.instructions.length;
+            this.patch(o76, s76, u76);
+            this.finishLoop(o76, t76, u76, true);
         }
-        else if (h68 instanceof ForOfStatement)
-            this.forOf(h68, i68);
-        else if (h68 instanceof TryStatement) {
-            this.block(h68.tryBlock, i68);
+        else if (n76 instanceof ForOfStatement)
+            this.forOf(n76, o76);
+        else if (n76 instanceof TryStatement) {
+            this.block(n76.tryBlock, o76);
         }
-        else if (h68 instanceof BreakStatement) {
-            let k68 = i68.loops[i68.loops.length - 1];
-            k68.breaks.push(i68.emit(mkJump(-1)));
+        else if (n76 instanceof BreakStatement) {
+            let q76 = o76.loops[o76.loops.length - 1];
+            q76.breaks.push(o76.emit(mkJump(-1)));
         }
-        else if (h68 instanceof ContinueStatement) {
-            let j68 = i68.loops[i68.loops.length - 1];
-            j68.continues.push(i68.emit(mkJump(-1)));
-        }
-    }
-    private forOf(w67: ForOfStatement, x67: FunctionBuilder): void {
-        let y67 = x67.local('$array' + x67.localCount);
-        let z67 = x67.local('$index' + x67.localCount);
-        let a68 = x67.local(w67.name);
-        this.expression(w67.iterable, x67);
-        if (this.model.expressionTypes.get(w67.iterable) === STRING)
-            x67.emit(mkInst('string-symbols'));
-        x67.emit(mkStoreLocal(y67));
-        x67.emit(mkPushInt('0'));
-        x67.emit(mkStoreLocal(z67));
-        let b68 = x67.instructions.length;
-        x67.emit(mkLoadLocal(z67));
-        x67.emit(mkLoadLocal(y67));
-        x67.emit(mkInst('length'));
-        x67.emit(mkBinary('<', true));
-        let c68 = x67.emit(mkJumpIfFalse(-1));
-        x67.emit(mkLoadLocal(y67));
-        x67.emit(mkLoadLocal(z67));
-        x67.emit(mkInst('load-index'));
-        x67.emit(mkStoreLocal(a68));
-        let d68 = new LoopLabels([], [], -1);
-        x67.loops.push(d68);
-        this.block(w67.body, x67);
-        let e68 = x67.instructions.length;
-        x67.emit(mkLoadLocal(z67));
-        x67.emit(mkPushInt('1'));
-        x67.emit(mkBinary('+', true));
-        x67.emit(mkStoreLocal(z67));
-        x67.emit(mkJump(b68));
-        let f68 = x67.instructions.length;
-        this.patch(x67, c68, f68);
-        let g68 = new LoopLabels(d68.breaks, d68.continues, e68);
-        x67.loops.pop();
-        this.finishLoop(x67, g68, f68, false);
-    }
-    private finishLoop(q67: FunctionBuilder, r67: LoopLabels, s67: number, t67: boolean): void {
-        if (t67)
-            q67.loops.pop();
-        for (let v67 of r67.breaks)
-            this.patch(q67, v67, s67);
-        for (let u67 of r67.continues)
-            this.patch(q67, u67, r67.continueTarget);
-    }
-    private assignment(n67: AssignStatement, o67: FunctionBuilder): void {
-        let p67 = n67.target;
-        if (p67 instanceof NameExpression) {
-            this.expression(n67.value, o67);
-            this.storeName(p67.name, o67);
-        }
-        else if (p67 instanceof IndexExpression) {
-            this.expression(p67.target, o67);
-            this.expression(p67.index, o67);
-            this.expression(n67.value, o67);
-            o67.emit(mkInst('store-index'));
-        }
-        else if (p67 instanceof SelectExpression) {
-            this.expression(p67.target, o67);
-            this.expression(n67.value, o67);
-            o67.emit(mkStoreField(p67.field));
+        else if (n76 instanceof ContinueStatement) {
+            let p76 = o76.loops[o76.loops.length - 1];
+            p76.continues.push(o76.emit(mkJump(-1)));
         }
     }
-    private expression(d67: Expression, e67: FunctionBuilder): void {
-        if (d67 instanceof IntExpression) {
-            let m67 = this.model.expressionTypes.get(d67);
-            if (m67 !== undefined && identical(m67, NUMBER))
-                e67.emit(mkPushNumber(d67.value));
+    private forOf(c76: ForOfStatement, d76: FunctionBuilder): void {
+        let e76 = d76.local('$array' + d76.localCount);
+        let f76 = d76.local('$index' + d76.localCount);
+        let g76 = d76.local(c76.name);
+        this.expression(c76.iterable, d76);
+        if (this.model.expressionTypes.get(c76.iterable) === STRING)
+            d76.emit(mkInst('string-symbols'));
+        d76.emit(mkStoreLocal(e76));
+        d76.emit(mkPushInt('0'));
+        d76.emit(mkStoreLocal(f76));
+        let h76 = d76.instructions.length;
+        d76.emit(mkLoadLocal(f76));
+        d76.emit(mkLoadLocal(e76));
+        d76.emit(mkInst('length'));
+        d76.emit(mkBinary('<', true));
+        let i76 = d76.emit(mkJumpIfFalse(-1));
+        d76.emit(mkLoadLocal(e76));
+        d76.emit(mkLoadLocal(f76));
+        d76.emit(mkInst('load-index'));
+        d76.emit(mkStoreLocal(g76));
+        let j76 = new LoopLabels([], [], -1);
+        d76.loops.push(j76);
+        this.block(c76.body, d76);
+        let k76 = d76.instructions.length;
+        d76.emit(mkLoadLocal(f76));
+        d76.emit(mkPushInt('1'));
+        d76.emit(mkBinary('+', true));
+        d76.emit(mkStoreLocal(f76));
+        d76.emit(mkJump(h76));
+        let l76 = d76.instructions.length;
+        this.patch(d76, i76, l76);
+        let m76 = new LoopLabels(j76.breaks, j76.continues, k76);
+        d76.loops.pop();
+        this.finishLoop(d76, m76, l76, false);
+    }
+    private finishLoop(w75: FunctionBuilder, x75: LoopLabels, y75: number, z75: boolean): void {
+        if (z75)
+            w75.loops.pop();
+        for (let b76 of x75.breaks)
+            this.patch(w75, b76, y75);
+        for (let a76 of x75.continues)
+            this.patch(w75, a76, x75.continueTarget);
+    }
+    private assignment(t75: AssignStatement, u75: FunctionBuilder): void {
+        let v75 = t75.target;
+        if (v75 instanceof NameExpression) {
+            this.expression(t75.value, u75);
+            this.storeName(v75.name, u75);
+        }
+        else if (v75 instanceof IndexExpression) {
+            this.expression(v75.target, u75);
+            this.expression(v75.index, u75);
+            this.expression(t75.value, u75);
+            u75.emit(mkInst('store-index'));
+        }
+        else if (v75 instanceof SelectExpression) {
+            this.expression(v75.target, u75);
+            this.expression(t75.value, u75);
+            u75.emit(mkStoreField(v75.field));
+        }
+    }
+    private expression(j75: Expression, k75: FunctionBuilder): void {
+        if (j75 instanceof IntExpression) {
+            let s75 = this.model.expressionTypes.get(j75);
+            if (s75 !== undefined && identical(s75, NUMBER))
+                k75.emit(mkPushNumber(j75.value));
             else
-                e67.emit(mkPushInt(d67.value.toString()));
+                k75.emit(mkPushInt(j75.value.toString()));
         }
-        else if (d67 instanceof NumberExpression)
-            e67.emit(mkPushNumber(d67.value));
-        else if (d67 instanceof StringExpression)
-            e67.emit(mkPushString(d67.value));
-        else if (d67 instanceof BooleanExpression)
-            e67.emit(mkPushBoolean(d67.value));
-        else if (d67 instanceof NullExpression)
-            e67.emit(mkInst('push-null'));
-        else if (d67 instanceof NameExpression)
-            this.loadName(d67.name, e67);
-        else if (d67 instanceof UnaryExpression) {
-            if (d67.operator === '-' && d67.operand instanceof IntExpression && d67.operand.value === 2147483648) {
-                e67.emit(mkPushInt('-2147483648'));
+        else if (j75 instanceof NumberExpression)
+            k75.emit(mkPushNumber(j75.value));
+        else if (j75 instanceof StringExpression)
+            k75.emit(mkPushString(j75.value));
+        else if (j75 instanceof BooleanExpression)
+            k75.emit(mkPushBoolean(j75.value));
+        else if (j75 instanceof NullExpression)
+            k75.emit(mkInst('push-null'));
+        else if (j75 instanceof NameExpression)
+            this.loadName(j75.name, k75);
+        else if (j75 instanceof UnaryExpression) {
+            if (j75.operator === '-' && j75.operand instanceof IntExpression && j75.operand.value === 2147483648) {
+                k75.emit(mkPushInt('-2147483648'));
             }
             else {
-                this.expression(d67.operand, e67);
-                e67.emit(mkUnary(d67.operator));
+                this.expression(j75.operand, k75);
+                k75.emit(mkUnary(j75.operator));
             }
         }
-        else if (d67 instanceof BinaryExpression)
-            this.binary(d67, e67);
-        else if (d67 instanceof CallExpression) {
-            if (d67.callee instanceof SelectExpression && d67.callee.field === 'push' && d67.argumentsList.length === 1 &&
-                this.model.expressionTypes.get(d67.callee.target) instanceof VeraArrayType) {
-                this.expression(d67.callee.target, e67);
-                this.expression(d67.argumentsList[0], e67);
-                e67.emit(mkInst('array-push'));
+        else if (j75 instanceof BinaryExpression)
+            this.binary(j75, k75);
+        else if (j75 instanceof CallExpression) {
+            if (j75.callee instanceof SelectExpression && j75.callee.field === 'push' && j75.argumentsList.length === 1 &&
+                this.model.expressionTypes.get(j75.callee.target) instanceof VeraArrayType) {
+                this.expression(j75.callee.target, k75);
+                this.expression(j75.argumentsList[0], k75);
+                k75.emit(mkInst('array-push'));
             }
-            else if (d67.callee instanceof SelectExpression && d67.callee.field === 'pop' && d67.argumentsList.length === 0 &&
-                this.model.expressionTypes.get(d67.callee.target) instanceof VeraArrayType) {
-                this.expression(d67.callee.target, e67);
-                e67.emit(mkInst('array-pop'));
+            else if (j75.callee instanceof SelectExpression && j75.callee.field === 'pop' && j75.argumentsList.length === 0 &&
+                this.model.expressionTypes.get(j75.callee.target) instanceof VeraArrayType) {
+                this.expression(j75.callee.target, k75);
+                k75.emit(mkInst('array-pop'));
             }
-            else if (d67.callee instanceof SelectExpression && d67.callee.field === 'length' && d67.argumentsList.length === 0) {
-                this.expression(d67.callee.target, e67);
-                e67.emit(mkInst('length'));
+            else if (j75.callee instanceof SelectExpression && j75.callee.field === 'length' && j75.argumentsList.length === 0) {
+                this.expression(j75.callee.target, k75);
+                k75.emit(mkInst('length'));
             }
             else {
-                this.call(d67, e67, false);
+                this.call(j75, k75, false);
             }
         }
-        else if (d67 instanceof AwaitExpression) {
-            if (d67.operand instanceof CallExpression)
-                this.call(d67.operand, e67, true);
+        else if (j75 instanceof AwaitExpression) {
+            if (j75.operand instanceof CallExpression)
+                this.call(j75.operand, k75, true);
         }
-        else if (d67 instanceof ArrayExpression) {
-            for (let l67 of d67.elements)
-                this.expression(l67, e67);
-            e67.emit(mkMakeArray(d67.elements.length));
+        else if (j75 instanceof ArrayExpression) {
+            for (let r75 of j75.elements)
+                this.expression(r75, k75);
+            k75.emit(mkMakeArray(j75.elements.length));
         }
-        else if (d67 instanceof ObjectExpression) {
-            for (let k67 of d67.properties)
-                this.expression(k67.value, e67);
-            let g67 = this.model.expressionTypes.get(d67);
-            let h67 = g67 instanceof VeraClassType ? g67.identity : 'invalid';
-            let i67: string[] = [];
-            for (let j67 of d67.properties)
-                i67.push(j67.name);
-            e67.emit(mkMakeObject(h67, i67));
+        else if (j75 instanceof ObjectExpression) {
+            for (let q75 of j75.properties)
+                this.expression(q75.value, k75);
+            let m75 = this.model.expressionTypes.get(j75);
+            let n75 = m75 instanceof VeraClassType ? m75.identity : 'invalid';
+            let o75: string[] = [];
+            for (let p75 of j75.properties)
+                o75.push(p75.name);
+            k75.emit(mkMakeObject(n75, o75));
         }
-        else if (d67 instanceof IndexExpression) {
-            this.expression(d67.target, e67);
-            this.expression(d67.index, e67);
-            e67.emit(mkInst('load-index'));
+        else if (j75 instanceof IndexExpression) {
+            this.expression(j75.target, k75);
+            this.expression(j75.index, k75);
+            k75.emit(mkInst('load-index'));
         }
-        else if (d67 instanceof EnsureNotNullExpression) {
-            this.expression(d67.operand, e67);
-            e67.emit(mkInst('ensure-not-null'));
+        else if (j75 instanceof EnsureNotNullExpression) {
+            this.expression(j75.operand, k75);
+            k75.emit(mkInst('ensure-not-null'));
         }
-        else if (d67 instanceof SelectExpression) {
-            if (d67.target instanceof NameExpression) {
-                let f67 = this.model.imports.get(d67.target.name);
-                if (f67 !== undefined) {
-                    e67.emit(mkLoadExternal(f67.specifier, d67.field));
+        else if (j75 instanceof SelectExpression) {
+            if (j75.target instanceof NameExpression) {
+                let l75 = this.model.imports.get(j75.target.name);
+                if (l75 !== undefined) {
+                    k75.emit(mkLoadExternal(l75.specifier, j75.field));
                     return;
                 }
             }
-            this.expression(d67.target, e67);
-            e67.emit(mkLoadField(d67.field));
+            this.expression(j75.target, k75);
+            k75.emit(mkLoadField(j75.field));
         }
-        else if (d67 instanceof LambdaExpression)
-            this.lambda(d67, e67);
+        else if (j75 instanceof LambdaExpression)
+            this.lambda(j75, k75);
     }
-    private binary(w66: BinaryExpression, x66: FunctionBuilder): void {
-        if (w66.operator === '&&') {
-            this.expression(w66.left, x66);
-            let b67 = x66.emit(mkJumpIfFalse(-1));
-            this.expression(w66.right, x66);
-            let c67 = x66.emit(mkJump(-1));
-            this.patch(x66, b67, x66.instructions.length);
-            x66.emit(mkPushBoolean(false));
-            this.patch(x66, c67, x66.instructions.length);
+    private binary(c75: BinaryExpression, d75: FunctionBuilder): void {
+        if (c75.operator === '&&') {
+            this.expression(c75.left, d75);
+            let h75 = d75.emit(mkJumpIfFalse(-1));
+            this.expression(c75.right, d75);
+            let i75 = d75.emit(mkJump(-1));
+            this.patch(d75, h75, d75.instructions.length);
+            d75.emit(mkPushBoolean(false));
+            this.patch(d75, i75, d75.instructions.length);
             return;
         }
-        if (w66.operator === '||') {
-            this.expression(w66.left, x66);
-            x66.emit(mkUnary('!'));
-            let z66 = x66.emit(mkJumpIfFalse(-1));
-            this.expression(w66.right, x66);
-            let a67 = x66.emit(mkJump(-1));
-            this.patch(x66, z66, x66.instructions.length);
-            x66.emit(mkPushBoolean(true));
-            this.patch(x66, a67, x66.instructions.length);
+        if (c75.operator === '||') {
+            this.expression(c75.left, d75);
+            d75.emit(mkUnary('!'));
+            let f75 = d75.emit(mkJumpIfFalse(-1));
+            this.expression(c75.right, d75);
+            let g75 = d75.emit(mkJump(-1));
+            this.patch(d75, f75, d75.instructions.length);
+            d75.emit(mkPushBoolean(true));
+            this.patch(d75, g75, d75.instructions.length);
             return;
         }
-        this.expression(w66.left, x66);
-        this.expression(w66.right, x66);
-        let y66 = this.model.expressionTypes.get(w66.left);
-        x66.emit(mkBinary(w66.operator, y66 === INT));
+        this.expression(c75.left, d75);
+        this.expression(c75.right, d75);
+        let e75 = this.model.expressionTypes.get(c75.left);
+        d75.emit(mkBinary(c75.operator, e75 === INT));
     }
-    private call(s66: CallExpression, t66: FunctionBuilder, u66: boolean): void {
-        this.expression(s66.callee, t66);
-        for (let v66 of s66.argumentsList)
-            this.expression(v66, t66);
-        t66.emit(mkCall(s66.argumentsList.length, u66));
+    private call(y74: CallExpression, z74: FunctionBuilder, a75: boolean): void {
+        this.expression(y74.callee, z74);
+        for (let b75 of y74.argumentsList)
+            this.expression(b75, z74);
+        z74.emit(mkCall(y74.argumentsList.length, a75));
     }
-    private lambda(k66: LambdaExpression, l66: FunctionBuilder): void {
-        let m66 = '$lambda' + this.lambdaCount++;
-        let n66 = new FunctionBuilder(m66, l66);
-        for (let r66 of k66.parameters)
-            n66.local(r66.name);
-        this.block(k66.body, n66);
-        n66.emit(mkInst('push-null'));
-        n66.emit(mkInst('return'));
-        let o66: number[] = [];
-        let p66 = Array.from(n66.capturedBindings.values());
-        for (let q66 of p66)
-            o66.push(q66);
-        this.functions.push(new BytecodeFunction(m66, k66.parameters.length, n66.localCount, false, n66.instructions));
-        l66.emit(mkMakeClosure(m66, o66));
+    private lambda(q74: LambdaExpression, r74: FunctionBuilder): void {
+        let s74 = '$lambda' + this.lambdaCount++;
+        let t74 = new FunctionBuilder(s74, r74);
+        for (let x74 of q74.parameters)
+            t74.local(x74.name);
+        this.block(q74.body, t74);
+        t74.emit(mkInst('push-null'));
+        t74.emit(mkInst('return'));
+        let u74: number[] = [];
+        let v74 = Array.from(t74.capturedBindings.values());
+        for (let w74 of v74)
+            u74.push(w74);
+        this.functions.push(new BytecodeFunction(s74, q74.parameters.length, t74.localCount, false, t74.instructions));
+        r74.emit(mkMakeClosure(s74, u74));
     }
-    private loadName(b66: string, c66: FunctionBuilder): void {
-        let d66 = c66.bindings.get(b66);
-        if (d66 !== undefined) {
-            if (d66.location === 'local')
-                c66.emit(mkLoadLocal(d66.slot));
+    private loadName(h74: string, i74: FunctionBuilder): void {
+        let j74 = i74.bindings.get(h74);
+        if (j74 !== undefined) {
+            if (j74.location === 'local')
+                i74.emit(mkLoadLocal(j74.slot));
             else
-                c66.emit(mkLoadCapture(d66.slot));
+                i74.emit(mkLoadCapture(j74.slot));
             return;
         }
-        if (this.model.functions.has(b66)) {
-            c66.emit(mkLoadFunction(b66));
+        if (this.model.functions.has(h74)) {
+            i74.emit(mkLoadFunction(h74));
             return;
         }
-        let e66 = b66.split('.');
-        if (e66.length >= 2) {
-            let j66 = this.model.imports.get(e66[0]);
-            if (j66 !== undefined) {
-                c66.emit(mkLoadExternal(j66.specifier, e66[1]));
+        let k74 = h74.split('.');
+        if (k74.length >= 2) {
+            let p74 = this.model.imports.get(k74[0]);
+            if (p74 !== undefined) {
+                i74.emit(mkLoadExternal(p74.specifier, k74[1]));
                 return;
             }
         }
-        let f66 = c66.parent;
-        if (f66 !== null) {
-            let g66 = this.findBinding(b66, f66);
-            if (g66 !== null) {
-                let h66 = c66.capturedBindings.size;
-                let i66 = g66.location === 'local' ? g66.slot : -g66.slot - 1;
-                c66.capturedBindings.set(b66, i66);
-                c66.bindings.set(b66, new Binding('capture', h66));
-                c66.emit(mkLoadCapture(h66));
+        let l74 = i74.parent;
+        if (l74 !== null) {
+            let m74 = this.findBinding(h74, l74);
+            if (m74 !== null) {
+                let n74 = i74.capturedBindings.size;
+                let o74 = m74.location === 'local' ? m74.slot : -m74.slot - 1;
+                i74.capturedBindings.set(h74, o74);
+                i74.bindings.set(h74, new Binding('capture', n74));
+                i74.emit(mkLoadCapture(n74));
                 return;
             }
         }
-        c66.emit(mkLoadFunction(b66));
+        i74.emit(mkLoadFunction(h74));
     }
-    private storeName(y65: string, z65: FunctionBuilder): void {
-        let a66 = z65.bindings.get(y65);
-        if (a66 === undefined)
+    private storeName(e74: string, f74: FunctionBuilder): void {
+        let g74 = f74.bindings.get(e74);
+        if (g74 === undefined)
             throw new Error('compiler invariant');
-        if (a66.location === 'local')
-            z65.emit(mkStoreLocal(a66.slot));
+        if (g74.location === 'local')
+            f74.emit(mkStoreLocal(g74.slot));
         else
-            z65.emit(mkStoreCapture(a66.slot));
+            f74.emit(mkStoreCapture(g74.slot));
     }
-    private findBinding(v65: string, w65: FunctionBuilder): Binding | null {
-        let x65 = w65.bindings.get(v65);
-        if (x65 !== undefined)
-            return x65;
-        if (w65.parent !== null)
-            return this.findBinding(v65, w65.parent);
+    private findBinding(b74: string, c74: FunctionBuilder): Binding | null {
+        let d74 = c74.bindings.get(b74);
+        if (d74 !== undefined)
+            return d74;
+        if (c74.parent !== null)
+            return this.findBinding(b74, c74.parent);
         return null;
     }
-    private patch(p65: FunctionBuilder, q65: number, r65: number): void {
-        let s65 = p65.instructions[q65];
-        if (s65.op === 'jump-if-false') {
-            let u65 = mkJumpIfFalse(r65);
-            p65.instructions[q65] = u65;
+    private patch(v73: FunctionBuilder, w73: number, x73: number): void {
+        let y73 = v73.instructions[w73];
+        if (y73.op === 'jump-if-false') {
+            let a74 = mkJumpIfFalse(x73);
+            v73.instructions[w73] = a74;
         }
         else {
-            let t65 = mkJump(r65);
-            p65.instructions[q65] = t65;
+            let z73 = mkJump(x73);
+            v73.instructions[w73] = z73;
         }
     }
 }
-function encodeInstruction(n65: Instruction): Object[] {
-    let o65 = n65.op;
-    switch (o65) {
-        case 'push-int': return [o65, n65.value];
-        case 'push-number': return [o65, n65.numValue];
-        case 'push-string': return [o65, n65.value];
-        case 'push-boolean': return [o65, n65.boolValue];
-        case 'push-null': return [o65];
-        case 'load-local': return [o65, n65.slot];
-        case 'store-local': return [o65, n65.slot];
-        case 'load-capture': return [o65, n65.slot];
-        case 'store-capture': return [o65, n65.slot];
-        case 'load-function': return [o65, n65.name];
-        case 'load-external': return [o65, n65.module, n65.name];
-        case 'pop': return [o65];
-        case 'duplicate': return [o65];
-        case 'unary': return [o65, n65.operator];
-        case 'binary': return [o65, n65.operator, n65.integer];
-        case 'jump': return [o65, n65.target];
-        case 'jump-if-false': return [o65, n65.target];
-        case 'call': return [o65, n65.count, n65.awaited];
-        case 'return': return [o65];
-        case 'make-array': return [o65, n65.count];
-        case 'array-push': return [o65];
-        case 'array-pop': return [o65];
-        case 'length': return [o65];
-        case 'string-symbols': return [o65];
-        case 'ensure-not-null': return [o65];
-        case 'load-index': return [o65];
-        case 'store-index': return [o65];
-        case 'make-object': return [o65, n65.classIdentity, n65.fields];
-        case 'load-field': return [o65, n65.name];
-        case 'store-field': return [o65, n65.name];
-        case 'make-closure': return [o65, n65.functionName, n65.captures];
-        default: return [o65];
+function encodeInstruction(t73: Instruction): Object[] {
+    let u73 = t73.op;
+    switch (u73) {
+        case 'push-int': return [u73, t73.value];
+        case 'push-number': return [u73, t73.numValue];
+        case 'push-string': return [u73, t73.value];
+        case 'push-boolean': return [u73, t73.boolValue];
+        case 'push-null': return [u73];
+        case 'load-local': return [u73, t73.slot];
+        case 'store-local': return [u73, t73.slot];
+        case 'load-capture': return [u73, t73.slot];
+        case 'store-capture': return [u73, t73.slot];
+        case 'load-function': return [u73, t73.name];
+        case 'load-external': return [u73, t73.module, t73.name];
+        case 'pop': return [u73];
+        case 'duplicate': return [u73];
+        case 'unary': return [u73, t73.operator];
+        case 'binary': return [u73, t73.operator, t73.integer];
+        case 'jump': return [u73, t73.target];
+        case 'jump-if-false': return [u73, t73.target];
+        case 'call': return [u73, t73.count, t73.awaited];
+        case 'return': return [u73];
+        case 'make-array': return [u73, t73.count];
+        case 'array-push': return [u73];
+        case 'array-pop': return [u73];
+        case 'length': return [u73];
+        case 'string-symbols': return [u73];
+        case 'ensure-not-null': return [u73];
+        case 'load-index': return [u73];
+        case 'store-index': return [u73];
+        case 'make-object': return [u73, t73.classIdentity, t73.fields];
+        case 'load-field': return [u73, t73.name];
+        case 'store-field': return [u73, t73.name];
+        case 'make-closure': return [u73, t73.functionName, t73.captures];
+        default: return [u73];
     }
 }
-function serializeVbc2(i65: BytecodeModule): string {
-    let j65: Object[] = [];
-    for (let k65 of i65.functions) {
-        let l65: Object[] = [];
-        for (let m65 of k65.instructions)
-            l65.push(encodeInstruction(m65));
-        j65.push([k65.name, k65.parameterCount, k65.localCount, k65.isAsync, l65]);
+function serializeVbc2(o73: BytecodeModule): string {
+    let p73: Object[] = [];
+    for (let q73 of o73.functions) {
+        let r73: Object[] = [];
+        for (let s73 of q73.instructions)
+            r73.push(encodeInstruction(s73));
+        p73.push([q73.name, q73.parameterCount, q73.localCount, q73.isAsync, r73]);
     }
-    return JSON.stringify(['VBC2', i65.entryCandidates, j65]);
+    return JSON.stringify(['VBC2', o73.entryCandidates, p73]);
 }
 export class CompileResult {
     vbc2: string;
-    constructor(h65: string) { this.vbc2 = h65; }
+    constructor(n73: string) { this.vbc2 = n73; }
 }
-export function compileVeraSource(c65: string, d65: string = '<source>'): CompileResult {
-    let e65 = new Parser(c65, d65).parse();
-    let f65 = new Analyzer(e65).analyze();
-    let g65 = new BytecodeCompiler(f65).compile();
-    return new CompileResult(serializeVbc2(g65));
+export function compileVeraSource(i73: string, j73: string = '<source>'): CompileResult {
+    let k73 = new Parser(i73, j73).parse();
+    let l73 = new Analyzer(k73).analyze();
+    let m73 = new BytecodeCompiler(l73).compile();
+    return new CompileResult(serializeVbc2(m73));
 }

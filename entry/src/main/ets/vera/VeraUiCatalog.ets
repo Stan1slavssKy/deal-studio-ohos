@@ -89,7 +89,7 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['field', ['default', 'multiline']],
   ['toggle', ['default']],
   ['checkbox', ['default']],
-  ['slider', ['default']],
+  ['slider', ['default', 'accent', 'success', 'warning', 'danger']],
   ['select', ['default']],
   ['divider', ['default']],
   ['progress', ['default', 'accent', 'success', 'warning', 'danger']],
@@ -124,6 +124,8 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['badge', ['default', 'accent', 'success', 'warning', 'danger']],
   ['timeline', ['default', 'compact', 'comfortable']],
   ['timelineitem', ['default', 'accent', 'success', 'warning', 'danger']],
+  ['table', ['default']],
+  ['tablerow', ['default', 'accent', 'success', 'warning', 'danger']],
 
   // Loading and transient-status feedback. No tone variation yet -- a
   // one-entry list here means describeCatalogForPrompt leaves the "styles:"
@@ -405,6 +407,21 @@ export const CATALOG: ComponentSpec[] = [
     '',
     'Only inside a ui.KeyValueGroup.'),
 
+  // A real grid of rows and columns, which neither ui.Grid (equal tappable
+  // cells for a keypad or board, one int payload each) nor ui.KeyValueGroup
+  // (facts, two per row, no header) is shaped for.
+  new ComponentSpec('Table', 'table',
+    [style('table'), new PropSpec('headers', 'string[]'), new PropSpec('columns', 'int'),
+      new PropSpec('children', 'view[]')],
+    'rows and columns of text, with an optional header row',
+    '',
+    'For data that genuinely has columns -- a list of orders with date, item and amount; a schedule with time and place. headers names each column and may be an empty array for no header row; columns must match both headers\' length (when given) and every ui.TableRow\'s own cells length. Children are ui.TableRow. Prefer ui.ListGroup when each row is really just a title with a trailing value -- a table is for three or more columns of data read down as well as across.'),
+  new ComponentSpec('TableRow', 'tablerow',
+    [style('tablerow'), new PropSpec('cells', 'string[]')],
+    'one row of a ui.Table: one string per column, in order',
+    '',
+    'Only inside a ui.Table, and always with as many cells as the table has columns. Give it a tone -- accent, success, warning, danger -- to call out one row, a total line or a problem entry, the same way a ui.ListItem can.'),
+
   // Loading and transient-status feedback. Added because the catalogue had no
   // way to say "this hasn't loaded yet" or "that just happened" -- a screen
   // either showed its real content or showed nothing at all while waiting.
@@ -433,10 +450,10 @@ export const CATALOG: ComponentSpec[] = [
   // number.
   new ComponentSpec('Sparkline', 'sparkline',
     [style('sparkline'), new PropSpec('series', 'int[]'), new PropSpec('maximum', 'int'),
-      new PropSpec('label', 'string', '', true)],
-    'a line chart of up to a few dozen values',
+      new PropSpec('label', 'string', '', true), new PropSpec('bars', 'boolean', '', true)],
+    'a line or bar chart of up to a few dozen values',
     '',
-    'For a trend -- a week of steps, a balance over time, a reading taken repeatedly. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the line does not jump every time a new point arrives). There is no x-axis label and no legend: say what the numbers are in label or in a ui.Text above it.'),
+    'For a trend -- a week of steps, a balance over time, a reading taken repeatedly -- leave bars false for a connected line. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the chart does not jump every time a new point arrives). There is no x-axis label and no legend: say what the numbers are in label or in a ui.Text above it.'),
 ]
 
 /**
@@ -480,6 +497,7 @@ export const CHILD_RULES: ChildRule[] = [
   new ChildRule('MetricGroup', ['Stat', 'IntStat', 'When'], []),
   new ChildRule('KeyValueGroup', ['KeyValueItem', 'When'], []),
   new ChildRule('Timeline', ['TimelineItem', 'ActionBar', 'When'], []),
+  new ChildRule('Table', ['TableRow', 'When'], []),
   new ChildRule('ActionBar', ['Button', 'IconButton', 'Badge', 'When'], []),
   // A card inside a card is the nesting deal-studio calls out by name: two
   // frames, two paddings, and no more meaning than one.
@@ -549,6 +567,7 @@ const COMPANIONS: string[][] = [
   ['Grid', 'Cell'],
   ['Timeline', 'TimelineItem'],
   ['KeyValueGroup', 'KeyValueItem'],
+  ['Table', 'TableRow'],
 ]
 
 /**

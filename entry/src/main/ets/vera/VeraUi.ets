@@ -34,6 +34,8 @@ export class VeraUiNode {
   options: string[] = []
   /** A chart's raw values, for ui.Sparkline -- the one int[] prop in the language. */
   series: number[] = []
+  /** ui.Sparkline: draw series as separate bars instead of a connected line. */
+  bars: boolean = false
   children: VeraUiNode[] = []
 
   /**
@@ -660,6 +662,18 @@ export class UiHostEnvironment extends HostEnvironment {
           ['enabled', new VeraBooleanValue(argBool(args, 6))],
           ['icon', new VeraStringValue(argString(args, 7))],
         ])
+      case 'Table':
+        return viewNode('table', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['options', argArray(args, 1)],
+          ['columns', new VeraIntValue(argInt(args, 2))],
+          ['children', argArray(args, 3)],
+        ])
+      case 'TableRow':
+        return viewNode('tablerow', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['options', argArray(args, 1)],
+        ])
       case 'KeyValueGroup':
         return viewNode('kvgroup', [
           ['style', new VeraStringValue(argString(args, 0))],
@@ -723,6 +737,7 @@ export class UiHostEnvironment extends HostEnvironment {
           ['series', argArray(args, 1)],
           ['maximum', new VeraIntValue(argInt(args, 2))],
           ['label', new VeraStringValue(argString(args, 3))],
+          ['bars', new VeraBooleanValue(argBool(args, 4, false))],
         ])
       case 'When':
         if (asBool(args[0])) { return args[1] }
@@ -886,6 +901,9 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
         break
       case 'enabled':
         if (v instanceof VeraBooleanValue) { node.enabled = (v as VeraBooleanValue).value }
+        break
+      case 'bars':
+        if (v instanceof VeraBooleanValue) { node.bars = (v as VeraBooleanValue).value }
         break
       case 'options':
         if (v instanceof VeraArrayValue) {
