@@ -14,7 +14,6 @@ const APP_DESCRIBING: string = 'describing'
 const APP_BUILDING: string = 'building'
 const APP_READY: string = 'ready'
 const APP_FAILED: string = 'failed'
-const APP_HEIGHT: number = 420
 const SCROLL_EVERY_MS: number = 150
 
 /**
@@ -67,9 +66,8 @@ struct MessageBubble {
         .backgroundColor('#FFFFFF')
         .borderRadius(14)
       } else if (this.msg.appState === APP_READY) {
-        VeraPreview({ vbc2: this.msg.vbc2 })
+        VeraPreview({ vbc2: this.msg.vbc2, embedded: true })
           .width('100%')
-          .height(APP_HEIGHT)
           .borderRadius(14)
           .clip(true)
           .backgroundColor('#FFFFFF')
