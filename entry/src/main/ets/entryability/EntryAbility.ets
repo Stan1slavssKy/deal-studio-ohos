@@ -31,6 +31,7 @@ export default class EntryAbility extends UIAbility {
     loadCatalogFile(this.context.filesDir)
     this.extractApiKey(want)
     this.extractSelectorKey(want)
+    this.extractExaKey(want)
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
@@ -46,6 +47,7 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'VERA', 'EntryAbility onNewWant')
     this.extractApiKey(want)
     this.extractSelectorKey(want)
+    this.extractExaKey(want)
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
@@ -87,6 +89,24 @@ export default class EntryAbility extends UIAbility {
    *
    * Optional: without it every intent in the catalogue goes into the prompt.
    */
+  /**
+   * The Exa key for the chat's web search, given the same way:
+   *     --ps exaKey ...
+   *
+   * Optional: without it the chat assistant has no search tool. Never logged.
+   */
+  private extractExaKey(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let key = params['exaKey']
+    if (key === null || key === undefined || typeof key !== 'string') { return }
+    let text = (key as string).trim()
+    if (text.length === 0) { return }
+    settings.init(this.context.filesDir)
+    settings.setExaKey(text)
+    hilog.info(DOMAIN, 'VERA', 'Exa key updated from launch parameter')
+  }
+
   private extractSelectorKey(want: Want): void {
     if (want.parameters === null || want.parameters === undefined) { return }
     let params = want.parameters as Record<string, Object>

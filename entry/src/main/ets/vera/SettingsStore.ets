@@ -55,6 +55,11 @@ export class SettingsStore {
    * the prompt, which is what happened before there was a selection step.
    */
   private selectorKey: string = ''
+  /**
+   * The Exa key, for the chat's web search. Supplied like the others,
+   * `--ps exaKey ...`; without it the assistant simply has no search tool.
+   */
+  private exaKey: string = ''
   private loaded: boolean = false
 
   init(filesDir: string): void {
@@ -77,6 +82,7 @@ export class SettingsStore {
         this.baseUrl = (obj['baseUrl'] as string) || DEFAULT_DEEPSEEK_BASE_URL
         this.serverUrl = (obj['serverUrl'] as string) || ''
         this.selectorKey = (obj['selectorKey'] as string) || ''
+        this.exaKey = (obj['exaKey'] as string) || ''
       } catch (_e) {}
     }
     this.loaded = true
@@ -90,6 +96,7 @@ export class SettingsStore {
     obj['baseUrl'] = this.baseUrl
     obj['serverUrl'] = this.serverUrl
     obj['selectorKey'] = this.selectorKey
+    obj['exaKey'] = this.exaKey
     try { writeText(this.path(), JSON.stringify(obj)) } catch (_e) {}
   }
 
@@ -119,6 +126,19 @@ export class SettingsStore {
   }
 
   hasSelectorKey(): boolean { return this.getSelectorKey().length > 0 }
+
+  getExaKey(): string {
+    if (!this.loaded) { this.load() }
+    return this.exaKey
+  }
+
+  hasExaKey(): boolean { return this.getExaKey().length > 0 }
+
+  setExaKey(key: string): void {
+    if (!this.loaded) { this.load() }
+    this.exaKey = key.trim()
+    this.save()
+  }
 
   setSelectorKey(key: string): void {
     if (!this.loaded) { this.load() }

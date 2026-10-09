@@ -204,6 +204,8 @@ struct ChatPage {
       let raw = await chatReply(turns, (soFar: string): void => {
         if (this.status === 'Thinking...') { this.status = '' }
         this.apply(reply, parseReply(soFar))
+      }, (status: string): void => {
+        this.status = status.length > 0 ? status : 'Thinking...'
       })
       console.info('VERA-CHAT reply: ' + raw)
       this.apply(reply, parseReply(raw))
