@@ -13,6 +13,7 @@
  */
 
 import http from '@ohos.net.http'
+import util from '@ohos.util'
 import { GenerateRequest } from './LlamaEngine'
 import { compileVeraSource, CompileError } from './VeraCompiler'
 import { deepseek, extractVeraSource } from './DeepSeekEngine'
@@ -25,9 +26,11 @@ const MAX_ATTEMPTS: number = 3
 const CHAT_SYSTEM_PROMPT: string =
   'You are the assistant in a phone chat. Answer briefly, in plain text with no markdown.\n' +
   'When a small interactive widget would help the person more than a paragraph would -- a calculator, ' +
-  'converter, split-the-bill, timer, planner, tracker, checklist, quiz, picker, form -- finish your reply ' +
-  'with one last line of exactly this shape:\n' +
+  'converter, split-the-bill, timer, planner, tracker, checklist, quiz, picker, form -- put one line of exactly ' +
+  'this shape in the reply, at the point where the widget belongs:\n' +
   '<<app: one or two sentences describing the widget in English, with the concrete numbers and names from the conversation>>\n' +
+  'It can come first, in the middle between two parts of the answer, or last. Write whole sentences on each side of it, ' +
+  'never a sentence that breaks off at the line, and say a sentence before it so it does not appear out of nowhere. ' +
   'A widget can also act on the phone itself -- flashlight, alarms, timers, navigation, calendar, opening other apps -- ' +
   'so when the person wants the phone to do something, never say you cannot: offer a widget and name those actions in the line ' +
   'as real buttons (for example "buttons that turn the flashlight on and off").\n' +
@@ -39,11 +42,17 @@ export class ChatTurn {
   text: string = ''
 }
 
-/** What a reply came to once the marker is taken out of it. */
+/**
+ * A reply, split around its widget line. `before` and `after` are the text on
+ * either side of it; with no widget line everything is in `before`.
+ */
 export class ParsedReply {
-  text: string = ''
-  /** Empty when the reply asked for no widget. */
+  before: string = ''
+  after: string = ''
+  /** Empty until the line is closed with >>. */
   appDescription: string = ''
+  /** The line has started but not finished: the widget is still being described. */
+  describing: boolean = false
 }
 
 export class MiniApp {
@@ -54,18 +63,42 @@ export class MiniApp {
   attempts: number = 0
 }
 
+/**
+ * Works on a reply that may still be arriving: a half-written marker is held
+ * back from the text rather than shown, and the widget line counts as complete
+ * only once its closing >> is in.
+ */
 export function parseReply(raw: string): ParsedReply {
   let out = new ParsedReply()
-  let open = raw.lastIndexOf(APP_OPEN)
+  let open = raw.indexOf(APP_OPEN)
   if (open < 0) {
-    out.text = raw.trim()
+    out.before = withoutPartialMarker(raw).trim()
     return out
   }
+  out.before = raw.substring(0, open).trim()
   let close = raw.indexOf(APP_CLOSE, open)
-  let end = close < 0 ? raw.length : close
-  out.appDescription = raw.substring(open + APP_OPEN.length, end).trim()
-  out.text = (raw.substring(0, open) + (close < 0 ? '' : raw.substring(close + APP_CLOSE.length))).trim()
+  if (close < 0) {
+    out.describing = true
+    return out
+  }
+  out.appDescription = raw.substring(open + APP_OPEN.length, close).trim()
+  let rest = raw.substring(close + APP_CLOSE.length)
+  // At most one widget per reply: a second line is dropped, not shown.
+  let again = rest.indexOf(APP_OPEN)
+  if (again >= 0) { rest = rest.substring(0, again) }
+  out.after = rest.trim()
   return out
+}
+
+/** "...<<ap" at the end of the text so far is the start of a marker, not text. */
+function withoutPartialMarker(text: string): string {
+  let longest = Math.min(APP_OPEN.length - 1, text.length)
+  for (let n = longest; n > 0; n--) {
+    if (text.endsWith(APP_OPEN.substring(0, n))) {
+      return text.substring(0, text.length - n)
+    }
+  }
+  return text
 }
 
 function plain(role: string, content: string): Record<string, Object> {
@@ -75,8 +108,11 @@ function plain(role: string, content: string): Record<string, Object> {
   return m
 }
 
-/** One non-streaming chat turn. Throws with a readable message on failure. */
-export async function chatReply(history: ChatTurn[]): Promise<string> {
+/**
+ * One chat turn, streamed. `onText` receives everything said so far, each time
+ * more arrives. Throws with a readable message on failure.
+ */
+export async function chatReply(history: ChatTurn[], onText: (soFar: string) => void): Promise<string> {
   let key = settings.getApiKey()
   if (key.length === 0) {
     throw new Error('No DeepSeek API key. Send one with: aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key>')
@@ -88,34 +124,79 @@ export async function chatReply(history: ChatTurn[]): Promise<string> {
   let payload: Record<string, Object> = {}
   payload['model'] = settings.getModel()
   payload['messages'] = messages
+  payload['stream'] = true
   let thinking: Record<string, Object> = {}
   thinking['type'] = 'disabled'
   payload['thinking'] = thinking
   payload['temperature'] = 0.7
   payload['max_tokens'] = 1024
 
+  let reply = ''
+  let buffer = ''
+  let body = ''
   let client = http.createHttp()
+  let decoder = util.TextDecoder.create('utf-8')
+  client.on('dataReceive', (chunk: ArrayBuffer): void => {
+    let piece = ''
+    try {
+      piece = decoder.decodeToString(new Uint8Array(chunk), { stream: true })
+    } catch (_e) {
+      return
+    }
+    body += piece
+    buffer += piece
+    let nl = buffer.indexOf('\n')
+    while (nl >= 0) {
+      let line = buffer.substring(0, nl).trim()
+      buffer = buffer.substring(nl + 1)
+      let delta = contentDelta(line)
+      if (delta.length > 0) {
+        reply += delta
+        onText(reply)
+      }
+      nl = buffer.indexOf('\n')
+    }
+  })
+  let code = 0
   try {
     let header: Record<string, string> = {}
     header['Content-Type'] = 'application/json'
+    header['Accept'] = 'text/event-stream'
     header['Authorization'] = 'Bearer ' + key
-    let resp = await client.request(settings.getBaseUrl() + '/chat/completions', {
+    code = await client.requestInStream(settings.getBaseUrl() + '/chat/completions', {
       method: http.RequestMethod.POST,
       header: header,
       extraData: JSON.stringify(payload),
       connectTimeout: 15000,
       readTimeout: 120000
     })
-    if (resp.responseCode !== 200) {
-      throw new Error('HTTP ' + resp.responseCode.toString() + ' ' + String(resp.result).substring(0, 200))
-    }
-    let body = JSON.parse(resp.result as string) as Record<string, Object>
-    let choices = body['choices'] as Object[]
-    let first = choices[0] as Record<string, Object>
-    let message = first['message'] as Record<string, Object>
-    return (message['content'] as string) || ''
+  } catch (e) {
+    throw new Error('Chat request failed: ' + (e as Error).message)
   } finally {
-    client.destroy()
+    try { client.off('dataReceive') } catch (_e) {}
+    try { client.destroy() } catch (_e) {}
+  }
+  if (code !== 200) {
+    throw new Error('HTTP ' + code.toString() + ' ' + body.substring(0, 200))
+  }
+  return reply
+}
+
+/** The text of one SSE line, or '' for anything that carries none. */
+function contentDelta(line: string): string {
+  if (!line.startsWith('data:')) { return '' }
+  let data = line.substring(5).trim()
+  if (data.length === 0 || data === '[DONE]') { return '' }
+  try {
+    let obj = JSON.parse(data) as Record<string, Object>
+    let choices = obj['choices'] as Object[]
+    if (choices === null || choices === undefined || choices.length === 0) { return '' }
+    let delta = (choices[0] as Record<string, Object>)['delta'] as Record<string, Object>
+    if (delta === null || delta === undefined) { return '' }
+    let content = delta['content']
+    return typeof content === 'string' ? content as string : ''
+  } catch (_e) {
+    return ''
   }
 }
 

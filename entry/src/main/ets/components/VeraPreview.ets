@@ -81,6 +81,11 @@ export struct VeraPreview {
    * thing and has to remember.
    */
   @Prop persistKey: string = ''
+  /**
+   * Drawn inside something that scrolls, such as a chat message: the program
+   * takes the height it needs and has no scrolling of its own.
+   */
+  @Prop embedded: boolean = false
   // The live tree is mutated in place, so it is not @State: its own @Trace
   // fields are what drive the re-render. See VeraLiveTree.
   @State hasRoot: boolean = false
@@ -669,7 +674,9 @@ export struct VeraPreview {
       }
     }
     .width('100%')
-    .height('100%')
+    // Embedded, the box is as tall as the program. At 100% inside a list row it
+    // takes the height of the whole list and the program sinks to its bottom.
+    .height(this.embedded ? undefined : '100%')
     .alignContent(Alignment.Bottom)
   }
 
@@ -740,21 +747,31 @@ export struct VeraPreview {
           .backgroundColor('#FFECEC')
       }
       if (this.hasRoot && this.liveRoot !== null) {
-        Scroll() {
+        if (this.embedded) {
+          // No Scroll of its own and no fixed height: the card is as tall as
+          // the program, and whatever it sits in does the scrolling. A Scroll
+          // here would take a drag that began on the program and leave the
+          // page behind it unmoved.
           Column() {
             this.renderNode(this.liveRoot!, 'root')
           }.width('100%')
+        } else {
+          Scroll() {
+            Column() {
+              this.renderNode(this.liveRoot!, 'root')
+            }.width('100%')
+          }
+          .width('100%')
+          .layoutWeight(1)
+          // Scroll centres its content by default, which leaves a generated
+          // program floating in the middle of the box instead of starting where
+          // a real app would.
+          .align(Alignment.Top)
         }
-        .width('100%')
-        .layoutWeight(1)
-        // Scroll centres its content by default, which leaves a generated
-        // program floating in the middle of the box instead of starting where
-        // a real app would.
-        .align(Alignment.Top)
       }
     }
     .width('100%')
-    .height('100%')
+    .height(this.embedded ? undefined : '100%')
     // Writing this back is what makes the column counts adapt. Guarded by a
     // whole vp: the write triggers a re-layout, and a re-layout that reports a
     // width a fraction different would write again, and so on.
