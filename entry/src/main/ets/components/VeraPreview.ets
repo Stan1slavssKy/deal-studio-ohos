@@ -2422,15 +2422,26 @@ export struct VeraPreview {
       // them overlap, which is what a drawing made of several shapes needs. The
       // group is scaled once, as a group, so the distances the model computed
       // between the parts survive.
+      //
+      // A flat per-style constant, not a measured one: a version scaling by
+      // this box's own measured width (canvasSize/100, the same idea that
+      // fixed Sparkline's bars) was tried and reverted. On device it was not
+      // merely imperfect the way the small centred cluster this comment used
+      // to describe was -- one generated program it filled correctly, a
+      // second, structurally similar one it rendered as an empty box with
+      // the simulation still running underneath (confirmed by its own bounce
+      // counter climbing). Nothing about the difference between those two
+      // programs was pinned down before deciding a flat constant, merely
+      // bigger than before, is the safer default until that is understood.
       Column() {
         Stack({ alignContent: Alignment.TopStart }) {
           this.renderChildren(node)
         }
-        .scale({ x: node.style === 'large' ? 3.4 : node.style === 'small' ? 1.8 : 2.6,
-                 y: node.style === 'large' ? 3.4 : node.style === 'small' ? 1.8 : 2.6 })
+        .scale({ x: node.style === 'large' ? 5.0 : node.style === 'small' ? 2.6 : 3.8,
+                 y: node.style === 'large' ? 5.0 : node.style === 'small' ? 2.6 : 3.8 })
       }
       .width('100%')
-      .height(node.style === 'large' ? 360 : node.style === 'small' ? 200 : 280)
+      .height(node.style === 'large' ? 440 : node.style === 'small' ? 240 : 340)
       .alignItems(HorizontalAlign.Center)
       .justifyContent(FlexAlign.Center)
     } else if (node.kind === 'path' && parentKind === 'canvas') {
