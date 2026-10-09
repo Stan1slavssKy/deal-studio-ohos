@@ -727,7 +727,9 @@ struct GeneratePage {
       request.previousSource = this.failedSource
       request.userPrompt = userPrompt +
         '\n\nThe program above is your previous attempt and it failed to compile:\n' + errorFeedback +
-        '\n\nFix these errors and return the complete program.'
+        '\n\nRepair the failed source against these diagnostics. Preserve requested behavior and compatible state field names and types. ' +
+        'Return the complete replacement program as source only, not a patch or continuation. ' +
+        'If output was truncated, shorten optional content while preserving required behavior.'
     } else if (this.previousSource.length > 0) {
       request.previousSource = this.previousSource
       request.userPrompt = userPrompt

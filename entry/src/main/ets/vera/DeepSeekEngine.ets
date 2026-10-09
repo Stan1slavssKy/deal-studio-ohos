@@ -60,7 +60,7 @@ const UI_SEARCH_LIMIT = 3
  * phrases, not component names -- the person's words and the catalogue's words
  * are matched by the embeddings, not by this model.
  */
-const UI_NEEDS_PROMPT = 'You read a request for a small phone app and list what must appear on its screen, as short English phrases of two to six words each, one per distinct kind of UI element or behaviour. Think of inputs (typing text, picking a number, choosing a time, a switch, a slider, a choice from a list), displays (a timeline of events, key facts, a progress bar, a picture, a drawing or an animated shape, a board or a grid, a divider, a scrolling page) and behaviour that moves on its own (a stopwatch, a countdown, a clock that updates). Give three to eight phrases. Answer with a JSON array of strings and nothing else.'
+const UI_NEEDS_PROMPT = "Extract only UI needs required by the request. Return a strict JSON array of strings, with no markdown or other text. Use short English search phrases of two to six words. Describe each distinct input, display, or automatic update in plain language, without component names. Include implied controls only when the requested interaction requires them. Remove duplicates. Use at most eight phrases and no minimum count. Return [] when no UI need is specified. Do not add features to fill a quota. Example: \"Show the number 7\" becomes [\"numeric value display\"]. Example: \"An editable countdown\" becomes [\"editable duration input\", \"countdown display\", \"automatic timer updates\"]."
 /**
  * How many tool-call round trips one generation tolerates, across both
  * tools. Each round is a full request-response cycle against DeepSeek, so
@@ -141,7 +141,7 @@ function needParameter(description: string): Record<string, Object> {
 function toolSchemas(withUiTool: boolean): Record<string, Object>[] {
   let sdkFn: Record<string, Object> = {}
   sdkFn['name'] = SDK_TOOL_NAME
-  sdkFn['description'] = 'Looks up a platform SDK function by what it needs to do, out of thousands the phone offers with no built-in catalogue. Returns a few candidates with their target, parameters, return type and a plain description of what each does and what it is for. Pick the one that does what is needed, not the one whose name merely sounds closest. Never invent a target string: only use one returned by this tool.'
+  sdkFn['description'] = "Find SDK functions by the required capability. Returns targets, parameter signatures, return types, and descriptions. Use only discovered targets and parameter names. Supply user data where the signature allows it. Use documented enum values. Match behavior, not only names. Discovery does not prove that a runtime adapter exists. Show unsupported-adapter errors and actual result text."
   sdkFn['parameters'] = needParameter('Plain-language description of the platform capability needed, e.g. "read the free internal storage space".')
   let sdkTool: Record<string, Object> = {}
   sdkTool['type'] = 'function'
@@ -149,7 +149,7 @@ function toolSchemas(withUiTool: boolean): Record<string, Object>[] {
 
   let intentFn: Record<string, Object> = {}
   intentFn['name'] = INTENT_TOOL_NAME
-  intentFn['description'] = 'Looks up how to reach another app on the phone, as a ready-to-adapt sdk.call. A "catalog" result is a probed, trustworthy address with real platform values already filled in; a "raw" result comes from this device\'s own intent registry and is unverified. Never invent a target or a value: only use one returned by this tool.'
+  intentFn['description'] = "Find actions in other apps as sdk.call candidates. Catalog results have specification or device evidence. Raw results come from an unverified device registry. Prefer a suitable catalog result. Copy discovered targets, parameter names, modes, and enum values exactly. Adapt data values to the request where the signature permits. Acceptance does not prove the device completed the action. Show returned results and refusals."
   intentFn['parameters'] = needParameter('Plain-language description of what another app needs to do, e.g. "start navigation to a place" or "send a text message".')
   let intentTool: Record<string, Object> = {}
   intentTool['type'] = 'function'
@@ -157,7 +157,7 @@ function toolSchemas(withUiTool: boolean): Record<string, Object>[] {
 
   let uiFn: Record<string, Object> = {}
   uiFn['name'] = UI_TOOL_NAME
-  uiFn['description'] = 'Looks up a std/ui component that the component list in the system prompt does not describe, by what it must show or do. Returns its signature and when to use it. Use it before writing any ui.* constructor that is not in that list. Never write a constructor you did not see in the list or in this tool\'s answer.'
+  uiFn['description'] = "Find a std/ui component by what the UI must show or do. Returns its signature and use. Search before using a constructor absent from the supplied catalogue. Use only constructors and arguments described by the catalogue or this tool."
   uiFn['parameters'] = needParameter('Plain-language description of the screen element needed, e.g. "a vertical timeline of events" or "a stopwatch that ticks".')
   let uiTool: Record<string, Object> = {}
   uiTool['type'] = 'function'
@@ -353,7 +353,8 @@ export class DeepSeekEngine {
     // assistant's own last turn, so the model edits it instead of restarting.
     if (request.previousSource.length > 0) {
       messages.push(plainMessage('assistant', request.previousSource))
-      messages.push(plainMessage('user', 'Refine the program above: ' + request.userPrompt))
+      messages.push(plainMessage('user', 'Return a complete replacement of the program above. Preserve unrelated behavior and compatible state field names and types. ' +
+        'Use source code only, without a patch, explanation, or continuation. Apply this request and any repair diagnostics: ' + request.userPrompt))
     } else {
       messages.push(plainMessage('user', request.userPrompt))
     }
