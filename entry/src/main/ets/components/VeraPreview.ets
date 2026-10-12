@@ -169,6 +169,7 @@ export struct VeraPreview {
    * size once it does.
    */
   @State sparklineWidth: number = 0
+  @State canvasWidth: number = 0
   /**
    * The call waiting for the person to allow it, and the calls queued behind it.
    *
@@ -1091,6 +1092,14 @@ export struct VeraPreview {
    */
   private chartWidth(): number {
     return this.sparklineWidth > 0 ? this.sparklineWidth : 300
+  }
+
+  private canvasSide(style: string): number {
+    let inset = 2 * (this.t().padBase + this.t().padCard)
+    let fallback = this.viewportWidth > inset ? this.viewportWidth - inset : 300
+    let width = this.canvasWidth > 0 ? this.canvasWidth : fallback
+    let ratio = style === 'large' ? 1.0 : style === 'small' ? 0.55 : 0.8
+    return width * ratio
   }
 
   /**
@@ -2531,33 +2540,23 @@ export struct VeraPreview {
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'canvas') {
-      // One shared coordinate field. Every other container divides space between
-      // its children; this one hands all of them the same 0..100 box and lets
-      // them overlap, which is what a drawing made of several shapes needs. The
-      // group is scaled once, as a group, so the distances the model computed
-      // between the parts survive.
-      //
-      // A flat per-style constant, not a measured one: a version scaling by
-      // this box's own measured width (canvasSize/100, the same idea that
-      // fixed Sparkline's bars) was tried and reverted. On device it was not
-      // merely imperfect the way the small centred cluster this comment used
-      // to describe was -- one generated program it filled correctly, a
-      // second, structurally similar one it rendered as an empty box with
-      // the simulation still running underneath (confirmed by its own bounce
-      // counter climbing). Nothing about the difference between those two
-      // programs was pinned down before deciding a flat constant, merely
-      // bigger than before, is the safer default until that is understood.
       Column() {
+        Row()
+          .width('100%')
+          .height(0)
+          .onAreaChange((_old: Area, now: Area) => {
+            let w = now.width as number
+            if (Math.abs(w - this.canvasWidth) >= 1) { this.canvasWidth = w }
+          })
         Stack({ alignContent: Alignment.TopStart }) {
           this.renderChildren(node)
         }
-        .scale({ x: node.style === 'large' ? 5.0 : node.style === 'small' ? 2.6 : 3.8,
-                 y: node.style === 'large' ? 5.0 : node.style === 'small' ? 2.6 : 3.8 })
+        .scale({ x: vp2px(this.canvasSide(node.style)) / 100, y: vp2px(this.canvasSide(node.style)) / 100,
+                 centerX: 0, centerY: 0 })
       }
       .width('100%')
-      .height(node.style === 'large' ? 440 : node.style === 'small' ? 240 : 340)
-      .alignItems(HorizontalAlign.Center)
-      .justifyContent(FlexAlign.Center)
+      .height(this.canvasSide(node.style))
+      .alignItems(HorizontalAlign.Start)
     } else if (node.kind === 'path' && parentKind === 'canvas') {
       // Bare: no wrapper, no centring, no scale of its own. Those are right for
       // a lone shape and fatal for a composition -- centring throws away the
