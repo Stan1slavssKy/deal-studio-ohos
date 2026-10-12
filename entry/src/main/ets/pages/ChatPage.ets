@@ -458,7 +458,7 @@ struct ChatPage {
           if (note.length > 0 && this.status.length === 0) { this.status = note }
         } catch (e) {
           this.status = 'Failed to load resources: ' + (e as Error).message
-          throw e
+          throw e as Error
         }
       })()
     }
