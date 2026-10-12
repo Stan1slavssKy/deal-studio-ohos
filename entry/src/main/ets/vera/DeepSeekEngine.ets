@@ -39,6 +39,7 @@ import util from '@ohos.util'
 import { GenerateRequest, GenerateResult, TokenCallback } from './LlamaEngine'
 import { settings } from './SettingsStore'
 import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
+import { calendarSdkContract } from './VeraCalendarSdk'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
 import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
@@ -185,6 +186,15 @@ function sdkResultsJson(entries: SdkEntry[]): string {
     item['params'] = e.params
     item['returnType'] = e.returnType
     item['description'] = e.summary.length > 0 ? e.summary : e.description
+    let contract = calendarSdkContract(target)
+    if (contract !== undefined) {
+      item['nativeParams'] = e.params
+      item['nativeReturnType'] = e.returnType
+      item['params'] = contract.params
+      item['returnType'] = contract.returnType
+      item['description'] = contract.description
+      item['implemented'] = true
+    }
     items.push(item)
   }
   body['results'] = items
