@@ -156,12 +156,17 @@ function scoreEntry(entry: SdkEntry, words: string[]): number {
  * An inverted index or ANN structure would only earn its keep at a much
  * larger N than this surface has.
  */
-export function findSdkFunction(index: SdkEntry[], need: string, limit: number = 8): SdkEntry[] {
+/** Keeps a candidate ("Kit.Module.name") in the results; null keeps every one. */
+export type SdkTargetFilter = (target: string) => boolean
+
+export function findSdkFunction(index: SdkEntry[], need: string, limit: number = 8,
+    only: SdkTargetFilter | null = null): SdkEntry[] {
   let words = needWords(need)
   let scored: SdkEntry[] = []
   let scores: Map<string, number> = new Map<string, number>()
   for (let i = 0; i < index.length; i++) {
     let entry = index[i]
+    if (only !== null && !only!(entry.kit + '.' + entry.module + '.' + entry.name)) { continue }
     let s = scoreEntry(entry, words)
     if (s > 0) {
       let key = entry.kit + '.' + entry.module + '.' + entry.name
@@ -227,6 +232,6 @@ export function sdkIndexSize(): number { return cache.length }
 export function sdkIndexEntries(): SdkEntry[] { return cache }
 
 /** find_sdk_function as DeepSeek's tool call reaches it: search the loaded index. */
-export function findSdkFunctionFromCache(need: string, limit: number = 8): SdkEntry[] {
-  return findSdkFunction(cache, need, limit)
+export function findSdkFunctionFromCache(need: string, limit: number = 8, only: SdkTargetFilter | null = null): SdkEntry[] {
+  return findSdkFunction(cache, need, limit, only)
 }

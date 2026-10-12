@@ -3427,10 +3427,14 @@ export async function runSdkAdapter(target: string, params: Map<string, string>)
 }
 
 /**
- * Whether `target` has a real row in ADAPTERS. Informational only -- the eval
- * and the sdk probe mark each result :impl/:stub with it. Search does not use
- * it: whether a target runs is not a relevance signal, and "sdk.call is not
- * implemented yet" is an acceptable answer.
+ * Whether `target` has a real adapter: a row in ADAPTERS or one of the CalendarKit
+ * targets VeraCalendarSdk handles. find_sdk_function, as the model
+ * reaches it (DeepSeekEngine), returns only such targets: a program that picks a
+ * stub compiles and runs and then answers "sdk.call is not implemented yet" on
+ * every tap -- a Morse widget did exactly that while setTorchMode sat first in
+ * its results. The ranking itself does not use it, and the eval, probe and
+ * benchmark search the whole index and mark each result :impl/:stub with it, so
+ * recall is still measured against everything the SDK has.
  */
 export function isSdkTargetImplemented(target: string): boolean {
   return calendarSdkTargets.indexOf(target) >= 0 || ADAPTERS.has(target)

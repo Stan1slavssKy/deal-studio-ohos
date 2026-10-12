@@ -36,7 +36,7 @@
 import fs from '@ohos.file.fs'
 import hilog from '@ohos.hilog'
 import resourceManager from '@ohos.resourceManager'
-import { SdkEntry, sdkIndexEntries } from './VeraSdkIndex'
+import { SdkEntry, sdkIndexEntries, SdkTargetFilter } from './VeraSdkIndex'
 import { embedBatch, embedOne, embeddingModelReady, MODEL_FILE } from './VeraEmbeddings'
 import { nativeScanCorpus } from './LlamaEngine'
 
@@ -318,7 +318,8 @@ export function ensureSdkEmbeddings(filesDir: string, mgr: resourceManager.Resou
  * tokens with their correct answer and would never reach a shortlist built
  * that way.
  */
-export async function findSdkFunctionByEmbedding(need: string, limit: number = 8): Promise<SdkEntry[] | null> {
+export async function findSdkFunctionByEmbedding(need: string, limit: number = 8,
+    only: SdkTargetFilter | null = null): Promise<SdkEntry[] | null> {
   if (!ready || vectors === null) { return null }
   // Timed in two pieces, not one -- "how long did this take" conflates two
   // very different costs: a live model inference to embed the query
@@ -346,7 +347,13 @@ export async function findSdkFunctionByEmbedding(need: string, limit: number = 8
   hilog.info(DOMAIN, 'VERA', 'VERA-SDK-EMBED-TIMING queryEmbedMs=' + queryEmbedMs.toString() +
     ' scanMs=' + scanMs.toString() + ' totalMs=' + (queryEmbedMs + scanMs).toString())
 
+  // The filter applies after scoring, so the scan stays one native pass over
+  // the whole cache; the top `limit` are taken from what passes.
   let out: SdkEntry[] = []
-  for (let i = 0; i < idx.length && i < limit; i++) { out.push(entries[idx[i]]) }
+  for (let i = 0; i < idx.length && out.length < limit; i++) {
+    let e = entries[idx[i]]
+    if (only !== null && !only!(e.kit + '.' + e.module + '.' + e.name)) { continue }
+    out.push(e)
+  }
   return out
 }
