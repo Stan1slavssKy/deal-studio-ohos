@@ -155,7 +155,13 @@ function rawEntry(entry: RegistryEntry): IntentEntry {
   // With a summary the description is what the intent is for; without one it
   // is all the registry gave us -- the name and the app it lives in.
   let bits: string[] = [summary !== undefined ? summary as string : entry.intentName + ' (' + entry.bundle + ')']
-  if (entry.params.length > 0) { bits.push('parameters: ' + entry.params.join(' ')) }
+  // paramHints carries type, allowed values and required-ness when the app
+  // declared a real schema (VeraIntentRegistry.describeSchemaProperty) --
+  // the same quality of hint a catalogue row gives, from real platform data.
+  // Falls back to bare names for the common case of a declared name with no
+  // further shape, and to nothing at all when the app declared no schema.
+  if (entry.paramHints.length > 0) { bits.push('parameters -- ' + entry.paramHints.join('; ')) }
+  else if (entry.params.length > 0) { bits.push('parameters: ' + entry.params.join(' ')) }
   if (entry.words.length > 0) { bits.push(entry.words) }
   e.description = bits.join(', ')
   e.label = entry.intentName
