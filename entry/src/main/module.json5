@@ -24,6 +24,7 @@
     //   ohos.permission.SET_TELEPHONY_STATE               generated sdk.call adapters
     //   ohos.permission.NOTIFICATION_CONTROLLER           generated sdk.call adapters
     //   ohos.permission.GET_NETWORK_INFO                  generated sdk.call adapters
+    //   ohos.permission.INPUT_MONITORING                  system_core?, inputMonitor.onKeyPressed (power-key double press)
     //
     // These MUST be signed with signing/UnsgnedReleasedProfileTemplate.json
     // via ./sign-system.sh. A plain arkui-sign build cannot carry them, and the
@@ -75,7 +76,8 @@
       { "name": "ohos.permission.GET_TELEPHONY_STATE" },
       { "name": "ohos.permission.SET_TELEPHONY_STATE" },
       { "name": "ohos.permission.NOTIFICATION_CONTROLLER" },
-      { "name": "ohos.permission.GET_NETWORK_INFO" }
+      { "name": "ohos.permission.GET_NETWORK_INFO" },
+      { "name": "ohos.permission.INPUT_MONITORING" }
     ],
     "abilities": [
       {
