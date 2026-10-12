@@ -118,6 +118,16 @@ export struct VeraPreview {
   @State hasRoot: boolean = false
   private liveRoot: LiveNode | null = null
   /**
+   * Which program liveRoot belongs to, bumped by every load(). The drawn tree
+   * is keyed by it: load() replaces liveRoot with a new object and flips
+   * hasRoot false and back to true within one frame, which ArkUI sees as no
+   * change at all, so without the key the old program's tree stayed on screen
+   * while every later reconcile updated the new one nobody was drawing. That
+   * is what a chat preview handing over to its finished program looked like:
+   * taps ran, state changed, the screen did not.
+   */
+  @State programId: number = 0
+  /**
    * A frame counter for the logs, and nothing more -- build() does not read it,
    * so writing it triggers no re-render. It is not @State for that reason: it
    * used to key a ForEach that recreated the whole tree on every action, and
@@ -264,6 +274,7 @@ export struct VeraPreview {
     this.currentState = null
     this.liveRoot = null
     this.hasRoot = false
+    this.programId += 1
     this.error = ''
     if (this.vbc2.length === 0) { return }
     try {
@@ -839,12 +850,16 @@ export struct VeraPreview {
           // here would take a drag that began on the program and leave the
           // page behind it unmoved.
           Column() {
-            this.renderNode(this.liveRoot!, 'root')
+            ForEach([this.programId], (_id: number) => {
+              this.renderNode(this.liveRoot!, 'root')
+            }, (id: number) => id.toString())
           }.width('100%')
         } else {
           Scroll() {
             Column() {
-              this.renderNode(this.liveRoot!, 'root')
+              ForEach([this.programId], (_id: number) => {
+                this.renderNode(this.liveRoot!, 'root')
+              }, (id: number) => id.toString())
             }.width('100%')
           }
           .width('100%')
