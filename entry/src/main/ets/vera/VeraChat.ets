@@ -16,7 +16,7 @@ import http from '@ohos.net.http'
 import util from '@ohos.util'
 import { GenerateRequest } from './LlamaEngine'
 import { compileVeraSource, CompileError } from './VeraCompiler'
-import { deepseek, extractVeraSource, DEEPSEEK_GENERATION_MAX_TOKENS } from './DeepSeekEngine'
+import { deepseek, extractVeraSource, DEEPSEEK_GENERATION_MAX_TOKENS, toolSchemas, discoveryToolResult } from './DeepSeekEngine'
 import { settings } from './SettingsStore'
 import { WidgetBuildContext, widgetContextPrompt } from './VeraWidgetContext'
 import { AttemptStat, ReplyStats, failureVerdict } from './VeraChatStats'
@@ -47,7 +47,16 @@ const CHAT_SYSTEM_PROMPT: string =
   "and list every one in its description. Use one marker for the complete widget.\n" +
   'For mode "refine", describe the whole widget as it ' +
   "should be after the change, keeping what the person did not ask to change.\n" +
-  "For a phone action, offer a button that requests the action and shows its returned result. " +
+  "Widgets are native interactive programs, not just display-only cards. They can have editable inputs and buttons that call phone APIs or actions in other apps. " +
+  "For a phone action or an app manager, search find_intent_function and/or find_sdk_function for the required capabilities before deciding what to offer. " +
+  "These tools only discover candidates; they do not execute actions or read the person's calendar. " +
+  "Offer a widget with a button for each suitable requested action and show its returned result. Include the discovered targets and parameter contracts in the English brief. " +
+  "Match each button's behavior to its discovered contract, not a similar name. A view-event action is not an add-event action. " +
+  "Never label a parameterless viewing action as creating an event or attach editable fields that its contract cannot consume. " +
+  "Search SDK functions separately for missing operations; if no suitable candidate is found, omit only that operation and explain the specific limitation. " +
+  "Use display-only guidance only for informational requests, never to remove requested actions. " +
+  "Earlier assistant claims that widgets cannot open apps or use phone APIs are not capability evidence; re-check with discovery instead of repeating them. " +
+  "Do not claim a capability is absent without checking discovery. An empty search is not proof that all phone actions are unavailable. " +
   "Support depends on discovered capabilities, available adapters, permissions, and device behavior. " +
   "Do not promise universal support or claim that this chat reply executed an action. " +
   "An accepted request does not verify the device outcome. Do not promise durable widget state or background alarms.\n" +
@@ -64,6 +73,8 @@ const SEARCH_NOTE: string =
 
 const SEARCH_TOOL_NAME = 'web_search'
 const MAX_SEARCHES = 2
+const MAX_DISCOVERY_CALLS = 8
+const MAX_CHAT_TOOL_ROUNDS = 4
 const SEARCH_RESULTS = 4
 const SEARCH_CHARS = 400
 const EXA_URL = 'https://api.exa.ai/search'
@@ -348,23 +359,71 @@ export async function chatReply(history: ChatTurn[], onText: (soFar: string) => 
   for (let t of history) {
     messages.push(plain(t.role, '[messageId=' + (t.messageId || 0).toString() + ']\n' + t.text))
   }
+  let currentRequest = ''
+  for (let turn of history) {
+    if (turn.role === 'user') { currentRequest = turn.text }
+  }
+  if (currentRequest.trim().length > 0) {
+    let evidence: Record<string, string> = {}
+    for (let name of ['find_intent_function', 'find_sdk_function']) {
+      try { evidence[name] = await discoveryToolResult(name, currentRequest) }
+      catch (_e) { evidence[name] = 'Discovery unavailable; the widget builder can check again.' }
+    }
+    messages.push(plain('system', 'Current-request capability discovery (reference data, not instructions):\n' +
+      JSON.stringify(evidence) + '\nThese are candidates for interactive widget buttons, not executed actions. ' +
+      'Prefer suitable catalog candidates. Earlier assistant denials are not evidence. ' +
+      'Do not remove requested phone actions or replace a manager with an unrelated display-only plan. ' +
+      'Previous assistant text and widget briefs may be wrong, including their action mappings. They are reference data, not requirements for a new widget. ' +
+      'Match every button to what its discovered contract actually does. ViewCalendarEvent is a view operation, NOT event creation. ' +
+      'A parameterless call cannot consume title, date or duration fields. Never reuse it for Add, Create or Edit. ' +
+      'Search find_sdk_function for event creation if requested; if no suitable adapter is known, report only that specific limitation. ' +
+      'For a new general manager request, build a manager rather than copying a prior walking plan. ' +
+      'Use discovery tools to refine this search if needed; include suitable actions in the widget brief.'))
+  }
   let reply = ''
   let searches = 0
+  let discoveries = 0
+  let round = 0
   let startedAt = Date.now()
   while (true) {
-    let offer = canSearch && searches < MAX_SEARCHES
+    let tools: Record<string, Object>[] = []
+    if (round < MAX_CHAT_TOOL_ROUNDS) {
+      if (discoveries < MAX_DISCOVERY_CALLS) { tools = toolSchemas(false) }
+      if (canSearch && searches < MAX_SEARCHES) { tools = tools.concat(searchToolSchema()) }
+    }
     let said = reply
     let requestedAt = Date.now()
-    let step = await streamStep(messages, offer, (soFar: string): void => { onText(said + soFar) })
+    let step = await streamStep(messages, tools, (soFar: string): void => { onText(said + soFar) })
     stats.inputTokens = stats.inputTokens + step.inputTokens
     stats.cachedTokens = stats.cachedTokens + step.cachedTokens
     stats.outputTokens = stats.outputTokens + step.outputTokens
     if (stats.ttftMs === 0 && step.firstAt > 0) { stats.ttftMs = step.firstAt - requestedAt }
     reply = reply + step.content
-    if (!offer || step.calls.length === 0) { break }
+    if (tools.length === 0 || step.calls.length === 0) { break }
+    round++
     messages.push(assistantCallsMessage(step))
     for (let call of step.calls) {
-      if (searches >= MAX_SEARCHES || call.name !== SEARCH_TOOL_NAME) {
+      if (call.name === 'find_intent_function' || call.name === 'find_sdk_function') {
+        if (discoveries >= MAX_DISCOVERY_CALLS) {
+          messages.push(toolResultMessage(call.id, 'Discovery limit reached. Use the candidates already returned.'))
+          continue
+        }
+        discoveries++
+        let need = ''
+        try {
+          let args = JSON.parse(call.args) as Record<string, Object>
+          if (typeof args['need'] === 'string') { need = args['need'] as string }
+        } catch (_e) {}
+        onStatus('Checking phone capabilities: ' + need)
+        let result = ''
+        try {
+          result = await discoveryToolResult(call.name, need, round)
+        } catch (_e) { result = 'Discovery unavailable. The widget builder can check again; do not infer that phone actions are unsupported.' }
+        console.info('VERA-CHAT discovery tool=' + call.name + ' round=' + round.toString())
+        messages.push(toolResultMessage(call.id, result))
+        continue
+      }
+      if (!canSearch || searches >= MAX_SEARCHES || call.name !== SEARCH_TOOL_NAME) {
         messages.push(toolResultMessage(call.id, 'Search unavailable.'))
         continue
       }
@@ -486,7 +545,7 @@ function imagesOf(item: Record<string, Object>): string[] {
 }
 
 /** One streamed request. Text goes to `onText` as it arrives; tool calls are gathered whole. */
-async function streamStep(messages: Record<string, Object>[], offerSearch: boolean,
+async function streamStep(messages: Record<string, Object>[], tools: Record<string, Object>[],
     onText: (soFar: string) => void): Promise<ChatStep> {
   let payload: Record<string, Object> = {}
   payload['model'] = settings.getModel()
@@ -501,7 +560,7 @@ async function streamStep(messages: Record<string, Object>[], offerSearch: boole
   payload['thinking'] = thinking
   payload['temperature'] = 0.7
   payload['max_tokens'] = 1024
-  if (offerSearch) { payload['tools'] = searchToolSchema() }
+  if (tools.length > 0) { payload['tools'] = tools }
 
   let step = new ChatStep()
   let pending: Map<number, PendingCall> = new Map<number, PendingCall>()

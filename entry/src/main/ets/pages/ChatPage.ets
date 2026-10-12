@@ -547,6 +547,7 @@ struct ChatPage {
     this.status = 'Thinking...'
     let stats = new ReplyStats()
     try {
+      await ensureCapabilities(getContext(this))
       let raw = await chatReply(turns, (soFar: string): void => {
         if (this.status === 'Thinking...') { this.status = '' }
         this.apply(reply, parseReply(soFar))
