@@ -330,8 +330,29 @@ export function extractVeraSource(text: string): string {
   return rest.substring(0, close).trim()
 }
 
+/**
+ * What a generation is doing while it is not writing program text, for a
+ * caller that shows progress. Program text itself still arrives through the
+ * token callback.
+ */
+export class GenerateProgress {
+  /** 'request' (a new round was sent), 'thinking' or 'tool'. */
+  phase: string = ''
+  /** The round this belongs to. Program text from an earlier round is void. */
+  round: number = 0
+  /** For 'tool': which search ran, and what it was asked for. */
+  tool: string = ''
+  need: string = ''
+}
+
+export type ProgressCallback = (progress: GenerateProgress) => void
+
+function noProgress(_progress: GenerateProgress): void {}
+
 export class DeepSeekEngine {
   private client: http.HttpRequest | null = null
+  private progress: GenerateProgress = new GenerateProgress()
+  private onProgress: ProgressCallback = noProgress
   private generating: boolean = false
   private cancelled: boolean = false
   private buffer: string = ''
@@ -376,11 +397,27 @@ export class DeepSeekEngine {
   lastToolRounds(): number { return this.toolRounds }
   lastInputTokens(): number { return this.inputTokens }
 
-  async generate(request: GenerateRequest, onToken: TokenCallback): Promise<GenerateResult> {
+  async generate(request: GenerateRequest, onToken: TokenCallback,
+      onProgress: ProgressCallback = noProgress): Promise<GenerateResult> {
     let key = settings.getApiKey()
     if (key.length === 0) {
       throw new Error('No DeepSeek API key. Send one with: aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key>')
     }
+    this.progress = new GenerateProgress()
+    this.onProgress = onProgress
+    try {
+      return await this.generateRounds(request, onToken)
+    } finally {
+      this.onProgress = noProgress
+    }
+  }
+
+  private report(phase: string): void {
+    this.progress.phase = phase
+    this.onProgress(this.progress)
+  }
+
+  private async generateRounds(request: GenerateRequest, onToken: TokenCallback): Promise<GenerateResult> {
 
     this.text = ''
     this.inputTokens = 0
@@ -414,6 +451,8 @@ export class DeepSeekEngine {
     let stillAsking = false
     while (round < MAX_TOOL_ROUNDS) {
       round++
+      this.progress.round = round
+      this.report('request')
       try {
         turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, true)
       } catch (e) {
@@ -444,6 +483,9 @@ export class DeepSeekEngine {
           // the tool result below tells the model that plainly rather than
           // dropping its call silently.
         }
+        this.progress.tool = call.name
+        this.progress.need = need
+        this.report('tool')
         if (call.name === INTENT_TOOL_NAME || call.name === SDK_TOOL_NAME) {
           messages.push(toolResultMessage(call.id, await discoveryToolResult(call.name, need, round)))
         } else if (call.name === UI_TOOL_NAME) {
@@ -478,6 +520,8 @@ export class DeepSeekEngine {
     // sitting right there. One last request, tools left off so it cannot
     // ask again, forces a real answer out of what it already has.
     if (stillAsking && !this.cancelled) {
+      this.progress.round = round + 1
+      this.report('request')
       try {
         let final = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, false)
         this.inputTokens = this.inputTokens + final.inputTokens
@@ -668,6 +712,7 @@ export class DeepSeekEngine {
         let reasoning = delta['reasoning_content']
         if (typeof reasoning === 'string' && (reasoning as string).length > 0) {
           if (this.firstAnyAt === 0) { this.firstAnyAt = Date.now() }
+          if (this.progress.phase !== 'thinking') { this.report('thinking') }
         }
         let content = delta['content']
         if (typeof content === 'string') {

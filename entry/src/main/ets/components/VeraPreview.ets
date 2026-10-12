@@ -73,6 +73,14 @@ const ASK_BEFORE_CALLS: boolean = false
 
 @Component
 export struct VeraPreview {
+  /**
+   * The program is a picture of one still being written (VeraWidgetPreview):
+   * its handlers may not exist yet, so nothing dispatches -- no taps, no
+   * tickers, no back gesture -- and nothing is saved or reported. Declared
+   * before vbc2 so it has its new value by the time a new program loads; the
+   * watch covers the other order too.
+   */
+  @Prop @Watch('onPreviewOnlyChanged') previewOnly: boolean = false
   @Prop @Watch('onProgramChanged') vbc2: string = ''
   /**
    * Where to keep this program's state, as 'projectId/versionId'. Empty means
@@ -216,6 +224,12 @@ export struct VeraPreview {
 
   onProgramChanged(): void {
     this.load()
+  }
+
+  /** Start or stop the tickers the current frame asks for, and report the state a preview held back. */
+  onPreviewOnlyChanged(): void {
+    this.notifyStateSnapshot()
+    this.renderView()
   }
 
   /**
@@ -429,7 +443,7 @@ export struct VeraPreview {
 
   private restoreState(): RuntimeValue | null {
     let keys = this.stateKeys()
-    if (keys.length === 0) { return null }
+    if (keys.length === 0 || this.previewOnly) { return null }
     let encoded = store.loadState(keys[0], keys[1], this.stamp())
     if (encoded.length === 0) { return null }
     try {
@@ -441,7 +455,7 @@ export struct VeraPreview {
   }
 
   private notifyStateSnapshot(): void {
-    if (this.currentState === null) { return }
+    if (this.currentState === null || this.previewOnly) { return }
     try {
       this.onStateSnapshot(JSON.stringify(encodeRuntimeValue(this.currentState!)))
     } catch (e) {
@@ -486,7 +500,7 @@ export struct VeraPreview {
         reconcile(this.liveRoot!, root!)
       }
       this.revision += 1
-      this.reconcileTimers(root)
+      this.reconcileTimers(this.previewOnly ? null : root)
       this.reconcileSpin(root)
       this.reconcileBackHandler(root)
     } catch (e) {
@@ -548,7 +562,7 @@ export struct VeraPreview {
    */
   private dispatch(action: string, payload: RuntimeValue, persist: boolean = true): void {
     console.info('VERA-CLICK action=' + action + ' rev=' + this.revision.toString())
-    if (this.vm === null || this.currentState === null) { return }
+    if (this.vm === null || this.currentState === null || this.previewOnly) { return }
     let t0 = Date.now()
     try {
       if (this.host !== null) { this.host!.effectsAllowed = true }
