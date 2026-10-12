@@ -7,8 +7,12 @@ ets/vera/` is the language: compiler, VM, the `std/ui` catalogue and the theme.
 
 ## Before you build: find out what is missing, then ask
 
-The build needs three things that are not in this repo. Run this first — it
-prints what it found and what it did not:
+For a rebuild and in-place update, run `./update-phone.sh` directly: it checks
+the tools and the installed app before building. Do not repeat the checks below
+or reread the build scripts on routine update requests unless the command fails.
+
+For other build workflows, the build needs three things that are not in this
+repo. Run this first — it prints what it found and what it did not:
 
 ```bash
 bash -c 'source ./tool-paths.sh
@@ -46,17 +50,43 @@ another copy.
 
 ## Building, signing, installing
 
+For routine updates:
+
 ```bash
-./build-hap.sh      # builds, then debug-signs; finds the UDID itself
-./sign-system.sh    # re-signs the unsigned HAP as a system app
-hdc install /tmp/vera-probe-dyn-hap/vera-probe-dyn-system-signed.hap
-./measure.sh 3      # timings -> results/device.jsonl
+./update-phone.sh
 ```
 
-`build-hap.sh` cannot produce a system app: `arkui-sign` takes no profile
-argument and reads the kit's own template. A program that calls `std/intent`
-needs one, because `insightIntentDriver` is a system API — so the usual route is
-`build-hap.sh`, ignore the HAP it signs, then `sign-system.sh` and install that.
+This requires exactly one connected phone and an existing system installation
+with the same bundle name. It builds incrementally, skips debug signing, signs
+once with the system profile, installs without deleting anything, and verifies
+that the app ID, UID and first install time did not change while update time
+advanced. On any error, stop: never uninstall, clear app data, or change the
+bundle name to work around an update failure. The script prints elapsed time.
+
+For separate build/sign steps:
+
+```bash
+./build-hap.sh --unsigned
+./sign-system.sh
+hdc install /tmp/vera-probe-dyn-hap/vera-probe-dyn-system-signed.hap
+./measure.sh 3
+```
+
+Without `--unsigned`, `build-hap.sh` keeps its original debug-signing behaviour
+and finds the UDID itself. It cannot produce a system app: `arkui-sign` takes no
+profile argument and reads the kit's own template. A program that calls
+`std/intent` needs system signing because `insightIntentDriver` is a system API.
+
+For shell-only changes, run:
+
+```bash
+for script in build-hap.sh sign-system.sh update-phone.sh tool-paths.sh; do
+  bash -n "$script" || exit
+done
+git diff --check
+```
+
+No shell lint/typecheck command is configured; use ShellCheck if it is available.
 
 ## Three traps that cost real time
 
