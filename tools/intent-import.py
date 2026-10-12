@@ -170,16 +170,33 @@ def candidates(tools: dict, execute_map: dict, device: dict):
     return kept, dropped
 
 
-def build(name, tool, entry, record, template, properties):
-    """One candidate: where to send it, what it takes, what is constant."""
+def resolve_template_params(template: dict, properties: dict, required: list) -> tuple:
+    """
+    Walks an intentParam template against the tool's own parameter schema.
+
+    fixed: platformName -> the literal constant the assistant always sends
+    (usually what makes a row specific, e.g. itemName "bluetooth").
+    params: one dict per program-supplied field -- name (the schema's own
+    key, celia's internal name), platformName (the literal wire key the
+    template actually places it under -- these two can differ), kind,
+    values, required, defaultValue.
+
+    A parameter the schema declares but the template never places still
+    travels under its own name: the assistant passes such payloads through.
+    """
+    # A handful of celia's own schema keys carry a stray trailing colon
+    # (data typo, not a naming convention) -- flat_params() in
+    # build-intent-summaries.py already strips this from its own display
+    # name; normalised here too, once, so every caller of this function and
+    # every lookup against `properties` agrees on the same key.
+    properties = {k.strip().rstrip(':'): v for k, v in properties.items()}
+    required = [r.strip().rstrip(':') for r in required]
     fixed, params = {}, []
     for platform_name, value in template.items():
         if not isinstance(value, str):
             continue
         match = re.fullmatch(r'\$\{([\w.]+)(?:\|([^}]*))?\}', value)
         if match is None:
-            # No placeholder: the assistant always sends this exact value, and
-            # it is usually what makes the row specific -- itemName "bluetooth".
             fixed[platform_name] = value
             continue
         field, default = match.group(1), match.group(2) or ''
@@ -189,10 +206,10 @@ def build(name, tool, entry, record, template, properties):
             'platformName': platform_name,
             'kind': 'int' if schema.get('type') == 'integer' else 'string',
             'values': [v for v in schema.get('enum', []) if isinstance(v, str)],
+            'required': field in required,
             'defaultValue': default,
+            'description': schema.get('description', ''),
         })
-    # A parameter the schema declares but the template never places still
-    # travels under its own name: the assistant passes such payloads through.
     placed = {p['name'] for p in params}
     for field, schema in properties.items():
         if field in placed:
@@ -202,8 +219,17 @@ def build(name, tool, entry, record, template, properties):
             'platformName': field,
             'kind': 'int' if schema.get('type') == 'integer' else 'string',
             'values': [v for v in schema.get('enum', []) if isinstance(v, str)],
+            'required': field in required,
             'defaultValue': '',
+            'description': schema.get('description', ''),
         })
+    return fixed, params
+
+
+def build(name, tool, entry, record, template, properties):
+    """One candidate: where to send it, what it takes, what is constant."""
+    required = (tool.get('parameters') or {}).get('required') or []
+    fixed, params = resolve_template_params(template, properties, required)
     bundle = entry['bundleName']
     # The assistant's mode is a preference; the device's list is the law. Asking
     # for a mode the target does not declare is refused by the framework before

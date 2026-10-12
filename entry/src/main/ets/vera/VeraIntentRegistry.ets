@@ -52,24 +52,41 @@ export class RegistryEntry {
 }
 
 /**
- * One property of a declared parameter schema, read the same defensive way
- * flatten() reads subIntentInfo: index into the untyped record, narrow with
- * typeof, accept absence silently -- a declared schema is still just app
- * data, not something this file can require a shape from.
+ * One declared parameter, rendered the same way regardless of where it was
+ * declared -- a live device schema (this file's own flatten(), below) or
+ * celia's static tool catalogue (VeraCeliaIntentIndex.ets). Provenance-
+ * agnostic on purpose: the model should not be able to tell the two apart
+ * from the text alone, and a reader comparing the two tiers' hints
+ * shouldn't either.
+ */
+export function describeParamHint(name: string, kind: string, values: string[],
+    description: string, required: boolean): string {
+  let desc = kind.length > 0 ? kind : 'any'
+  if (values.length > 0) { desc = desc + ', one of: ' + values.join(' ') }
+  if (description.length > 0) { desc = desc + ' -- ' + description }
+  if (required) { desc = desc + ' (required)' }
+  return name + ': ' + desc
+}
+
+/**
+ * One property of a *live device's own* declared parameter schema, read the
+ * same defensive way flatten() reads subIntentInfo: index into the untyped
+ * record, narrow with typeof, accept absence silently -- a declared schema
+ * is still just app data, not something this file can require a shape from.
+ * Pulls out the primitives describeParamHint actually needs and defers to it,
+ * so this device-specific parsing is the only thing that isn't shared.
  */
 function describeSchemaProperty(name: string, required: boolean, schema: Record<string, Object>): string {
   let typeVal = schema['type']
-  let desc = typeof typeVal === 'string' ? typeVal : 'any'
+  let kind = typeof typeVal === 'string' ? typeVal : 'any'
+  let values: string[] = []
   let enumVal = schema['enum']
   if (Array.isArray(enumVal) && (enumVal as Object[]).length > 0) {
-    let shown: string[] = []
-    for (let v of enumVal as Object[]) { shown.push((v as Object).toString()) }
-    desc = desc + ', one of: ' + shown.join(' ')
+    for (let v of enumVal as Object[]) { values.push((v as Object).toString()) }
   }
   let descVal = schema['description']
-  if (typeof descVal === 'string' && descVal.length > 0) { desc = desc + ' -- ' + descVal }
-  if (required) { desc = desc + ' (required)' }
-  return name + ': ' + desc
+  let description = typeof descVal === 'string' ? descVal : ''
+  return describeParamHint(name, kind, values, description, required)
 }
 
 /**

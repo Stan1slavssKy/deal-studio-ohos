@@ -19,9 +19,10 @@
 
 import fs from '@ohos.file.fs'
 import hilog from '@ohos.hilog'
-import { IntentEntry, allEntries } from './VeraIntentIndex'
+import { IntentEntry, allEntries, celiaEntryIfInstalled } from './VeraIntentIndex'
 import { embedBatch, embedOne, embeddingModelReady, MODEL_FILE } from './VeraEmbeddings'
 import { loadRawfileText } from './LlamaEngine'
+import { scoreCeliaCorpus, CeliaScored, celiaIntentEmbeddingsReady } from './VeraCeliaIntentEmbeddingCache'
 import resourceManager from '@ohos.resourceManager'
 
 const DOMAIN = 0x0000
@@ -171,6 +172,11 @@ async function build(filesDir: string, mgr: resourceManager.ResourceManager | nu
   let entries = allEntries()
   let missing: IntentEntry[] = []
   for (let e of entries) {
+    // celia-tier entries are embedded once, offline, host-side, over celia's
+    // whole static corpus (VeraCeliaIntentEmbeddingCache.ets) -- embedding
+    // them again here, one device-present subset at a time, would duplicate
+    // that work on-device at the ~145ms/entry cost this file exists to avoid.
+    if (e.kind === 'celia') { continue }
     if (!vectors.has(entryKey(e))) { missing.push(e) }
   }
   if (missing.length === 0) { return }
@@ -243,7 +249,7 @@ export function ensureIntentEmbeddings(filesDir: string,
  * degrades by shrinking the candidate pool, not by never favouring anything.
  */
 export async function findIntentFunctionByEmbedding(need: string, limit: number = 8): Promise<IntentEntry[] | null> {
-  if (vectors.size === 0) { return null }
+  if (vectors.size === 0 && !celiaIntentEmbeddingsReady()) { return null }
   // Same two-piece timing as VeraSdkEmbeddingCache.ets's findSdkFunctionByEmbedding
   // -- see its comment for why queryEmbedMs and scanMs are kept apart.
   let queryStartedAt = Date.now()
@@ -262,6 +268,19 @@ export async function findIntentFunctionByEmbedding(need: string, limit: number 
     for (let d = 0; d < dimension; d++) { dot = dot + q[d] * v[d] }
     scores.set(entryKey(e), dot)
     scored.push(e)
+  }
+  // Celia tier: its own precomputed corpus, scanned natively against the
+  // same query vector, filtered to what this device actually has through
+  // the identical rule the token path uses (VeraIntentIndex.
+  // celiaEntryIfInstalled) -- one filter, never two copies that could drift.
+  let celiaScored = scoreCeliaCorpus(q)
+  if (celiaScored !== null) {
+    for (let cs of celiaScored) {
+      let e = celiaEntryIfInstalled(cs.entry)
+      if (e === null) { continue }
+      scores.set(entryKey(e), cs.score)
+      scored.push(e)
+    }
   }
   scored.sort((a: IntentEntry, b: IntentEntry) => {
     let sa = scores.get(entryKey(a)) as number
