@@ -36,6 +36,16 @@ export class VeraUiNode {
   series: number[] = []
   /** ui.Sparkline: draw series as separate bars instead of a connected line. */
   bars: boolean = false
+  /** ui.Sparkline: a second line to compare against series; empty for a single-series chart. */
+  series2: number[] = []
+  /** ui.Sparkline: series2's tone, from the same style set as the chart itself. */
+  series2Style: string = ''
+  /** ui.Sparkline: legend text for series, shown only when series2 is non-empty. */
+  seriesLabel: string = ''
+  /** ui.Sparkline: legend text for series2. */
+  series2Label: string = ''
+  /** ui.Sparkline: x-axis labels, one per point; empty for a plain trend with no axis. */
+  categories: string[] = []
   children: VeraUiNode[] = []
 
   /**
@@ -752,6 +762,12 @@ export class UiHostEnvironment extends HostEnvironment {
           ['maximum', new VeraIntValue(argInt(args, 2))],
           ['label', new VeraStringValue(argString(args, 3))],
           ['bars', new VeraBooleanValue(argBool(args, 4, false))],
+          ['series2', argArray(args, 5)],
+          ['series2Style', new VeraStringValue(argString(args, 6))],
+          ['seriesLabel', new VeraStringValue(argString(args, 7))],
+          ['series2Label', new VeraStringValue(argString(args, 8))],
+          ['categories', argArray(args, 9)],
+          ['minimum', new VeraIntValue(argInt(args, 10, 0))],
         ])
       case 'When':
         if (asBool(args[0])) { return args[1] }
@@ -935,6 +951,33 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
             if (n instanceof VeraIntValue) { nums.push((n as VeraIntValue).value) }
           }
           node.series = nums
+        }
+        break
+      case 'series2':
+        if (v instanceof VeraArrayValue) {
+          let nums2: number[] = []
+          for (let n of (v as VeraArrayValue).elements) {
+            if (n instanceof VeraIntValue) { nums2.push((n as VeraIntValue).value) }
+          }
+          node.series2 = nums2
+        }
+        break
+      case 'series2Style':
+        if (v instanceof VeraStringValue) { node.series2Style = (v as VeraStringValue).value }
+        break
+      case 'seriesLabel':
+        if (v instanceof VeraStringValue) { node.seriesLabel = (v as VeraStringValue).value }
+        break
+      case 'series2Label':
+        if (v instanceof VeraStringValue) { node.series2Label = (v as VeraStringValue).value }
+        break
+      case 'categories':
+        if (v instanceof VeraArrayValue) {
+          let cats: string[] = []
+          for (let c of (v as VeraArrayValue).elements) {
+            if (c instanceof VeraStringValue) { cats.push((c as VeraStringValue).value) }
+          }
+          node.categories = cats
         }
         break
       case 'keyboardType':

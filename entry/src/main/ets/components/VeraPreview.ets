@@ -1024,19 +1024,35 @@ export struct VeraPreview {
    * maximum bounds the vertical scale; a value past it is clamped rather than
    * drawn off the top, since the program named maximum itself and a point
    * above it is the program's own figure being wrong, not a reason to redraw
-   * everything else smaller.
+   * everything else smaller. floor is node.minimum -- the bottom of the same
+   * scale, 0 unless the program set it, for a series whose whole range sits
+   * far from zero (a height in cm, a temperature) and would otherwise draw as
+   * a sliver pinned to the top of the box with the rest of it empty.
+   *
+   * width and SPARKLINE_HEIGHT arrive in vp, but a Path's own command numbers
+   * are not: unlike .height()/.width(), which ArkUI reads as vp, Path paints
+   * its M/L coordinates in real device px (the same split drawIcon's own
+   * comment describes for the icon box, '100px'/'8px' against a vp-sized
+   * viewPort). Skipping the conversion here drew a chart that was only
+   * 1/density of the box it sat in -- correct in proportion, pinned to the
+   * top-left corner of a box several times its own size, which is what reads
+   * as "a tiny line and a lot of empty space" on any screen whose density
+   * isn't 1. vp2px(1) is that density, so multiplying both axes by it before
+   * building the path is what makes the drawing fill the box it is declared
+   * to fill.
    */
-  private sparklineCommands(node: LiveNode, width: number): string {
-    let series = node.series
+  private sparklineCommands(series: number[], maximum: number, floor: number, width: number): string {
     if (series.length === 0) { return '' }
-    let max = node.maximum > 0 ? node.maximum : 1
-    let h = VeraPreview.SPARKLINE_HEIGHT
+    let max = maximum > floor ? maximum : floor + 1
+    let scale = vp2px(1)
+    let h = VeraPreview.SPARKLINE_HEIGHT * scale
+    let w = width * scale
     let n = series.length
     let cmds: string[] = []
     for (let i = 0; i < n; i++) {
-      let x = n > 1 ? (i / (n - 1)) * width : width / 2
-      let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
-      let y = h - (v / max) * h
+      let x = n > 1 ? (i / (n - 1)) * w : w / 2
+      let v = series[i] < floor ? floor : (series[i] > max ? max : series[i])
+      let y = h - ((v - floor) / (max - floor)) * h
       cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
     }
     return cmds.join(' ')
@@ -1048,19 +1064,20 @@ export struct VeraPreview {
    * computed from the line itself rather than left to an implicit close the
    * way the plain 'path' branch's fill is.
    */
-  private sparklineAreaCommands(node: LiveNode, width: number): string {
-    let series = node.series
+  private sparklineAreaCommands(series: number[], maximum: number, floor: number, width: number): string {
     if (series.length === 0) { return '' }
-    let max = node.maximum > 0 ? node.maximum : 1
-    let h = VeraPreview.SPARKLINE_HEIGHT
+    let max = maximum > floor ? maximum : floor + 1
+    let scale = vp2px(1)
+    let h = VeraPreview.SPARKLINE_HEIGHT * scale
+    let w = width * scale
     let n = series.length
     let cmds: string[] = []
     let firstX = 0
-    let lastX = width
+    let lastX = w
     for (let i = 0; i < n; i++) {
-      let x = n > 1 ? (i / (n - 1)) * width : width / 2
-      let v = series[i] < 0 ? 0 : (series[i] > max ? max : series[i])
-      let y = h - (v / max) * h
+      let x = n > 1 ? (i / (n - 1)) * w : w / 2
+      let v = series[i] < floor ? floor : (series[i] > max ? max : series[i])
+      let y = h - ((v - floor) / (max - floor)) * h
       if (i === 0) { firstX = x }
       if (i === n - 1) { lastX = x }
       cmds.push((i === 0 ? 'M ' : 'L ') + x.toFixed(2) + ' ' + y.toFixed(2))
@@ -1117,6 +1134,43 @@ export struct VeraPreview {
       heights.push((clamped / max) * VeraPreview.SPARKLINE_HEIGHT)
     }
     return heights
+  }
+
+  /** ui.Sparkline's x-axis caption, its categories joined the same way a program would build it by hand. */
+  private sparklineAxisText(node: LiveNode): string {
+    return node.categories.join(' · ')
+  }
+
+  /**
+   * Four evenly spaced y-axis values for a line-mode ui.Sparkline, maximum
+   * first -- the order the label column draws top to bottom, over the same
+   * range sparklineGridCommands draws its lines across.
+   */
+  private sparklineTicks(maximum: number, floor: number): number[] {
+    let max = maximum > floor ? maximum : floor + 1
+    let step = (max - floor) / 3
+    return [
+      Math.round(max),
+      Math.round(floor + step * 2),
+      Math.round(floor + step),
+      Math.round(floor),
+    ]
+  }
+
+  /** One horizontal line per sparklineTicks value, in the same px-corrected space sparklineCommands draws in. */
+  private sparklineGridCommands(maximum: number, floor: number, width: number): string {
+    let max = maximum > floor ? maximum : floor + 1
+    let scale = vp2px(1)
+    let h = VeraPreview.SPARKLINE_HEIGHT * scale
+    let w = width * scale
+    let step = (max - floor) / 3
+    let cmds: string[] = []
+    for (let i = 0; i <= 3; i++) {
+      let v = floor + step * i
+      let y = h - ((v - floor) / (max - floor)) * h
+      cmds.push('M 0 ' + y.toFixed(2) + ' L ' + w.toFixed(2) + ' ' + y.toFixed(2))
+    }
+    return cmds.join(' ')
   }
 
   /** ui.Select's current choice, for the trigger row -- '' if it has no options at all. */
@@ -1248,6 +1302,15 @@ export struct VeraPreview {
     .viewPort({ x: ICON_ORIGIN, y: ICON_ORIGIN, width: ICON_VIEWPORT, height: ICON_VIEWPORT })
     .width(size)
     .height(size)
+  }
+
+  /** One legend entry for a two-series ui.Sparkline: a tone-coloured dot and its name. */
+  @Builder
+  sparklineLegendEntry(text: string, colour: string) {
+    Row({ space: this.t().gapTight }) {
+      Column().width(8).height(8).borderRadius(4).backgroundColor(colour)
+      Text(text).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft)
+    }
   }
 
   @Builder
@@ -2509,32 +2572,89 @@ export struct VeraPreview {
           .height(VeraPreview.SPARKLINE_HEIGHT)
           .alignItems(VerticalAlign.Bottom)
         } else {
-          Shape() {
-            // The same line, closed down to the bottom edge and filled with
-            // the tone's soft background -- this is why it reads as a chart
-            // rather than a bare line, and unlike the plain 'path' branch
-            // above, the fill traces exactly the points this shape itself
-            // drew, not an open shape closed by accident.
-            Path({ commands: this.sparklineAreaCommands(node, this.chartWidth()) })
-              .fill(toneFill(this.t(), node.style, this.t().primaryFill))
-              .fillOpacity(0.4)
-              .stroke(Color.Transparent)
-            Path({ commands: this.sparklineCommands(node, this.chartWidth()) })
-              .fill(Color.Transparent)
-              .stroke(toneEdge(this.t(), node.style, this.t().primary))
-              .strokeWidth('3px')
-              .strokeLineCap(LineCapStyle.Round)
-              .strokeLineJoin(LineJoinStyle.Round)
+          Row({ space: this.t().gapTight }) {
+            // The four y-axis labels, top (maximum) to bottom (floor) --
+            // sparklineTicks and sparklineGridCommands divide the same range
+            // into the same four levels, so a label and its gridline always
+            // land at the same height without either one measuring the other.
+            Column() {
+              ForEach(this.sparklineTicks(node.maximum, node.minimum), (v: number, _index: number) => {
+                Text(v.toString()).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+                  .fontColor(this.t().inkMuted)
+              }, (v: number, index: number) => index.toString())
+            }
+            .height(VeraPreview.SPARKLINE_HEIGHT)
+            .justifyContent(FlexAlign.SpaceBetween)
+            .alignItems(HorizontalAlign.End)
+
+            Shape() {
+              Path({ commands: this.sparklineGridCommands(node.maximum, node.minimum, this.chartWidth()) })
+                .fill(Color.Transparent)
+                .stroke(this.t().line)
+                .strokeWidth('1px')
+              // A second series present turns this into a comparison chart: both
+              // lines are plain strokes with no area fill, since two overlapping
+              // fills read as a muddy blob rather than two readable lines. The
+              // single-series area fill below is unchanged, so an existing
+              // one-line chart still reads as a filled trend, not a bare line.
+              if (node.series2.length > 0) {
+                Path({ commands: this.sparklineCommands(node.series, node.maximum, node.minimum, this.chartWidth()) })
+                  .fill(Color.Transparent)
+                  .stroke(toneEdge(this.t(), node.style, this.t().primary))
+                  .strokeWidth('3px')
+                  .strokeLineCap(LineCapStyle.Round)
+                  .strokeLineJoin(LineJoinStyle.Round)
+                Path({ commands: this.sparklineCommands(node.series2, node.maximum, node.minimum, this.chartWidth()) })
+                  .fill(Color.Transparent)
+                  .stroke(toneEdge(this.t(), node.series2Style, this.t().primary))
+                  .strokeWidth('3px')
+                  .strokeLineCap(LineCapStyle.Round)
+                  .strokeLineJoin(LineJoinStyle.Round)
+              } else {
+                // The same line, closed down to the bottom edge and filled with
+                // the tone's soft background -- this is why it reads as a chart
+                // rather than a bare line, and unlike the plain 'path' branch
+                // above, the fill traces exactly the points this shape itself
+                // drew, not an open shape closed by accident.
+                Path({ commands: this.sparklineAreaCommands(node.series, node.maximum, node.minimum, this.chartWidth()) })
+                  .fill(toneFill(this.t(), node.style, this.t().primaryFill))
+                  .fillOpacity(0.4)
+                  .stroke(Color.Transparent)
+                Path({ commands: this.sparklineCommands(node.series, node.maximum, node.minimum, this.chartWidth()) })
+                  .fill(Color.Transparent)
+                  .stroke(toneEdge(this.t(), node.style, this.t().primary))
+                  .strokeWidth('3px')
+                  .strokeLineCap(LineCapStyle.Round)
+                  .strokeLineJoin(LineJoinStyle.Round)
+              }
+            }
+            .layoutWeight(1)
+            .height(VeraPreview.SPARKLINE_HEIGHT)
+            // Measures this chart's own box, the way the whole page measures
+            // its own for viewportWidth two screens up -- see chartWidth's own
+            // comment on why this chart cannot just reuse that one.
+            .onAreaChange((_old: Area, now: Area) => {
+              let w = now.width as number
+              if (Math.abs(w - this.sparklineWidth) >= 1) { this.sparklineWidth = w }
+            })
           }
           .width('100%')
-          .height(VeraPreview.SPARKLINE_HEIGHT)
-          // Measures this chart's own box, the way the whole page measures
-          // its own for viewportWidth two screens up -- see chartWidth's own
-          // comment on why this chart cannot just reuse that one.
-          .onAreaChange((_old: Area, now: Area) => {
-            let w = now.width as number
-            if (Math.abs(w - this.sparklineWidth) >= 1) { this.sparklineWidth = w }
-          })
+          .alignItems(VerticalAlign.Top)
+        }
+        if (node.series2.length > 0 && (node.seriesLabel.length > 0 || node.series2Label.length > 0)) {
+          Row({ space: this.t().gapBase }) {
+            if (node.seriesLabel.length > 0) {
+              this.sparklineLegendEntry(node.seriesLabel, toneEdge(this.t(), node.style, this.t().primary))
+            }
+            if (node.series2Label.length > 0) {
+              this.sparklineLegendEntry(node.series2Label, toneEdge(this.t(), node.series2Style, this.t().primary))
+            }
+          }
+          .width('100%')
+        }
+        if (node.categories.length > 0) {
+          Text(this.sparklineAxisText(node)).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+            .fontColor(this.t().inkSoft).width('100%')
         }
       }
       .width('100%')
