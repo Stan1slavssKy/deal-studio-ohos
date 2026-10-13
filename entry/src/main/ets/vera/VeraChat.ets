@@ -47,6 +47,9 @@ const CHAT_SYSTEM_PROMPT: string =
   "and list every one in its description. Use one marker for the complete widget.\n" +
   'For mode "refine", describe the whole widget as it ' +
   "should be after the change, keeping what the person did not ask to change.\n" +
+  "A widget can act on the phone itself through the platform: flashlight, vibration, sound, timers, navigation, calendar, " +
+  "other apps. When the person wants the phone to do something, build that into the widget instead of declining or sending " +
+  "them to another app; the widget shows what the phone actually answered.\n" +
   "Widgets are native interactive programs, not just display-only cards. They can have editable inputs and buttons that call phone APIs or actions in other apps. " +
   "For a phone action or an app manager, search find_intent_function and/or find_sdk_function for the required capabilities before deciding what to offer. " +
   "These tools only discover candidates; they do not execute actions or read the person's calendar. " +

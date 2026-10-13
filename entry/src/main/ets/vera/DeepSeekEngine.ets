@@ -42,6 +42,7 @@ import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
 import { calendarSdkContract } from './VeraCalendarSdk'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
+import { isSdkTargetImplemented } from './VeraSdkBackend'
 import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
 import { findUiComponentsByEmbedding } from './VeraUiIndex'
 import { describeComponents, optionalComponents } from './VeraUiCatalog'
@@ -52,6 +53,8 @@ export const DEEPSEEK_GENERATION_MAX_TOKENS: number = 32768
 const SDK_TOOL_NAME = 'find_sdk_function'
 // 16, not 8: on the gold set the right function sat at rank 9-16 often enough that
 // recall went from 0.62 at 8 to 0.76 at 16, for a few hundred more tokens a call.
+// Only targets with a runtime adapter are returned (isSdkTargetImplemented), out
+// of the whole index: a stub compiles and runs, then fails on every call.
 const SDK_SEARCH_LIMIT = 16
 const INTENT_TOOL_NAME = 'find_intent_function'
 const INTENT_SEARCH_LIMIT = 8
@@ -145,7 +148,7 @@ function needParameter(description: string): Record<string, Object> {
 export function toolSchemas(withUiTool: boolean): Record<string, Object>[] {
   let sdkFn: Record<string, Object> = {}
   sdkFn['name'] = SDK_TOOL_NAME
-  sdkFn['description'] = "Find SDK functions by the required capability. Returns targets, parameter signatures, return types, and descriptions. Use only discovered targets and parameter names. Supply user data where the signature allows it. Use documented enum values. Match behavior, not only names. Discovery does not prove that a runtime adapter exists. Show unsupported-adapter errors and actual result text."
+  sdkFn['description'] = "Find SDK functions by the required capability. Returns targets, parameter signatures, return types, and descriptions. Use only discovered targets and parameter names. Supply user data where the signature allows it. Use documented enum values. Match behavior, not only names. Every result has a runtime adapter on this device; if none fits, the capability is not available, so say so instead of guessing. Show the actual result text, errors included."
   sdkFn['parameters'] = needParameter('Plain-language description of the platform capability needed, e.g. "read the free internal storage space".')
   let sdkTool: Record<string, Object> = {}
   sdkTool['type'] = 'function'
@@ -267,10 +270,10 @@ export async function discoveryToolResult(name: string, need: string, round: num
     return intentResultsJson(results)
   }
   if (name === SDK_TOOL_NAME) {
-    let tokenResults = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT)
+    let tokenResults = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT, isSdkTargetImplemented)
     let tokenMs = Date.now() - startedAt
     let embedStartedAt = Date.now()
-    let embedResults = await findSdkFunctionByEmbedding(need, SDK_SEARCH_LIMIT)
+    let embedResults = await findSdkFunctionByEmbedding(need, SDK_SEARCH_LIMIT, isSdkTargetImplemented)
     let embedMs = Date.now() - embedStartedAt
     console.info('VERA-SDK-EMBED-CMP need="' + need + '" token=' + sdkKeysList(tokenResults) +
       ' embedding=' + (embedResults === null ? 'n/a' : sdkKeysList(embedResults)))
