@@ -37,6 +37,12 @@ class ChatMessage {
   appDescription: string = ''
   appState: string = APP_NONE
   vbc2: string = ''
+  /** While building: a static picture of the program written so far (VeraWidgetPreview). Never saved. */
+  previewVbc2: string = ''
+  /** While building: what the builder is doing, shown in the bubble. Never saved. */
+  buildStatus: string = ''
+  /** Added under the streamed text by this page, so the next streamed piece does not wipe it. */
+  beforeNote: string = ''
   source: string = ''
   originalRequest: string = ''
   parentMessageId: number = 0
@@ -228,6 +234,12 @@ struct StatsPanel {
               note: 'on device' }).layoutWeight(1)
             StatCell({ label: 'Speed', value: speedOf(a), note: 'output after the wait' }).layoutWeight(1)
           }.width('100%').alignItems(VerticalAlign.Top)
+          Row({ space: 8 }) {
+            StatCell({ label: 'Preview', value: a.previewMs > 0 ? formatMs(a.previewMs) : '—',
+              note: 'picture before handlers' }).layoutWeight(1)
+            StatCell({ label: 'Lead', value: a.previewMs > 0 ? formatMs(Math.max(0, a.genMs - a.previewMs)) : '—',
+              note: 'shown before done' }).layoutWeight(1)
+          }.width('100%').alignItems(VerticalAlign.Top)
         }
         .width('100%')
         .padding(10)
@@ -266,22 +278,15 @@ struct MessageBubble {
           .padding(12)
           .backgroundColor('#FFFFFF')
           .borderRadius(14)
-      } else if (this.msg.appState === APP_BUILDING) {
+      } else if (this.msg.appState === APP_BUILDING && this.msg.previewVbc2.length === 0) {
         Row({ space: 8 }) {
           LoadingProgress().width(18).height(18)
-          Text('Building a widget...').fontSize(13).fontColor('#666666')
+          Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Building a widget...')
+            .fontSize(13).fontColor('#666666').layoutWeight(1)
         }
         .padding(12)
         .backgroundColor('#FFFFFF')
         .borderRadius(14)
-      } else if (this.msg.appState === APP_READY) {
-        VeraPreview({ vbc2: this.msg.vbc2, embedded: true,
-          persistKey: this.chatId.length > 0 ? chats.stateKey(this.chatId, this.msg.id) : '',
-          onStateSnapshot: (encoded: string): void => { this.msg.latestState = encoded } })
-          .width('100%')
-          .borderRadius(14)
-          .clip(true)
-          .backgroundColor('#FFFFFF')
       } else if (this.msg.appState === APP_FAILED) {
         Text('The widget could not be built: ' + this.msg.error.substring(0, 240))
           .fontSize(12)
@@ -289,6 +294,29 @@ struct MessageBubble {
           .padding(10)
           .backgroundColor('#FFECEC')
           .borderRadius(10)
+      }
+      // One branch for the preview and the finished widget, so the same
+      // renderer is handed the finished program in place instead of a new one
+      // appearing where the picture was.
+      if (this.msg.appState === APP_READY || (this.msg.appState === APP_BUILDING && this.msg.previewVbc2.length > 0)) {
+        VeraPreview({ previewOnly: this.msg.appState !== APP_READY,
+          vbc2: this.msg.appState === APP_READY ? this.msg.vbc2 : this.msg.previewVbc2, embedded: true,
+          persistKey: this.chatId.length > 0 ? chats.stateKey(this.chatId, this.msg.id) : '',
+          onStateSnapshot: (encoded: string): void => { this.msg.latestState = encoded } })
+          .width('100%')
+          .borderRadius(14)
+          .clip(true)
+          .backgroundColor('#FFFFFF')
+          .opacity(this.msg.appState === APP_READY ? 1 : 0.6)
+        if (this.msg.appState === APP_BUILDING) {
+          Row({ space: 8 }) {
+            LoadingProgress().width(14).height(14)
+            Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Finishing the widget...')
+              .fontSize(12).fontColor('#888888').layoutWeight(1)
+          }
+          .width('100%')
+          .padding({ left: 4, right: 4 })
+        }
       }
       if (this.msg.after.length > 0) {
         Text(this.msg.after)
@@ -506,10 +534,14 @@ struct ChatPage {
     return references
   }
 
-  /** Stream visible text only. Build dispatch waits for the complete reply. */
+  /** Stream visible text. A widget already handed to the builder keeps its state. */
   private apply(msg: ChatMessage, parsed: ParsedReply): void {
-    msg.before = parsed.before
+    msg.before = parsed.before + msg.beforeNote
     msg.after = parsed.after
+    if (msg.appState === APP_BUILDING || msg.appState === APP_READY) {
+      this.scrollDown()
+      return
+    }
     if (parsed.error.length > 0) {
       msg.appState = APP_FAILED
       msg.error = parsed.error
@@ -546,43 +578,34 @@ struct ChatPage {
     this.scrollDown(true)
     this.status = 'Thinking...'
     let stats = new ReplyStats()
+    let started = false
     try {
       await ensureCapabilities(getContext(this))
       let raw = await chatReply(turns, (soFar: string): void => {
         if (this.status === 'Thinking...') { this.status = '' }
-        this.apply(reply, parseReply(soFar))
+        let parsed = parseReply(soFar)
+        this.apply(reply, parsed)
+        // A JSON marker is complete and final the moment its >> arrives -- a
+        // second one would be an error either way -- so the build starts
+        // while the rest of the reply is still being written.
+        if (!started && parsed.structured && parsed.error.length === 0 && parsed.appDescription.length > 0) {
+          started = true
+          console.info('VERA-CHAT widget started before the reply ended, at ' + soFar.length.toString() + ' chars')
+          this.startWidget(reply, parsed, references, context)
+        }
       }, (status: string): void => {
         this.status = status.length > 0 ? status : 'Thinking...'
       }, stats, (verified: string): void => { context.verifiedSearchResults.push(verified) })
       console.info('VERA-CHAT reply: ' + raw)
       let parsed = parseReply(raw, true)
       this.apply(reply, parsed)
-      if (parsed.error.length === 0 && parsed.appDescription.length > 0) {
-        context.brief = parsed.appDescription
-        let target: WidgetReference | undefined = undefined
-        if (parsed.mode === 'refine' || parsed.update) {
-          target = parsed.update ? references[references.length - 1] :
-            references.find((ref: WidgetReference): boolean => ref.messageId === parsed.targetMessageId)
-          if (target === undefined) {
-            reply.appState = APP_FAILED
-            reply.error = 'The selected widget is unavailable. Specify an existing widget.'
-          } else {
-            context.parentMessageId = target.messageId
-            context.source = target.source
-            context.originalRequest = target.originalRequest.length > 0 ? target.originalRequest : target.brief
-            context.latestState = target.latestState
-            if (target.source.length === 0) {
-              reply.before = reply.before + '\nThis older widget has no saved source. I will recreate it from its description.'
-            }
-          }
-        }
-        if (reply.appState !== APP_FAILED) {
-          reply.appDescription = parsed.appDescription
-          reply.cutFrom = 0
-          reply.update = parsed.update || parsed.mode === 'refine'
-          reply.appState = APP_BUILDING
-          this.queueBuild(reply, context)
-        }
+      if (started && parsed.error.length > 0) {
+        // The rest of the reply broke the marker (a second one, say). The
+        // build already under way is dropped when it finishes.
+        reply.appState = APP_FAILED
+        reply.error = parsed.error
+      } else if (!started && parsed.error.length === 0 && parsed.appDescription.length > 0) {
+        this.startWidget(reply, parsed, references, context)
       }
     } catch (e) {
       this.status = (e as Error).message
@@ -607,16 +630,52 @@ struct ChatPage {
     this.persist()
   }
 
+  /** Resolve the widget a marker asks for and hand it to the builder. */
+  private startWidget(reply: ChatMessage, parsed: ParsedReply, references: WidgetReference[],
+      context: WidgetBuildContext): void {
+    context.brief = parsed.appDescription
+    if (parsed.mode === 'refine' || parsed.update) {
+      let target: WidgetReference | undefined = parsed.update ? references[references.length - 1] :
+        references.find((ref: WidgetReference): boolean => ref.messageId === parsed.targetMessageId)
+      if (target === undefined) {
+        reply.appState = APP_FAILED
+        reply.error = 'The selected widget is unavailable. Specify an existing widget.'
+        return
+      }
+      context.parentMessageId = target.messageId
+      context.source = target.source
+      context.originalRequest = target.originalRequest.length > 0 ? target.originalRequest : target.brief
+      context.latestState = target.latestState
+      if (target.source.length === 0) {
+        reply.beforeNote = '\nThis older widget has no saved source. I will recreate it from its description.'
+        reply.before = parsed.before + reply.beforeNote
+      }
+    }
+    reply.appDescription = parsed.appDescription
+    reply.cutFrom = 0
+    reply.update = parsed.update || parsed.mode === 'refine'
+    reply.appState = APP_BUILDING
+    this.queueBuild(reply, context)
+  }
+
   private queueBuild(msg: ChatMessage, context: WidgetBuildContext): void {
     this.buildQueue = this.buildQueue.then(async (): Promise<void> => {
+      // The rest of the reply invalidated the marker while this waited.
+      if (msg.appState === APP_FAILED) { return }
       let startedAt = Date.now()
       try {
         await this.loadResources()
         let app: MiniApp = await buildMiniApp(this.skillPrompt, context, (s: string): void => {
-          this.status = s
+          if (msg.buildStatus !== s) { msg.buildStatus = s }
+        }, '', (_s: string): void => {}, (vbc2: string): void => {
+          if (msg.appState !== APP_BUILDING) { return }
+          msg.previewVbc2 = vbc2
+          this.scrollDown(true)
         })
         msg.attempts = app.stats
-        if (app.error.length === 0 && app.vbc2.length > 0) {
+        if (msg.appState === APP_FAILED) {
+          // Invalidated while it was being built: keep the numbers, not the widget.
+        } else if (app.error.length === 0 && app.vbc2.length > 0) {
           msg.vbc2 = app.vbc2
           msg.source = app.source
           msg.originalRequest = context.originalRequest
@@ -631,7 +690,9 @@ struct ChatPage {
         msg.appState = APP_FAILED
       }
       msg.widgetMs = Date.now() - startedAt
-      this.status = ''
+      // After appState: the renderer has already been handed the finished program.
+      msg.previewVbc2 = ''
+      msg.buildStatus = ''
       this.scrollDown(true)
       this.persist()
     })

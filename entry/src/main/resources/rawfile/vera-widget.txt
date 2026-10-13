@@ -5,6 +5,11 @@ This section overrides full-screen layout guidance and saved-project persistence
 All language rules, immutable state, pure views, catalogue signatures, and platform result rules still apply.
 Widget state is transient. Do not promise that values survive a chat reload or app restart.
 
+Write the program in this order: imports, classes, the helper functions view() calls, init(), view(),
+and then every handler. The chat draws view() as soon as it is complete, while the handlers are still
+being written, so view() must not depend on anything declared after it except handler names.
+Start each top-level declaration in column 0 and close it with a } alone in column 0.
+
 Build one compact interaction that serves the supplied description:
 - Use exactly one ui.AppTheme and at most two ui.Section children.
 - Do not use full-screen ui.Hero or ui.AdaptiveColumns inside the chat bubble.

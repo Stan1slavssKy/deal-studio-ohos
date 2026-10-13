@@ -73,6 +73,14 @@ const ASK_BEFORE_CALLS: boolean = false
 
 @Component
 export struct VeraPreview {
+  /**
+   * The program is a picture of one still being written (VeraWidgetPreview):
+   * its handlers may not exist yet, so nothing dispatches -- no taps, no
+   * tickers, no back gesture -- and nothing is saved or reported. Declared
+   * before vbc2 so it has its new value by the time a new program loads; the
+   * watch covers the other order too.
+   */
+  @Prop @Watch('onPreviewOnlyChanged') previewOnly: boolean = false
   @Prop @Watch('onProgramChanged') vbc2: string = ''
   /**
    * Where to keep this program's state, as 'projectId/versionId'. Empty means
@@ -109,6 +117,16 @@ export struct VeraPreview {
   // fields are what drive the re-render. See VeraLiveTree.
   @State hasRoot: boolean = false
   private liveRoot: LiveNode | null = null
+  /**
+   * Which program liveRoot belongs to, bumped by every load(). The drawn tree
+   * is keyed by it: load() replaces liveRoot with a new object and flips
+   * hasRoot false and back to true within one frame, which ArkUI sees as no
+   * change at all, so without the key the old program's tree stayed on screen
+   * while every later reconcile updated the new one nobody was drawing. That
+   * is what a chat preview handing over to its finished program looked like:
+   * taps ran, state changed, the screen did not.
+   */
+  @State programId: number = 0
   /**
    * A frame counter for the logs, and nothing more -- build() does not read it,
    * so writing it triggers no re-render. It is not @State for that reason: it
@@ -218,6 +236,12 @@ export struct VeraPreview {
     this.load()
   }
 
+  /** Start or stop the tickers the current frame asks for, and report the state a preview held back. */
+  onPreviewOnlyChanged(): void {
+    this.notifyStateSnapshot()
+    this.renderView()
+  }
+
   /**
    * Follow the system's light/dark setting, and keep following it.
    *
@@ -250,6 +274,7 @@ export struct VeraPreview {
     this.currentState = null
     this.liveRoot = null
     this.hasRoot = false
+    this.programId += 1
     this.error = ''
     if (this.vbc2.length === 0) { return }
     try {
@@ -429,7 +454,7 @@ export struct VeraPreview {
 
   private restoreState(): RuntimeValue | null {
     let keys = this.stateKeys()
-    if (keys.length === 0) { return null }
+    if (keys.length === 0 || this.previewOnly) { return null }
     let encoded = store.loadState(keys[0], keys[1], this.stamp())
     if (encoded.length === 0) { return null }
     try {
@@ -441,7 +466,7 @@ export struct VeraPreview {
   }
 
   private notifyStateSnapshot(): void {
-    if (this.currentState === null) { return }
+    if (this.currentState === null || this.previewOnly) { return }
     try {
       this.onStateSnapshot(JSON.stringify(encodeRuntimeValue(this.currentState!)))
     } catch (e) {
@@ -486,7 +511,7 @@ export struct VeraPreview {
         reconcile(this.liveRoot!, root!)
       }
       this.revision += 1
-      this.reconcileTimers(root)
+      this.reconcileTimers(this.previewOnly ? null : root)
       this.reconcileSpin(root)
       this.reconcileBackHandler(root)
     } catch (e) {
@@ -548,7 +573,7 @@ export struct VeraPreview {
    */
   private dispatch(action: string, payload: RuntimeValue, persist: boolean = true): void {
     console.info('VERA-CLICK action=' + action + ' rev=' + this.revision.toString())
-    if (this.vm === null || this.currentState === null) { return }
+    if (this.vm === null || this.currentState === null || this.previewOnly) { return }
     let t0 = Date.now()
     try {
       if (this.host !== null) { this.host!.effectsAllowed = true }
@@ -825,12 +850,16 @@ export struct VeraPreview {
           // here would take a drag that began on the program and leave the
           // page behind it unmoved.
           Column() {
-            this.renderNode(this.liveRoot!, 'root')
+            ForEach([this.programId], (_id: number) => {
+              this.renderNode(this.liveRoot!, 'root')
+            }, (id: number) => id.toString())
           }.width('100%')
         } else {
           Scroll() {
             Column() {
-              this.renderNode(this.liveRoot!, 'root')
+              ForEach([this.programId], (_id: number) => {
+                this.renderNode(this.liveRoot!, 'root')
+              }, (id: number) => id.toString())
             }.width('100%')
           }
           .width('100%')

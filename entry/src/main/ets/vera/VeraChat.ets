@@ -16,7 +16,8 @@ import http from '@ohos.net.http'
 import util from '@ohos.util'
 import { GenerateRequest } from './LlamaEngine'
 import { compileVeraSource, CompileError } from './VeraCompiler'
-import { deepseek, extractVeraSource, DEEPSEEK_GENERATION_MAX_TOKENS, toolSchemas, discoveryToolResult } from './DeepSeekEngine'
+import { deepseek, extractVeraSource, DEEPSEEK_GENERATION_MAX_TOKENS, toolSchemas, discoveryToolResult, GenerateProgress } from './DeepSeekEngine'
+import { WidgetPreviewTracker } from './VeraWidgetPreview'
 import { settings } from './SettingsStore'
 import { WidgetBuildContext, widgetContextPrompt } from './VeraWidgetContext'
 import { AttemptStat, ReplyStats, failureVerdict } from './VeraChatStats'
@@ -108,6 +109,8 @@ export class ParsedReply {
   cutFrom: number = 0
   /** The line asked to change the last widget (it started with "update:"). */
   update: boolean = false
+  /** The marker carried a JSON payload, the only shape that may appear once and be acted on before the reply ends. */
+  structured: boolean = false
 }
 
 export class MiniApp {
@@ -249,6 +252,7 @@ export function parseReply(raw: string, complete: boolean = false): ParsedReply 
     if (between.trim().length > 0) { afterParts.push(between.trim()) }
   }
   out.after = afterParts.join('\n')
+  out.structured = structured
   if (structured && descriptions.length > 1) { out.error = 'More than one widget marker with a structured payload.' }
   if (payloadCharacters > MAX_WIDGET_LINE) { out.error = 'Widget markers exceed 8192 characters.' }
   if (out.error.length > 0 || out.describing || descriptions.length === 0) { return out }
@@ -665,6 +669,21 @@ function readLine(line: string, step: ChatStep, pending: Map<number, PendingCall
   }
 }
 
+/** The last few declarations written, for the status line. */
+function recent(names: string[]): string {
+  let shown = names.length > 4 ? names.slice(names.length - 4) : names
+  return (names.length > 4 ? '..., ' : '') + shown.join(', ')
+}
+
+function progressStatus(doing: string, p: GenerateProgress): string {
+  if (p.phase === 'thinking') { return doing + ': thinking...' }
+  if (p.phase === 'tool') {
+    let what = p.tool === 'find_intent_function' ? 'an app action' : p.tool === 'find_sdk_function' ? 'a phone function' : 'a component'
+    return doing + ': looking up ' + what + (p.need.length > 0 ? ' for "' + p.need + '"' : '') + '...'
+  }
+  return p.round > 1 ? doing + ': reading what it found...' : doing + '...'
+}
+
 /**
  * Turns a widget description into bytecode, retrying with the compiler's
  * diagnostics the way the Generate screen does. `systemPrompt` is the skill with
@@ -673,7 +692,8 @@ function readLine(line: string, step: ChatStep, pending: Map<number, PendingCall
  */
 export async function buildMiniApp(systemPrompt: string, description: string | WidgetBuildContext,
     personRequestOrStatus: string | ((status: string) => void), baseSource: string = '',
-    legacyStatus: (status: string) => void = (_status: string): void => {}): Promise<MiniApp> {
+    legacyStatus: (status: string) => void = (_status: string): void => {},
+    onPreview: (vbc2: string) => void = (_vbc2: string): void => {}): Promise<MiniApp> {
   let result = new MiniApp()
   if (systemPrompt.trim().length === 0) { result.error = 'Widget resources are not ready.'; return result }
   let prompt = typeof description === 'string' ? description : widgetContextPrompt(description)
@@ -686,7 +706,8 @@ export async function buildMiniApp(systemPrompt: string, description: string | W
   let feedback = ''
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     result.attempts = attempt
-    onStatus(attempt === 1 ? 'Building a widget...' : 'Fixing the widget (' + attempt.toString() + '/' + MAX_ATTEMPTS.toString() + ')...')
+    let doing = attempt === 1 ? 'Building a widget' : 'Fixing the widget (' + attempt.toString() + '/' + MAX_ATTEMPTS.toString() + ')'
+    onStatus(doing + '...')
     let request = new GenerateRequest()
     request.systemPrompt = systemPrompt
     request.uiTool = false
@@ -709,8 +730,20 @@ export async function buildMiniApp(systemPrompt: string, description: string | W
     stat.attempt = attempt
     let text = ''
     let genStart = Date.now()
+    let tracker = new WidgetPreviewTracker()
     try {
-      let gen = await deepseek.generate(request, (_t: string): void => {})
+      let gen = await deepseek.generate(request, (token: string): void => {
+        let step = tracker.feed(token)
+        if (step.vbc2.length > 0) {
+          if (stat.previewMs === 0) { stat.previewMs = Date.now() - genStart }
+          onPreview(step.vbc2)
+        }
+        if (step.changed) { onStatus(doing + ': writing ' + recent(tracker.declarations())) }
+      }, (p: GenerateProgress): void => {
+        // A tool round's text is not part of the program the final round writes.
+        if (p.phase === 'request' && p.round > 1) { tracker = new WidgetPreviewTracker() }
+        onStatus(progressStatus(doing, p))
+      })
       text = extractVeraSource(gen.text)
       stat.inputTokens = gen.inputTokens
       stat.outputTokens = gen.outputTokens

@@ -15,6 +15,8 @@ export class AttemptStat {
   ttftMs: number = 0
   thinkMs: number = 0
   genMs: number = 0
+  /** From the start of the attempt until its static preview was drawn; 0 when none was. */
+  previewMs: number = 0
   compileMs: number = 0
   inputTokens: number = 0
   cachedTokens: number = 0

@@ -1279,9 +1279,11 @@ class Analyzer {
   private inAsyncFunction: boolean = false
   private loopDepth: number = 0
   private lambdaCount: number = 0
+  private options: CompileOptions
 
-  constructor(application: Application) {
+  constructor(application: Application, options: CompileOptions) {
     this.model = new SemanticModel(application)
+    this.options = options
   }
 
   analyze(): SemanticModel {
@@ -1894,7 +1896,7 @@ class Analyzer {
     let handlerName = (arg as StringExpression).value
     let fn = this.model.functions.get(handlerName)
     if (fn === undefined) {
-      this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span)
+      if (!this.options.allowMissingHandlers) { this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span) }
       return
     }
     if (fn.parameters.length < 2 || !identical(fn.parameters[1], STRING)) {
@@ -1922,7 +1924,7 @@ class Analyzer {
       let handlerName = (arg as StringExpression).value
       let fn = this.model.functions.get(handlerName)
       if (fn === undefined) {
-        this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span)
+        if (!this.options.allowMissingHandlers) { this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span) }
         return
       }
       let want: VeraType = payload === 'string' ? STRING : payload === 'boolean' ? BOOLEAN : INT
@@ -2485,9 +2487,22 @@ export class CompileResult {
   constructor(vbc2: string) { this.vbc2 = vbc2 }
 }
 
-export function compileVeraSource(source: string, sourceName: string = '<source>'): CompileResult {
+export class CompileOptions {
+  /**
+   * Accept an action that names a handler not declared anywhere. Only for a
+   * preview of a program still being written: the chat compiles the source
+   * that has streamed in so far once view() is complete, before the handlers
+   * after it have arrived, and draws it with taps switched off. A handler is
+   * only a string in the UI tree until something dispatches to it, so nothing
+   * else needs it to exist.
+   */
+  allowMissingHandlers: boolean = false
+}
+
+export function compileVeraSource(source: string, sourceName: string = '<source>',
+    options: CompileOptions = new CompileOptions()): CompileResult {
   let app = new Parser(source, sourceName).parse()
-  let model = new Analyzer(app).analyze()
+  let model = new Analyzer(app, options).analyze()
   let module = new BytecodeCompiler(model).compile()
   return new CompileResult(serializeVbc2(module))
 }
