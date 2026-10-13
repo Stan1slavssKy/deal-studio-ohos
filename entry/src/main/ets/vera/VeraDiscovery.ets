@@ -3,6 +3,7 @@ import resourceManager from '@ohos.resourceManager'
 import { loadIntentSummaries } from './VeraIntentIndex'
 import { loadRegistry } from './VeraIntentRegistry'
 import { loadSdkIndex } from './VeraSdkIndex'
+import { loadCeliaIntentIndex } from './VeraCeliaIntentIndex'
 
 let discovery: Promise<void> | null = null
 
@@ -15,7 +16,13 @@ export function loadDiscovery(_filesDir: string, mgr: resourceManager.ResourceMa
     let sdk = loadSdkIndex(mgr).then((count: number): void => {
       console.info('VERA-SDK ' + count.toString() + ' sdk functions available to search')
     })
-    discovery = Promise.all([intents, sdk]).then((): void => {})
+    // Independent of the registry load above: celia's own static corpus
+    // never depends on this device's registry, only on allEntries() later
+    // joining the two by bundle/intentName once both have loaded.
+    let celia = loadCeliaIntentIndex(mgr).then((count: number): void => {
+      console.info('VERA-CELIA ' + count.toString() + ' celia intent candidates loaded')
+    })
+    discovery = Promise.all([intents, sdk, celia]).then((): void => {})
   }
   return discovery!
 }

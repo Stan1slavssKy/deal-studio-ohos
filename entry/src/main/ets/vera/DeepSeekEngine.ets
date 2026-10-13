@@ -39,6 +39,7 @@ import util from '@ohos.util'
 import { GenerateRequest, GenerateResult, TokenCallback } from './LlamaEngine'
 import { settings } from './SettingsStore'
 import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
+import { calendarSdkContract } from './VeraCalendarSdk'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
 import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
@@ -141,7 +142,7 @@ function needParameter(description: string): Record<string, Object> {
 }
 
 /** The two tools DeepSeek is offered, each describing itself well enough to be found without a system-prompt mention. */
-function toolSchemas(withUiTool: boolean): Record<string, Object>[] {
+export function toolSchemas(withUiTool: boolean): Record<string, Object>[] {
   let sdkFn: Record<string, Object> = {}
   sdkFn['name'] = SDK_TOOL_NAME
   sdkFn['description'] = "Find SDK functions by the required capability. Returns targets, parameter signatures, return types, and descriptions. Use only discovered targets and parameter names. Supply user data where the signature allows it. Use documented enum values. Match behavior, not only names. Discovery does not prove that a runtime adapter exists. Show unsupported-adapter errors and actual result text."
@@ -185,6 +186,15 @@ function sdkResultsJson(entries: SdkEntry[]): string {
     item['params'] = e.params
     item['returnType'] = e.returnType
     item['description'] = e.summary.length > 0 ? e.summary : e.description
+    let contract = calendarSdkContract(target)
+    if (contract !== undefined) {
+      item['nativeParams'] = e.params
+      item['nativeReturnType'] = e.returnType
+      item['params'] = contract.params
+      item['returnType'] = contract.returnType
+      item['description'] = contract.description
+      item['implemented'] = true
+    }
     items.push(item)
   }
   body['results'] = items
@@ -236,6 +246,43 @@ function intentKeysList(entries: IntentEntry[]): string {
   let keys: string[] = []
   for (let e of entries) { keys.push(e.kind + ':' + e.name) }
   return '[' + keys.join(', ') + ']'
+}
+
+export async function discoveryToolResult(name: string, need: string, round: number = 0): Promise<string> {
+  let startedAt = Date.now()
+  if (name === INTENT_TOOL_NAME) {
+    let tokenResults = findIntentFunction(need, INTENT_SEARCH_LIMIT)
+    let tokenMs = Date.now() - startedAt
+    let embedStartedAt = Date.now()
+    let embedResults = await findIntentFunctionByEmbedding(need, INTENT_SEARCH_LIMIT)
+    let embedMs = Date.now() - embedStartedAt
+    console.info('VERA-INTENT-EMBED-CMP need="' + need + '" token=' + intentKeysList(tokenResults) +
+      ' embedding=' + (embedResults === null ? 'n/a' : intentKeysList(embedResults)))
+    let results = embedResults !== null ? embedResults : tokenResults
+    console.info('VERA-INTENT-TOOL round=' + round.toString() + ' need="' + need +
+      '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
+      (results.length > 0 ? ' top=' + results[0].kind + ':' + results[0].name : ''))
+    console.info('VERA-INTENT-TIMING need="' + need + '" tokenFullMs=' + tokenMs.toString() +
+      ' embeddingFullMs=' + embedMs.toString() + ' callTotalMs=' + (Date.now() - startedAt).toString())
+    return intentResultsJson(results)
+  }
+  if (name === SDK_TOOL_NAME) {
+    let tokenResults = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT)
+    let tokenMs = Date.now() - startedAt
+    let embedStartedAt = Date.now()
+    let embedResults = await findSdkFunctionByEmbedding(need, SDK_SEARCH_LIMIT)
+    let embedMs = Date.now() - embedStartedAt
+    console.info('VERA-SDK-EMBED-CMP need="' + need + '" token=' + sdkKeysList(tokenResults) +
+      ' embedding=' + (embedResults === null ? 'n/a' : sdkKeysList(embedResults)))
+    let results = embedResults !== null ? embedResults : tokenResults
+    console.info('VERA-SDK-TOOL round=' + round.toString() + ' need="' + need +
+      '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
+      (results.length > 0 ? ' top=' + results[0].kit + '.' + results[0].module + '.' + results[0].name : ''))
+    console.info('VERA-SDK-TIMING need="' + need + '" tokenFullMs=' + tokenMs.toString() +
+      ' embeddingFullMs=' + embedMs.toString() + ' callTotalMs=' + (Date.now() - startedAt).toString())
+    return sdkResultsJson(results)
+  }
+  return 'Unknown discovery tool.'
 }
 
 function httpErrorMessage(code: number, body: string): string {
@@ -387,7 +434,6 @@ export class DeepSeekEngine {
       this.toolRounds = this.toolRounds + 1
       messages.push(assistantToolCallMessage(turn.toolCalls))
       for (let call of turn.toolCalls) {
-        let callStartedAt = Date.now()
         let need = ''
         try {
           let args = JSON.parse(call.arguments) as Record<string, Object>
@@ -398,32 +444,8 @@ export class DeepSeekEngine {
           // the tool result below tells the model that plainly rather than
           // dropping its call silently.
         }
-        if (call.name === INTENT_TOOL_NAME) {
-          let tokenStartedAt = Date.now()
-          let tokenResults = findIntentFunction(need, INTENT_SEARCH_LIMIT)
-          let tokenMs = Date.now() - tokenStartedAt
-          let embedStartedAt = Date.now()
-          let embedResults = await findIntentFunctionByEmbedding(need, INTENT_SEARCH_LIMIT)
-          let embedMs = Date.now() - embedStartedAt
-          console.info('VERA-INTENT-EMBED-CMP need="' + need + '" token=' + intentKeysList(tokenResults) +
-            ' embedding=' + (embedResults === null ? 'n/a' : intentKeysList(embedResults)))
-          // Embedding search is used outright when ready, not blended with
-          // the token result -- see VeraIntentEmbeddingCache.ets's doc
-          // comment on why the two stay separate for now. Falling back to
-          // the token result is the same "not ready yet / unavailable this
-          // session" case VeraEmbeddings.ets's null already means.
-          let results = embedResults !== null ? embedResults : tokenResults
-          console.info('VERA-INTENT-TOOL round=' + round.toString() + ' need="' + need +
-            '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
-            (results.length > 0 ? ' top=' + results[0].kind + ':' + results[0].name : ''))
-          // tokenFullMs/embedFullMs: this call's own standalone cost, had it
-          // been the only one run -- both are computed every round
-          // regardless of which is used (see VeraIntentEmbeddingCache.ets's
-          // doc comment on why), so these are measured around each one's own
-          // call, not derived from which branch "won".
-          console.info('VERA-INTENT-TIMING need="' + need + '" tokenFullMs=' + tokenMs.toString() +
-            ' embeddingFullMs=' + embedMs.toString() + ' callTotalMs=' + (Date.now() - callStartedAt).toString())
-          messages.push(toolResultMessage(call.id, intentResultsJson(results)))
+        if (call.name === INTENT_TOOL_NAME || call.name === SDK_TOOL_NAME) {
+          messages.push(toolResultMessage(call.id, await discoveryToolResult(call.name, need, round)))
         } else if (call.name === UI_TOOL_NAME) {
           let shown = new Set<string>(request.uiSelected)
           let names: string[] = []
@@ -444,21 +466,7 @@ export class DeepSeekEngine {
             names.join(', ') + ']')
           messages.push(toolResultMessage(call.id, uiResultsJson(names, note)))
         } else {
-          let tokenStartedAt = Date.now()
-          let tokenResults = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT)
-          let tokenMs = Date.now() - tokenStartedAt
-          let embedStartedAt = Date.now()
-          let embedResults = await findSdkFunctionByEmbedding(need, SDK_SEARCH_LIMIT)
-          let embedMs = Date.now() - embedStartedAt
-          console.info('VERA-SDK-EMBED-CMP need="' + need + '" token=' + sdkKeysList(tokenResults) +
-            ' embedding=' + (embedResults === null ? 'n/a' : sdkKeysList(embedResults)))
-          let results = embedResults !== null ? embedResults : tokenResults
-          console.info('VERA-SDK-TOOL round=' + round.toString() + ' need="' + need +
-            '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
-            (results.length > 0 ? ' top=' + results[0].kit + '.' + results[0].module + '.' + results[0].name : ''))
-          console.info('VERA-SDK-TIMING need="' + need + '" tokenFullMs=' + tokenMs.toString() +
-            ' embeddingFullMs=' + embedMs.toString() + ' callTotalMs=' + (Date.now() - callStartedAt).toString())
-          messages.push(toolResultMessage(call.id, sdkResultsJson(results)))
+          messages.push(toolResultMessage(call.id, 'Unknown discovery tool.'))
         }
       }
     }

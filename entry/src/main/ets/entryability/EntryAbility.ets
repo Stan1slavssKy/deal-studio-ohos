@@ -14,6 +14,7 @@ import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
+import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 
 const DOMAIN = 0x0000
 
@@ -29,6 +30,7 @@ export default class EntryAbility extends UIAbility {
     // Before anything can be generated or compiled: the vocabulary a program is
     // allowed to use must not change underneath a program that is being written.
     loadCatalogFile(this.context.filesDir)
+    startPowerKeyProbe()
     this.extractApiKey(want)
     this.extractSelectorKey(want)
     this.extractExaKey(want)

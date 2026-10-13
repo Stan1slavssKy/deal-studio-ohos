@@ -458,7 +458,7 @@ struct ChatPage {
           if (note.length > 0 && this.status.length === 0) { this.status = note }
         } catch (e) {
           this.status = 'Failed to load resources: ' + (e as Error).message
-          throw e
+          throw e as Error
         }
       })()
     }
@@ -547,6 +547,7 @@ struct ChatPage {
     this.status = 'Thinking...'
     let stats = new ReplyStats()
     try {
+      await ensureCapabilities(getContext(this))
       let raw = await chatReply(turns, (soFar: string): void => {
         if (this.status === 'Thinking...') { this.status = '' }
         this.apply(reply, parseReply(soFar))

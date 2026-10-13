@@ -39,8 +39,54 @@ export class RegistryEntry {
   domain: string = ''
   /** Parameter names the app declares, if it declares any. Most declare none. */
   params: string[] = []
+  /**
+   * One line per declared parameter -- name, type, allowed values if the
+   * schema gives an enum, a short description if it gives one, and whether
+   * it is required -- the same quality of hint a catalogue row's own
+   * IntentParam carries, built from real platform data instead of a guess.
+   * Empty exactly when params is.
+   */
+  paramHints: string[] = []
   /** displayName or keywords, when the app bothered to write them. */
   words: string = ''
+}
+
+/**
+ * One declared parameter, rendered the same way regardless of where it was
+ * declared -- a live device schema (this file's own flatten(), below) or
+ * celia's static tool catalogue (VeraCeliaIntentIndex.ets). Provenance-
+ * agnostic on purpose: the model should not be able to tell the two apart
+ * from the text alone, and a reader comparing the two tiers' hints
+ * shouldn't either.
+ */
+export function describeParamHint(name: string, kind: string, values: string[],
+    description: string, required: boolean): string {
+  let desc = kind.length > 0 ? kind : 'any'
+  if (values.length > 0) { desc = desc + ', one of: ' + values.join(' ') }
+  if (description.length > 0) { desc = desc + ' -- ' + description }
+  if (required) { desc = desc + ' (required)' }
+  return name + ': ' + desc
+}
+
+/**
+ * One property of a *live device's own* declared parameter schema, read the
+ * same defensive way flatten() reads subIntentInfo: index into the untyped
+ * record, narrow with typeof, accept absence silently -- a declared schema
+ * is still just app data, not something this file can require a shape from.
+ * Pulls out the primitives describeParamHint actually needs and defers to it,
+ * so this device-specific parsing is the only thing that isn't shared.
+ */
+function describeSchemaProperty(name: string, required: boolean, schema: Record<string, Object>): string {
+  let typeVal = schema['type']
+  let kind = typeof typeVal === 'string' ? typeVal : 'any'
+  let values: string[] = []
+  let enumVal = schema['enum']
+  if (Array.isArray(enumVal) && (enumVal as Object[]).length > 0) {
+    for (let v of enumVal as Object[]) { values.push((v as Object).toString()) }
+  }
+  let descVal = schema['description']
+  let description = typeof descVal === 'string' ? descVal : ''
+  return describeParamHint(name, kind, values, description, required)
 }
 
 /**
@@ -147,13 +193,39 @@ function flatten(info: insightIntentDriver.InsightIntentInfo): RegistryEntry | n
   entry.modes = modes.join(' ')
   entry.domain = domainOf(info.bundleName)
   let names: string[] = []
+  let hints: string[] = []
   let declared = info.parameters
+  // Confirmed on device (VERA-PARAM-SHAPE, since removed): parameters is a
+  // JSON Schema object -- {type, properties, required, ...} -- not a flat
+  // name/value map. Object.keys(declared) used to read the schema's OWN
+  // top-level keys ("properties", "required", "type") as if they were
+  // parameter names; every intent with a real schema handed the model three
+  // words that are not a parameter on any intent. The names, and the typed
+  // hint each one deserves, live one level down, in declared.properties.
   if (declared !== undefined && declared !== null) {
-    // The parameter names, not their shapes: a prompt can use a name, and the
-    // shape is a JSON schema the program has no way to read anyway.
-    for (let key of Object.keys(declared as Record<string, Object>)) { names.push(key) }
+    let schema = declared as Object as Record<string, Object>
+    let props = schema['properties']
+    if (props !== undefined && props !== null && typeof props === 'object' && !Array.isArray(props)) {
+      let required: string[] = []
+      let req = schema['required']
+      if (Array.isArray(req)) {
+        for (let r of req as Object[]) { if (typeof r === 'string') { required.push(r as string) } }
+      }
+      let propsRecord = props as Record<string, Object>
+      for (let key of Object.keys(propsRecord)) {
+        names.push(key)
+        let propSchema = propsRecord[key]
+        if (propSchema !== undefined && propSchema !== null && typeof propSchema === 'object') {
+          hints.push(describeSchemaProperty(key, required.indexOf(key) >= 0,
+            propSchema as Record<string, Object>))
+        } else {
+          hints.push(key)
+        }
+      }
+    }
   }
   entry.params = names
+  entry.paramHints = hints
   let words: string[] = []
   if (info.displayName.length > 0) { words.push(info.displayName) }
   for (let keyword of info.keywords) { words.push(keyword) }

@@ -46,6 +46,11 @@ export class LiveNode {
   // ui.Sparkline's raw values; see VeraUiNode.
   @Trace series: number[] = []
   @Trace bars: boolean = false
+  @Trace series2: number[] = []
+  @Trace series2Style: string = ''
+  @Trace seriesLabel: string = ''
+  @Trace series2Label: string = ''
+  @Trace categories: string[] = []
   // The typed numeric layer; see VeraUiNode.
   @Trace intValue: number = 0
   @Trace prefix: string = ''
@@ -90,6 +95,11 @@ export function toLive(node: VeraUiNode): LiveNode {
   live.options = node.options
   live.series = node.series
   live.bars = node.bars
+  live.series2 = node.series2
+  live.series2Style = node.series2Style
+  live.seriesLabel = node.seriesLabel
+  live.series2Label = node.series2Label
+  live.categories = node.categories
   live.intValue = node.intValue
   live.prefix = node.prefix
   live.suffix = node.suffix
@@ -157,6 +167,11 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.options.join('\u0000') !== next.options.join('\u0000')) { live.options = next.options }
   if (live.series.join(',') !== next.series.join(',')) { live.series = next.series }
   if (live.bars !== next.bars) { live.bars = next.bars }
+  if (live.series2.join(',') !== next.series2.join(',')) { live.series2 = next.series2 }
+  if (live.series2Style !== next.series2Style) { live.series2Style = next.series2Style }
+  if (live.seriesLabel !== next.seriesLabel) { live.seriesLabel = next.seriesLabel }
+  if (live.series2Label !== next.series2Label) { live.series2Label = next.series2Label }
+  if (live.categories.join('\u0000') !== next.categories.join('\u0000')) { live.categories = next.categories }
   if (live.intValue !== next.intValue) { live.intValue = next.intValue }
   if (live.prefix !== next.prefix) { live.prefix = next.prefix }
   if (live.suffix !== next.suffix) { live.suffix = next.suffix }

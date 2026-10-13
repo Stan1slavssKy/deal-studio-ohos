@@ -6,6 +6,7 @@ import { loadDiscovery } from './VeraDiscovery'
 import { loadEmbeddingModel, embedModelExists, embedModelPath, EMBED_MODEL_URL } from './VeraEmbeddings'
 import { ensureSdkEmbeddings, sdkEmbeddingsReady } from './VeraSdkEmbeddingCache'
 import { ensureIntentEmbeddings, intentEmbeddingsReady } from './VeraIntentEmbeddingCache'
+import { ensureCeliaIntentEmbeddings, celiaIntentEmbeddingsReady } from './VeraCeliaIntentEmbeddingCache'
 
 const INDEX_WAIT_MS: number = 10000
 let readiness: Promise<void> | null = null
@@ -35,10 +36,12 @@ async function warmEmbeddings(context: common.Context): Promise<void> {
   if (!await loadEmbeddingModel(context.filesDir)) { return }
   await Promise.all([
     ensureSdkEmbeddings(context.filesDir, context.resourceManager),
-    ensureIntentEmbeddings(context.filesDir, context.resourceManager)
+    ensureIntentEmbeddings(context.filesDir, context.resourceManager),
+    ensureCeliaIntentEmbeddings(context.filesDir, context.resourceManager)
   ])
   console.info('VERA-CAPABILITIES sdkEmbedding=' + sdkEmbeddingsReady().toString() +
-    ' intentEmbedding=' + intentEmbeddingsReady().toString())
+    ' intentEmbedding=' + intentEmbeddingsReady().toString() +
+    ' celiaIntentEmbedding=' + celiaIntentEmbeddingsReady().toString())
 }
 
 /** Resolve when indexes settle, or after the bounded wait. Downloads never block this promise. */

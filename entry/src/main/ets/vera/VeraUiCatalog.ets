@@ -463,10 +463,16 @@ export const CATALOG: ComponentSpec[] = [
   // number.
   new ComponentSpec('Sparkline', 'sparkline',
     [style('sparkline'), new PropSpec('series', 'int[]'), new PropSpec('maximum', 'int'),
-      new PropSpec('label', 'string', '', true), new PropSpec('bars', 'boolean', '', true)],
-    'a line or bar chart of up to a few dozen values',
+      new PropSpec('label', 'string', '', true), new PropSpec('bars', 'boolean', '', true),
+      new PropSpec('series2', 'int[]', '', true),
+      new PropSpec('series2Style', 'string', 'sparkline', true),
+      new PropSpec('seriesLabel', 'string', '', true),
+      new PropSpec('series2Label', 'string', '', true),
+      new PropSpec('categories', 'string[]', '', true),
+      new PropSpec('minimum', 'int', '', true)],
+    'a line or bar chart of up to a few dozen values, one or two series',
     '',
-    'For a trend -- a week of steps, a balance over time, a reading taken repeatedly -- leave bars false for a connected line. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the chart does not jump every time a new point arrives). There is no x-axis label and no legend: say what the numbers are in label or in a ui.Text above it.'),
+    'For a trend -- a week of steps, a balance over time, a reading taken repeatedly -- leave bars false for a connected line. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the chart does not jump every time a new point arrives). The line chart (bars false) scales between minimum and maximum, not always from zero: leave minimum 0 for values that are naturally zero-based (steps, a count), but set it to a real floor for values that live in a narrow band far from zero (human height, a temperature range, a stock price) -- otherwise every point lands in a sliver at the very top of the chart with empty space below. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead; bars always start at zero regardless of minimum, the way a bar chart should. To compare two series over the same points -- men vs women, this year vs last -- pass series2 with its own style tone (series2Style) and leave bars false; a legend naming the two (seriesLabel, series2Label) is drawn automatically when series2 is non-empty. categories labels the points along the x axis, in order, when they are not plain indices (e.g. "1700s", "1800s", ...); leave it empty for a plain trend. Never draw a line chart by hand with ui.Canvas and ui.Path -- ui.Path only fills, so an open multi-point line drawn that way renders as a solid wedge, not a line.'),
 ]
 
 /**
