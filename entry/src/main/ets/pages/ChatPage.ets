@@ -259,6 +259,7 @@ struct MessageBubble {
   @ObjectLink msg: ChatMessage
   @Prop showStats: boolean = false
   @Prop chatId: string = ''
+  @State showCode: boolean = false
 
   build() {
     Column({ space: 8 }) {
@@ -270,6 +271,7 @@ struct MessageBubble {
           .backgroundColor(this.msg.role === 'user' ? '#2F6BFF' : '#FFFFFF')
           .borderRadius(14)
           .constraintSize({ maxWidth: '85%' })
+          .copyOption(CopyOptions.LocalDevice)
       }
       if (this.msg.appState === APP_DESCRIBING) {
         Text('Planning a widget...')
@@ -294,6 +296,7 @@ struct MessageBubble {
           .padding(10)
           .backgroundColor('#FFECEC')
           .borderRadius(10)
+          .copyOption(CopyOptions.LocalDevice)
       }
       // One branch for the preview and the finished widget, so the same
       // renderer is handed the finished program in place instead of a new one
@@ -326,10 +329,41 @@ struct MessageBubble {
           .backgroundColor('#FFFFFF')
           .borderRadius(14)
           .constraintSize({ maxWidth: '85%' })
+          .copyOption(CopyOptions.LocalDevice)
       }
       if (this.showStats && this.msg.role === 'assistant' && this.msg.chatInput + this.msg.attempts.length > 0) {
         StatsPanel({ tally: tallyOf([this.msg]), attempts: this.msg.attempts, heading: 'This reply',
           widgetLine: this.msg.appDescription, widgetCutFrom: this.msg.cutFrom, widgetUpdate: this.msg.update })
+      }
+      // The program behind the widget, next to the numbers about how it was
+      // built. Collapsed by default: a whole program would push the next
+      // message out of view.
+      if (this.showStats && this.msg.role === 'assistant' && this.msg.source.length > 0) {
+        Column({ space: 6 }) {
+          Row() {
+            Text('Widget code').fontSize(13).fontColor('#666666').layoutWeight(1)
+            Text(this.showCode ? 'Hide' : 'Show').fontSize(13).fontColor('#2F6BFF')
+          }
+          .width('100%')
+          .onClick(() => { this.showCode = !this.showCode })
+          if (this.showCode) {
+            Scroll() {
+              Text(this.msg.source)
+                .fontSize(11)
+                .fontFamily('monospace')
+                .fontColor('#1A1A1A')
+                .width('100%')
+                .copyOption(CopyOptions.LocalDevice)
+            }
+            .width('100%')
+            .constraintSize({ maxHeight: 420 })
+            .scrollBar(BarState.Auto)
+          }
+        }
+        .width('100%')
+        .padding(10)
+        .backgroundColor('#FFFFFF')
+        .borderRadius(10)
       }
     }
     .width('100%')
