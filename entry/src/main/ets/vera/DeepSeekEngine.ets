@@ -46,6 +46,7 @@ import { isSdkTargetImplemented } from './VeraSdkBackend'
 import { findIntentFunctionByEmbedding } from './VeraIntentEmbeddingCache'
 import { findUiComponentsByEmbedding } from './VeraUiIndex'
 import { describeComponents, optionalComponents } from './VeraUiCatalog'
+import { TurnTiming, logTurn, logStep, trace, traceTurn } from './VeraTiming'
 
 // Application generation uses this budget for both reasoning and source on every attempt.
 export const DEEPSEEK_GENERATION_MAX_TOKENS: number = 32768
@@ -87,13 +88,20 @@ class ToolCallAccumulator {
 }
 
 /** What one HTTP request/response cycle produced. */
+/** How a request offers the tools: callable, defined but not callable, or not sent at all. */
+const TOOLS_AUTO = 'auto'
+const TOOLS_NONE = 'none'
+const TOOLS_OFF = 'off'
+
 class StreamTurn {
   content: string = ''
+  reasoning: string = ''
   finishReason: string = ''
   toolCalls: ToolCallAccumulator[] = []
   inputTokens: number = 0
   outputTokens: number = 0
   cacheHitTokens: number = 0
+  timing: TurnTiming = new TurnTiming()
 }
 
 function plainMessage(role: string, content: string): Record<string, Object> {
@@ -104,7 +112,14 @@ function plainMessage(role: string, content: string): Record<string, Object> {
 }
 
 /** The assistant turn that asked for tools, replayed so the model sees its own request. */
-function assistantToolCallMessage(toolCalls: ToolCallAccumulator[]): Record<string, Object> {
+/**
+ * The assistant turn that asked for tools, replayed before their results. Its
+ * reasoning goes back with it: DeepSeek's thinking-mode guide requires every
+ * earlier turn's reasoning_content on requests that carry `tools`, and says
+ * leaving it out is an API error. deepseek-flash has not enforced that so far,
+ * which is how this went unnoticed.
+ */
+function assistantToolCallMessage(toolCalls: ToolCallAccumulator[], reasoning: string): Record<string, Object> {
   let calls: Record<string, Object>[] = []
   for (let tc of toolCalls) {
     let fn: Record<string, Object> = {}
@@ -119,6 +134,7 @@ function assistantToolCallMessage(toolCalls: ToolCallAccumulator[]): Record<stri
   let m: Record<string, Object> = {}
   m['role'] = 'assistant'
   m['content'] = ''
+  if (reasoning.length > 0) { m['reasoning_content'] = reasoning }
   m['tool_calls'] = calls
   return m
 }
@@ -249,6 +265,18 @@ function intentKeysList(entries: IntentEntry[]): string {
   let keys: string[] = []
   for (let e of entries) { keys.push(e.kind + ':' + e.name) }
   return '[' + keys.join(', ') + ']'
+}
+
+/** The trace event for one tool call: what was asked and exactly what went back to the model. */
+export function traceTool(src: string, round: number, name: string, need: string, startedAt: number, result: string): void {
+  let f: Record<string, Object> = {}
+  f['src'] = src
+  f['round'] = round
+  f['name'] = name
+  f['need'] = need
+  f['ms'] = Date.now() - startedAt
+  f['result'] = result
+  trace('tool', f)
 }
 
 export async function discoveryToolResult(name: string, need: string, round: number = 0): Promise<string> {
@@ -457,7 +485,7 @@ export class DeepSeekEngine {
       this.progress.round = round
       this.report('request')
       try {
-        turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, true)
+        turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, TOOLS_AUTO, 'gen', round)
       } catch (e) {
         this.generating = false
         throw e as Error
@@ -474,8 +502,11 @@ export class DeepSeekEngine {
       }
       stillAsking = true
       this.toolRounds = this.toolRounds + 1
-      messages.push(assistantToolCallMessage(turn.toolCalls))
+      messages.push(assistantToolCallMessage(turn.toolCalls, turn.reasoning))
+      let toolsStartedAt = Date.now()
+      let toolNames: string[] = []
       for (let call of turn.toolCalls) {
+        toolNames.push(call.name)
         let need = ''
         try {
           let args = JSON.parse(call.arguments) as Record<string, Object>
@@ -489,8 +520,11 @@ export class DeepSeekEngine {
         this.progress.tool = call.name
         this.progress.need = need
         this.report('tool')
+        let callStartedAt = Date.now()
         if (call.name === INTENT_TOOL_NAME || call.name === SDK_TOOL_NAME) {
-          messages.push(toolResultMessage(call.id, await discoveryToolResult(call.name, need, round)))
+          let result = await discoveryToolResult(call.name, need, round)
+          traceTool('gen', round, call.name, need, callStartedAt, result)
+          messages.push(toolResultMessage(call.id, result))
         } else if (call.name === UI_TOOL_NAME) {
           let shown = new Set<string>(request.uiSelected)
           let names: string[] = []
@@ -509,24 +543,36 @@ export class DeepSeekEngine {
           }
           console.info('VERA-UI-TOOL round=' + round.toString() + ' need="' + need + '" found=[' +
             names.join(', ') + ']')
-          messages.push(toolResultMessage(call.id, uiResultsJson(names, note)))
+          let uiResult = uiResultsJson(names, note)
+          traceTool('gen', round, call.name, need, callStartedAt, uiResult)
+          messages.push(toolResultMessage(call.id, uiResult))
         } else {
           messages.push(toolResultMessage(call.id, 'Unknown discovery tool.'))
         }
       }
+      logStep('tools', toolsStartedAt, 'src=gen round=' + round.toString() + ' calls=' + toolNames.join(','))
     }
 
     // MAX_TOOL_ROUNDS was reached while the model was still asking for more:
     // without this, its last round of tool results are computed and pushed
     // to `messages` but never sent back, and the generation ends with
     // nothing -- "produced empty output" -- even though good answers were
-    // sitting right there. One last request, tools left off so it cannot
-    // ask again, forces a real answer out of what it already has.
+    // sitting right there. One last request forces a real answer out of what
+    // it already has: the tools stay defined but tool_choice is "none", and a
+    // plain instruction says the lookups are over. Dropping the tools instead
+    // left a model mid-plan with a tool it still wanted and no way to call it,
+    // and twice in 30 benchmark runs it wrote the call out as DSML markup in
+    // place of a program, losing the attempt.
+    // TODO: belongs in a proper harness -- a lookup budget the model is told
+    // about up front, not a cut-off it discovers in the last round.
     if (stillAsking && !this.cancelled) {
       this.progress.round = round + 1
       this.report('request')
+      messages.push(plainMessage('user', 'The lookup budget is used up. Do not call or write out any tool call. ' +
+        'Write the complete program now from the results you already have; where something is still unknown, ' +
+        'use what the catalogue offers and show the limitation in the app.'))
       try {
-        let final = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, false)
+        let final = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, TOOLS_NONE, 'gen', round + 1)
         this.inputTokens = this.inputTokens + final.inputTokens
         this.outputTokens = this.outputTokens + final.outputTokens
         this.finishReason = final.finishReason
@@ -561,7 +607,7 @@ export class DeepSeekEngine {
     this.generating = true
     let startedAt = Date.now()
     try {
-      let turn = await this.streamOnce(messages, 0, 300, (_token: string): void => {}, false)
+      let turn = await this.streamOnce(messages, 0, 300, (_token: string): void => {}, TOOLS_OFF, 'uineeds', 1)
       let text = extractVeraSource(turn.content)
       let start = text.indexOf('[')
       let end = text.lastIndexOf(']')
@@ -600,7 +646,7 @@ export class DeepSeekEngine {
 
   /** One request/response cycle: sends `messages`, returns what streamed back. */
   private async streamOnce(messages: Record<string, Object>[], temperature: number,
-      maxTokens: number, onToken: TokenCallback, allowTools: boolean): Promise<StreamTurn> {
+      maxTokens: number, onToken: TokenCallback, tools: string, src: string, round: number): Promise<StreamTurn> {
     let key = settings.getApiKey()
     this.buffer = ''
     this.rawBody = ''
@@ -624,6 +670,9 @@ export class DeepSeekEngine {
     })
 
     let code = 0
+    let body = this.buildBody(messages, temperature, maxTokens, tools)
+    turn.timing.bodyChars = body.length
+    turn.timing.sentAt = Date.now()
     try {
       let header: Record<string, string> = {}
       header['Content-Type'] = 'application/json'
@@ -632,7 +681,7 @@ export class DeepSeekEngine {
       code = await client.requestInStream(settings.getBaseUrl() + '/chat/completions', {
         method: http.RequestMethod.POST,
         header: header,
-        extraData: this.buildBody(messages, temperature, maxTokens, allowTools),
+        extraData: body,
         connectTimeout: 15000,
         readTimeout: 300000
       })
@@ -653,11 +702,23 @@ export class DeepSeekEngine {
     let toolCalls: ToolCallAccumulator[] = []
     pending.forEach((tc: ToolCallAccumulator) => { toolCalls.push(tc) })
     turn.toolCalls = toolCalls
+    turn.timing.endAt = Date.now()
+    turn.timing.finishReason = turn.finishReason
+    turn.timing.toolCalls = toolCalls.length
+    logTurn(src, round, turn.timing)
+    let calls: Object[] = []
+    for (let tc of toolCalls) {
+      let c: Record<string, Object> = {}
+      c['name'] = tc.name
+      c['arguments'] = tc.arguments
+      calls.push(c)
+    }
+    traceTurn(src, round, turn.timing, turn.reasoning, turn.content, calls, tools === TOOLS_AUTO)
     return turn
   }
 
   private buildBody(messages: Record<string, Object>[], temperature: number,
-      maxTokens: number, allowTools: boolean): string {
+      maxTokens: number, tools: string): string {
     let payload: Record<string, Object> = {}
     payload['model'] = settings.getModel()
     payload['messages'] = messages
@@ -669,12 +730,15 @@ export class DeepSeekEngine {
     let thinking: Record<string, Object> = {}
     thinking['type'] = this.thinking ? 'enabled' : 'disabled'
     payload['thinking'] = thinking
+    // Reasoning is most of a generation's time; see DEFAULT_REASONING_EFFORT.
+    if (this.thinking) { payload['reasoning_effort'] = settings.getReasoningEffort() }
     payload['temperature'] = temperature
     payload['max_tokens'] = maxTokens
-    // Left off on the forced final round (generate()) so a model that would
-    // otherwise keep asking has no way to -- it must answer with whatever
-    // tool results it already has.
-    if (allowTools) { payload['tools'] = toolSchemas(this.uiToolOffered) }
+    // TOOLS_NONE is the forced final round (generate()): the model still sees
+    // the tools it was using but cannot call them, so it answers with the
+    // results it already has. TOOLS_OFF is a request that never had tools.
+    if (tools !== TOOLS_OFF) { payload['tools'] = toolSchemas(this.uiToolOffered) }
+    if (tools === TOOLS_NONE) { payload['tool_choice'] = 'none' }
     return JSON.stringify(payload)
   }
 
@@ -714,6 +778,8 @@ export class DeepSeekEngine {
       if (delta !== null && delta !== undefined) {
         let reasoning = delta['reasoning_content']
         if (typeof reasoning === 'string' && (reasoning as string).length > 0) {
+          turn.timing.saw('reasoning')
+          turn.reasoning += reasoning as string
           if (this.firstAnyAt === 0) { this.firstAnyAt = Date.now() }
           if (this.progress.phase !== 'thinking') { this.report('thinking') }
         }
@@ -721,6 +787,7 @@ export class DeepSeekEngine {
         if (typeof content === 'string') {
           let token = content as string
           if (token.length > 0) {
+            turn.timing.saw('content')
             if (this.firstAnyAt === 0) { this.firstAnyAt = Date.now() }
             if (this.firstContentAt === 0) { this.firstContentAt = Date.now() }
             turn.content += token
@@ -731,6 +798,7 @@ export class DeepSeekEngine {
         // arguments piece by piece, reassembled here before it's ever parsed.
         let toolCalls = delta['tool_calls'] as Object[]
         if (toolCalls !== null && toolCalls !== undefined) {
+          turn.timing.saw('tool')
           if (this.firstAnyAt === 0) { this.firstAnyAt = Date.now() }
           for (let raw of toolCalls) {
             let tc = raw as Record<string, Object>
@@ -758,6 +826,7 @@ export class DeepSeekEngine {
 
     let usage = obj['usage'] as Record<string, Object>
     if (usage !== null && usage !== undefined) {
+      turn.timing.readUsage(usage)
       let input = usage['prompt_tokens']
       if (typeof input === 'number') { turn.inputTokens = input as number }
       let output = usage['completion_tokens']

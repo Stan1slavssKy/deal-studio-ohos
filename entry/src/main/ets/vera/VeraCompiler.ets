@@ -1,5 +1,5 @@
 import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter'
-import { CATALOG, ComponentSpec, ChildRule, stylesFor, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
+import { CATALOG, ComponentSpec, ChildRule, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
 import { iconPath, iconNames } from './VeraIcons'
 import { isValidSdkTarget } from './VeraSdkIndex'
 
@@ -1245,6 +1245,8 @@ function buildStdSdkModule(): ModuleInterface {
 
 class Scope {
   values: Map<string, VeraType> = new Map<string, VeraType>()
+  /** Names bound here that the program may read but not assign: parameters and for-of variables. */
+  readOnly: Set<string> = new Set<string>()
   parent: Scope | null
   constructor(parent: Scope | null) { this.parent = parent }
   find(name: string): VeraType | null {
@@ -1252,6 +1254,16 @@ class Scope {
     if (v !== undefined) return v
     if (this.parent !== null) return this.parent.find(name)
     return null
+  }
+  /** The scope that binds `name`, or null when nothing does. */
+  owner(name: string): Scope | null {
+    if (this.values.has(name)) return this
+    if (this.parent !== null) return this.parent.owner(name)
+    return null
+  }
+  isReadOnly(name: string): boolean {
+    let o = this.owner(name)
+    return o !== null && o.readOnly.has(name)
   }
 }
 
@@ -1404,7 +1416,7 @@ class Analyzer {
     for (let i = 0; i < decl.parameters.length; i++) {
       let p = decl.parameters[i]
       if (scope.find(p.name) !== null) this.addError('E2004', 'declaration ' + p.name + ' shadows a visible entity', p.span)
-      else scope.values.set(p.name, ft.parameters[i])
+      else { scope.values.set(p.name, ft.parameters[i]); scope.readOnly.add(p.name) }
     }
     let returns = this.checkBlock(decl.body, scope)
     if (!identical(this.returnType, VOID) && !returns) this.addError('E2018', 'function ' + decl.name + ' may not return a value', decl.body.span)
@@ -1466,7 +1478,7 @@ class Analyzer {
       if (element !== null && !identical(element, declared)) this.typeError(stmt.iterable, declared, element)
       let child = new Scope(scope)
       if (child.find(stmt.name) !== null) this.addError('E2004', 'declaration ' + stmt.name + ' shadows a visible entity', stmt.span)
-      else child.values.set(stmt.name, declared)
+      else { child.values.set(stmt.name, declared); child.readOnly.add(stmt.name) }
       this.loopDepth += 1
       this.checkBlock(stmt.body, child)
       this.loopDepth -= 1
@@ -1495,12 +1507,29 @@ class Analyzer {
     return false
   }
 
+  /**
+   * What the language allows a bare name to be assigned: a let local, of any
+   * type. A parameter or for-of variable is read-only ("return a new value
+   * instead"), and a global -- a class, function or imported namespace -- is
+   * not a variable at all.
+   *
+   * This used to decide by the name's type, refusing anything whose type was a
+   * class. That was meant for `AppState = ...`, but a variable of class type has
+   * the same type as the class, so `let badge: ui.View = ...; badge = ...` was
+   * refused too, while an int or string parameter could be reassigned freely.
+   */
   private checkAssignable(expr: Expression, scope: Scope): VeraType {
     if (expr instanceof NameExpression) {
       let type = scope.find(expr.name)
-      if (type === null || scope === this.globals || type instanceof VeraFunctionType || type instanceof VeraClassType || type instanceof NamespaceType) {
+      let owner = scope.owner(expr.name)
+      if (type === null || owner === null || owner === this.globals) {
         this.addError('E2010', 'invalid assignment target', expr.span)
         return VOID
+      }
+      if (owner.readOnly.has(expr.name)) {
+        this.addError('E2010', 'cannot assign to ' + expr.name + ': parameters and for-of variables are read-only; ' +
+          'declare a let local or return a new value instead', expr.span)
+        return type
       }
       return type
     }
@@ -1779,12 +1808,10 @@ class Analyzer {
   }
 
   /**
-   * A style name the renderer does not know silently falls through to its
-   * default branch, so the program looks plausible and renders wrong. Catch it
-   * where every other mistake is caught.
-   *
-   * Only literal styles are checked: a computed style is legitimate and cannot
-   * be resolved here, so it passes.
+   * Icons and handler signatures for a std/ui call. Style names are not
+   * checked here: one outside its set is drawn in the set's default style
+   * (resolveStyle, applied when the tree is decoded), because refusing it cost
+   * a whole generation attempt over something cosmetic.
    */
   private checkStyleArguments(expr: CallExpression, callee: VeraFunctionType): void {
     const prefix = 'external:std/ui:'
@@ -1792,18 +1819,6 @@ class Analyzer {
     let name = callee.identity.substring(prefix.length)
     for (let spec of CATALOG) {
       if (spec.name !== name) continue
-      for (let i = 0; i < spec.props.length && i < expr.argumentsList.length; i++) {
-        let prop = spec.props[i]
-        if (prop.styleSet.length === 0) continue
-        let arg = expr.argumentsList[i]
-        if (!(arg instanceof StringExpression)) continue
-        let allowed = stylesFor(spec.nodeKind)
-        if (allowed.length === 0) continue
-        if (allowed.indexOf((arg as StringExpression).value) < 0) {
-          this.addError('E2105', 'unknown ' + spec.name + ' style "' + (arg as StringExpression).value +
-            '"; allowed: ' + allowed.join(' '), arg.span)
-        }
-      }
       this.checkIconArguments(expr, spec)
       this.checkHandlerSignature(expr, spec)
       return
@@ -1947,7 +1962,7 @@ class Analyzer {
     for (let i = 0; i < expr.parameters.length; i++) {
       let p = expr.parameters[i]
       if (scope.find(p.name) !== null) this.addError('E2004', 'declaration ' + p.name + ' shadows a visible entity', p.span)
-      else scope.values.set(p.name, params[i])
+      else { scope.values.set(p.name, params[i]); scope.readOnly.add(p.name) }
     }
     let oldRet = this.returnType
     let oldAsync = this.inAsyncFunction
@@ -1974,6 +1989,7 @@ class Analyzer {
         if (type !== null && type instanceof NullableType) {
           let narrowedScope = op === '!==' ? yes : no
           narrowedScope.values.set(nameExpr.name, type.base)
+          if (scope.isReadOnly(nameExpr.name)) narrowedScope.readOnly.add(nameExpr.name)
         }
       }
     }

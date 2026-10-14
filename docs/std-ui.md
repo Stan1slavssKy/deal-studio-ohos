@@ -93,8 +93,8 @@ Six types appear in the component signatures, and every one of them is checked a
 Three of the string-typed properties are not free text:
 
 - **`style`** is the first argument of every component and comes from that component's own closed set,
-  listed under each entry below. A literal outside the set is diagnostic `E2105`; a style computed at
-  runtime is not checked and falls back to the renderer's default.
+  listed under each entry below. A name outside the set, literal or computed, is not an error: the node is
+  drawn in the set's `default` style (`body` for text, else the set's first entry) -- see `resolveStyle`.
 - **`icon`** is one of the 16 names below, or `""` for none. An unknown literal is `E2108`.
 - **`action`** is the name of a handler function in the program. A name with no handler behind it is `E2106`,
   and so is a handler whose parameter type does not match what the component hands it.

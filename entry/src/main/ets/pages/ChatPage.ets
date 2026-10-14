@@ -2,6 +2,7 @@ import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
 import router from '@ohos.router'
 import { VeraPreview } from '../components/VeraPreview'
 import { loadRawfileText } from '../vera/LlamaEngine'
+import { logMark, logStep, initTrace } from '../vera/VeraTiming'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
@@ -259,6 +260,7 @@ struct MessageBubble {
   @ObjectLink msg: ChatMessage
   @Prop showStats: boolean = false
   @Prop chatId: string = ''
+  @State showCode: boolean = false
 
   build() {
     Column({ space: 8 }) {
@@ -270,6 +272,7 @@ struct MessageBubble {
           .backgroundColor(this.msg.role === 'user' ? '#2F6BFF' : '#FFFFFF')
           .borderRadius(14)
           .constraintSize({ maxWidth: '85%' })
+          .copyOption(CopyOptions.LocalDevice)
       }
       if (this.msg.appState === APP_DESCRIBING) {
         Text('Planning a widget...')
@@ -294,6 +297,7 @@ struct MessageBubble {
           .padding(10)
           .backgroundColor('#FFECEC')
           .borderRadius(10)
+          .copyOption(CopyOptions.LocalDevice)
       }
       // One branch for the preview and the finished widget, so the same
       // renderer is handed the finished program in place instead of a new one
@@ -326,10 +330,41 @@ struct MessageBubble {
           .backgroundColor('#FFFFFF')
           .borderRadius(14)
           .constraintSize({ maxWidth: '85%' })
+          .copyOption(CopyOptions.LocalDevice)
       }
       if (this.showStats && this.msg.role === 'assistant' && this.msg.chatInput + this.msg.attempts.length > 0) {
         StatsPanel({ tally: tallyOf([this.msg]), attempts: this.msg.attempts, heading: 'This reply',
           widgetLine: this.msg.appDescription, widgetCutFrom: this.msg.cutFrom, widgetUpdate: this.msg.update })
+      }
+      // The program behind the widget, next to the numbers about how it was
+      // built. Collapsed by default: a whole program would push the next
+      // message out of view.
+      if (this.showStats && this.msg.role === 'assistant' && this.msg.source.length > 0) {
+        Column({ space: 6 }) {
+          Row() {
+            Text('Widget code').fontSize(13).fontColor('#666666').layoutWeight(1)
+            Text(this.showCode ? 'Hide' : 'Show').fontSize(13).fontColor('#2F6BFF')
+          }
+          .width('100%')
+          .onClick(() => { this.showCode = !this.showCode })
+          if (this.showCode) {
+            Scroll() {
+              Text(this.msg.source)
+                .fontSize(11)
+                .fontFamily('monospace')
+                .fontColor('#1A1A1A')
+                .width('100%')
+                .copyOption(CopyOptions.LocalDevice)
+            }
+            .width('100%')
+            .constraintSize({ maxHeight: 420 })
+            .scrollBar(BarState.Auto)
+          }
+        }
+        .width('100%')
+        .padding(10)
+        .backgroundColor('#FFFFFF')
+        .borderRadius(10)
       }
     }
     .width('100%')
@@ -363,6 +398,7 @@ struct ChatPage {
     // The store VeraPreview saves a widget's state in, and the chats themselves.
     store.init(dir)
     chats.init(dir)
+    initTrace(dir)
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)
     let params = router.getParams() as Record<string, string>
     if (params !== null && params !== undefined && (params['chatId'] || '').length > 0) {
@@ -579,9 +615,14 @@ struct ChatPage {
     this.status = 'Thinking...'
     let stats = new ReplyStats()
     let started = false
+    let sawText = false
+    logMark('chat-send', 'chars=' + text.length.toString())
     try {
+      let capsStartedAt = Date.now()
       await ensureCapabilities(getContext(this))
+      logStep('ensure-capabilities', capsStartedAt)
       let raw = await chatReply(turns, (soFar: string): void => {
+        if (!sawText) { sawText = true; logMark('chat-first-text') }
         if (this.status === 'Thinking...') { this.status = '' }
         let parsed = parseReply(soFar)
         this.apply(reply, parsed)
@@ -596,6 +637,7 @@ struct ChatPage {
       }, (status: string): void => {
         this.status = status.length > 0 ? status : 'Thinking...'
       }, stats, (verified: string): void => { context.verifiedSearchResults.push(verified) })
+      logMark('chat-reply-done')
       console.info('VERA-CHAT reply: ' + raw)
       let parsed = parseReply(raw, true)
       this.apply(reply, parsed)
@@ -655,6 +697,7 @@ struct ChatPage {
     reply.cutFrom = 0
     reply.update = parsed.update || parsed.mode === 'refine'
     reply.appState = APP_BUILDING
+    logMark('widget-queued')
     this.queueBuild(reply, context)
   }
 
@@ -663,12 +706,16 @@ struct ChatPage {
       // The rest of the reply invalidated the marker while this waited.
       if (msg.appState === APP_FAILED) { return }
       let startedAt = Date.now()
+      logMark('widget-build-start')
+      let sawPreview = false
       try {
         await this.loadResources()
+        logStep('load-resources', startedAt)
         let app: MiniApp = await buildMiniApp(this.skillPrompt, context, (s: string): void => {
           if (msg.buildStatus !== s) { msg.buildStatus = s }
         }, '', (_s: string): void => {}, (vbc2: string): void => {
           if (msg.appState !== APP_BUILDING) { return }
+          if (!sawPreview) { sawPreview = true; logMark('widget-preview') }
           msg.previewVbc2 = vbc2
           this.scrollDown(true)
         })
@@ -681,6 +728,7 @@ struct ChatPage {
           msg.originalRequest = context.originalRequest
           msg.parentMessageId = context.parentMessageId
           msg.appState = APP_READY
+          logMark('widget-ready')
         } else {
           msg.error = app.error
           msg.appState = APP_FAILED
