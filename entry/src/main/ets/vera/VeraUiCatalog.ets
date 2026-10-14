@@ -551,6 +551,22 @@ export function stylesFor(nodeKind: string): string[] {
   return s !== undefined ? s : []
 }
 
+/**
+ * The style a node gets when its program names one outside its set: 'default'
+ * where the set has it, the body size for text, else the set's first entry.
+ * A wrong style name is a cosmetic slip -- a generated program used to lose a
+ * whole compile attempt to `"muted"` on a chart -- so it is drawn plainly
+ * rather than refused. An empty style is left alone: optional style props use
+ * it to mean "not given".
+ */
+export function resolveStyle(nodeKind: string, style: string): string {
+  let allowed = stylesFor(nodeKind)
+  if (style.length === 0 || allowed.length === 0 || allowed.indexOf(style) >= 0) { return style }
+  if (allowed.indexOf('default') >= 0) { return 'default' }
+  if (allowed.indexOf('body') >= 0) { return 'body' }
+  return allowed[0]
+}
+
 /** Node kinds the decoder can produce, for the renderer's coverage check. */
 export function catalogKinds(): string[] {
   let kinds: string[] = []

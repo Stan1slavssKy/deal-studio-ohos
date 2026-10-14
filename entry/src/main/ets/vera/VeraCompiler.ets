@@ -1,5 +1,5 @@
 import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter'
-import { CATALOG, ComponentSpec, ChildRule, stylesFor, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
+import { CATALOG, ComponentSpec, ChildRule, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
 import { iconPath, iconNames } from './VeraIcons'
 import { isValidSdkTarget } from './VeraSdkIndex'
 
@@ -1808,12 +1808,10 @@ class Analyzer {
   }
 
   /**
-   * A style name the renderer does not know silently falls through to its
-   * default branch, so the program looks plausible and renders wrong. Catch it
-   * where every other mistake is caught.
-   *
-   * Only literal styles are checked: a computed style is legitimate and cannot
-   * be resolved here, so it passes.
+   * Icons and handler signatures for a std/ui call. Style names are not
+   * checked here: one outside its set is drawn in the set's default style
+   * (resolveStyle, applied when the tree is decoded), because refusing it cost
+   * a whole generation attempt over something cosmetic.
    */
   private checkStyleArguments(expr: CallExpression, callee: VeraFunctionType): void {
     const prefix = 'external:std/ui:'
@@ -1821,18 +1819,6 @@ class Analyzer {
     let name = callee.identity.substring(prefix.length)
     for (let spec of CATALOG) {
       if (spec.name !== name) continue
-      for (let i = 0; i < spec.props.length && i < expr.argumentsList.length; i++) {
-        let prop = spec.props[i]
-        if (prop.styleSet.length === 0) continue
-        let arg = expr.argumentsList[i]
-        if (!(arg instanceof StringExpression)) continue
-        let allowed = stylesFor(spec.nodeKind)
-        if (allowed.length === 0) continue
-        if (allowed.indexOf((arg as StringExpression).value) < 0) {
-          this.addError('E2105', 'unknown ' + spec.name + ' style "' + (arg as StringExpression).value +
-            '"; allowed: ' + allowed.join(' '), arg.span)
-        }
-      }
       this.checkIconArguments(expr, spec)
       this.checkHandlerSignature(expr, spec)
       return

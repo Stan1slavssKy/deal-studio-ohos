@@ -11,6 +11,7 @@ import {
   HostEnvironment,
   RuntimeTrap,
 } from './VeraInterpreter'
+import { resolveStyle } from './VeraUiCatalog'
 
 export class VeraUiNode {
   id: number = 0
@@ -1026,5 +1027,7 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
         break
     }
   }
+  node.style = resolveStyle(node.kind, node.style)
+  if (node.series2Style.length > 0) { node.series2Style = resolveStyle(node.kind, node.series2Style) }
   return node
 }
