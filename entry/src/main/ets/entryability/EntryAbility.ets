@@ -115,9 +115,11 @@ export default class EntryAbility extends UIAbility {
    * How hard the model reasons before a generation, given the same way:
    *     --ps reasoningEffort low
    *
-   * One of DeepSeek's levels (none minimal low medium high xhigh ultra max);
-   * `default` goes back to the app's own, DEFAULT_REASONING_EFFORT. Kept across
-   * restarts, like the keys, so a benchmark can switch it without a rebuild.
+   * DeepSeek has three levels, low, high and max; it accepts other names as
+   * aliases (minimal = low; medium, xhigh = high; ultra = max), and its own
+   * default is high. `default` goes back to the app's own,
+   * DEFAULT_REASONING_EFFORT. Kept across restarts, like the keys, so a
+   * benchmark can switch it without a rebuild.
    */
   private extractReasoningEffort(want: Want): void {
     if (want.parameters === null || want.parameters === undefined) { return }

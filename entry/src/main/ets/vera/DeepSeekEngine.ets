@@ -112,7 +112,14 @@ function plainMessage(role: string, content: string): Record<string, Object> {
 }
 
 /** The assistant turn that asked for tools, replayed so the model sees its own request. */
-function assistantToolCallMessage(toolCalls: ToolCallAccumulator[]): Record<string, Object> {
+/**
+ * The assistant turn that asked for tools, replayed before their results. Its
+ * reasoning goes back with it: DeepSeek's thinking-mode guide requires every
+ * earlier turn's reasoning_content on requests that carry `tools`, and says
+ * leaving it out is an API error. deepseek-flash has not enforced that so far,
+ * which is how this went unnoticed.
+ */
+function assistantToolCallMessage(toolCalls: ToolCallAccumulator[], reasoning: string): Record<string, Object> {
   let calls: Record<string, Object>[] = []
   for (let tc of toolCalls) {
     let fn: Record<string, Object> = {}
@@ -127,6 +134,7 @@ function assistantToolCallMessage(toolCalls: ToolCallAccumulator[]): Record<stri
   let m: Record<string, Object> = {}
   m['role'] = 'assistant'
   m['content'] = ''
+  if (reasoning.length > 0) { m['reasoning_content'] = reasoning }
   m['tool_calls'] = calls
   return m
 }
@@ -494,7 +502,7 @@ export class DeepSeekEngine {
       }
       stillAsking = true
       this.toolRounds = this.toolRounds + 1
-      messages.push(assistantToolCallMessage(turn.toolCalls))
+      messages.push(assistantToolCallMessage(turn.toolCalls, turn.reasoning))
       let toolsStartedAt = Date.now()
       let toolNames: string[] = []
       for (let call of turn.toolCalls) {
