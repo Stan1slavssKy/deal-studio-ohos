@@ -2,6 +2,7 @@ import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
 import router from '@ohos.router'
 import { VeraPreview } from '../components/VeraPreview'
 import { loadRawfileText } from '../vera/LlamaEngine'
+import { logMark, logStep, initTrace } from '../vera/VeraTiming'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
@@ -397,6 +398,7 @@ struct ChatPage {
     // The store VeraPreview saves a widget's state in, and the chats themselves.
     store.init(dir)
     chats.init(dir)
+    initTrace(dir)
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)
     let params = router.getParams() as Record<string, string>
     if (params !== null && params !== undefined && (params['chatId'] || '').length > 0) {
@@ -613,9 +615,14 @@ struct ChatPage {
     this.status = 'Thinking...'
     let stats = new ReplyStats()
     let started = false
+    let sawText = false
+    logMark('chat-send', 'chars=' + text.length.toString())
     try {
+      let capsStartedAt = Date.now()
       await ensureCapabilities(getContext(this))
+      logStep('ensure-capabilities', capsStartedAt)
       let raw = await chatReply(turns, (soFar: string): void => {
+        if (!sawText) { sawText = true; logMark('chat-first-text') }
         if (this.status === 'Thinking...') { this.status = '' }
         let parsed = parseReply(soFar)
         this.apply(reply, parsed)
@@ -630,6 +637,7 @@ struct ChatPage {
       }, (status: string): void => {
         this.status = status.length > 0 ? status : 'Thinking...'
       }, stats, (verified: string): void => { context.verifiedSearchResults.push(verified) })
+      logMark('chat-reply-done')
       console.info('VERA-CHAT reply: ' + raw)
       let parsed = parseReply(raw, true)
       this.apply(reply, parsed)
@@ -689,6 +697,7 @@ struct ChatPage {
     reply.cutFrom = 0
     reply.update = parsed.update || parsed.mode === 'refine'
     reply.appState = APP_BUILDING
+    logMark('widget-queued')
     this.queueBuild(reply, context)
   }
 
@@ -697,12 +706,16 @@ struct ChatPage {
       // The rest of the reply invalidated the marker while this waited.
       if (msg.appState === APP_FAILED) { return }
       let startedAt = Date.now()
+      logMark('widget-build-start')
+      let sawPreview = false
       try {
         await this.loadResources()
+        logStep('load-resources', startedAt)
         let app: MiniApp = await buildMiniApp(this.skillPrompt, context, (s: string): void => {
           if (msg.buildStatus !== s) { msg.buildStatus = s }
         }, '', (_s: string): void => {}, (vbc2: string): void => {
           if (msg.appState !== APP_BUILDING) { return }
+          if (!sawPreview) { sawPreview = true; logMark('widget-preview') }
           msg.previewVbc2 = vbc2
           this.scrollDown(true)
         })
@@ -715,6 +728,7 @@ struct ChatPage {
           msg.originalRequest = context.originalRequest
           msg.parentMessageId = context.parentMessageId
           msg.appState = APP_READY
+          logMark('widget-ready')
         } else {
           msg.error = app.error
           msg.appState = APP_FAILED

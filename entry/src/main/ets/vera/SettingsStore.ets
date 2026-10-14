@@ -15,6 +15,13 @@ import fs from '@ohos.file.fs'
 
 export const DEFAULT_DEEPSEEK_BASE_URL: string = 'https://api.deepseek.com'
 export const DEFAULT_DEEPSEEK_MODEL: string = 'deepseek-flash'
+/**
+ * reasoning_effort when none is set. On the generation benchmark (5 prompts x 3
+ * runs) 'low' cut reasoning from 185k to 124k tokens and total time by a fifth
+ * against the API's default, with the same first-attempt compile rate once the
+ * compiler's assignment check was fixed.
+ */
+export const DEFAULT_REASONING_EFFORT: string = 'low'
 
 function readText(path: string): string {
   try {
@@ -60,6 +67,11 @@ export class SettingsStore {
    * `--ps exaKey ...`; without it the assistant simply has no search tool.
    */
   private exaKey: string = ''
+  /**
+   * DeepSeek's reasoning_effort for requests with thinking on; '' means
+   * DEFAULT_REASONING_EFFORT. Supplied as `--ps reasoningEffort high` (EntryAbility).
+   */
+  private reasoningEffort: string = ''
   private loaded: boolean = false
 
   init(filesDir: string): void {
@@ -83,6 +95,7 @@ export class SettingsStore {
         this.serverUrl = (obj['serverUrl'] as string) || ''
         this.selectorKey = (obj['selectorKey'] as string) || ''
         this.exaKey = (obj['exaKey'] as string) || ''
+        this.reasoningEffort = (obj['reasoningEffort'] as string) || ''
       } catch (_e) {}
     }
     this.loaded = true
@@ -97,6 +110,7 @@ export class SettingsStore {
     obj['serverUrl'] = this.serverUrl
     obj['selectorKey'] = this.selectorKey
     obj['exaKey'] = this.exaKey
+    obj['reasoningEffort'] = this.reasoningEffort
     try { writeText(this.path(), JSON.stringify(obj)) } catch (_e) {}
   }
 
@@ -133,6 +147,17 @@ export class SettingsStore {
   }
 
   hasExaKey(): boolean { return this.getExaKey().length > 0 }
+
+  getReasoningEffort(): string {
+    if (!this.loaded) { this.load() }
+    return this.reasoningEffort.length > 0 ? this.reasoningEffort : DEFAULT_REASONING_EFFORT
+  }
+
+  setReasoningEffort(effort: string): void {
+    if (!this.loaded) { this.load() }
+    this.reasoningEffort = effort.trim()
+    this.save()
+  }
 
   setExaKey(key: string): void {
     if (!this.loaded) { this.load() }

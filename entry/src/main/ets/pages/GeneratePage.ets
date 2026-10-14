@@ -7,6 +7,7 @@ import { store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
+import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
 import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS } from '../vera/DeepSeekEngine'
 import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
@@ -244,6 +245,7 @@ struct GeneratePage {
       if (v !== null) { this.previousSource = v!.source }
     }
     settings.init(getContext(this).filesDir)
+    initTrace(getContext(this).filesDir)
     // Shrink the page for the keyboard instead of panning it: panning slides
     // the preview up under the title bar, and with the refine field pinned at
     // the bottom the page has to give up height, not move.
@@ -463,6 +465,12 @@ struct GeneratePage {
     this.runs = []
     this.startRun(this.prompt.trim())
     this.genStartTime = Date.now()
+    logMark('gen-start', 'chars=' + this.prompt.trim().length.toString())
+    let startFields: Record<string, Object> = {}
+    startFields['prompt'] = this.prompt.trim()
+    startFields['refining'] = this.previousSource.length > 0
+    startFields['effort'] = settings.getReasoningEffort()
+    trace('gen-start', startFields)
     this.lastRequest = this.prompt.trim()
     // No pre-generation intent selection step any more: find_intent_function
     // and find_sdk_function (DeepSeekEngine.ets) are looked up by the model
@@ -484,7 +492,9 @@ struct GeneratePage {
     this.uiSelected = []
     if (UI_SELECT_MODE !== UI_SELECT_FULL && this.mode === MODE_DEEPSEEK && this.skillText.length > 0) {
       this.status = 'Choosing UI components...'
+      let selectStartedAt = Date.now()
       let selected = await selectUiForPrompt(UI_SELECT_MODE, userPrompt, this.previousSource)
+      logStep('ui-select', selectStartedAt, 'mode=' + UI_SELECT_MODE)
       if (this.cancelRequested) { return }
       if (selected === null) {
         console.info('VERA-UI-SELECT fallback to the whole catalogue')
@@ -495,6 +505,12 @@ struct GeneratePage {
         this.systemPrompt = this.skillText
           .replace('{{UI_CATALOG}}', describeCatalogForPrompt(selected))
           .replace('{{UI_TOOL_NOTE}}\n', UI_TOOL_NOTE)
+        let uiFields: Record<string, Object> = {}
+        uiFields['mode'] = UI_SELECT_MODE
+        uiFields['described'] = names
+        uiFields['promptChars'] = this.systemPrompt.length
+        uiFields['fullChars'] = this.promptTemplate.length
+        trace('ui-select', uiFields)
         console.info('VERA-UI-SELECT mode=' + UI_SELECT_MODE + ' described=' + names.length.toString() +
           ' promptChars=' + this.systemPrompt.length.toString() + ' fullChars=' + this.promptTemplate.length.toString())
       }
@@ -658,6 +674,7 @@ struct GeneratePage {
       this.totalMs = Date.now() - this.genStartTime
       this.addToProgram(metrics)
       this.status = 'Generation failed: ' + (e as Error).message
+      this.traceEnd('request: ' + (e as Error).message)
       this.generating = false
       return
     }
@@ -686,6 +703,7 @@ struct GeneratePage {
 
     if (this.generatedSource.trim().length === 0) {
       metrics.failLayer = 'empty'
+      this.traceEnd('empty')
       this.status = 'Generation produced empty output'
       this.generating = false
       this.attempts = [...this.attempts, metrics]
@@ -709,6 +727,8 @@ struct GeneratePage {
       }
     }
     metrics.compileMs = Date.now() - compileStart
+    logStep('compile', compileStart, 'src=generate attempt=' + this.attempt.toString() + ' ok=' + (errors.length === 0).toString())
+    traceCompile('generate', this.attempt, this.generatedSource.trim(), errors)
 
     // A program cut off at the token ceiling fails to parse somewhere near its
     // end. Saying so is worth more to the next attempt than the parse error,
@@ -739,6 +759,12 @@ struct GeneratePage {
       this.compiled = true
       this.compileErrors = ''
       this.status = 'Compiled successfully on attempt ' + this.attempt
+      logMark('gen-compiled', 'attempt=' + this.attempt.toString())
+      let endFields: Record<string, Object> = {}
+      endFields['ok'] = true
+      endFields['attempt'] = this.attempt
+      endFields['totalMs'] = this.totalMs
+      trace('gen-end', endFields)
       this.generating = false
       return
     }
@@ -758,8 +784,18 @@ struct GeneratePage {
     } else {
       this.totalMs = Date.now() - this.genStartTime
       this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
+      this.traceEnd('compile')
       this.generating = false
     }
+  }
+
+  /** The trace's closing event for a generation that ended without a program. */
+  private traceEnd(failure: string): void {
+    let fields: Record<string, Object> = {}
+    fields['ok'] = false
+    fields['attempt'] = this.attempt
+    fields['failure'] = failure
+    trace('gen-end', fields)
   }
 
   private addToProgram(metrics: AttemptMetrics): void {

@@ -141,10 +141,10 @@ run('Widget currency helper handles cents and negative amounts',()=>{
   function page(){
     const src=read('entry/src/main/ets/pages/GeneratePage.ets');
     const prefix=src.slice(0,src.indexOf('@Entry')).replace(/^import .*$/gm,'');
-    const code=prefix+'\nclass Controller { '+['callModel','runAttempt','doRefine'].map(n=>method(src,n)).join('\n')+' } module.exports=Controller;';
+    const code=prefix+'\nclass Controller { '+['callModel','runAttempt','doRefine','traceEnd'].map(n=>method(src,n)).join('\n')+' } module.exports=Controller;';
     const compiled=ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020},reportDiagnostics:true});
     assert.equal((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).length,0,'Extracted generation controller syntax');
-    const globals={ensureCapabilities:async()=>{},getContext:()=>({}),UI_SELECT_FULL:selection.UI_SELECT_FULL,UI_SELECT_PROMPT:selection.UI_SELECT_PROMPT,settings,deepseek:deep.deepseek,DEEPSEEK_GENERATION_MAX_TOKENS:deep.DEEPSEEK_GENERATION_MAX_TOKENS,
+    const globals={ensureCapabilities:async()=>{},logStep:()=>{},logMark:()=>{},trace:()=>{},traceCompile:()=>{},getContext:()=>({}),UI_SELECT_FULL:selection.UI_SELECT_FULL,UI_SELECT_PROMPT:selection.UI_SELECT_PROMPT,settings,deepseek:deep.deepseek,DEEPSEEK_GENERATION_MAX_TOKENS:deep.DEEPSEEK_GENERATION_MAX_TOKENS,
       GenerateRequest:llama.GenerateRequest,GenerateResult:llama.GenerateResult,compileVeraSource:compiler.compileVeraSource,CompileError:compiler.CompileError,
       engine:{generate(request){return {text:example,inputTokens:1,outputTokens:1,request}}}};
     const mod={exports:{}};new Function('module',...Object.keys(globals),compiled.outputText)(mod,...Object.values(globals));
@@ -208,8 +208,11 @@ run('Widget currency helper handles cents and negative amounts',()=>{
   await runAsync('Widget forced final tool round retains uniform settings',async()=>{
     reset();responses.push(lookup,lookup,lookup,lookup,example);
     const result=await chat.buildMiniApp(skill+widget,'An editable amount log.',()=>{});assert.equal(result.error,'');assert.equal(result.attempts,1);
-    assert.equal(requests.length,5);assertUniform();assert.equal(requests.at(-1).tools,undefined);
-    return {requests:5,finalToolsDisabled:true};
+    assert.equal(requests.length,5);assertUniform();
+    // The final round keeps the tools defined but not callable, and says why.
+    const last=requests.at(-1);assert(Array.isArray(last.tools)&&last.tools.length>0);assert.equal(last.tool_choice,'none');
+    assert(last.messages.at(-1).role==='user'&&/lookup budget is used up/.test(last.messages.at(-1).content));
+    return {requests:5,finalToolChoice:'none'};
   });
   await runAsync('Local generation keeps its original token budget',async()=>{
     reset();const c=page();c.mode='local';const request=new llama.GenerateRequest();request.maxTokens=2048;

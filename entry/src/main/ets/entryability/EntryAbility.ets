@@ -34,6 +34,7 @@ export default class EntryAbility extends UIAbility {
     this.extractApiKey(want)
     this.extractSelectorKey(want)
     this.extractExaKey(want)
+    this.extractReasoningEffort(want)
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
@@ -50,6 +51,7 @@ export default class EntryAbility extends UIAbility {
     this.extractApiKey(want)
     this.extractSelectorKey(want)
     this.extractExaKey(want)
+    this.extractReasoningEffort(want)
     this.extractServerUrl(want)
     this.extractProjectId(want)
     this.extractProbe(want)
@@ -107,6 +109,26 @@ export default class EntryAbility extends UIAbility {
     settings.init(this.context.filesDir)
     settings.setExaKey(text)
     hilog.info(DOMAIN, 'VERA', 'Exa key updated from launch parameter')
+  }
+
+  /**
+   * How hard the model reasons before a generation, given the same way:
+   *     --ps reasoningEffort low
+   *
+   * One of DeepSeek's levels (none minimal low medium high xhigh ultra max);
+   * `default` goes back to the app's own, DEFAULT_REASONING_EFFORT. Kept across
+   * restarts, like the keys, so a benchmark can switch it without a rebuild.
+   */
+  private extractReasoningEffort(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let value = params['reasoningEffort']
+    if (value === null || value === undefined || typeof value !== 'string') { return }
+    let text = (value as string).trim()
+    if (text.length === 0) { return }
+    settings.init(this.context.filesDir)
+    settings.setReasoningEffort(text === 'default' ? '' : text)
+    hilog.info(DOMAIN, 'VERA', 'reasoning effort set to ' + settings.getReasoningEffort())
   }
 
   private extractSelectorKey(want: Want): void {
