@@ -134,6 +134,20 @@ run('String case: s.toUpperCase(), s.toLowerCase() and the strings functions',()
   assert(skill.includes('strings.toUpperCase(s), strings.toLowerCase(s)'));
   return {texts};
 });
+run('Parser recovery: every syntax error in one compile, without cascades',()=>{
+  // egg-2 had four ternaries in one view expression; the parser used to stop at
+  // the first, and each edit repair then uncovered the next.
+  const head='@jsonable class AppState { n: number; done: boolean; }\nfunction init(): AppState { return {n: 0, done: false}; }\n';
+  function errors(src){try{compiler.compileVeraSource(src);return []}catch(e){assert(e instanceof compiler.CompileError);return e.diagnostics.map(d=>d.span.start.line+':'+d.span.start.column+' '+d.message)}}
+  const view=head+'function view(state: AppState): ui.View {\n  return ui.AppTheme("clean", "", [\n    ui.Text("body", state.done ? "a" : "b"),\n    ui.Row("compact", [ui.Badge(state.done ? "success" : "default", "x", "check")]),\n    ui.Text("body", "Your " + (state.n === 0 ? "soft" : "hard") + " egg"),\n    ui.Text("body", "fine")\n  ]);\n}';
+  assert.deepEqual(errors(view),['5:32 expected ), found ?','6:44 expected ), found ?','7:46 expected ), found ?']);
+  const statements=head+'function f(state: AppState): AppState {\n  let from: number = 1;\n  let ok: number = 2;\n  let y: number = state.n ? 1 : 2;\n  return {n: state.done ? 1 : 2, done: false};\n}\nfunction view(state: AppState): ui.View { return ui.Text("body", "a"); }';
+  assert.deepEqual(errors(statements),['4:7 expected name, found from','6:27 expected expression','7:25 expected }, found ?']);
+  const brace=head+'function f(state: AppState): AppState {\n  if (state.done) {\n    return state;\n\nfunction view(state: AppState): ui.View { return ui.Text("body", "a"); }';
+  assert.deepEqual(errors(brace),['7:1 expected }, found function']);
+  assert.deepEqual(errors(head+'function view(state: AppState): ui.View { return ui.Text("body", "a"); }'),[]);
+  return {view:errors(view),statements:errors(statements),brace:errors(brace)};
+});
 (async()=>{
   const llama=load(path.join(base,'LlamaEngine.ets'));
   const deep=load(path.join(base,'DeepSeekEngine.ets'));
