@@ -369,6 +369,10 @@ function invokeStdStrings(name: string, args: RuntimeValue[]): RuntimeValue {
       if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(text)) { return new VeraNumberValue(asNum(args[1])) }
       return new VeraNumberValue(parseFloat(text))
     }
+    case 'toUpperCase':
+      return new VeraStringValue(asString(args[0]).toUpperCase())
+    case 'toLowerCase':
+      return new VeraStringValue(asString(args[0]).toLowerCase())
     case 'trim': {
       let chars = scalars(asString(args[0]))
       let start = 0

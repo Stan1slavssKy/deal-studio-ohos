@@ -125,8 +125,9 @@ Text -- strings:
   strings.length(s), strings.substring(s, start, end)
   strings.contains(s, part), strings.startsWith(s, part), strings.endsWith(s, part)
   strings.replace(s, from, to), strings.split(s, sep), strings.trim(s)
+  strings.toUpperCase(s), strings.toLowerCase(s)
   strings.toNumber(s, fallback)  the number typed in s, or fallback when s is not a number
-The language also supports string +, comparisons, .length(), and for-of over characters.
+The language also supports string +, comparisons, .length(), .toUpperCase(), .toLowerCase(), and for-of over characters.
 For an amount the person types, use ui.TextField with keyboardType "number" and strings.toNumber.
 Prefer ui.NumberText, ui.NumberStat, or ui.NumberListItem for numbers. Give money decimals 2.
 Use ui.ClockText for minutes since midnight, and ui.clockToString(minutes) for the same "HH:MM" inside a string.

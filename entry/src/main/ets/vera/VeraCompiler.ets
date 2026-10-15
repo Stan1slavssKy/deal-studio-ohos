@@ -1216,6 +1216,8 @@ function buildStdStringsModule(): ModuleInterface {
     new ExternalFunction('replace', [STRING, STRING, STRING], STRING, false),
     new ExternalFunction('split', [STRING, STRING], new VeraArrayType(STRING), false),
     new ExternalFunction('trim', [STRING], STRING, false),
+    new ExternalFunction('toUpperCase', [STRING], STRING, false),
+    new ExternalFunction('toLowerCase', [STRING], STRING, false),
     // Text the person typed, read as a number: fallback when it is not one.
     new ExternalFunction('toNumber', [STRING, NUMBER], NUMBER, false),
   ]
@@ -1270,6 +1272,9 @@ function buildStdSdkModule(): ModuleInterface {
   ]
   return new ModuleInterface('std/sdk', fns, [])
 }
+
+/** String methods a program may call on a string value; each is the std/strings function of that name. */
+const STRING_METHODS: string[] = ['toUpperCase', 'toLowerCase']
 
 /** std modules a program may use without importing them, each under its own name. */
 const PRELUDE_NAMES: string[] = ['ui', 'math', 'time', 'strings', 'sdk']
@@ -1711,6 +1716,12 @@ class Analyzer {
     }
     if ((target instanceof VeraArrayType || identical(target, STRING)) && expr.field === 'length') {
       return new VeraFunctionType([], NUMBER, false, 'intrinsic:length')
+    }
+    // s.toUpperCase() and s.toLowerCase(), the way TypeScript writes them: the
+    // model reaches for the method, and "field selection requires class" sent
+    // a whole repair round after it. Compiled as the std/strings calls.
+    if (identical(target, STRING) && STRING_METHODS.indexOf(expr.field) >= 0) {
+      return new VeraFunctionType([], STRING, false, 'intrinsic:' + expr.field)
     }
     // Array growth as intrinsics rather than a std module: the element type
     // comes from the receiver, so these are polymorphic for free, whereas an
@@ -2340,6 +2351,12 @@ class BytecodeCompiler {
       else if (expr.callee instanceof SelectExpression && expr.callee.field === 'length' && expr.argumentsList.length === 0) {
         this.expression(expr.callee.target, b)
         b.emit(mkInst('length'))
+      }
+      else if (expr.callee instanceof SelectExpression && STRING_METHODS.indexOf(expr.callee.field) >= 0 &&
+        expr.argumentsList.length === 0 && this.model.expressionTypes.get(expr.callee.target) === STRING) {
+        b.emit(mkLoadExternal('std/strings', expr.callee.field))
+        this.expression(expr.callee.target, b)
+        b.emit(mkCall(1, false))
       } else {
         this.call(expr, b, false)
       }
