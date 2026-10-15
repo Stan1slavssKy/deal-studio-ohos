@@ -7,6 +7,7 @@ import { store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
+import { applyRepair, repairPrompt } from '../vera/VeraRepair'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
 import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS } from '../vera/DeepSeekEngine'
 import { VeraPreview } from '../components/VeraPreview'
@@ -228,6 +229,8 @@ struct GeneratePage {
   private uiSelected: string[] = []
   private grammar: string = ''
   private previousSource: string = ''
+  /** The next repair asks for SEARCH/REPLACE edits (VeraRepair); false after edits failed to apply. */
+  private repairByEdit: boolean = true
   private genStartTime: number = 0
   private cancelRequested: boolean = false
   private lastRequest: string = ''
@@ -637,6 +640,9 @@ struct GeneratePage {
     request.maxTokens = 2048
     request.temperature = 0.2
 
+    if (errorFeedback.length === 0) { this.repairByEdit = true }
+    // Only DeepSeek is asked for edits; the local model rewrites as before.
+    let editing = errorFeedback.length > 0 && this.repairByEdit && this.mode === MODE_DEEPSEEK
     if (errorFeedback.length > 0) {
       // Hand back the program that failed, not the last one that worked: the
       // diagnostics carry line and column numbers, and they only mean
@@ -644,11 +650,8 @@ struct GeneratePage {
       // good program instead made every retry a blind rewrite -- which is how
       // three attempts in a row used to trip over the same operator.
       request.previousSource = this.failedSource
-      request.userPrompt = userPrompt +
-        '\n\nThe program above is your previous attempt and it failed to compile:\n' + errorFeedback +
-        '\n\nRepair the failed source against these diagnostics. Preserve requested behavior and compatible state field names and types. ' +
-        'Return the complete replacement program as source only, not a patch or continuation. ' +
-        'If output was truncated, shorten optional content while preserving required behavior.'
+      request.repairByEdit = editing
+      request.userPrompt = repairPrompt(userPrompt, errorFeedback, editing, this.failedSource)
     } else if (this.previousSource.length > 0) {
       request.previousSource = this.previousSource
       request.userPrompt = userPrompt
@@ -699,6 +702,31 @@ struct GeneratePage {
       let prefill = deepseek.lastPrefillMs()
       if (prefill > 0) { metrics.ttftMs = prefill }
       metrics.thinkMs = deepseek.lastThinkMs()
+    }
+
+    if (editing && this.generatedSource.trim().length > 0) {
+      let repair = applyRepair(this.failedSource, this.generatedSource)
+      if (repair.source.length === 0) {
+        // The edits did not fit the failed source: the next attempt rewrites it
+        // in full, against the same diagnostics and the same failed text.
+        traceCompile('generate', this.attempt, this.generatedSource, 'edit not applied: ' + repair.error)
+        metrics.failLayer = 'edit'
+        this.attempts = [...this.attempts, metrics]
+        this.addToProgram(metrics)
+        if (this.attempt < MAX_RETRIES) {
+          this.repairByEdit = false
+          this.attempt++
+          this.status = 'Edit did not apply, rewriting (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
+          await this.runAttempt(userPrompt, errorFeedback)
+        } else {
+          this.totalMs = Date.now() - this.genStartTime
+          this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
+          this.traceEnd('compile')
+          this.generating = false
+        }
+        return
+      }
+      this.generatedSource = repair.source
     }
 
     if (this.generatedSource.trim().length === 0) {
@@ -778,6 +806,9 @@ struct GeneratePage {
       // runAttempt clears generatedSource on entry, so the broken text has to
       // be kept now if the next attempt is to see it.
       this.failedSource = this.generatedSource.trim()
+      // A program cut off at the limit has no end to edit; anything else is
+      // repaired by edits.
+      this.repairByEdit = !(this.mode === MODE_DEEPSEEK && deepseek.lastFinishReason() === 'length')
       this.attempt++
       this.status = 'Compile failed, retrying (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
       await this.runAttempt(userPrompt, errors)

@@ -536,7 +536,11 @@ export class DeepSeekEngine {
     }
     // Mirrors LlamaEngine.buildPrompt: an existing program is replayed as the
     // assistant's own last turn, so the model edits it instead of restarting.
-    if (request.previousSource.length > 0) {
+    if (request.previousSource.length > 0 && request.repairByEdit) {
+      // The repair prompt itself says how to write the edits (VeraRepair).
+      messages.push(plainMessage('assistant', request.previousSource))
+      messages.push(plainMessage('user', request.userPrompt))
+    } else if (request.previousSource.length > 0) {
       messages.push(plainMessage('assistant', request.previousSource))
       messages.push(plainMessage('user', 'Return a complete replacement of the program above. Preserve unrelated behavior and compatible state field names and types. ' +
         'Use source code only, without a patch, explanation, or continuation. Apply this request and any repair diagnostics: ' + request.userPrompt))
@@ -552,7 +556,11 @@ export class DeepSeekEngine {
       this.progress.round = round
       this.report('request')
       try {
-        turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, TOOLS_AUTO, 'gen', round)
+        // An edit repair fixes diagnostics in a program whose lookups are done;
+        // offered tools, the model re-ran a search it already had (egg-3, 5 s).
+        // Defined but not callable, so the cached prompt prefix still matches.
+        turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken,
+          request.repairByEdit ? TOOLS_NONE : TOOLS_AUTO, 'gen', round)
       } catch (e) {
         this.generating = false
         throw e as Error
@@ -572,51 +580,15 @@ export class DeepSeekEngine {
       messages.push(assistantToolCallMessage(turn.toolCalls, turn.reasoning))
       let toolsStartedAt = Date.now()
       let toolNames: string[] = []
+      // The calls of one round are independent: run them together and answer
+      // in the order they were asked.
+      let pendingResults: Promise<Record<string, Object>>[] = []
       for (let call of turn.toolCalls) {
         toolNames.push(call.name)
-        let need = ''
-        try {
-          let args = JSON.parse(call.arguments) as Record<string, Object>
-          let n = args['need']
-          if (typeof n === 'string') { need = n as string }
-        } catch (_e) {
-          // Malformed arguments: search with nothing, which finds nothing --
-          // the tool result below tells the model that plainly rather than
-          // dropping its call silently.
-        }
-        this.progress.tool = call.name
-        this.progress.need = need
-        this.report('tool')
-        let callStartedAt = Date.now()
-        if (call.name === INTENT_TOOL_NAME || call.name === SDK_TOOL_NAME) {
-          let result = await discoveryToolResult(call.name, need, round)
-          traceTool('gen', round, call.name, need, callStartedAt, result)
-          messages.push(toolResultMessage(call.id, result))
-        } else if (call.name === UI_TOOL_NAME) {
-          let shown = new Set<string>(request.uiSelected)
-          let names: string[] = []
-          let note = 'No further component matched. Use what the list already offers.'
-          if (request.uiSelected.length === 0) {
-            note = 'Every component is already described in the system prompt.'
-          } else {
-            let found = await findUiComponentsByEmbedding(need, UI_SEARCH_LIMIT, shown)
-            if (found !== null) {
-              names = found
-            } else {
-              // Index not ready: hand back every component not yet shown, so
-              // the model is never left without the one it asked for.
-              for (let c of optionalComponents()) { if (!shown.has(c.name)) { names.push(c.name) } }
-            }
-          }
-          console.info('VERA-UI-TOOL round=' + round.toString() + ' need="' + need + '" found=[' +
-            names.join(', ') + ']')
-          let uiResult = uiResultsJson(names, note)
-          traceTool('gen', round, call.name, need, callStartedAt, uiResult)
-          messages.push(toolResultMessage(call.id, uiResult))
-        } else {
-          messages.push(toolResultMessage(call.id, 'Unknown discovery tool.'))
-        }
+        pendingResults.push(this.runToolCall(call, request, round))
       }
+      let results = await Promise.all(pendingResults)
+      for (let r of results) { messages.push(r) }
       logStep('tools', toolsStartedAt, 'src=gen round=' + round.toString() + ' calls=' + toolNames.join(','))
     }
 
@@ -652,10 +624,58 @@ export class DeepSeekEngine {
 
     this.generating = false
     let result = new GenerateResult()
-    result.text = extractVeraSource(this.text)
+    // Edits are parsed by the caller; a fence around one block must not cut the rest.
+    result.text = request.repairByEdit ? this.text.trim() : extractVeraSource(this.text)
     result.inputTokens = this.inputTokens
     result.outputTokens = this.outputTokens
     return result
+  }
+
+  /** Runs one discovery call of a tool round and returns its tool message. */
+  private async runToolCall(call: ToolCallAccumulator, request: GenerateRequest,
+      round: number): Promise<Record<string, Object>> {
+    let need = ''
+    try {
+      let args = JSON.parse(call.arguments) as Record<string, Object>
+      let n = args['need']
+      if (typeof n === 'string') { need = n as string }
+    } catch (_e) {
+      // Malformed arguments: search with nothing, which finds nothing --
+      // the tool result below tells the model that plainly rather than
+      // dropping its call silently.
+    }
+    this.progress.tool = call.name
+    this.progress.need = need
+    this.report('tool')
+    let callStartedAt = Date.now()
+    if (call.name === INTENT_TOOL_NAME || call.name === SDK_TOOL_NAME) {
+      let result = await discoveryToolResult(call.name, need, round)
+      traceTool('gen', round, call.name, need, callStartedAt, result)
+      return toolResultMessage(call.id, result)
+    }
+    if (call.name === UI_TOOL_NAME) {
+      let shown = new Set<string>(request.uiSelected)
+      let names: string[] = []
+      let note = 'No further component matched. Use what the list already offers.'
+      if (request.uiSelected.length === 0) {
+        note = 'Every component is already described in the system prompt.'
+      } else {
+        let found = await findUiComponentsByEmbedding(need, UI_SEARCH_LIMIT, shown)
+        if (found !== null) {
+          names = found
+        } else {
+          // Index not ready: hand back every component not yet shown, so
+          // the model is never left without the one it asked for.
+          for (let c of optionalComponents()) { if (!shown.has(c.name)) { names.push(c.name) } }
+        }
+      }
+      console.info('VERA-UI-TOOL round=' + round.toString() + ' need="' + need + '" found=[' +
+        names.join(', ') + ']')
+      let uiResult = uiResultsJson(names, note)
+      traceTool('gen', round, call.name, need, callStartedAt, uiResult)
+      return toolResultMessage(call.id, uiResult)
+    }
+    return toolResultMessage(call.id, 'Unknown discovery tool.')
   }
 
   /**
