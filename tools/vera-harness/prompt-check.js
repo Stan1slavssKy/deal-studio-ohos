@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const cp = require('node:child_process');
 const ts = (process.env.VERA_TYPESCRIPT_PATH ? require(process.env.VERA_TYPESCRIPT_PATH) : require('typescript'));
 const root = path.resolve(process.argv[2] || path.join(__dirname, '../..'));
-const output = path.resolve(process.argv[3] || 'prompt-verification.json');
+const output = path.resolve(process.argv[3] || '/tmp/vera-prompt-verification.json');
 const base = path.join(root, 'entry/src/main/ets/vera');
 const requests = [], responses = [], cache = new Map(), checks = [];
 const http = {RequestMethod:{POST:'POST'}, createHttp(){
@@ -49,12 +49,12 @@ const runtime=load(path.join(base,'VeraInterpreter.ets'));
 const ui=load(path.join(base,'VeraUi.ets'));
 const catalog=load(path.join(base,'VeraUiCatalog.ets'));
 const selection=load(path.join(base,'VeraUiSelect.ets'));
-const example=skill.slice(skill.lastIndexOf('\nimport * as ui from "std/ui"')+1).trim();
+const example=skill.slice(skill.indexOf('\n@jsonable', skill.lastIndexOf('\nExample'))+1).trim();
 let machine,host,state,tree;
 function render(current){host.effectsAllowed=false;const result=ui.decodeVeraUi(machine.execute('view',[current]));return result;}
 function countNodes(nodes){return nodes.reduce((sum,n)=>sum+1+countNodes(n.children),0)}
 run('Prompt template assembly: full, selected, widget',()=>{
-  for(const [name,note,selected] of [['full','',null],['selected',selection.UI_TOOL_NOTE,new Set(['IntField'])],['widget','',null]]){
+  for(const [name,note,selected] of [['full','',null],['selected',selection.UI_TOOL_NOTE,new Set(['NumberField'])],['widget','',null]]){
     let text=skill.replace('{{UI_CATALOG}}',catalog.describeCatalogForPrompt(selected)).replace('{{UI_TOOL_NOTE}}\n',note)+(name==='widget'?widget:'');
     assert(!/\{\{UI_/.test(text),'Unresolved placeholder in '+name);
     assert(text.includes('ui.AppTheme'),'Root theme absent');
@@ -75,13 +75,13 @@ run('Render initial state through real VM and UI decoder',()=>{
 run('Edit input and add entry without mutating earlier state',()=>{
   const before=JSON.stringify(runtime.encodeRuntimeValue(state));
   host.effectsAllowed=true;
-  let adjusted=machine.execute('setSize',[state,new runtime.VeraIntValue(30)]);
-  let added=machine.execute('add',[adjusted,new runtime.VeraIntValue(0)]);
+  let adjusted=machine.execute('setSize',[state,new runtime.VeraNumberValue(30)]);
+  let added=machine.execute('add',[adjusted,new runtime.VeraNumberValue(0)]);
   assert.equal(JSON.stringify(runtime.encodeRuntimeValue(state)),before,'Add handler mutated an earlier state');
   const raw=runtime.encodeRuntimeValue(added); assert(raw);
   assert.equal(added.fields.get('log').elements.length,1);
   const first=JSON.stringify(runtime.encodeRuntimeValue(added));
-  let addedAgain=machine.execute('add',[added,new runtime.VeraIntValue(0)]);
+  let addedAgain=machine.execute('add',[added,new runtime.VeraNumberValue(0)]);
   assert.equal(JSON.stringify(runtime.encodeRuntimeValue(added)),first,'Second add mutated prior state');
   assert.equal(addedAgain.fields.get('log').elements.length,2);
   state=addedAgain;return {entries:2};
@@ -101,15 +101,15 @@ run('Intent callback classification through compile, dispatch and render',()=>{
   for(const [answer,expected] of cases){let st=m.execute('onAnswer',[m.execute('init'),new runtime.VeraStringValue(answer)]);const nodes=ui.decodeVeraUi(m.execute('view',[st]));assert.equal(nodes[0].children[0].text,answer);assert.equal(nodes[0].children[1].text,String(expected));}
   return {cases:cases.length,rawAnswersPreserved:true};
 });
-run('Widget currency helper handles cents and negative amounts',()=>{
-  const begin=widget.indexOf('function money(');assert(begin>=0,'Currency helper missing');
-  let open=widget.indexOf('{',begin),depth=1,end=open+1;
-  while(depth>0&&end<widget.length){if(widget[end]==='{')depth++;if(widget[end]==='}')depth--;end++;}
-  const helper=widget.slice(begin,end);
-  const source='import * as ui from "std/ui"\n'+helper+'\n@jsonable class AppState { cents: int; }\nfunction init(): AppState { return {cents: 0}; }\nfunction set(state: AppState, value: int): AppState { return {cents: value}; }\nfunction view(state: AppState): ui.View { return ui.AppTheme("technical", "", [ui.Text("body", money(state.cents))]); }';
+run('Widget money guidance formats cents, rounding and negative amounts',()=>{
+  // The widget prompt now tells the model to keep money as a number and let
+  // ui.formatNumber / ui.NumberText write it, and to read typed amounts with
+  // strings.toNumber. This runs exactly that path.
+  assert(widget.includes('ui.formatNumber(amount, 2)')&&widget.includes('strings.toNumber(value, 0)'),'Money guidance missing');
+  const source='import * as ui from "std/ui"\nimport * as math from "std/math"\nimport * as strings from "std/strings"\n@jsonable class AppState { typed: string; }\nfunction init(): AppState { return {typed: ""}; }\nfunction set(state: AppState, value: string): AppState { return {typed: value}; }\nfunction view(state: AppState): ui.View { let amount: number = strings.toNumber(state.typed, 0); let tip: number = math.round(amount * 0.12 * 100) / 100; return ui.AppTheme("technical", "", [ui.Text("body", "$" + ui.formatNumber(amount, 2)), ui.Text("body", ui.formatNumber(tip, 2))]); }';
   const h=new ui.UiHostEnvironment();const m=new runtime.VirtualMachine(runtime.deserializeVbc2(compiler.compileVeraSource(source).vbc2),h);
-  const cases=[[0,'$0.00'],[2248,'$22.48'],[18740,'$187.40'],[-1,'-$0.01'],[-105,'-$1.05'],[2147483647,'$21474836.47'],[-2147483648,'-$21474836.48']];
-  for(const [input,expected] of cases){let st=m.execute('set',[m.execute('init'),new runtime.VeraIntValue(input)]);const nodes=ui.decodeVeraUi(m.execute('view',[st]));assert.equal(nodes[0].children[0].text,expected,'Currency for '+input);}
+  const cases=[['','$0.00','0.00'],['187.40','$187.40','22.49'],['187,40','$187.40','22.49'],['-0.01','$-0.01','0.00'],['-1.05','$-1.05','-0.13'],['21474836.47','$21474836.47','2576980.38'],['abc','$0.00','0.00']];
+  for(const [input,amount,tip] of cases){let st=m.execute('set',[m.execute('init'),new runtime.VeraStringValue(input)]);const nodes=ui.decodeVeraUi(m.execute('view',[st]));assert.equal(nodes[0].children[0].text,amount,'Amount for '+input);assert.equal(nodes[0].children[1].text,tip,'Tip for '+input);}
   return {cases:cases.length};
 });
 (async()=>{

@@ -9,7 +9,7 @@ function init(): AppState {
   return { screen: "detail" };
 }
 
-function goBack(state: AppState, _v: int): AppState {
+function goBack(state: AppState, _v: number): AppState {
   return { screen: "list" };
 }
 

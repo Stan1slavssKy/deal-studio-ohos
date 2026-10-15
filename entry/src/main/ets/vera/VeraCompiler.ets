@@ -343,7 +343,6 @@ class VeraNullType extends VeraType {
   display(): string { return 'null' }
 }
 
-const INT = new PrimitiveType('int')
 const NUMBER = new PrimitiveType('number')
 const BOOLEAN = new PrimitiveType('boolean')
 const STRING = new PrimitiveType('string')
@@ -1080,12 +1079,12 @@ function buildStdUiModule(): ModuleInterface {
   for (let spec of CATALOG) {
     let params: VeraType[] = []
     for (let p of spec.props) {
-      if (p.kind === 'int') params.push(INT)
+      if (p.kind === 'number') params.push(NUMBER)
       else if (p.kind === 'boolean') params.push(BOOLEAN)
       else if (p.kind === 'view') params.push(viewType)
       else if (p.kind === 'view[]') params.push(viewArray)
       else if (p.kind === 'string[]') params.push(new VeraArrayType(STRING))
-      else if (p.kind === 'int[]') params.push(new VeraArrayType(INT))
+      else if (p.kind === 'number[]') params.push(new VeraArrayType(NUMBER))
       else params.push(STRING)
     }
     // Trailing optionals may be left off, so a program written against an
@@ -1095,18 +1094,17 @@ function buildStdUiModule(): ModuleInterface {
     fns.push(new ExternalFunction(spec.name, params, viewType, false, required))
   }
   fns.push(new ExternalFunction('When', [BOOLEAN, viewType], viewType, false))
-  fns.push(new ExternalFunction('intToString', [INT], STRING, false))
   fns.push(new ExternalFunction('numberToString', [NUMBER], STRING, false))
+  fns.push(new ExternalFunction('formatNumber', [NUMBER, NUMBER], STRING, false))
+  fns.push(new ExternalFunction('clockToString', [NUMBER], STRING, false))
+  fns.push(new ExternalFunction('durationToString', [NUMBER], STRING, false))
   fns.push(new ExternalFunction('booleanToString', [BOOLEAN], STRING, false))
   return new ModuleInterface('std/ui', fns, [new ExternalClass('View', viewType)])
 }
 
 /**
- * The clock. Everything is an int, so nothing here needs the number type or a
- * conversion that does not exist yet.
- *
- * nowSeconds is Unix seconds, which stays inside int32 until 2038 -- milliseconds
- * would be ~1.8e12 and trap immediately on the VM's overflow check.
+ * The clock, in numbers. nowMillis is Unix milliseconds (~1.8e12), exact in a
+ * double; it is what a countdown or a timestamp should be built from.
  *
  * Programs should read the clock in handlers, where the result is stored into
  * state, rather than in view(): view is meant to be a pure function of state,
@@ -1114,54 +1112,47 @@ function buildStdUiModule(): ModuleInterface {
  * state.
  */
 /**
- * Arithmetic the language cannot express.
- *
- * Everything is monomorphic, so int and number variants are separate entries --
- * ExternalFunction carries concrete types and there are no generics. The two
- * conversions matter most: without them an int radius and a fractional sine can
- * never meet, which is what keeps parametric graphics and any decimal money out
- * of reach.
+ * Arithmetic the language cannot express. There is one numeric type, so each
+ * operation has one name; floor, round and ceil are how a program gets a whole
+ * number when it needs one.
  */
 function buildStdMathModule(): ModuleInterface {
   let fns: ExternalFunction[] = [
-    new ExternalFunction('intToNumber', [INT], NUMBER, false),
-    new ExternalFunction('numberToInt', [NUMBER], INT, false),
     new ExternalFunction('pi', [], NUMBER, false),
     new ExternalFunction('sqrt', [NUMBER], NUMBER, false),
     new ExternalFunction('sin', [NUMBER], NUMBER, false),
     new ExternalFunction('cos', [NUMBER], NUMBER, false),
     new ExternalFunction('atan2', [NUMBER, NUMBER], NUMBER, false),
     new ExternalFunction('pow', [NUMBER, NUMBER], NUMBER, false),
-    new ExternalFunction('floorToInt', [NUMBER], INT, false),
-    new ExternalFunction('roundToInt', [NUMBER], INT, false),
-    new ExternalFunction('absInt', [INT], INT, false),
-    new ExternalFunction('absNumber', [NUMBER], NUMBER, false),
-    new ExternalFunction('minInt', [INT, INT], INT, false),
-    new ExternalFunction('maxInt', [INT, INT], INT, false),
-    new ExternalFunction('minNumber', [NUMBER, NUMBER], NUMBER, false),
-    new ExternalFunction('maxNumber', [NUMBER, NUMBER], NUMBER, false),
+    new ExternalFunction('floor', [NUMBER], NUMBER, false),
+    new ExternalFunction('round', [NUMBER], NUMBER, false),
+    new ExternalFunction('ceil', [NUMBER], NUMBER, false),
+    new ExternalFunction('abs', [NUMBER], NUMBER, false),
+    new ExternalFunction('min', [NUMBER, NUMBER], NUMBER, false),
+    new ExternalFunction('max', [NUMBER, NUMBER], NUMBER, false),
     // Deterministic and replayable: the seed lives in the program's state, so a
     // saved game restores to the same sequence. A host random() would not.
-    new ExternalFunction('randomStep', [INT], INT, false),
-    new ExternalFunction('randomBelow', [INT, INT], INT, false),
+    new ExternalFunction('randomStep', [NUMBER], NUMBER, false),
+    new ExternalFunction('randomBelow', [NUMBER, NUMBER], NUMBER, false),
   ]
   return new ModuleInterface('std/math', fns, [])
 }
 
 function buildStdTimeModule(): ModuleInterface {
   let fns: ExternalFunction[] = [
-    new ExternalFunction('nowSeconds', [], INT, false),
-    new ExternalFunction('millisOfDay', [], INT, false),
-    new ExternalFunction('daysSinceEpoch', [], INT, false),
-    new ExternalFunction('hourOfDay', [], INT, false),
-    new ExternalFunction('minuteOfHour', [], INT, false),
-    new ExternalFunction('weekday', [], INT, false),
+    new ExternalFunction('nowMillis', [], NUMBER, false),
+    new ExternalFunction('nowSeconds', [], NUMBER, false),
+    new ExternalFunction('millisOfDay', [], NUMBER, false),
+    new ExternalFunction('daysSinceEpoch', [], NUMBER, false),
+    new ExternalFunction('hourOfDay', [], NUMBER, false),
+    new ExternalFunction('minuteOfHour', [], NUMBER, false),
+    new ExternalFunction('weekday', [], NUMBER, false),
     // The calendar fields. daysSinceEpoch answers "same day?" but cannot name a
     // day, so anything a person reads back later -- a history row, a report
     // shown to someone else -- had no way to say which date it was about.
-    new ExternalFunction('dayOfMonth', [], INT, false),
-    new ExternalFunction('monthOfYear', [], INT, false),
-    new ExternalFunction('year', [], INT, false),
+    new ExternalFunction('dayOfMonth', [], NUMBER, false),
+    new ExternalFunction('monthOfYear', [], NUMBER, false),
+    new ExternalFunction('year', [], NUMBER, false),
   ]
   return new ModuleInterface('std/time', fns, [])
 }
@@ -1182,14 +1173,16 @@ function buildStdTimeModule(): ModuleInterface {
  */
 function buildStdStringsModule(): ModuleInterface {
   let fns: ExternalFunction[] = [
-    new ExternalFunction('length', [STRING], INT, false),
-    new ExternalFunction('substring', [STRING, INT, INT], STRING, false),
+    new ExternalFunction('length', [STRING], NUMBER, false),
+    new ExternalFunction('substring', [STRING, NUMBER, NUMBER], STRING, false),
     new ExternalFunction('contains', [STRING, STRING], BOOLEAN, false),
     new ExternalFunction('startsWith', [STRING, STRING], BOOLEAN, false),
     new ExternalFunction('endsWith', [STRING, STRING], BOOLEAN, false),
     new ExternalFunction('replace', [STRING, STRING, STRING], STRING, false),
     new ExternalFunction('split', [STRING, STRING], new VeraArrayType(STRING), false),
     new ExternalFunction('trim', [STRING], STRING, false),
+    // Text the person typed, read as a number: fallback when it is not one.
+    new ExternalFunction('toNumber', [STRING, NUMBER], NUMBER, false),
   ]
   return new ModuleInterface('std/strings', fns, [])
 }
@@ -1238,10 +1231,13 @@ function buildStdStringsModule(): ModuleInterface {
 function buildStdSdkModule(): ModuleInterface {
   let fns: ExternalFunction[] = [
     new ExternalFunction('call',
-      [STRING, new VeraArrayType(STRING), STRING, STRING], INT, false, 3)
+      [STRING, new VeraArrayType(STRING), STRING, STRING], NUMBER, false, 3)
   ]
   return new ModuleInterface('std/sdk', fns, [])
 }
+
+/** std modules a program may use without importing them, each under its own name. */
+const PRELUDE_NAMES: string[] = ['ui', 'math', 'time', 'strings', 'sdk']
 
 class Scope {
   values: Map<string, VeraType> = new Map<string, VeraType>()
@@ -1331,11 +1327,13 @@ class Analyzer {
     return this.model
   }
 
+  private stdModules: Map<string, ModuleInterface> = new Map<string, ModuleInterface>()
+
   private collectImports(): void {
     // A table rather than a chain of string compares, so a new std module is
     // one entry here plus a host implementation -- nothing in the checker, the
     // code generator, the bytecode format or the VM has to know about it.
-    let registry = new Map<string, ModuleInterface>()
+    let registry = this.stdModules
     registry.set('std/ui', buildStdUiModule())
     registry.set('std/time', buildStdTimeModule())
     registry.set('std/math', buildStdMathModule())
@@ -1346,12 +1344,32 @@ class Analyzer {
       let found = registry.get(decl.specifier)
       let resolved: ModuleInterface | null = found !== undefined ? found : null
       if (resolved === null) { this.addError('E2002', 'module not found: ' + decl.specifier, decl.span); continue }
-      let members = new Map<string, VeraType>()
-      for (let fn of resolved.functions) members.set(fn.name, new VeraFunctionType(fn.parameters, fn.result, fn.isAsync, 'external:' + resolved.specifier + ':' + fn.name, fn.required))
-      for (let cls of resolved.classes) members.set(cls.name, cls.type)
-      this.model.imports.set(decl.name, resolved)
-      this.globals.values.set(decl.name, new NamespaceType(decl.name, members))
+      this.bindNamespace(decl.name, resolved)
     }
+  }
+
+  private bindNamespace(name: string, resolved: ModuleInterface): void {
+    let members = new Map<string, VeraType>()
+    for (let fn of resolved.functions) members.set(fn.name, new VeraFunctionType(fn.parameters, fn.result, fn.isAsync, 'external:' + resolved.specifier + ':' + fn.name, fn.required))
+    for (let cls of resolved.classes) members.set(cls.name, cls.type)
+    this.model.imports.set(name, resolved)
+    this.globals.values.set(name, new NamespaceType(name, members))
+  }
+
+  /**
+   * The prelude: ui, math, time, strings and sdk need no import. A program
+   * that writes math.floor without `import * as math from "std/math"` gets
+   * std/math, the way TypeScript's Math needs no import -- leaving the line
+   * out was the commonest first-attempt compile error. Bound only when the
+   * name is otherwise unknown, so a program's own `time` local still works,
+   * and an explicit import under that name still wins.
+   */
+  private preludeNamespace(name: string): VeraType | null {
+    if (PRELUDE_NAMES.indexOf(name) < 0) return null
+    let resolved = this.stdModules.get('std/' + name)
+    if (resolved === undefined) return null
+    this.bindNamespace(name, resolved)
+    return this.globals.find(name)
   }
 
   private checkClass(decl: ClassDeclaration): void {
@@ -1541,11 +1559,9 @@ class Analyzer {
   private checkExpression(expr: Expression, scope: Scope, expected: VeraType | null): VeraType {
     let result: VeraType = VOID
     if (expr instanceof IntExpression) {
-      if (expr.value > 2147483647) this.addError('E2011', 'integer literal exceeds int32 range', expr.span)
-      // `let x: number = 1` used to be a type error, because the lexer only
-      // emits a number token when a '.' is present. Writing 1.0 everywhere is a
-      // rule no one remembers, and it was a standing source of failed compiles.
-      result = (expected !== null && identical(expected, NUMBER)) ? NUMBER : INT
+      // A literal without a '.' is still a number: there is no other numeric type.
+      if (expr.value > 9007199254740991) this.addError('E2011', 'number literal is larger than a number holds exactly', expr.span)
+      result = NUMBER
     }
     else if (expr instanceof NumberExpression) result = NUMBER
     else if (expr instanceof StringExpression) result = STRING
@@ -1553,6 +1569,7 @@ class Analyzer {
     else if (expr instanceof NullExpression) result = NULL_TYPE
     else if (expr instanceof NameExpression) {
       let found = scope.find(expr.name)
+      if (found === null) found = this.preludeNamespace(expr.name)
       if (found !== null) result = found
       else { result = VOID; this.addError('E2012', 'unknown name ' + expr.name, expr.span) }
     }
@@ -1562,7 +1579,7 @@ class Analyzer {
     else if (expr instanceof BinaryExpression) result = this.checkBinary(expr, scope)
     else if (expr instanceof IndexExpression) {
       let target = this.checkExpression(expr.target, scope, null)
-      this.requireType(this.checkExpression(expr.index, scope, INT), INT, expr.index)
+      this.requireType(this.checkExpression(expr.index, scope, NUMBER), NUMBER, expr.index)
       if (target instanceof VeraArrayType) result = target.element
       else this.addError('E2013', 'index target must be an array', expr.target.span)
     }
@@ -1616,13 +1633,9 @@ class Analyzer {
   }
 
   private checkUnary(expr: UnaryExpression, scope: Scope): VeraType {
-    if (expr.operator === '-' && expr.operand instanceof IntExpression && expr.operand.value === 2147483648) {
-      this.model.expressionTypes.set(expr.operand, INT)
-      return INT
-    }
     let op = this.checkExpression(expr.operand, scope, null)
     if (expr.operator === '!') { this.requireType(op, BOOLEAN, expr.operand); return BOOLEAN }
-    if (!identical(op, INT) && !identical(op, NUMBER)) this.addError('E2025', 'unary minus requires int or number', expr.span)
+    if (!identical(op, NUMBER)) this.addError('E2025', 'unary minus requires a number', expr.span)
     return op
   }
 
@@ -1643,14 +1656,14 @@ class Analyzer {
       return BOOLEAN
     }
     if (op === '<' || op === '<=' || op === '>' || op === '>=') {
-      if ((!identical(left, INT) && !identical(left, NUMBER) && !identical(left, STRING)) || !identical(left, right)) {
-        this.addError('E2027', 'relational operands must be equal int, number, or string types', expr.span)
+      if ((!identical(left, NUMBER) && !identical(left, STRING)) || !identical(left, right)) {
+        this.addError('E2027', 'relational operands must both be numbers or both be strings', expr.span)
       }
       return BOOLEAN
     }
     if (!identical(left, right)) this.addError('E2028', 'arithmetic operands must have identical types', expr.span)
-    let valid = identical(left, INT) || identical(left, NUMBER) || (op === '+' && identical(left, STRING))
-    if (!valid || (op === '%' && !identical(left, INT))) this.addError('E2029', 'operator ' + op + ' is invalid for ' + left.display(), expr.span)
+    let valid = identical(left, NUMBER) || (op === '+' && identical(left, STRING))
+    if (!valid) this.addError('E2029', 'operator ' + op + ' is invalid for ' + left.display(), expr.span)
     return left
   }
 
@@ -1662,7 +1675,7 @@ class Analyzer {
       return m !== undefined ? m : VOID
     }
     if ((target instanceof VeraArrayType || identical(target, STRING)) && expr.field === 'length') {
-      return new VeraFunctionType([], INT, false, 'intrinsic:length')
+      return new VeraFunctionType([], NUMBER, false, 'intrinsic:length')
     }
     // Array growth as intrinsics rather than a std module: the element type
     // comes from the receiver, so these are polymorphic for free, whereas an
@@ -1673,7 +1686,7 @@ class Analyzer {
       if (expr.field === 'push') {
         // Returns the new length, as in JavaScript. It also has to leave one
         // value behind: every expression statement emits a pop after it.
-        return new VeraFunctionType([element], INT, false, 'intrinsic:push')
+        return new VeraFunctionType([element], NUMBER, false, 'intrinsic:push')
       }
       if (expr.field === 'pop') {
         return new VeraFunctionType([], element, false, 'intrinsic:pop')
@@ -1942,11 +1955,9 @@ class Analyzer {
         if (!this.options.allowMissingHandlers) { this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span) }
         return
       }
-      let want: VeraType = payload === 'string' ? STRING : payload === 'boolean' ? BOOLEAN : INT
+      let want: VeraType = payload === 'string' ? STRING : payload === 'boolean' ? BOOLEAN : NUMBER
       if (fn.parameters.length < 2 || !identical(fn.parameters[1], want)) {
-        // "a int" reads as a typo in a message the model is asked to act on.
-        let article = payload === 'int' ? 'an ' : 'a '
-        this.addError('E2106', spec.name + ' hands its handler ' + article + payload + ', so "' +
+        this.addError('E2106', spec.name + ' hands its handler a ' + payload + ', so "' +
           handlerName + '" must take (state, value: ' + payload + ')', arg.span)
       }
       return
@@ -2000,7 +2011,11 @@ class Analyzer {
     let existing = this.model.declaredTypes.get(node)
     if (existing !== undefined) return existing
     let type: VeraType
-    if (node.name === 'int') type = INT
+    if (node.name === 'int') {
+      // Habit from other languages; said plainly so the repair is one word.
+      this.addError('E2042', 'there is no int type; use number', node.span)
+      type = NUMBER
+    }
     else if (node.name === 'number') type = NUMBER
     else if (node.name === 'boolean') type = BOOLEAN
     else if (node.name === 'string') type = STRING
@@ -2022,6 +2037,7 @@ class Analyzer {
   private resolveNamedType(name: string, node: TypeNode): VeraType {
     let pieces = name.split('.')
     let value: VeraType | null = this.globals.find(pieces[0])
+    if (value === null && pieces.length > 1) value = this.preludeNamespace(pieces[0])
     for (let i = 1; i < pieces.length; i++) {
       if (value instanceof NamespaceType) {
         let m = value.members.get(pieces[i])
@@ -2095,7 +2111,6 @@ class FunctionBuilder {
 
 function mkInst(op: string): Instruction { return new Instruction(op) }
 
-function mkPushInt(v: string): Instruction { let i = mkInst('push-int'); i.value = v; return i }
 function mkPushNumber(v: number): Instruction { let i = mkInst('push-number'); i.numValue = v; return i }
 function mkPushString(v: string): Instruction { let i = mkInst('push-string'); i.value = v; return i }
 function mkPushBoolean(v: boolean): Instruction { let i = mkInst('push-boolean'); i.boolValue = v; return i }
@@ -2106,7 +2121,7 @@ function mkStoreCapture(slot: number): Instruction { let i = mkInst('store-captu
 function mkLoadFunction(name: string): Instruction { let i = mkInst('load-function'); i.name = name; return i }
 function mkLoadExternal(mod: string, name: string): Instruction { let i = mkInst('load-external'); i.module = mod; i.name = name; return i }
 function mkUnary(op: string): Instruction { let i = mkInst('unary'); i.operator = op; return i }
-function mkBinary(op: string, integer: boolean): Instruction { let i = mkInst('binary'); i.operator = op; i.integer = integer; return i }
+function mkBinary(op: string): Instruction { let i = mkInst('binary'); i.operator = op; return i }
 function mkJump(target: number): Instruction { let i = mkInst('jump'); i.target = target; return i }
 function mkJumpIfFalse(target: number): Instruction { let i = mkInst('jump-if-false'); i.target = target; return i }
 function mkCall(count: number, awaited: boolean): Instruction { let i = mkInst('call'); i.count = count; i.awaited = awaited; return i }
@@ -2212,13 +2227,13 @@ class BytecodeCompiler {
     this.expression(stmt.iterable, b)
     if (this.model.expressionTypes.get(stmt.iterable) === STRING) b.emit(mkInst('string-symbols'))
     b.emit(mkStoreLocal(arraySlot))
-    b.emit(mkPushInt('0'))
+    b.emit(mkPushNumber(0))
     b.emit(mkStoreLocal(indexSlot))
     let start = b.instructions.length
     b.emit(mkLoadLocal(indexSlot))
     b.emit(mkLoadLocal(arraySlot))
     b.emit(mkInst('length'))
-    b.emit(mkBinary('<', true))
+    b.emit(mkBinary('<'))
     let exit = b.emit(mkJumpIfFalse(-1))
     b.emit(mkLoadLocal(arraySlot))
     b.emit(mkLoadLocal(indexSlot))
@@ -2229,8 +2244,8 @@ class BytecodeCompiler {
     this.block(stmt.body, b)
     let advance = b.instructions.length
     b.emit(mkLoadLocal(indexSlot))
-    b.emit(mkPushInt('1'))
-    b.emit(mkBinary('+', true))
+    b.emit(mkPushNumber(1))
+    b.emit(mkBinary('+'))
     b.emit(mkStoreLocal(indexSlot))
     b.emit(mkJump(start))
     let end = b.instructions.length
@@ -2264,24 +2279,15 @@ class BytecodeCompiler {
   }
 
   private expression(expr: Expression, b: FunctionBuilder): void {
-    if (expr instanceof IntExpression) {
-      // The analyzer recorded whether this literal sits in a number position.
-      let recorded = this.model.expressionTypes.get(expr)
-      if (recorded !== undefined && identical(recorded, NUMBER)) b.emit(mkPushNumber(expr.value))
-      else b.emit(mkPushInt(expr.value.toString()))
-    }
+    if (expr instanceof IntExpression) b.emit(mkPushNumber(expr.value))
     else if (expr instanceof NumberExpression) b.emit(mkPushNumber(expr.value))
     else if (expr instanceof StringExpression) b.emit(mkPushString(expr.value))
     else if (expr instanceof BooleanExpression) b.emit(mkPushBoolean(expr.value))
     else if (expr instanceof NullExpression) b.emit(mkInst('push-null'))
     else if (expr instanceof NameExpression) this.loadName(expr.name, b)
     else if (expr instanceof UnaryExpression) {
-      if (expr.operator === '-' && expr.operand instanceof IntExpression && expr.operand.value === 2147483648) {
-        b.emit(mkPushInt('-2147483648'))
-      } else {
-        this.expression(expr.operand, b)
-        b.emit(mkUnary(expr.operator))
-      }
+      this.expression(expr.operand, b)
+      b.emit(mkUnary(expr.operator))
     }
     else if (expr instanceof BinaryExpression) this.binary(expr, b)
     else if (expr instanceof CallExpression) {
@@ -2330,7 +2336,7 @@ class BytecodeCompiler {
     else if (expr instanceof SelectExpression) {
       if (expr.target instanceof NameExpression) {
         let imported = this.model.imports.get(expr.target.name)
-        if (imported !== undefined) {
+        if (imported !== undefined && this.findBinding(expr.target.name, b) === null) {
           b.emit(mkLoadExternal(imported.specifier, expr.field))
           return
         }
@@ -2365,8 +2371,7 @@ class BytecodeCompiler {
     }
     this.expression(expr.left, b)
     this.expression(expr.right, b)
-    let type = this.model.expressionTypes.get(expr.left)
-    b.emit(mkBinary(expr.operator, type === INT))
+    b.emit(mkBinary(expr.operator))
   }
 
   private call(expr: CallExpression, b: FunctionBuilder, awaited: boolean): void {
@@ -2451,7 +2456,6 @@ class BytecodeCompiler {
 function encodeInstruction(inst: Instruction): Object[] {
   let op = inst.op
   switch (op) {
-    case 'push-int': return [op, inst.value]
     case 'push-number': return [op, inst.numValue]
     case 'push-string': return [op, inst.value]
     case 'push-boolean': return [op, inst.boolValue]
@@ -2465,7 +2469,7 @@ function encodeInstruction(inst: Instruction): Object[] {
     case 'pop': return [op]
     case 'duplicate': return [op]
     case 'unary': return [op, inst.operator]
-    case 'binary': return [op, inst.operator, inst.integer]
+    case 'binary': return [op, inst.operator]
     case 'jump': return [op, inst.target]
     case 'jump-if-false': return [op, inst.target]
     case 'call': return [op, inst.count, inst.awaited]

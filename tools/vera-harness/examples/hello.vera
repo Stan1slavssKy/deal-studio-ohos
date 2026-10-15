@@ -2,18 +2,18 @@ import * as ui from "std/ui"
 
 @jsonable
 class AppState {
-  count: int;
+  count: number;
 }
 
 function init(): AppState {
   return { count: 0 };
 }
 
-function increment(state: AppState, amount: int): AppState {
+function increment(state: AppState, amount: number): AppState {
   return { count: state.count + amount };
 }
 
-function pick(state: AppState, index: int): AppState {
+function pick(state: AppState, index: number): AppState {
   return { count: index };
 }
 
@@ -21,7 +21,7 @@ function view(state: AppState): ui.View {
   return ui.AppTheme("clean", "", [
     ui.Column("spacious", [
       ui.Header("default", "Counter", "", "", ""),
-      ui.Text("metric", ui.intToString(state.count)),
+      ui.Text("metric", ui.numberToString(state.count)),
       ui.Row("spacious", [
         ui.Button("secondary", "-", "increment", -1, true),
         ui.Button("primary", "+", "increment", 1, true)

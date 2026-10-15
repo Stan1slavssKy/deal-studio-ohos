@@ -589,7 +589,7 @@ export function densityPad(t: ResolvedTheme, style: string): number {
 export function densityGap(t: ResolvedTheme, style: string): number {
   if (style === 'compact') { return t.gapTight }
   if (style === 'spacious') { return t.gapLoose }
-  // 'joined' is for children that have to read as one thing: the two ui.IntText
+  // 'joined' is for children that have to read as one thing: the two ui.NumberText
   // of a clock are "21:09" only if nothing sits between them.
   if (style === 'joined') { return 0 }
   return t.gapBase

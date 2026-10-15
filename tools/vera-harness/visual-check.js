@@ -9,7 +9,7 @@ const path = require('node:path')
 const cp = require('node:child_process')
 const {loadVera, loadSource, sourceRoot} = require('./source-loader')
 const C = loadVera('VeraCompiler'), V = loadVera('VeraInterpreter'), U = loadVera('VeraUi')
-const output = path.resolve(process.argv[2] || 'visual-verification.json')
+const output = path.resolve(process.argv[2] || '/tmp/vera-visual-verification.json')
 const baseline = process.argv.includes('--capture-baseline')
 const cases = [['counter','change',1,'count',8], ['countdown','start',0,'running',true], ['expense','setBudget',140,'budget',140], ['reading','save',0,'saved',true], ['habit','complete',0,'days',4]]
 const results = [], trees = {}, contrasts = []
@@ -23,7 +23,7 @@ for (const [name, handler, value, field, expected] of cases) {
   const machine = vm(bytecode), initial = machine.execute('init')
   const tree = U.decodeVeraUi(machine.execute('view',[initial]))[0]
   assert.equal(tree.kind,'apptheme'); assert(walk(tree).some(n => n.kind === (baseline ? 'section' : 'hero')))
-  const changed = machine.execute(handler,[initial,new V.VeraIntValue(value)])
+  const changed = machine.execute(handler,[initial,new V.VeraNumberValue(value)])
   assert.equal(changed.fields.get(field).value, expected)
   const saved = V.encodeRuntimeValue(changed), restored = V.decodeRuntimeValue(JSON.parse(JSON.stringify(saved)))
   assert.deepEqual(V.encodeRuntimeValue(restored),saved)
@@ -37,7 +37,7 @@ for (const [name, handler, value, field, expected] of cases) {
   assert.equal(state.fields.get(old.field).value,old.expected)
   const before = U.decodeVeraUi(machine.execute('view',[state]))[0]
   assert.equal(before.kind,'apptheme')
-  const after=machine.execute(old.handler,[state,new V.VeraIntValue(old.value)])
+  const after=machine.execute(old.handler,[state,new V.VeraNumberValue(old.value)])
   const expectedNext=name==='counter'?9:name==='habit'?5:old.expected
   assert.equal(after.fields.get(old.field).value,expectedNext)
   trees[name] = {...trees[name], legacy:before}
@@ -46,10 +46,10 @@ for (const [name, handler, value, field, expected] of cases) {
 if (!baseline) {
  test('countdown: elapsed time and terminal boundary', () => {
   const bytecode=C.compileVeraSource(fs.readFileSync(path.join(__dirname,'examples/visual-countdown.vera'),'utf8')).vbc2
-  const m=vm(bytecode); const started=m.execute('start',[m.execute('init'),new V.VeraIntValue(0)])
-  const tick=m.execute('tick',[started,new V.VeraIntValue(1000)])
+  const m=vm(bytecode); const started=m.execute('start',[m.execute('init'),new V.VeraNumberValue(0)])
+  const tick=m.execute('tick',[started,new V.VeraNumberValue(1000)])
   assert.equal(tick.fields.get('remaining').value,89000)
-  const done=m.execute('tick',[tick,new V.VeraIntValue(100000)])
+  const done=m.execute('tick',[tick,new V.VeraNumberValue(100000)])
   assert.equal(done.fields.get('remaining').value,0); assert.equal(done.fields.get('running').value,false)
  })
  test('new component signatures/styles/fields/empty/long text/order', () => {

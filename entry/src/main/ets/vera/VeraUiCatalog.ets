@@ -15,7 +15,7 @@ import { iconNames } from './VeraIcons'
 
 export class PropSpec {
   name: string
-  /** 'string' | 'int' | 'boolean' | 'view' | 'view[]' | 'string[]' | 'int[]' | 'icon' */
+  /** 'string' | 'number' | 'boolean' | 'view' | 'view[]' | 'string[]' | 'number[]' | 'icon' */
   kind: string
   /** Key into STYLE_SETS when this prop is a style name; empty otherwise. */
   styleSet: string
@@ -43,9 +43,8 @@ export class ComponentSpec {
   props: PropSpec[]
   summary: string
   /**
-   * What this component hands its handler: '' for none, or 'string' / 'int' /
-   * 'boolean'. Until now the only payload in the whole system was an int chosen
-   * by the program itself, so nothing a person typed or toggled could reach it.
+   * What this component hands its handler: '' for none, or 'string' / 'number' /
+   * 'boolean'.
    */
   payloadKind: string
   /**
@@ -113,11 +112,11 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['metricgroup', ['default', 'compact', 'spacious']],
 
   // The typed numeric layer: the number travels as a number.
-  ['inttext', ['display', 'title', 'heading', 'body', 'caption', 'metric', 'muted', 'success', 'warning', 'danger']],
-  ['intstat', ['default', 'accent', 'success', 'warning', 'danger']],
-  ['intfield', ['default']],
+  ['numbertext', ['display', 'title', 'heading', 'body', 'caption', 'metric', 'muted', 'success', 'warning', 'danger']],
+  ['numberstat', ['default', 'accent', 'success', 'warning', 'danger']],
+  ['numberfield', ['default']],
   ['timefield', ['default']],
-  ['intlistitem', ['default', 'accent', 'success', 'warning', 'danger']],
+  ['numberlistitem', ['default', 'accent', 'success', 'warning', 'danger']],
   ['actionbar', ['default', 'end', 'center', 'spread']],
   ['kvgroup', ['default', 'compact', 'spacious']],
   ['kvitem', ['default', 'accent', 'success', 'warning', 'danger']],
@@ -154,27 +153,27 @@ export const CATALOG: ComponentSpec[] = [
   new ComponentSpec('Image', 'image',
     [style('image'), new PropSpec('src', 'string'), new PropSpec('alt', 'string')], 'https image'),
   new ComponentSpec('Path', 'path',
-    [style('path'), new PropSpec('commands', 'string'), new PropSpec('spinPeriodMs', 'int')],
+    [style('path'), new PropSpec('commands', 'string'), new PropSpec('spinPeriodMs', 'number')],
     'vector shape; spinPeriodMs > 0 rotates it', '',
     'Draws real vector graphics -- circles, gears, arrows, icons, chart shapes -- so use it whenever the user asks to draw something, instead of substituting a number and buttons. commands is an SVG path string using M L C Q A Z with absolute coordinates only. The drawing box is 0..100 in both axes; centre artwork on 50,50. There is no math at runtime: compute every coordinate yourself and write plain number literals. spinPeriodMs rotates the shape (0 is static, 2000 is one turn every 2 seconds) and needs no handler, state field or timer. A circle is "M50 10 A40 40 0 1 0 50 90 A40 40 0 1 0 50 10 Z".'),
   new ComponentSpec('Button', 'button',
     [style('button'), new PropSpec('text', 'string'), new PropSpec('action', 'string'),
-      new PropSpec('value', 'int'), new PropSpec('enabled', 'boolean')], 'tappable button'),
+      new PropSpec('value', 'number'), new PropSpec('enabled', 'boolean')], 'tappable button'),
   new ComponentSpec('Cell', 'cell',
     [style('cell'), new PropSpec('text', 'string'), new PropSpec('action', 'string'),
-      new PropSpec('value', 'int'), new PropSpec('enabled', 'boolean')], 'tappable grid cell'),
+      new PropSpec('value', 'number'), new PropSpec('enabled', 'boolean')], 'tappable grid cell'),
 
   // Everything below hands the handler a value the person chose, so the handler
-  // takes that type instead of an int.
+  // takes that type.
   new ComponentSpec('TextField', 'field',
     [style('field'), new PropSpec('label', 'string'), new PropSpec('value', 'string'),
       new PropSpec('action', 'string'),
       new PropSpec('keyboardType', 'string', '', true),
       new PropSpec('required', 'boolean', '', true),
       new PropSpec('requiredMessage', 'string', '', true),
-      new PropSpec('minLength', 'int', '', true),
+      new PropSpec('minLength', 'number', '', true),
       new PropSpec('minLengthMessage', 'string', '', true),
-      new PropSpec('maxLength', 'int', '', true),
+      new PropSpec('maxLength', 'number', '', true),
       new PropSpec('maxLengthMessage', 'string', '', true),
       new PropSpec('pattern', 'string', '', true),
       new PropSpec('patternMessage', 'string', '', true),
@@ -196,41 +195,41 @@ export const CATALOG: ComponentSpec[] = [
       new PropSpec('action', 'string')],
     'tick box; the handler takes (state, value: boolean)', 'boolean'),
   new ComponentSpec('Slider', 'slider',
-    [style('slider'), new PropSpec('label', 'string'), new PropSpec('value', 'int'),
-      new PropSpec('minimum', 'int'), new PropSpec('maximum', 'int'),
+    [style('slider'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
+      new PropSpec('minimum', 'number'), new PropSpec('maximum', 'number'),
       new PropSpec('action', 'string')],
-    'pick a number in a range; the handler takes (state, value: int)', 'int'),
+    'pick a number in a range; the handler takes (state, value: number)', 'number'),
   new ComponentSpec('Canvas', 'canvas',
     [style('canvas'), new PropSpec('children', 'view[]')],
     'one drawing: the ui.Path children share a single 0..100 field and overlap', '',
     'For a drawing made of several shapes -- a face, an animal, a scene, a chart. Each ui.Path child keeps the position and size you gave it and may have its own colour; give them back to front (the head before the ears, the face before the eyes). Outside a Canvas every ui.Path is centred alone in its own band, which is right only for a single icon.'),
   new ComponentSpec('Grid', 'grid',
-    [style('grid'), new PropSpec('columns', 'int'), new PropSpec('children', 'view[]')],
+    [style('grid'), new PropSpec('columns', 'number'), new PropSpec('children', 'view[]')],
     'lays its children out in N equal columns, wrapping onto new rows', '',
     'For anything laid out in equal columns -- a board, a calendar, a keypad -- rather than building rows by hand.'),
   new ComponentSpec('ListItem', 'listitem',
     [style('listitem'), new PropSpec('text', 'string'), new PropSpec('label', 'string'),
       new PropSpec('value', 'string'), new PropSpec('action', 'string'),
-      new PropSpec('eventValue', 'int'), new PropSpec('enabled', 'boolean'),
+      new PropSpec('eventValue', 'number'), new PropSpec('enabled', 'boolean'),
       icon('icon')],
     'one row of a list: title, subtitle, trailing text, leading icon, tappable'),
   new ComponentSpec('Ticker', 'ticker',
-    [style('ticker'), new PropSpec('id', 'string'), new PropSpec('intervalMs', 'int'),
+    [style('ticker'), new PropSpec('id', 'string'), new PropSpec('intervalMs', 'number'),
       new PropSpec('running', 'boolean'), new PropSpec('action', 'string')],
-    'draws nothing; calls the handler every intervalMs with the elapsed ms', 'int',
-    'Keeps a displayed time or a countdown moving -- never add a refresh button instead. The handler is onTick(state, elapsedMs: int), called every interval; use it to advance a stopwatch, a game or a clock. Accumulate the elapsed value it gives you: do not subtract two clock readings, because time.nowSeconds() only changes once a second. Match intervalMs to the precision shown: 1000 for whole seconds, 50 for hundredths. Example: ui.Ticker("default", "clock", 1000, true, "onTick").'),
+    'draws nothing; calls the handler every intervalMs with the elapsed ms', 'number',
+    'Keeps a displayed time or a countdown moving -- never add a refresh button instead. The handler is onTick(state, elapsedMs: number), called every interval; use it to advance a stopwatch, a game or a clock. Accumulate the elapsed value it gives you: do not subtract two clock readings, because time.nowSeconds() only changes once a second. Match intervalMs to the precision shown: 1000 for whole seconds, 50 for hundredths. Show the time left or elapsed with ui.durationToString(seconds). Example: ui.Ticker("default", "clock", 1000, true, "onTick").'),
   new ComponentSpec('Divider', 'divider', [style('divider')], 'a horizontal rule'),
   new ComponentSpec('BackHandler', 'backhandler',
     [new PropSpec('action', 'string')],
-    'draws nothing; calls the handler, with 0, on the system back gesture', 'int',
+    'draws nothing; calls the handler, with 0, on the system back gesture', 'number',
     'VERA has no separate navigation stack -- "screens" are just a state.screen-style field and ui.When choosing which View to draw. Add one ui.BackHandler wherever a screen other than the first is showing, so the hardware/system back gesture does something sensible (return to the previous screen, close a dialog) instead of the OS default, which exits the app. Leave it out of the first screen so back still exits normally. Only one should be live at a time; if several are drawn in the same frame the last one decoded wins.'),
   new ComponentSpec('Progress', 'progress',
-    [style('progress'), new PropSpec('label', 'string'), new PropSpec('value', 'int'),
-      new PropSpec('maximum', 'int')], 'a progress bar'),
+    [style('progress'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
+      new PropSpec('maximum', 'number')], 'a progress bar'),
   new ComponentSpec('Select', 'select',
     [style('select'), new PropSpec('label', 'string'), new PropSpec('options', 'string[]'),
-      new PropSpec('selected', 'int'), new PropSpec('action', 'string')],
-    'choose one option; the handler takes (state, index: int)', 'int'),
+      new PropSpec('selected', 'number'), new PropSpec('action', 'string')],
+    'choose one option; the handler takes (state, index: number)', 'number'),
 
   // The compositional layer.
   //
@@ -256,7 +255,7 @@ export const CATALOG: ComponentSpec[] = [
     '',
     'Use plain for an open focal area or accent for a tinted surface. Empty strings omit text. Children can hold a result, visual, or action. Use only when the content needs this emphasis. Do not add a redundant Header above Hero.'),
   new ComponentSpec('AdaptiveColumns', 'adaptivecolumns',
-    [style('adaptivecolumns'), new PropSpec('minimumWidth', 'int'), new PropSpec('children', 'view[]')],
+    [style('adaptivecolumns'), new PropSpec('minimumWidth', 'number'), new PropSpec('children', 'view[]')],
     'ordered content in one or two top-aligned columns, based on available width',
     '',
     'Use for independent related groups. The renderer measures available width and includes the theme gap. minimumWidth defaults to 240 when nonpositive and otherwise has a minimum of 160. Narrow containers keep one column.'),
@@ -282,7 +281,7 @@ export const CATALOG: ComponentSpec[] = [
     [style('listgroup'), new PropSpec('title', 'string'), new PropSpec('children', 'view[]')],
     'one bounded surface holding related ui.ListItem rows, separated for you',
     '',
-    'Two or more related rows belong in one of these, not in a Card each. The frame, the separators and the row rhythm are the renderer\'s job. Rows are ui.ListItem or ui.IntListItem; a ui.SectionHeader may open the group and a ui.ActionBar may follow the row it belongs to.'),
+    'Two or more related rows belong in one of these, not in a Card each. The frame, the separators and the row rhythm are the renderer\'s job. Rows are ui.ListItem or ui.NumberListItem; a ui.SectionHeader may open the group and a ui.ActionBar may follow the row it belongs to.'),
   new ComponentSpec('InsetBanner', 'banner',
     [style('banner'), new PropSpec('title', 'string'), new PropSpec('message', 'string'),
       new PropSpec('actionText', 'string'), new PropSpec('action', 'string'),
@@ -304,57 +303,53 @@ export const CATALOG: ComponentSpec[] = [
     '',
     'For a summary figure. It draws no surface of its own, so put two to four inside a ui.MetricGroup rather than one inside a Card.'),
   new ComponentSpec('MetricGroup', 'metricgroup',
-    [style('metricgroup'), new PropSpec('columns', 'int'), new PropSpec('children', 'view[]')],
-    'two to four ui.Stat or ui.IntStat children across one surface, in equal columns',
+    [style('metricgroup'), new PropSpec('columns', 'number'), new PropSpec('children', 'view[]')],
+    'two to four ui.Stat or ui.NumberStat children across one surface, in equal columns',
     '',
-    'The summary strip at the top of a screen. Only ui.Stat or ui.IntStat children. columns is a maximum: a narrow screen uses fewer.'),
+    'The summary strip at the top of a screen. Only ui.Stat or ui.NumberStat children. columns is a maximum: a narrow screen uses fewer.'),
 
-  // The typed numeric layer.
-  //
-  // The language has no number formatting and no way back from a string to an
-  // int, so until now every number on screen was a string the program had
-  // already built with ui.intToString, and anything wider than one digit needed
-  // a padding function written by hand. These take the number and let the
-  // renderer format it, which also means a number the person types can come
-  // back as an int instead of unparseable text.
-  new ComponentSpec('IntText', 'inttext',
-    [style('inttext'), new PropSpec('value', 'int'), new PropSpec('prefix', 'string'),
-      new PropSpec('suffix', 'string'), new PropSpec('minimumDigits', 'int')],
-    'a whole number as text: prefix, the number padded to minimumDigits, suffix',
+  // The typed numeric layer: these take the number and let the renderer format
+  // it -- decimals, padding, prefix and suffix -- so a program never builds
+  // "$9.50" or "07" by hand.
+  new ComponentSpec('NumberText', 'numbertext',
+    [style('numbertext'), new PropSpec('value', 'number'), new PropSpec('prefix', 'string'),
+      new PropSpec('suffix', 'string'), new PropSpec('minimumDigits', 'number'),
+      new PropSpec('decimals', 'number', '', true)],
+    'a number as text: prefix, the number with `decimals` places and its whole part padded to minimumDigits, suffix',
     '',
-    'Use instead of ui.Text with ui.intToString. minimumDigits 2 writes 7 as "07", so a clock is ui.IntText("body", h, "", ":", 2) beside ui.IntText("body", m, "", "", 2) and needs no pad function. Use prefix and suffix for units and currency rather than gluing strings together.'),
+    'Use instead of ui.Text with ui.numberToString. decimals 2 writes 9.5 as "9.50", so money is ui.NumberText("metric", total, "$", "", 1, 2). Leave decimals off to show the number as it is. minimumDigits 2 writes 7 as "07". Use prefix and suffix for units and currency rather than gluing strings together.'),
   new ComponentSpec('ClockText', 'clocktext',
-    [style('inttext'), new PropSpec('minutes', 'int'), new PropSpec('prefix', 'string'),
+    [style('numbertext'), new PropSpec('minutes', 'number'), new PropSpec('prefix', 'string'),
       new PropSpec('suffix', 'string')],
     'a time of day from minutes since midnight, written as HH:MM',
     '',
-    'The only way to show a time. Never build one from two ui.IntText and never write a padding function for it: 9:05 in the morning is ui.ClockText("body", 545, "", ""). Minutes since midnight is what time.hourOfDay() * 60 + time.minuteOfHour() gives and what ui.TimeField hands back, so the three fit together.'),
-  new ComponentSpec('IntStat', 'intstat',
-    [style('intstat'), new PropSpec('label', 'string'), new PropSpec('value', 'int'),
+    'Shows a time as its own element: 9:05 in the morning is ui.ClockText("body", 545, "", ""). Where a time has to sit inside another component\'s text -- a ListItem trailing value, a TimelineItem, a title -- use ui.clockToString(545), which returns "09:05". Never build a time from two numbers and never write a padding function. A length of time -- a countdown, a stopwatch -- is not a time of day: ui.durationToString(360) returns "6:00" and ui.durationToString(3725) "1:02:05"; show it with ui.Text. Minutes since midnight is what time.hourOfDay() * 60 + time.minuteOfHour() gives and what ui.TimeField hands back, so the three fit together.'),
+  new ComponentSpec('NumberStat', 'numberstat',
+    [style('numberstat'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
       new PropSpec('prefix', 'string'), new PropSpec('suffix', 'string'),
-      new PropSpec('minimumDigits', 'int'), new PropSpec('supporting', 'string'),
-      icon('icon')],
-    'ui.Stat for a number the program holds as an int',
+      new PropSpec('minimumDigits', 'number'), new PropSpec('supporting', 'string'),
+      icon('icon'), new PropSpec('decimals', 'number', '', true)],
+    'ui.Stat for a figure that is a number; decimals as in ui.NumberText',
     '',
     'Prefer this to ui.Stat whenever the figure is a number rather than text. Same place: inside a ui.MetricGroup.'),
-  new ComponentSpec('IntField', 'intfield',
-    [style('intfield'), new PropSpec('label', 'string'), new PropSpec('value', 'int'),
-      new PropSpec('minimum', 'int'), new PropSpec('maximum', 'int'),
+  new ComponentSpec('NumberField', 'numberfield',
+    [style('numberfield'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
+      new PropSpec('minimum', 'number'), new PropSpec('maximum', 'number'),
       new PropSpec('action', 'string')],
-    'a number the user sets with - and +; the handler takes (state, value: int)', 'int',
-    'The only way to get a number from the person. A ui.TextField hands you a string and there is no way to turn a string into an int, so a typed quantity has to come through here. minimum and maximum bound it.'),
+    'a count the user sets with - and +, one step at a time; the handler takes (state, value: number)', 'number',
+    'For a small count the person nudges up and down -- people at a table, servings, sets. minimum and maximum bound it. For an amount the person types -- money, a weight, a distance -- use ui.TextField with keyboardType "number" instead and read it with strings.toNumber(value, 0).'),
   new ComponentSpec('TimeField', 'timefield',
-    [style('timefield'), new PropSpec('label', 'string'), new PropSpec('value', 'int'),
+    [style('timefield'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
       new PropSpec('action', 'string')],
-    'a time of day, as minutes since midnight; the handler takes (state, value: int)', 'int',
+    'a time of day, as minutes since midnight; the handler takes (state, value: number)', 'number',
     'For a time the person chooses. The value is minutes since midnight, which is the same shape time.hourOfDay() * 60 + time.minuteOfHour() produces, so it compares with the clock directly.'),
-  new ComponentSpec('IntListItem', 'intlistitem',
-    [style('intlistitem'), new PropSpec('title', 'string'), new PropSpec('subtitle', 'string'),
-      new PropSpec('value', 'int'), new PropSpec('prefix', 'string'),
-      new PropSpec('suffix', 'string'), new PropSpec('minimumDigits', 'int'),
-      new PropSpec('action', 'string'), new PropSpec('eventValue', 'int'),
-      new PropSpec('enabled', 'boolean'), icon('icon')],
-    'a ui.ListItem whose trailing value is a number, formatted for you',
+  new ComponentSpec('NumberListItem', 'numberlistitem',
+    [style('numberlistitem'), new PropSpec('title', 'string'), new PropSpec('subtitle', 'string'),
+      new PropSpec('value', 'number'), new PropSpec('prefix', 'string'),
+      new PropSpec('suffix', 'string'), new PropSpec('minimumDigits', 'number'),
+      new PropSpec('action', 'string'), new PropSpec('eventValue', 'number'),
+      new PropSpec('enabled', 'boolean'), icon('icon'), new PropSpec('decimals', 'number', '', true)],
+    'a ui.ListItem whose trailing value is a number, formatted for you; decimals as in ui.NumberText',
     '',
     'For a row that ends in a quantity, an amount or a time. It goes in a ui.ListGroup exactly like ui.ListItem. Note it carries two numbers: value is what is shown, eventValue is what the tap hands the handler.'),
   new ComponentSpec('ActionBar', 'actionbar',
@@ -377,14 +372,14 @@ export const CATALOG: ComponentSpec[] = [
   new ComponentSpec('TimelineItem', 'timelineitem',
     [style('timelineitem'), new PropSpec('title', 'string'), new PropSpec('subtitle', 'string'),
       new PropSpec('trailing', 'string'), new PropSpec('action', 'string'),
-      new PropSpec('eventValue', 'int'), new PropSpec('enabled', 'boolean'),
+      new PropSpec('eventValue', 'number'), new PropSpec('enabled', 'boolean'),
       icon('icon')],
     'one moment on a timeline; same fields as ui.ListItem, plus its marker',
     '',
     'Put the time in trailing, so the times line up down the right edge. The icon becomes the marker on the rail -- "pin" for a place, "check" for something done, "clock" for something still ahead; with no icon the marker is a plain dot.'),
 
   new ComponentSpec('KeyValueGroup', 'kvgroup',
-    [style('kvgroup'), new PropSpec('columns', 'int'), new PropSpec('children', 'view[]')],
+    [style('kvgroup'), new PropSpec('columns', 'number'), new PropSpec('children', 'view[]')],
     'ui.KeyValueItem children in equal columns, for facts rather than figures',
     '',
     'For the details of a thing -- where, how long, which platform. Use this rather than a ui.MetricGroup when the values are words, and rather than a ListGroup when they are short enough to sit two to a row.'),
@@ -402,7 +397,7 @@ export const CATALOG: ComponentSpec[] = [
     'For an icon that is not part of something else. Most icons should instead be the icon property of a ListItem, Banner, EmptyState, Header or Stat, which places them properly.'),
   new ComponentSpec('IconButton', 'iconbutton',
     [style('iconbutton'), icon('icon'), new PropSpec('label', 'string'),
-      new PropSpec('action', 'string'), new PropSpec('value', 'int'),
+      new PropSpec('action', 'string'), new PropSpec('value', 'number'),
       new PropSpec('enabled', 'boolean')],
     'a button that is only an icon; label is what it does, for accessibility',
     '',
@@ -421,10 +416,10 @@ export const CATALOG: ComponentSpec[] = [
     'Only inside a ui.KeyValueGroup.'),
 
   // A real grid of rows and columns, which neither ui.Grid (equal tappable
-  // cells for a keypad or board, one int payload each) nor ui.KeyValueGroup
+  // cells for a keypad or board, one number payload each) nor ui.KeyValueGroup
   // (facts, two per row, no header) is shaped for.
   new ComponentSpec('Table', 'table',
-    [style('table'), new PropSpec('headers', 'string[]'), new PropSpec('columns', 'int'),
+    [style('table'), new PropSpec('headers', 'string[]'), new PropSpec('columns', 'number'),
       new PropSpec('children', 'view[]')],
     'rows and columns of text, with an optional header row',
     '',
@@ -439,7 +434,7 @@ export const CATALOG: ComponentSpec[] = [
   // way to say "this hasn't loaded yet" or "that just happened" -- a screen
   // either showed its real content or showed nothing at all while waiting.
   new ComponentSpec('Skeleton', 'skeleton',
-    [style('skeleton'), new PropSpec('width', 'int'), new PropSpec('height', 'int'),
+    [style('skeleton'), new PropSpec('width', 'number'), new PropSpec('height', 'number'),
       new PropSpec('rounded', 'boolean', '', true)],
     'a placeholder box the size of the content that has not arrived yet',
     '',
@@ -456,20 +451,18 @@ export const CATALOG: ComponentSpec[] = [
     '',
     'For something that just happened and does not need to stay on screen -- "Saved", "Undo", a result the person did not have to ask for. Unlike ui.InsetBanner this is not meant to persist: put it behind ui.When(state.showX, ...) and have the handler that triggered it set state.showX true, and whatever dismisses it (a timer, the action button, the next tap) set it back to false. Pass actionText "" and action "" for no action; the handler, if named, is called with 0.'),
 
-  // The one int[] prop in the language -- a chart's raw values travel as
-  // numbers, not as a string the program built with ui.intToString and the
-  // renderer tried to parse back. The renderer does the normalising and the
-  // drawing, the same division of labour ui.IntText already has for a single
-  // number.
+  // The one number[] prop in the language -- a chart's raw values travel as
+  // numbers, and the renderer does the normalising and the drawing, the same
+  // division of labour ui.NumberText has for a single number.
   new ComponentSpec('Sparkline', 'sparkline',
-    [style('sparkline'), new PropSpec('series', 'int[]'), new PropSpec('maximum', 'int'),
+    [style('sparkline'), new PropSpec('series', 'number[]'), new PropSpec('maximum', 'number'),
       new PropSpec('label', 'string', '', true), new PropSpec('bars', 'boolean', '', true),
-      new PropSpec('series2', 'int[]', '', true),
+      new PropSpec('series2', 'number[]', '', true),
       new PropSpec('series2Style', 'string', 'sparkline', true),
       new PropSpec('seriesLabel', 'string', '', true),
       new PropSpec('series2Label', 'string', '', true),
       new PropSpec('categories', 'string[]', '', true),
-      new PropSpec('minimum', 'int', '', true)],
+      new PropSpec('minimum', 'number', '', true)],
     'a line or bar chart of up to a few dozen values, one or two series',
     '',
     'For a trend -- a week of steps, a balance over time, a reading taken repeatedly -- leave bars false for a connected line. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the chart does not jump every time a new point arrives). The line chart (bars false) scales between minimum and maximum, not always from zero: leave minimum 0 for values that are naturally zero-based (steps, a count), but set it to a real floor for values that live in a narrow band far from zero (human height, a temperature range, a stock price) -- otherwise every point lands in a sliver at the very top of the chart with empty space below. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead; bars always start at zero regardless of minimum, the way a bar chart should. To compare two series over the same points -- men vs women, this year vs last -- pass series2 with its own style tone (series2Style) and leave bars false; a legend naming the two (seriesLabel, series2Label) is drawn automatically when series2 is non-empty. categories labels the points along the x axis, in order, when they are not plain indices (e.g. "1700s", "1800s", ...); leave it empty for a plain trend. Never draw a line chart by hand with ui.Canvas and ui.Path -- ui.Path only fills, so an open multi-point line drawn that way renders as a solid wedge, not a line.'),
@@ -512,8 +505,8 @@ export const CHILD_RULES: ChildRule[] = [
   // E2107 and nothing else.
   //
   // So these forbid only what is actually wrong and would actually draw badly.
-  new ChildRule('ListGroup', ['ListItem', 'IntListItem', 'SectionHeader', 'ActionBar', 'When'], []),
-  new ChildRule('MetricGroup', ['Stat', 'IntStat', 'When'], []),
+  new ChildRule('ListGroup', ['ListItem', 'NumberListItem', 'SectionHeader', 'ActionBar', 'When'], []),
+  new ChildRule('MetricGroup', ['Stat', 'NumberStat', 'When'], []),
   new ChildRule('KeyValueGroup', ['KeyValueItem', 'When'], []),
   new ChildRule('Timeline', ['TimelineItem', 'ActionBar', 'When'], []),
   new ChildRule('Table', ['TableRow', 'When'], []),
@@ -583,8 +576,12 @@ export function catalogKinds(): string[] {
 export const CORE_COMPONENTS: string[] = [
   'Column', 'Row', 'Card', 'Text', 'Spacer', 'Button',
   'AppTheme', 'Hero', 'AdaptiveColumns', 'Header', 'Section', 'SectionHeader', 'ListGroup', 'ListItem',
-  'IntListItem', 'ActionBar', 'IconButton', 'Badge', 'EmptyState', 'InsetBanner',
-  'Stat', 'IntStat', 'MetricGroup', 'IntText', 'ClockText',
+  'NumberListItem', 'ActionBar', 'IconButton', 'Badge', 'EmptyState', 'InsetBanner',
+  'Stat', 'NumberStat', 'MetricGroup', 'NumberText', 'ClockText',
+  // Inputs and progress: picking by similarity to the whole prompt missed
+  // them for a form-like request (a pill tracker never got TextField, Toggle
+  // or TimeField), and each miss costs a find_ui_component round.
+  'TextField', 'Toggle', 'Checkbox', 'Slider', 'Select', 'NumberField', 'TimeField', 'Progress',
 ]
 
 /** Components that are described only when selected. */
@@ -689,7 +686,7 @@ export function describeCatalogForPrompt(selected: Set<string> | null = null): s
   lines.push('UI constructors (all return ui.View):')
   for (let c of shown) { lines.push(signatureLine(c)) }
   lines.push('  ui.When(condition, child)  -- child when true, nothing when false')
-  lines.push('  ui.intToString(n), ui.numberToString(n), ui.booleanToString(b)')
+  lines.push('  ui.numberToString(n), ui.formatNumber(n, decimals), ui.clockToString(minutes), ui.durationToString(seconds), ui.booleanToString(b)')
   lines.push('')
   lines.push('Allowed styles:')
   for (let c of shown) {

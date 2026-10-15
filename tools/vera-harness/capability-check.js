@@ -91,11 +91,11 @@ async function test(name,fn){try{const observed=await fn();checks.push({name,sta
    controller.onStateSnapshot=encoded=>snapshots.push(JSON.parse(encoded))
    controller.renderView=()=>{controller.host.effectsAllowed=false;trees.push(U.decodeVeraUi(controller.vm.execute('view',[controller.currentState])))}
    controller.load();assert.equal(controller.error,'');assert.equal(V.decodeRuntimeValue(snapshots.at(-1)).fields.get('count').value,7)
-   controller.dispatch('change',new V.VeraIntValue(1));assert.equal(V.decodeRuntimeValue(snapshots.at(-1)).fields.get('count').value,8)
+   controller.dispatch('change',new V.VeraNumberValue(1));assert.equal(V.decodeRuntimeValue(snapshots.at(-1)).fields.get('count').value,8)
    controller.load();assert.equal(V.decodeRuntimeValue(snapshots.at(-1)).fields.get('count').value,8)
    assert(trees.every(tree=>tree[0].kind==='apptheme'));assert.equal(values.size,1)
    function walk(nodes){return nodes.flatMap(n=>[n,...walk(n.children||[])])}
-   assert.deepEqual(trees.map(tree=>walk(tree).find(n=>n.kind==='inttext').intValue),[7,8,8])
+   assert.deepEqual(trees.map(tree=>walk(tree).find(n=>n.kind==='numbertext').numberValue),[7,8,8])
    return {sharedInitialization:true,initialAndActionSnapshots:true,snapshots,decodedTrees:trees,savedKeys:[...values.keys()]}
  })
  const hashes={};for(const file of ['entry/src/main/ets/vera/VeraCapabilities.ets','entry/src/main/ets/vera/VeraSdkIndex.ets','entry/src/main/ets/vera/VeraIntentRegistry.ets','entry/src/main/ets/vera/VeraIntentIndex.ets','entry/src/main/ets/pages/GeneratePage.ets','entry/src/main/ets/components/VeraPreview.ets','tools/vera-harness/capability-check.js'])hashes[file]=crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')

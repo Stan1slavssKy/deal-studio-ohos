@@ -35,7 +35,7 @@ function init(): AppState {
   };
 }
 
-function checkScreenLock(state: AppState, ignored: int): AppState {
+function checkScreenLock(state: AppState, ignored: number): AppState {
   sdk.call("BasicServicesKit.screenLock.isDeviceLocked", ["userId", "100"], "onScreenLock");
   return state;
 }
@@ -43,7 +43,7 @@ function onScreenLock(state: AppState, value: string): AppState {
   return {screenLocked: value, notifEnabled: state.notifEnabled, hotspotDualBand: state.hotspotDualBand, appMemSize: state.appMemSize, pipEnabled: state.pipEnabled, hasNet: state.hasNet, voiceCap: state.voiceCap, locEnabled: state.locEnabled};
 }
 
-function checkNotif(state: AppState, ignored: int): AppState {
+function checkNotif(state: AppState, ignored: number): AppState {
   sdk.call("NotificationKit.notificationManager.isNotificationEnabled", [], "onNotif");
   return state;
 }
@@ -51,7 +51,7 @@ function onNotif(state: AppState, value: string): AppState {
   return {screenLocked: state.screenLocked, notifEnabled: value, hotspotDualBand: state.hotspotDualBand, appMemSize: state.appMemSize, pipEnabled: state.pipEnabled, hasNet: state.hasNet, voiceCap: state.voiceCap, locEnabled: state.locEnabled};
 }
 
-function checkHotspot(state: AppState, ignored: int): AppState {
+function checkHotspot(state: AppState, ignored: number): AppState {
   sdk.call("ConnectivityKit.wifiManager.isHotspotDualBandSupported", [], "onHotspot");
   return state;
 }
@@ -59,7 +59,7 @@ function onHotspot(state: AppState, value: string): AppState {
   return {screenLocked: state.screenLocked, notifEnabled: state.notifEnabled, hotspotDualBand: value, appMemSize: state.appMemSize, pipEnabled: state.pipEnabled, hasNet: state.hasNet, voiceCap: state.voiceCap, locEnabled: state.locEnabled};
 }
 
-function checkAppMem(state: AppState, ignored: int): AppState {
+function checkAppMem(state: AppState, ignored: number): AppState {
   sdk.call("AbilityKit.appManager.getAppMemorySize", [], "onAppMem");
   return state;
 }
@@ -67,7 +67,7 @@ function onAppMem(state: AppState, value: string): AppState {
   return {screenLocked: state.screenLocked, notifEnabled: state.notifEnabled, hotspotDualBand: state.hotspotDualBand, appMemSize: value, pipEnabled: state.pipEnabled, hasNet: state.hasNet, voiceCap: state.voiceCap, locEnabled: state.locEnabled};
 }
 
-function checkPiP(state: AppState, ignored: int): AppState {
+function checkPiP(state: AppState, ignored: number): AppState {
   sdk.call("ArkUI.PiPWindow.isPiPEnabled", [], "onPiP");
   return state;
 }
@@ -75,7 +75,7 @@ function onPiP(state: AppState, value: string): AppState {
   return {screenLocked: state.screenLocked, notifEnabled: state.notifEnabled, hotspotDualBand: state.hotspotDualBand, appMemSize: state.appMemSize, pipEnabled: value, hasNet: state.hasNet, voiceCap: state.voiceCap, locEnabled: state.locEnabled};
 }
 
-function checkNet(state: AppState, ignored: int): AppState {
+function checkNet(state: AppState, ignored: number): AppState {
   sdk.call("NetworkKit.connection.hasDefaultNet", [], "onNet");
   return state;
 }
@@ -83,7 +83,7 @@ function onNet(state: AppState, value: string): AppState {
   return {screenLocked: state.screenLocked, notifEnabled: state.notifEnabled, hotspotDualBand: state.hotspotDualBand, appMemSize: state.appMemSize, pipEnabled: state.pipEnabled, hasNet: value, voiceCap: state.voiceCap, locEnabled: state.locEnabled};
 }
 
-function checkVoice(state: AppState, ignored: int): AppState {
+function checkVoice(state: AppState, ignored: number): AppState {
   sdk.call("TelephonyKit.call.hasVoiceCapability", [], "onVoice");
   return state;
 }
@@ -91,7 +91,7 @@ function onVoice(state: AppState, value: string): AppState {
   return {screenLocked: state.screenLocked, notifEnabled: state.notifEnabled, hotspotDualBand: state.hotspotDualBand, appMemSize: state.appMemSize, pipEnabled: state.pipEnabled, hasNet: state.hasNet, voiceCap: value, locEnabled: state.locEnabled};
 }
 
-function checkLocation(state: AppState, ignored: int): AppState {
+function checkLocation(state: AppState, ignored: number): AppState {
   sdk.call("LocationKit.geoLocationManager.isLocationEnabled", [], "onLocation");
   return state;
 }

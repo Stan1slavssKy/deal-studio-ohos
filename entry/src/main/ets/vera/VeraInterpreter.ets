@@ -2,14 +2,14 @@
  * VERA-L VBC2 Virtual Machine — dynamic ArkTS port of vera-server/src/vm.ts.
  *
  * Differences from the TypeScript original:
- *   - bigint → number with int32 range checks (dynamic ArkTS has no bigint)
+ *   - one numeric type: every number is a VeraNumberValue (a double). There is
+ *     no int and no 32-bit overflow; whole numbers are exact up to 2^53.
  *   - readonly → dropped (not enforced in dynamic ArkTS)
  *   - discriminated union Instruction → class with all fields
  *   - JSON.parse for VBC2 deserialization
  */
 
 export abstract class RuntimeValue {}
-export class VeraIntValue extends RuntimeValue { value: number; constructor(v: number) { super(); this.value = v; } }
 export class VeraNumberValue extends RuntimeValue { value: number; constructor(v: number) { super(); this.value = v; } }
 export class VeraStringValue extends RuntimeValue { value: string; constructor(v: string) { super(); this.value = v; } }
 export class VeraBooleanValue extends RuntimeValue { value: boolean; constructor(v: boolean) { super(); this.value = v; } }
@@ -68,7 +68,6 @@ export class Instruction {
   name: string = ''
   module: string = ''
   operator: string = ''
-  integer: boolean = false
   target: number = 0
   count: number = 0
   awaited: boolean = false
@@ -123,9 +122,6 @@ class Frame {
   }
 }
 
-const MIN_INT: number = -2147483648
-const MAX_INT: number = 2147483647
-
 export class VirtualMachine {
   private functions: Map<string, BytecodeFunction> = new Map<string, BytecodeFunction>()
   private functionValues: Map<string, FunctionValue> = new Map<string, FunctionValue>()
@@ -163,9 +159,6 @@ export class VirtualMachine {
       let inst = frame.fn.instructions[frame.pc]
       frame.pc += 1
       switch (inst.op) {
-        case 'push-int':
-          frame.stack.push(new VeraIntValue(this.checked(parseInt(inst.value))))
-          break
         case 'push-number':
           frame.stack.push(new VeraNumberValue(inst.numValue))
           break
@@ -221,7 +214,7 @@ export class VirtualMachine {
         case 'binary': {
           let r = this.pop(frame)
           let l = this.pop(frame)
-          frame.stack.push(this.binary(inst.operator, inst.integer, l, r))
+          frame.stack.push(this.binary(inst.operator, l, r))
           break
         }
         case 'jump':
@@ -245,7 +238,7 @@ export class VirtualMachine {
             throw new RuntimeTrap('R0022', 'array length limit reached (4096)')
           }
           arr.elements.push(v)
-          frame.stack.push(new VeraIntValue(arr.elements.length))
+          frame.stack.push(new VeraNumberValue(arr.elements.length))
           break
         }
         case 'array-pop': {
@@ -259,9 +252,9 @@ export class VirtualMachine {
         case 'length': {
           let v = this.pop(frame)
           if (v instanceof VeraArrayValue) {
-            frame.stack.push(new VeraIntValue(v.elements.length))
+            frame.stack.push(new VeraNumberValue(v.elements.length))
           } else if (v instanceof VeraStringValue) {
-            frame.stack.push(new VeraIntValue(v.value.length))
+            frame.stack.push(new VeraNumberValue(v.value.length))
           } else {
             throw new RuntimeTrap('R0008', 'expected array or string')
           }
@@ -349,12 +342,11 @@ export class VirtualMachine {
 
   private unary(op: string, value: RuntimeValue): RuntimeValue {
     if (op === '!') { return new VeraBooleanValue(!this.asBoolean(value)) }
-    if (value instanceof VeraIntValue) { return new VeraIntValue(this.checked(-value.value)) }
     if (value instanceof VeraNumberValue) { return new VeraNumberValue(-value.value) }
     throw new RuntimeTrap('R0002', 'invalid unary operand')
   }
 
-  private binary(op: string, integer: boolean, left: RuntimeValue, right: RuntimeValue): RuntimeValue {
+  private binary(op: string, left: RuntimeValue, right: RuntimeValue): RuntimeValue {
     if (op === '===') { return new VeraBooleanValue(this.equal(left, right)) }
     if (op === '!==') { return new VeraBooleanValue(!this.equal(left, right)) }
     if (op === '&&') { return new VeraBooleanValue(this.asBoolean(left) && this.asBoolean(right)) }
@@ -363,33 +355,22 @@ export class VirtualMachine {
       if (op === '+') { return new VeraStringValue(left.value + right.value) }
       return new VeraBooleanValue(this.compareStr(op, left.value, right.value))
     }
-    if (integer) { return this.intBinary(op, this.asInt(left), this.asInt(right)) }
     let a = this.asNumber(left)
     let b = this.asNumber(right)
     if (op === '+') { return new VeraNumberValue(a + b) }
     if (op === '-') { return new VeraNumberValue(a - b) }
     if (op === '*') { return new VeraNumberValue(a * b) }
-    if (op === '/') { return new VeraNumberValue(a / b) }
-    return new VeraBooleanValue(this.compareNum(op, a, b))
-  }
-
-  private intBinary(op: string, left: number, right: number): RuntimeValue {
-    if (op === '+') { return new VeraIntValue(this.checked(left + right)) }
-    if (op === '-') { return new VeraIntValue(this.checked(left - right)) }
-    if (op === '*') { return new VeraIntValue(this.checked(left * right)) }
+    // Division by zero stays a trap, as it was for the old int: an Infinity or
+    // NaN would otherwise travel into state and onto the screen as text.
     if (op === '/') {
-      if (right === 0) { throw new RuntimeTrap('R0003', 'integer division by zero') }
-      return new VeraIntValue(this.checked(Math.trunc(left / right)))
+      if (b === 0) { throw new RuntimeTrap('R0003', 'division by zero') }
+      return new VeraNumberValue(a / b)
     }
     if (op === '%') {
-      if (right === 0) { throw new RuntimeTrap('R0004', 'integer modulo by zero') }
-      return new VeraIntValue(left % right)
+      if (b === 0) { throw new RuntimeTrap('R0004', 'modulo by zero') }
+      return new VeraNumberValue(a % b)
     }
-    if (op === '<') { return new VeraBooleanValue(left < right) }
-    if (op === '<=') { return new VeraBooleanValue(left <= right) }
-    if (op === '>') { return new VeraBooleanValue(left > right) }
-    if (op === '>=') { return new VeraBooleanValue(left >= right) }
-    throw new RuntimeTrap('R0005', `invalid comparison ${op}`)
+    return new VeraBooleanValue(this.compareNum(op, a, b))
   }
 
   private compareNum(op: string, a: number, b: number): boolean {
@@ -410,18 +391,12 @@ export class VirtualMachine {
 
   private equal(a: RuntimeValue, b: RuntimeValue): boolean {
     if (a instanceof VeraNullValue || b instanceof VeraNullValue) { return a instanceof VeraNullValue && b instanceof VeraNullValue }
-    if (a instanceof VeraIntValue && b instanceof VeraIntValue) { return a.value === b.value }
     if (a instanceof VeraNumberValue && b instanceof VeraNumberValue) { return a.value === b.value }
     if (a instanceof VeraStringValue && b instanceof VeraStringValue) { return a.value === b.value }
     if (a instanceof VeraBooleanValue && b instanceof VeraBooleanValue) { return a.value === b.value }
     if (a instanceof FunctionValue && b instanceof FunctionValue) { return a === b }
     if (a instanceof ExternalFunctionValue && b instanceof ExternalFunctionValue) { return a === b }
     return false
-  }
-
-  private checked(value: number): number {
-    if (value < MIN_INT || value > MAX_INT) { throw new RuntimeTrap('R0006', 'integer overflow') }
-    return value
   }
 
   private pop(frame: Frame): RuntimeValue {
@@ -439,18 +414,21 @@ export class VirtualMachine {
     return result
   }
 
-  private asInt(v: RuntimeValue): number { if (!(v instanceof VeraIntValue)) { throw new RuntimeTrap('R0008', 'expected int') } return (v as VeraIntValue).value }
   private asNumber(v: RuntimeValue): number { if (!(v instanceof VeraNumberValue)) { throw new RuntimeTrap('R0008', 'expected number') } return (v as VeraNumberValue).value }
   private asBoolean(v: RuntimeValue): boolean { if (!(v instanceof VeraBooleanValue)) { throw new RuntimeTrap('R0008', 'expected boolean') } return (v as VeraBooleanValue).value }
   private asArray(v: RuntimeValue): VeraArrayValue { if (!(v instanceof VeraArrayValue)) { throw new RuntimeTrap('R0008', 'expected array') } return v as VeraArrayValue }
   private asObject(v: RuntimeValue): VeraObjectValue { if (!(v instanceof VeraObjectValue)) { throw new RuntimeTrap('R0008', 'expected object') } return v as VeraObjectValue }
-  private index(v: RuntimeValue): number { let i = this.asInt(v); if (i < 0 || i > MAX_INT) { throw new RuntimeTrap('R0009', 'array index out of bounds') } return i }
+  private index(v: RuntimeValue): number {
+    let i = this.asNumber(v)
+    if (!Number.isInteger(i)) { throw new RuntimeTrap('R0009', 'array index must be a whole number, got ' + i.toString()) }
+    if (i < 0) { throw new RuntimeTrap('R0009', 'array index out of bounds') }
+    return i
+  }
   private indexValue(arr: VeraArrayValue, idx: number): RuntimeValue { if (idx < 0 || idx >= arr.elements.length) { throw new RuntimeTrap('R0009', 'array index out of bounds') } return arr.elements[idx] }
   private cell(vals: Cell[], idx: number): Cell { if (idx < 0 || idx >= vals.length) { throw new RuntimeTrap('R0016', 'invalid slot') } return vals[idx] }
 }
 
 export function formatRuntimeValue(value: RuntimeValue): string {
-  if (value instanceof VeraIntValue) { return value.value.toString() }
   if (value instanceof VeraNumberValue) { return value.value.toString() }
   if (value instanceof VeraStringValue) { return value.value }
   if (value instanceof VeraBooleanValue) { return value.value ? 'true' : 'false' }
@@ -469,17 +447,14 @@ export function formatRuntimeValue(value: RuntimeValue): string {
 /**
  * Program state, encoded so it survives a restart.
  *
- * Tagged rather than plain JSON for two reasons: plain JSON cannot tell an int
- * from a number, which matters because arithmetic here refuses to mix them; and
- * it would lose classIdentity, which make-object sets and which field access
- * relies on.
+ * Tagged rather than plain JSON because plain JSON would lose classIdentity,
+ * which make-object sets and which field access relies on.
  *
  * Functions are deliberately unrepresentable. A closure in state would be a
  * captured environment that no longer exists after a restart, so it is better to
  * fail loudly at save time than to restore something subtly wrong.
  */
 export function encodeRuntimeValue(value: RuntimeValue): Object {
-  if (value instanceof VeraIntValue) { return ['i', (value as VeraIntValue).value] as Object }
   if (value instanceof VeraNumberValue) { return ['n', (value as VeraNumberValue).value] as Object }
   if (value instanceof VeraStringValue) { return ['s', (value as VeraStringValue).value] as Object }
   if (value instanceof VeraBooleanValue) { return ['b', (value as VeraBooleanValue).value] as Object }
@@ -501,7 +476,6 @@ export function encodeRuntimeValue(value: RuntimeValue): Object {
 export function decodeRuntimeValue(raw: Object): RuntimeValue {
   let parts = raw as Object[]
   let tag = parts[0] as string
-  if (tag === 'i') { return new VeraIntValue(parts[1] as number) }
   if (tag === 'n') { return new VeraNumberValue(parts[1] as number) }
   if (tag === 's') { return new VeraStringValue(parts[1] as string) }
   if (tag === 'b') { return new VeraBooleanValue(parts[1] as boolean) }
@@ -551,7 +525,9 @@ function decodeInstruction(raw: Object[]): Instruction {
   let op = raw[0] as string
   let inst = new Instruction(op)
   switch (op) {
-    case 'push-int': inst.value = raw[1] as string; break
+    // The built-in demo programs (VeraPrograms.ets) were compiled when the
+    // language still had int; their whole-number constants read as numbers.
+    case 'push-int': inst.op = 'push-number'; inst.numValue = parseInt(raw[1] as string); break
     case 'push-number': inst.numValue = raw[1] as number; break
     case 'push-string': inst.value = raw[1] as string; break
     case 'push-boolean': inst.boolValue = raw[1] as boolean; break
@@ -565,7 +541,7 @@ function decodeInstruction(raw: Object[]): Instruction {
     case 'pop': break
     case 'duplicate': break
     case 'unary': inst.operator = raw[1] as string; break
-    case 'binary': inst.operator = raw[1] as string; inst.integer = raw[2] as boolean; break
+    case 'binary': inst.operator = raw[1] as string; break
     case 'jump': inst.target = raw[1] as number; break
     case 'jump-if-false': inst.target = raw[1] as number; break
     case 'call': inst.count = raw[1] as number; inst.awaited = raw[2] as boolean; break

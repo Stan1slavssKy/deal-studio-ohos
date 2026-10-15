@@ -34,13 +34,20 @@ function wrapText(text, size, width) {
   }
   return lines
 }
+// Mirrors formatVeraNumber in VeraUi.ets: decimals -1 is "as it is", without binary noise.
 function formattedInt(node) {
-  const value = node.intValue || 0
-  return (node.prefix || '') + (value < 0 ? '-' : '') +
-    String(Math.abs(value)).padStart(Math.max(1, Math.min(20, node.minimumDigits || 1)), '0') + (node.suffix || '')
+  const value = node.numberValue || 0
+  const decimals = node.decimals === undefined ? -1 : node.decimals
+  const a = Math.abs(value)
+  const text = decimals >= 0 ? a.toFixed(Math.min(Math.floor(decimals), 10))
+    : (Number.isInteger(a) ? String(a) : String(parseFloat(a.toFixed(9))))
+  const [whole, rest] = text.includes('.') ? [text.slice(0, text.indexOf('.')), text.slice(text.indexOf('.'))] : [text, '']
+  const padded = whole.padStart(Math.max(1, Math.min(20, node.minimumDigits || 1)), '0')
+  const zero = parseFloat(padded + rest) === 0
+  return (node.prefix || '') + (value < 0 && !zero ? '-' : '') + padded + rest + (node.suffix || '')
 }
 function formattedTime(node) {
-  const total = Math.max(0, node.intValue || 0) % 1440
+  const total = Math.max(0, node.numberValue || 0) % 1440
   return (node.prefix || '') + String(Math.floor(total / 60)).padStart(2, '0') + ':' +
     String(total % 60).padStart(2, '0') + (node.suffix || '')
 }
@@ -147,8 +154,8 @@ function createRenderer(theme, options) {
       const inner = stack(boxes, w, t.gapTight)
       return frame(inner, width, pad, kind === 'header' ? t.padLoose : pad, pad)
     }
-    if (['text', 'inttext', 'clocktext'].includes(kind)) {
-      const value = kind === 'inttext' ? formattedInt(node) : kind === 'clocktext' ? formattedTime(node) : node.text
+    if (['text', 'numbertext', 'clocktext'].includes(kind)) {
+      const value = kind === 'numbertext' ? formattedInt(node) : kind === 'clocktext' ? formattedTime(node) : node.text
       const box = text(value, style, width, undefined, {eyebrow: style === 'eyebrow'})
       return {...box, svg: move(box, 0, 2), height: box.height ? box.height + 4 : 0}
     }
@@ -194,7 +201,7 @@ function createRenderer(theme, options) {
       }
       return {svg: svg + rect(width, y, 'none', t.radiusCard, t.line), width, height: y}
     }
-    if (kind === 'intfield') {
+    if (kind === 'numberfield') {
       const control = t.controlHeight, gap = t.gapBase
       const valueWidth = Math.max(1, width - 2 * (control + gap))
       const value = text(formattedInt(node), 'heading', valueWidth, t.ink,
@@ -204,9 +211,9 @@ function createRenderer(theme, options) {
         const caption = text(label, 'body', control, ink)
         return `<g opacity="${enabled ? 1 : 0.4}" transform="translate(${x},${(height - control) / 2})">${rect(control, control, fill, control / 2)}${move(caption, (control - caption.width) / 2, (control - caption.height) / 2)}</g>`
       }
-      const svg = stepButton('-', 0, t.secondaryFill, t.secondaryInk, node.enabled !== false && node.intValue > node.minimum) +
+      const svg = stepButton('-', 0, t.secondaryFill, t.secondaryInk, node.enabled !== false && node.numberValue > node.minimum) +
         move(value, control + gap + (valueWidth - value.width) / 2, (height - value.height) / 2) +
-        stepButton('+', width - control, t.primary, t.onPrimary, node.enabled !== false && node.intValue < node.maximum)
+        stepButton('+', width - control, t.primary, t.onPrimary, node.enabled !== false && node.numberValue < node.maximum)
       const inner = stack([text(node.label, 'caption', width, t.inkSoft), {svg, width, height}], width, t.gapTight)
       return frame(inner, width, 0, t.gapTight, t.gapTight)
     }
@@ -235,8 +242,8 @@ function createRenderer(theme, options) {
       const color = T.toneEdge(t, style, t.primary), x = 7 + Math.max(0, width - 14) * frac
       return stack([text(node.label, 'caption', width, t.inkMuted), {svg: `<rect x="7" y="8" width="${Math.max(0, width - 14)}" height="4" rx="2" fill="${t.secondaryFill}"/><rect x="7" y="8" width="${Math.max(0, x - 7)}" height="4" fill="${color}"/>` + (kind === 'slider' ? `<circle cx="${x}" cy="10" r="7" fill="${color}"/>` : ''), width, height: 20}], width, t.gapTight)
     }
-    if (kind === 'stat' || kind === 'intstat') {
-      return stack([text(node.label, 'caption', width, t.inkMuted), text(kind === 'intstat' ? formattedInt(node) : node.text, 'metric', width, T.toneInk(t, style, t.ink)), text(node.value, 'caption', width, t.inkSoft)], width, t.gapTight)
+    if (kind === 'stat' || kind === 'numberstat') {
+      return stack([text(node.label, 'caption', width, t.inkMuted), text(kind === 'numberstat' ? formattedInt(node) : node.text, 'metric', width, T.toneInk(t, style, t.ink)), text(node.value, 'caption', width, t.inkSoft)], width, t.gapTight)
     }
     if (kind === 'badge') {
       const content = text(node.text, 'caption', Math.max(1, width - t.padTight * 2), T.toneInk(t, style, t.ink))

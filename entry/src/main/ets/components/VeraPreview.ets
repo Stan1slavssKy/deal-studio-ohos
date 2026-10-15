@@ -10,9 +10,9 @@
  * one in place.
  */
 
-import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraIntValue, VeraStringValue,
+import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraNumberValue, VeraStringValue,
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
-import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi } from '../vera/VeraUi'
+import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock } from '../vera/VeraUi'
 import { runRawIntent } from '../vera/VeraIntents'
 import { runSdkAdapter } from '../vera/VeraSdkBackend'
 import { LengthMetrics } from '@ohos.arkui.node'
@@ -214,7 +214,7 @@ export struct VeraPreview {
     'slider', 'select', 'divider', 'progress', 'ticker', 'grid', 'listitem', 'canvas',
     'apptheme', 'hero', 'adaptivecolumns', 'header', 'section', 'sectionheader', 'listgroup', 'banner',
     'emptystate', 'stat', 'metricgroup',
-    'inttext', 'intstat', 'intfield', 'timefield', 'intlistitem', 'actionbar',
+    'numbertext', 'numberstat', 'numberfield', 'timefield', 'numberlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
     'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler',
     'table', 'tablerow']
@@ -378,7 +378,7 @@ export struct VeraPreview {
   /** The system back gesture, relayed by the hosting page via backPressSignal. */
   onBackPressSignal(): void {
     if (this.backHandlerAction.length > 0) {
-      this.dispatch(this.backHandlerAction, new VeraIntValue(0))
+      this.dispatch(this.backHandlerAction, new VeraNumberValue(0))
     }
   }
 
@@ -404,7 +404,7 @@ export struct VeraPreview {
       let elapsed = last !== undefined ? now - (last as number) : safe
       this.timerLastFire.set(id, now)
       this.ticking = true
-      this.dispatch(action, new VeraIntValue(Math.round(elapsed)))
+      this.dispatch(action, new VeraNumberValue(Math.round(elapsed)))
       this.ticking = false
     }, safe)
     this.timers.set(id, handle)
@@ -555,7 +555,7 @@ export struct VeraPreview {
   }
 
   private handleAction(action: string, value: number): void {
-    this.dispatch(action, new VeraIntValue(value))
+    this.dispatch(action, new VeraNumberValue(value))
   }
 
   private handleStringAction(action: string, value: string): void {
@@ -567,9 +567,8 @@ export struct VeraPreview {
   }
 
   /**
-   * The single way a person's input reaches a program. Until now the payload was
-   * always an int the program had chosen itself, so nothing typed or toggled
-   * could get in; the value is now whatever the component produces.
+   * The single way a person's input reaches a program: the value is whatever
+   * the component produces -- a number, a string or a boolean.
    */
   private dispatch(action: string, payload: RuntimeValue, persist: boolean = true): void {
     console.info('VERA-CLICK action=' + action + ' rev=' + this.revision.toString())
@@ -962,21 +961,9 @@ export struct VeraPreview {
     return this.sectionFills(style) ? this.t().padCard : 0
   }
 
-  /**
-   * A number, as the program asked for it to be shown.
-   *
-   * This is the formatting the language cannot do. VERA-L has no padStart and
-   * no number formatting of any kind, so a program wanting "07" had to carry a
-   * pad2 function, and one wanting "$1,204" had to build the string by hand.
-   * The node carries the number and the three things worth saying about it.
-   */
-  private formatInt(node: LiveNode): string {
-    let n = node.intValue
-    let negative = n < 0
-    let digits = (negative ? -n : n).toString()
-    // minimumDigits pads the digits, not the sign: -7 to two digits is "-07".
-    while (digits.length < node.minimumDigits) { digits = '0' + digits }
-    return node.prefix + (negative ? '-' : '') + digits + node.suffix
+  /** A number, as the program asked for it to be shown: see formatVeraNumber. */
+  private formatNumber(node: LiveNode): string {
+    return node.prefix + formatVeraNumber(node.numberValue, node.decimals, node.minimumDigits) + node.suffix
   }
 
   /**
@@ -1025,10 +1012,7 @@ export struct VeraPreview {
 
   /** Minutes since midnight as HH:MM, which is what TimeField holds. */
   private formatMinutes(total: number): string {
-    let m = total < 0 ? 0 : total % 1440
-    let h = Math.floor(m / 60)
-    let mm = m % 60
-    return (h < 10 ? '0' : '') + h.toString() + ':' + (mm < 10 ? '0' : '') + mm.toString()
+    return formatVeraClock(total)
   }
 
   /**
@@ -1639,7 +1623,7 @@ export struct VeraPreview {
           // Rules go between rows. A program that puts something else in a
           // group -- an ActionBar for the row above it, most often -- was
           // getting a rule drawn across it, which read as a broken list.
-          if (index > 0 && (child.kind === 'listitem' || child.kind === 'intlistitem')) {
+          if (index > 0 && (child.kind === 'listitem' || child.kind === 'numberlistitem')) {
             Divider()
               .strokeWidth(this.t().borderWidth)
               .color(this.t().lineSoft)
@@ -1798,9 +1782,9 @@ export struct VeraPreview {
       .width('100%')
       .padding(densityPad(this.t(), node.style) - this.t().padTight)
       .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
-    } else if (node.kind === 'inttext') {
+    } else if (node.kind === 'numbertext') {
       // ui.Text's twin for a number the program holds as a number.
-      Text(this.formatInt(node))
+      Text(this.formatNumber(node))
         .fontSize(this.renderTextSize(node.style))
         .fontFamily(this.textFamily(node.style))
         .fontWeight(textWeight(this.t(), node.style))
@@ -1810,7 +1794,7 @@ export struct VeraPreview {
         .flexShrink(1)
         .padding({ top: 2, bottom: 2 })
     } else if (node.kind === 'clocktext') {
-      Text(node.prefix + this.formatMinutes(node.intValue) + node.suffix)
+      Text(node.prefix + this.formatMinutes(node.numberValue) + node.suffix)
         .fontSize(this.renderTextSize(node.style))
         .fontFamily(this.textFamily(node.style))
         .fontWeight(textWeight(this.t(), node.style))
@@ -1819,7 +1803,7 @@ export struct VeraPreview {
         .constraintSize({ maxWidth: '100%' })
         .flexShrink(1)
         .padding({ top: 2, bottom: 2 })
-    } else if (node.kind === 'intstat') {
+    } else if (node.kind === 'numberstat') {
       Column({ space: 2 }) {
         Row({ space: this.t().gapTight }) {
           if (node.icon.length > 0) {
@@ -1836,7 +1820,7 @@ export struct VeraPreview {
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
-        Text(this.formatInt(node))
+        Text(this.formatNumber(node))
           .fontSize(this.renderTextSize('metric'))
           .fontFamily(this.textFamily('metric'))
           .fontWeight(this.t().weightMetric)
@@ -1853,9 +1837,9 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
       .padding(this.t().padBase)
-    } else if (node.kind === 'intfield') {
-      // Stepper rather than a keyboard: the value has to come back as an int,
-      // and there is no way to turn typed text into one.
+    } else if (node.kind === 'numberfield') {
+      // A stepper for a small count; a typed amount goes through ui.TextField
+      // and strings.toNumber instead.
       Column({ space: this.t().gapTight }) {
         if (node.label.length > 0) {
           Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().inkSoft).width('100%')
@@ -1867,15 +1851,15 @@ export struct VeraPreview {
             .width(this.t().controlHeight)
             .height(this.t().controlHeight)
             .type(ButtonType.Circle)
-            .enabled(node.enabled && node.intValue > node.minimum)
+            .enabled(node.enabled && node.numberValue > node.minimum)
             .backgroundColor(this.t().secondaryFill)
             .fontColor(this.t().secondaryInk)
             .onClick(() => {
               if (node.action.length === 0) { return }
-              let next = node.intValue - 1
+              let next = node.numberValue - 1
               if (next >= node.minimum) { this.handleAction(node.action, next) }
             })
-          Text(this.formatInt(node))
+          Text(this.formatNumber(node))
             .fontSize(this.renderTextSize('heading'))
             .fontFamily(this.textFamily('metric'))
             .fontWeight(this.t().weightHeading)
@@ -1888,12 +1872,12 @@ export struct VeraPreview {
             .width(this.t().controlHeight)
             .height(this.t().controlHeight)
             .type(ButtonType.Circle)
-            .enabled(node.enabled && node.intValue < node.maximum)
+            .enabled(node.enabled && node.numberValue < node.maximum)
             .backgroundColor(this.t().primary)
             .fontColor(this.t().onPrimary)
             .onClick(() => {
               if (node.action.length === 0) { return }
-              let next = node.intValue + 1
+              let next = node.numberValue + 1
               if (next <= node.maximum) { this.handleAction(node.action, next) }
             })
         }
@@ -1906,7 +1890,7 @@ export struct VeraPreview {
       Row({ space: this.t().gapBase }) {
         Text(node.label).fontSize(this.t().sizeBody).fontFamily(this.textFamily()).layoutWeight(1)
             .fontColor(this.t().ink)
-        Button(this.formatMinutes(node.intValue))
+        Button(this.formatMinutes(node.numberValue))
           .height(this.t().chipHeight)
           .fontSize(this.t().sizeBody)
           .fontFamily(this.textFamily())
@@ -1919,7 +1903,7 @@ export struct VeraPreview {
             // The phone's own picker, so the value is always a real time and
             // the program never has to validate one.
             TimePickerDialog.show({
-              selected: this.minutesToDate(node.intValue),
+              selected: this.minutesToDate(node.numberValue),
               useMilitaryTime: true,
               onAccept: (result: TimePickerResult) => {
                 let h = result.hour !== undefined ? result.hour as number : 0
@@ -1932,7 +1916,7 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .padding({ top: this.t().padRow, bottom: this.t().padRow })
-    } else if (node.kind === 'intlistitem') {
+    } else if (node.kind === 'numberlistitem') {
       Row({ space: this.t().gapBase + 2 }) {
         if (node.icon.length > 0) {
           this.drawIcon(node.icon, this.t().sizeHeading,
@@ -1947,7 +1931,7 @@ export struct VeraPreview {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
-        Text(this.formatInt(node))
+        Text(this.formatNumber(node))
           .fontSize(this.t().sizeBody)
           .fontFamily(this.textFamily())
           .fontWeight(this.t().weightHeading)
@@ -2429,7 +2413,7 @@ export struct VeraPreview {
             // slider that only answers on release reads as broken. Only the end
             // of the drag is written to disk, so a drag is one save, not fifty.
             if (node.action.length === 0) { return }
-            this.dispatch(node.action, new VeraIntValue(Math.round(v)),
+            this.dispatch(node.action, new VeraNumberValue(Math.round(v)),
               mode === SliderChangeMode.End)
           })
       }
@@ -2559,7 +2543,7 @@ export struct VeraPreview {
       // viewPort-based approach this replaced). The renderer does the
       // normalising -- the program hands raw values and a scale, not a
       // pre-computed string, which is the point of series travelling as
-      // int[] rather than as text.
+      // number[] rather than as text.
       Column({ space: 4 }) {
         if (node.label.length > 0) {
           Text(node.label).fontSize(this.t().sizeBody).fontFamily(this.textFamily())

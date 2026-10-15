@@ -2,14 +2,14 @@ import * as ui from "std/ui"
 
 @jsonable
 class AppState {
-  budget: int;
+  budget: number;
 }
 
 function init(): AppState {
   return { budget: 40 };
 }
 
-function setBudget(state: AppState, value: int): AppState {
+function setBudget(state: AppState, value: number): AppState {
   return { budget: value };
 }
 

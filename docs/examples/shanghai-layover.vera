@@ -22,20 +22,20 @@ import * as calendar from "std/calendar"
 @jsonable
 class Stop {
   name: string;
-  minutes: int;
+  minutes: number;
   latitude: string;
   longitude: string;
   reached: boolean;
-  reachedMinute: int;
+  reachedMinute: number;
 }
 
 @jsonable
 class AppState {
   stops: Stop[];
-  lastReachedIndex: int;
+  lastReachedIndex: number;
   lastAnswer: string;
-  leaveByMinute: int;
-  startMinute: int;
+  leaveByMinute: number;
+  startMinute: number;
 }
 
 function init(): AppState {
@@ -51,9 +51,9 @@ function init(): AppState {
   return {stops: stops, lastReachedIndex: -1, lastAnswer: "", leaveByMinute: 1080, startMinute: 540};
 }
 
-function markReached(state: AppState, index: int): AppState {
+function markReached(state: AppState, index: number): AppState {
   let out: Stop[] = [];
-  let i: int = 0;
+  let i: number = 0;
   while (i < state.stops.length()) {
     let s: Stop = state.stops[i];
     if (i === index) {
@@ -66,7 +66,7 @@ function markReached(state: AppState, index: int): AppState {
   return {stops: out, lastReachedIndex: index, lastAnswer: state.lastAnswer, leaveByMinute: state.leaveByMinute, startMinute: state.startMinute};
 }
 
-function navigate(state: AppState, index: int): AppState {
+function navigate(state: AppState, index: number): AppState {
   let fromPlace: string = "Pudong International Airport";
   let fromLat: string = "31.1443";
   let fromLon: string = "121.8083";
@@ -81,26 +81,26 @@ function navigate(state: AppState, index: int): AppState {
   return state;
 }
 
-function addToCalendar(state: AppState, index: int): AppState {
+function addToCalendar(state: AppState, index: number): AppState {
   let target: Stop = state.stops[index];
-  let startMin: int = state.startMinute;
-  let i: int = 0;
+  let startMin: number = state.startMinute;
+  let i: number = 0;
   while (i < index) {
     startMin = startMin + state.stops[i].minutes + 30;
     i = i + 1;
   }
-  let hour: int = startMin / 60;
-  let minute: int = startMin % 60;
+  let hour: number = (startMin - startMin % 60) / 60;
+  let minute: number = startMin % 60;
   calendar.addEvent({title: target.name, hour: hour, minute: minute, durationMinutes: target.minutes, remindBefore: 15, repeat: "once"}, "onAnswer");
   return state;
 }
 
-function clearCalendar(state: AppState, ignored: int): AppState {
+function clearCalendar(state: AppState, ignored: number): AppState {
   calendar.clearEvents({}, "onAnswer");
   return state;
 }
 
-function openCalendar(state: AppState, ignored: int): AppState {
+function openCalendar(state: AppState, ignored: number): AppState {
   intent.openCalendar({}, "onAnswer");
   return state;
 }
@@ -110,10 +110,10 @@ function onAnswer(state: AppState, value: string): AppState {
 }
 
 function view(state: AppState): ui.View {
-  let count: int = state.stops.length();
-  let reachedCount: int = 0;
-  let plannedMinutes: int = 0;
-  let i: int = 0;
+  let count: number = state.stops.length();
+  let reachedCount: number = 0;
+  let plannedMinutes: number = 0;
+  let i: number = 0;
   while (i < count) {
     let s: Stop = state.stops[i];
     if (s.reached) {
@@ -124,14 +124,14 @@ function view(state: AppState): ui.View {
   }
 
   let rows: ui.View[] = [];
-  let j: int = 0;
+  let j: number = 0;
   while (j < count) {
     let s: Stop = state.stops[j];
     let icon: string = "pin";
     if (s.reached) {
       icon = "check";
     }
-    let subtitle: string = ui.intToString(s.minutes) + " min";
+    let subtitle: string = ui.numberToString(s.minutes) + " min";
     if (s.reached) {
       subtitle = subtitle + " - reached";
     }
@@ -147,9 +147,9 @@ function view(state: AppState): ui.View {
     ui.Header("default", "Shanghai Layover", "11 HOURS", "Land 09:00, back at Pudong in time", "clock"),
     ui.Section("summary", "", "", [
       ui.MetricGroup("default", 3, [
-        ui.IntStat("default", "Stops", count, "", "", 1, "", "pin"),
-        ui.IntStat("accent", "Reached", reachedCount, "", "", 1, "of " + ui.intToString(count), "check"),
-        ui.IntStat("default", "Planned", plannedMinutes, "", " min", 1, "on the ground", "clock")
+        ui.NumberStat("default", "Stops", count, "", "", 1, "", "pin"),
+        ui.NumberStat("accent", "Reached", reachedCount, "", "", 1, "of " + ui.numberToString(count), "check"),
+        ui.NumberStat("default", "Planned", plannedMinutes, "", " min", 1, "on the ground", "clock")
       ]),
       ui.KeyValueGroup("default", 2, [
         ui.KeyValueItem("default", "Land", "09:00", "Pudong International"),
@@ -158,7 +158,7 @@ function view(state: AppState): ui.View {
       ui.ClockText("caption", state.leaveByMinute, "Latest departure ", "")
     ]),
     ui.Section("content", "", "", [
-      ui.SectionHeader("default", "The day, hour by hour", "Tap a stop to mark it reached", ui.intToString(reachedCount) + " of " + ui.intToString(count)),
+      ui.SectionHeader("default", "The day, hour by hour", "Tap a stop to mark it reached", ui.numberToString(reachedCount) + " of " + ui.numberToString(count)),
       ui.When(count === 0,
         ui.EmptyState("default", "No stops planned", "Add a stop to build your day.", "", "", "pin")),
       ui.When(count > 0, ui.ListGroup("default", "", rows))
