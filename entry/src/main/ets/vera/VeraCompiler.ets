@@ -511,6 +511,7 @@ class Lexer {
         else if (esc === 't') value += '\t'
         else if (esc === '\\') value += '\\'
         else if (esc === '"') value += '"'
+        else if (esc === 'u' && this.scanUnicodeEscape()) { value += this.escaped; continue }
         else value += esc
         this.pos++; this.col++
       } else {
@@ -521,6 +522,40 @@ class Lexer {
     }
     if (this.pos < this.source.length) { this.pos++; this.col++ }
     return new Token('string', value, this.makeSpan(start))
+  }
+
+  private escaped: string = ''
+
+  /**
+   * \uXXXX or \u{X...}, as in TypeScript, with pos on the 'u'. The model writes
+   * " · " for a middle dot; without this the backslash was dropped and the
+   * screen read "u00b7". On success the character is left in `escaped` and pos
+   * is past the escape; a malformed one consumes nothing and stays a plain 'u'.
+   */
+  private scanUnicodeEscape(): boolean {
+    let begin = this.pos + 1
+    let digits = ''
+    let end = begin
+    if (begin < this.source.length && this.source[begin] === '{') {
+      let close = this.source.indexOf('}', begin + 1)
+      if (close < 0) return false
+      digits = this.source.substring(begin + 1, close)
+      end = close + 1
+      if (digits.length < 1 || digits.length > 6) return false
+    } else {
+      digits = this.source.substring(begin, begin + 4)
+      end = begin + 4
+      if (digits.length < 4) return false
+    }
+    for (let i = 0; i < digits.length; i++) {
+      if ('0123456789abcdefABCDEF'.indexOf(digits[i]) < 0) return false
+    }
+    let code = parseInt(digits, 16)
+    if (code > 0x10FFFF) return false
+    this.escaped = String.fromCodePoint(code)
+    this.col += end - this.pos
+    this.pos = end
+    return true
   }
 
   private scanSymbol(start: Position): Token {

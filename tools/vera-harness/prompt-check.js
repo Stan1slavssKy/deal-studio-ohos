@@ -112,6 +112,17 @@ run('Widget money guidance formats cents, rounding and negative amounts',()=>{
   for(const [input,amount,tip] of cases){let st=m.execute('set',[m.execute('init'),new runtime.VeraStringValue(input)]);const nodes=ui.decodeVeraUi(m.execute('view',[st]));assert.equal(nodes[0].children[0].text,amount,'Amount for '+input);assert.equal(nodes[0].children[1].text,tip,'Tip for '+input);}
   return {cases:cases.length};
 });
+run('String escapes: \\uXXXX and \\u{...} as in TypeScript, malformed ones left as text',()=>{
+  // The model wrote " · " for a middle dot; the backslash used to be
+  // dropped and the egg timer read "Soft boiled u00b7 360 min".
+  const literals=['"a \\u00b7 b"','"\\u{1F95A}"','"\\u00E9t\\u00e9"','"\\u12"','"\\u{}x"','"\\uZZZZ"','"tab\\tq\\"\\\\"','"\\u0041\\u0042"'];
+  const want=['a · b','\u{1F95A}','été','u12','u{}x','uZZZZ','tab\tq"\\','AB'];
+  const source='@jsonable class AppState { n: number; }\nfunction init(): AppState { return {n: 0}; }\nfunction view(state: AppState): ui.View { return ui.AppTheme("clean", "", ['+literals.map(l=>'ui.Text("body", '+l+')').join(', ')+']); }';
+  const h=new ui.UiHostEnvironment();const m=new runtime.VirtualMachine(runtime.deserializeVbc2(compiler.compileVeraSource(source).vbc2),h);
+  const texts=ui.decodeVeraUi(m.execute('view',[m.execute('init')]))[0].children.map(n=>n.text);
+  assert.deepEqual(texts,want);
+  return {texts};
+});
 (async()=>{
   const llama=load(path.join(base,'LlamaEngine.ets'));
   const deep=load(path.join(base,'DeepSeekEngine.ets'));
