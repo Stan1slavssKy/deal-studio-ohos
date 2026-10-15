@@ -6,11 +6,14 @@ export class CalendarSdkContract {
   params: string
   returnType: string
   description: string
+  /** A complete sdk.call for the common case, copied into the tool result as `call`. */
+  call: string
 
-  constructor(params: string, returnType: string, description: string) {
+  constructor(params: string, returnType: string, description: string, call: string = '') {
     this.params = params
     this.returnType = returnType
     this.description = description
+    this.call = call
   }
 }
 
@@ -41,6 +44,9 @@ export const calendarSdkTargets: string[] = [
 
 const EVENT_PARAMS: string = 'title?: string, date?: YYYY-MM-DD, hour?: 0-23, minute?: 0-59, durationMinutes?: positive integer (default 60), startTime?: epoch milliseconds string, endTime?: epoch milliseconds string, description?: string, timeZone?: string, isAllDay?: true|false, identifier?: string, location?: string, remindBefore?: integer minutes, repeat?: once|none|daily|weekly|monthly|yearly, event?: JSON Event wire'
 const EVENT_WIRE: string = 'JSON is opaque to VERA (no JSON parser). All IDs/calendarIds must be positive int32 (1..2147483647). Native void completion becomes ok, not verified persistence. Event wire uses decimal strings for id/startTime/endTime/instanceStartTime/instanceEndTime; numeric type 0|1, boolean isAllDay/isLunar, string title/description/timeZone/identifier, location {location?:string,longitude?:number,latitude?:number}, reminderTime integer array, recurrenceRule {recurrenceFrequency:0|1|2|3 (yearly/monthly/weekly/daily),expire?:epoch string,count?:nonnegative integer,interval?:nonnegative integer,excludedDates?:epoch string array,daysOfWeek?:1-7 array,daysOfMonth?:1-31 array,daysOfYear?:1-366 array,weeksOfMonth?:1-5 array,weeksOfYear?:1-53 array,monthsOfYear?:1-12 array}. Input rejects attendee/service and instance fields; id is update-only. Read DTOs also expose attendee/service. Unsupported JSON fields are errors. JSON event cannot be mixed with flat event fields. Local dates use host time zone; timeZone is event metadata, not a date conversion zone. '
+// The JSON event schema is long and the flat fields cover what a generated app
+// needs, so single-event contracts point at it instead of repeating it.
+const EVENT_WIRE_POINTER: string = 'Use the flat fields; the event JSON wire (schema in Calendar.addEvents) cannot be mixed with them. Local dates use the host time zone. '
 const CALENDAR_SELECTION: string = 'calendarId?: positive int32 decimal (1..2147483647) string'
 const MANAGER_SELECTION: string = 'manager?: vera-calendar-manager'
 const EVENT_KEYS: string[] = ['id', 'type', 'title', 'location', 'startTime', 'endTime', 'isAllDay', 'attendee', 'timeZone', 'reminderTime', 'recurrenceRule', 'description', 'service', 'identifier', 'isLunar', 'instanceStartTime', 'instanceEndTime']
@@ -60,18 +66,21 @@ export function calendarSdkContract(target: string): CalendarSdkContract | undef
     case PREFIX + 'CalendarManager.getAllCalendars':
       return new CalendarSdkContract(MANAGER_SELECTION, 'string', 'Returns opaque JSON [{id:string,account:{name:string,type:string,displayName?:string}}]; VERA has no JSON parser.')
     case PREFIX + 'CalendarManager.editEvent':
-      return new CalendarSdkContract(MANAGER_SELECTION + ', ' + EVENT_PARAMS, 'string', EVENT_WIRE + 'Opens native event creation: positive int32 decimal (1..2147483647) ID, cancelled for negative result, error for zero/undefined. No whole-calendar permissions are requested.')
+      return new CalendarSdkContract(MANAGER_SELECTION + ', ' + EVENT_PARAMS, 'string', EVENT_WIRE_POINTER + 'Opens native event creation: positive int32 decimal (1..2147483647) ID, cancelled for negative result, error for zero/undefined. No whole-calendar permissions are requested.')
     case PREFIX + 'Calendar.addEvent':
-      return new CalendarSdkContract(CALENDAR_SELECTION + ', ' + EVENT_PARAMS, 'string', EVENT_WIRE + 'Returns decimal event ID. Flat title/hour/minute creates today; date optional. Epoch start/end must be supplied together. No ID allowed on creation.')
+      return new CalendarSdkContract(CALENDAR_SELECTION + ', ' + EVENT_PARAMS, 'string', 'Adds one event to the default calendar; the answer is its decimal event ID, which deleteEvent/deleteEvents take, so keep it in state. Give either date (YYYY-MM-DD, default today) with hour and minute, or startTime and endTime together as whole epoch milliseconds, e.g. ui.numberToString(startMs). remindBefore is minutes before the start. ' + EVENT_WIRE_POINTER + 'No ID allowed on creation.',
+        'sdk.call("CalendarKit.Calendar.addEvent", ["title", "Dentist", "startTime", ui.numberToString(startMs), "endTime", ui.numberToString(endMs), "location", "12 Main Street", "remindBefore", "15"], "onEventAdded")')
     case PREFIX + 'Calendar.addEvents':
       return new CalendarSdkContract(CALENDAR_SELECTION + ', events: JSON Event wire array', 'string', EVENT_WIRE + 'Validates the entire nonempty array before writing; native void becomes ok, not IDs.')
     case PREFIX + 'Calendar.updateEvent':
-      return new CalendarSdkContract(CALENDAR_SELECTION + ', id: positive int32 decimal (1..2147483647) string, ' + EVENT_PARAMS, 'string', EVENT_WIRE + 'Fetches existing event by ID and merges supplied fields, preserving absent fields; validates the merged event. JSON event may be a patch with matching id. Location members merge with existing coordinates. Duration-only preserves exact startTime. Existing empty/absent titles are preserved; supplied titles must be nonempty. Native nonrecurring sentinel and empty recurrence arrays are normalized. Clearing a persisted recurrence with repeat once/none is unsupported and rejected. Returns ok for native void completion, not a persistence guarantee.')
+      return new CalendarSdkContract(CALENDAR_SELECTION + ', id: positive int32 decimal (1..2147483647) string, ' + EVENT_PARAMS, 'string', EVENT_WIRE_POINTER + 'Fetches existing event by ID and merges supplied fields, preserving absent fields; validates the merged event. JSON event may be a patch with matching id. Location members merge with existing coordinates. Duration-only preserves exact startTime. Existing empty/absent titles are preserved; supplied titles must be nonempty. Native nonrecurring sentinel and empty recurrence arrays are normalized. Clearing a persisted recurrence with repeat once/none is unsupported and rejected. Returns ok for native void completion, not a persistence guarantee.')
     case PREFIX + 'Calendar.deleteEvent':
     case PREFIX + 'Calendar.openEventEditPage':
-      return new CalendarSdkContract(CALENDAR_SELECTION + ', id: positive int32 decimal (1..2147483647) string', 'string', 'Returns ok; native errors retain their codes. openEventEditPage requires API 26 and reports an explicit unsupported error if the function is absent.')
+      return new CalendarSdkContract(CALENDAR_SELECTION + ', id: positive int32 decimal (1..2147483647) string', 'string', 'Takes the ID addEvent answered with. Returns ok; native errors retain their codes. openEventEditPage requires API 26 and reports an explicit unsupported error if the function is absent.',
+        'sdk.call("' + target + '", ["id", item.eventId], "onAnswer")')
     case PREFIX + 'Calendar.deleteEvents':
-      return new CalendarSdkContract(CALENDAR_SELECTION + ', ids: comma-separated positive int32 decimal (1..2147483647) IDs', 'string', 'Deletes events and returns ok; malformed or empty IDs are errors.')
+      return new CalendarSdkContract(CALENDAR_SELECTION + ', ids: comma-separated positive int32 decimal (1..2147483647) IDs', 'string', 'Deletes the events whose IDs addEvent answered with -- the way to remove every event this app added -- and returns ok; malformed or empty IDs are errors, so skip the call when there are none.',
+        'sdk.call("CalendarKit.Calendar.deleteEvents", ["ids", "12,15,31"], "onEventsDeleted")')
     case PREFIX + 'Calendar.getEvents':
       return new CalendarSdkContract(CALENDAR_SELECTION + ', ids?: comma-separated IDs, title?: string, start?: epoch string, end?: epoch string, eventFilter?: JSON descriptor, eventKey?: comma-separated Event keys, format?: json', 'string', EVENT_WIRE + 'Returns opaque JSON Event DTO array; choose only one of ids/title/start+end/eventFilter. Descriptor schema {kind:"id",ids:string[]} or {kind:"title",title:string} or {kind:"time",start:string,end:string}. eventKey: ' + EVENT_KEYS.join(',') + '.')
     case PREFIX + 'Calendar.queryEventInstances':
