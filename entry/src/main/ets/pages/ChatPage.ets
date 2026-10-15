@@ -574,7 +574,11 @@ struct ChatPage {
   private apply(msg: ChatMessage, parsed: ParsedReply): void {
     msg.before = parsed.before + msg.beforeNote
     msg.after = parsed.after
-    if (msg.appState === APP_BUILDING || msg.appState === APP_READY) {
+    // A failure the builder already reported (startWidget, run while the reply
+    // was still streaming, found no such widget) stands: the description in a
+    // later chunk must not turn it back into "describing".
+    let builderFailed = msg.appState === APP_FAILED && parsed.error.length === 0
+    if (msg.appState === APP_BUILDING || msg.appState === APP_READY || builderFailed) {
       this.scrollDown()
       return
     }

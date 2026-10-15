@@ -9,11 +9,11 @@ function init(): AppState {
   return { saved: false };
 }
 
-function save(state: AppState, v: int): AppState {
+function save(state: AppState, v: number): AppState {
   return { saved: true };
 }
 
-function dismiss(state: AppState, v: int): AppState {
+function dismiss(state: AppState, v: number): AppState {
   return { saved: false };
 }
 

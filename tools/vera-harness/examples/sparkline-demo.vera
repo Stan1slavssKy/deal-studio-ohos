@@ -2,7 +2,7 @@ import * as ui from "std/ui"
 
 @jsonable
 class AppState {
-  nothing: int;
+  nothing: number;
 }
 
 function init(): AppState {

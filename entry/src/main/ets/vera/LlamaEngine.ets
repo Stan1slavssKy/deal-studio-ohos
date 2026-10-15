@@ -30,6 +30,8 @@ export class GenerateRequest {
   topP: number = 0.95
   seed: number = 42
   previousSource: string = ''
+  /** previousSource failed to compile and the reply is SEARCH/REPLACE edits to it (VeraRepair), returned raw. */
+  repairByEdit: boolean = false
   /** std/ui components the system prompt describes; empty means all of them. */
   uiSelected: string[] = []
   /** Offer find_ui_component to the model. */

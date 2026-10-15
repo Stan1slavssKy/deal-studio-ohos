@@ -40,6 +40,7 @@ import { GenerateRequest, GenerateResult, TokenCallback } from './LlamaEngine'
 import { settings } from './SettingsStore'
 import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
 import { calendarSdkContract } from './VeraCalendarSdk'
+import { sdkContract } from './VeraSdkContracts'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
 import { isSdkTargetImplemented } from './VeraSdkBackend'
@@ -172,7 +173,7 @@ export function toolSchemas(withUiTool: boolean): Record<string, Object>[] {
 
   let intentFn: Record<string, Object> = {}
   intentFn['name'] = INTENT_TOOL_NAME
-  intentFn['description'] = "Find actions in other apps as sdk.call candidates. Catalog results have specification or device evidence. Raw results come from an unverified device registry. Prefer a suitable catalog result. Copy discovered targets, parameter names, modes, and enum values exactly. Adapt data values to the request where the signature permits. Acceptance does not prove the device completed the action. Show returned results and refusals."
+  intentFn['description'] = "Find actions in other apps as sdk.call candidates. Catalog results have specification or device evidence. Raw results come from an unverified device registry. Prefer a suitable catalog result. Copy discovered targets, parameter names, modes, and enum values exactly. Adapt data values to the request where the signature permits. Acceptance does not prove the device completed the action. Show returned results and refusals. Adding, changing or deleting calendar events is not an intent: those are CalendarKit SDK functions, returned here under sdkFunctions when the need matches, and by find_sdk_function."
   intentFn['parameters'] = needParameter('Plain-language description of what another app needs to do, e.g. "start navigation to a place" or "send a text message".')
   let intentTool: Record<string, Object> = {}
   intentTool['type'] = 'function'
@@ -189,6 +190,52 @@ export function toolSchemas(withUiTool: boolean): Record<string, Object>[] {
   return withUiTool ? [sdkTool, intentTool, uiTool] : [sdkTool, intentTool]
 }
 
+/**
+ * A copyable sdk.call for an SDK result: its required parameters as name and
+ * placeholder pairs. Shown so the model does not have to reason out the call
+ * form -- whether a mode is needed, how values are passed -- from prose.
+ */
+function sdkCallExample(target: string, params: string): string {
+  let parts: string[] = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i <= params.length; i++) {
+    let ch = i < params.length ? params.charAt(i) : ','
+    if (ch === '{' || ch === '[' || ch === '(' || ch === '<') { depth++ }
+    else if (ch === '}' || ch === ']' || ch === ')' || ch === '>') { depth-- }
+    else if (ch === ',' && depth <= 0) { parts.push(params.substring(start, i).trim()); start = i + 1 }
+  }
+  let pairs: string[] = []
+  for (let part of parts) {
+    let colon = part.indexOf(':')
+    if (colon <= 0) { continue }
+    let name = part.substring(0, colon).trim()
+    if (name.endsWith('?') || !/^[A-Za-z_][A-Za-z0-9_.]*$/.test(name)) { continue }
+    pairs.push('"' + name + '", "<' + part.substring(colon + 1).trim().replace(/"/g, "'") + '>"')
+  }
+  return 'sdk.call("' + target + '", [' + pairs.join(', ') + '], "onAnswer")'
+}
+
+/** One find_sdk_function result as the model sees it, with an adapter's own contract where it has one. */
+function sdkResultItem(e: SdkEntry): Record<string, Object> {
+  let item: Record<string, Object> = {}
+  let target = e.kit + '.' + e.module + '.' + e.name
+  item['target'] = target
+  item['params'] = e.params
+  item['returnType'] = e.returnType
+  item['description'] = e.summary.length > 0 ? e.summary : e.description
+  let contract = sdkContract(target)
+  if (contract !== undefined) {
+    item['params'] = contract.params
+    item['returnType'] = contract.returnType
+    item['description'] = contract.description
+    item['implemented'] = true
+  }
+  item['call'] = contract !== undefined && contract.call.length > 0 ? contract.call :
+    sdkCallExample(target, item['params'] as string)
+  return item
+}
+
 /** find_sdk_function's answer, in the shape handed back as the tool result. */
 function sdkResultsJson(entries: SdkEntry[]): string {
   let body: Record<string, Object> = {}
@@ -198,31 +245,25 @@ function sdkResultsJson(entries: SdkEntry[]): string {
     return JSON.stringify(body)
   }
   let items: Record<string, Object>[] = []
-  for (let e of entries) {
-    let item: Record<string, Object> = {}
-    let target = e.kit + '.' + e.module + '.' + e.name
-    item['target'] = target
-    item['params'] = e.params
-    item['returnType'] = e.returnType
-    item['description'] = e.summary.length > 0 ? e.summary : e.description
-    let contract = calendarSdkContract(target)
-    if (contract !== undefined) {
-      item['nativeParams'] = e.params
-      item['nativeReturnType'] = e.returnType
-      item['params'] = contract.params
-      item['returnType'] = contract.returnType
-      item['description'] = contract.description
-      item['implemented'] = true
-    }
-    items.push(item)
-  }
+  for (let e of entries) { items.push(sdkResultItem(e)) }
   body['results'] = items
   return JSON.stringify(body)
 }
 
-/** find_intent_function's answer, in the shape handed back as the tool result. */
-function intentResultsJson(entries: IntentEntry[]): string {
+/**
+ * find_intent_function's answer, in the shape handed back as the tool result.
+ * `sdkAlso` is the curated SDK adapters (CalendarKit) that the same need finds
+ * in the SDK index. Creating or deleting a calendar event is an SDK function,
+ * not an intent, and a model that asks only find_intent_function finds just
+ * "opens the calendar app" -- seen to settle for clock alarms instead.
+ */
+function intentResultsJson(entries: IntentEntry[], sdkAlso: SdkEntry[] = []): string {
   let body: Record<string, Object> = {}
+  if (sdkAlso.length > 0) {
+    let also: Record<string, Object>[] = []
+    for (let e of sdkAlso) { also.push(sdkResultItem(e)) }
+    body['sdkFunctions'] = also
+  }
   if (entries.length === 0) {
     body['results'] = []
     body['note'] = 'No intent matched. Try a different, more specific phrasing, or if this app does not need to reach another app, it may not need this tool at all.'
@@ -279,6 +320,32 @@ export function traceTool(src: string, round: number, name: string, need: string
   trace('tool', f)
 }
 
+/** How deep in the SDK ranking a curated adapter may sit and still ride along with an intent answer. */
+const SDK_ALSO_DEPTH = 6
+const SDK_ALSO_LIMIT = 3
+
+/**
+ * The curated SDK adapters near the top of the SDK ranking for this need, for
+ * intentResultsJson. Only an extra: a failing SDK search gives none rather than
+ * taking the intent answer down with it.
+ */
+async function curatedSdkAlso(need: string): Promise<SdkEntry[]> {
+  let ranked: SdkEntry[] = []
+  try {
+    let embedded = await findSdkFunctionByEmbedding(need, SDK_ALSO_DEPTH, isSdkTargetImplemented)
+    ranked = embedded !== null ? embedded : findSdkFunctionFromCache(need, SDK_ALSO_DEPTH, isSdkTargetImplemented)
+  } catch (e) {
+    console.warn('VERA-INTENT-SDK-ALSO failed: ' + (e as Error).message)
+    return []
+  }
+  let out: SdkEntry[] = []
+  for (let e of ranked) {
+    if (out.length >= SDK_ALSO_LIMIT) { break }
+    if (calendarSdkContract(e.kit + '.' + e.module + '.' + e.name) !== undefined) { out.push(e) }
+  }
+  return out
+}
+
 export async function discoveryToolResult(name: string, need: string, round: number = 0): Promise<string> {
   let startedAt = Date.now()
   if (name === INTENT_TOOL_NAME) {
@@ -295,7 +362,7 @@ export async function discoveryToolResult(name: string, need: string, round: num
       (results.length > 0 ? ' top=' + results[0].kind + ':' + results[0].name : ''))
     console.info('VERA-INTENT-TIMING need="' + need + '" tokenFullMs=' + tokenMs.toString() +
       ' embeddingFullMs=' + embedMs.toString() + ' callTotalMs=' + (Date.now() - startedAt).toString())
-    return intentResultsJson(results)
+    return intentResultsJson(results, await curatedSdkAlso(need))
   }
   if (name === SDK_TOOL_NAME) {
     let tokenResults = findSdkFunctionFromCache(need, SDK_SEARCH_LIMIT, isSdkTargetImplemented)
@@ -469,7 +536,11 @@ export class DeepSeekEngine {
     }
     // Mirrors LlamaEngine.buildPrompt: an existing program is replayed as the
     // assistant's own last turn, so the model edits it instead of restarting.
-    if (request.previousSource.length > 0) {
+    if (request.previousSource.length > 0 && request.repairByEdit) {
+      // The repair prompt itself says how to write the edits (VeraRepair).
+      messages.push(plainMessage('assistant', request.previousSource))
+      messages.push(plainMessage('user', request.userPrompt))
+    } else if (request.previousSource.length > 0) {
       messages.push(plainMessage('assistant', request.previousSource))
       messages.push(plainMessage('user', 'Return a complete replacement of the program above. Preserve unrelated behavior and compatible state field names and types. ' +
         'Use source code only, without a patch, explanation, or continuation. Apply this request and any repair diagnostics: ' + request.userPrompt))
@@ -485,7 +556,11 @@ export class DeepSeekEngine {
       this.progress.round = round
       this.report('request')
       try {
-        turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken, TOOLS_AUTO, 'gen', round)
+        // An edit repair fixes diagnostics in a program whose lookups are done;
+        // offered tools, the model re-ran a search it already had (egg-3, 5 s).
+        // Defined but not callable, so the cached prompt prefix still matches.
+        turn = await this.streamOnce(messages, request.temperature, request.maxTokens, onToken,
+          request.repairByEdit ? TOOLS_NONE : TOOLS_AUTO, 'gen', round)
       } catch (e) {
         this.generating = false
         throw e as Error
@@ -505,51 +580,15 @@ export class DeepSeekEngine {
       messages.push(assistantToolCallMessage(turn.toolCalls, turn.reasoning))
       let toolsStartedAt = Date.now()
       let toolNames: string[] = []
+      // The calls of one round are independent: run them together and answer
+      // in the order they were asked.
+      let pendingResults: Promise<Record<string, Object>>[] = []
       for (let call of turn.toolCalls) {
         toolNames.push(call.name)
-        let need = ''
-        try {
-          let args = JSON.parse(call.arguments) as Record<string, Object>
-          let n = args['need']
-          if (typeof n === 'string') { need = n as string }
-        } catch (_e) {
-          // Malformed arguments: search with nothing, which finds nothing --
-          // the tool result below tells the model that plainly rather than
-          // dropping its call silently.
-        }
-        this.progress.tool = call.name
-        this.progress.need = need
-        this.report('tool')
-        let callStartedAt = Date.now()
-        if (call.name === INTENT_TOOL_NAME || call.name === SDK_TOOL_NAME) {
-          let result = await discoveryToolResult(call.name, need, round)
-          traceTool('gen', round, call.name, need, callStartedAt, result)
-          messages.push(toolResultMessage(call.id, result))
-        } else if (call.name === UI_TOOL_NAME) {
-          let shown = new Set<string>(request.uiSelected)
-          let names: string[] = []
-          let note = 'No further component matched. Use what the list already offers.'
-          if (request.uiSelected.length === 0) {
-            note = 'Every component is already described in the system prompt.'
-          } else {
-            let found = await findUiComponentsByEmbedding(need, UI_SEARCH_LIMIT, shown)
-            if (found !== null) {
-              names = found
-            } else {
-              // Index not ready: hand back every component not yet shown, so
-              // the model is never left without the one it asked for.
-              for (let c of optionalComponents()) { if (!shown.has(c.name)) { names.push(c.name) } }
-            }
-          }
-          console.info('VERA-UI-TOOL round=' + round.toString() + ' need="' + need + '" found=[' +
-            names.join(', ') + ']')
-          let uiResult = uiResultsJson(names, note)
-          traceTool('gen', round, call.name, need, callStartedAt, uiResult)
-          messages.push(toolResultMessage(call.id, uiResult))
-        } else {
-          messages.push(toolResultMessage(call.id, 'Unknown discovery tool.'))
-        }
+        pendingResults.push(this.runToolCall(call, request, round))
       }
+      let results = await Promise.all(pendingResults)
+      for (let r of results) { messages.push(r) }
       logStep('tools', toolsStartedAt, 'src=gen round=' + round.toString() + ' calls=' + toolNames.join(','))
     }
 
@@ -585,10 +624,58 @@ export class DeepSeekEngine {
 
     this.generating = false
     let result = new GenerateResult()
-    result.text = extractVeraSource(this.text)
+    // Edits are parsed by the caller; a fence around one block must not cut the rest.
+    result.text = request.repairByEdit ? this.text.trim() : extractVeraSource(this.text)
     result.inputTokens = this.inputTokens
     result.outputTokens = this.outputTokens
     return result
+  }
+
+  /** Runs one discovery call of a tool round and returns its tool message. */
+  private async runToolCall(call: ToolCallAccumulator, request: GenerateRequest,
+      round: number): Promise<Record<string, Object>> {
+    let need = ''
+    try {
+      let args = JSON.parse(call.arguments) as Record<string, Object>
+      let n = args['need']
+      if (typeof n === 'string') { need = n as string }
+    } catch (_e) {
+      // Malformed arguments: search with nothing, which finds nothing --
+      // the tool result below tells the model that plainly rather than
+      // dropping its call silently.
+    }
+    this.progress.tool = call.name
+    this.progress.need = need
+    this.report('tool')
+    let callStartedAt = Date.now()
+    if (call.name === INTENT_TOOL_NAME || call.name === SDK_TOOL_NAME) {
+      let result = await discoveryToolResult(call.name, need, round)
+      traceTool('gen', round, call.name, need, callStartedAt, result)
+      return toolResultMessage(call.id, result)
+    }
+    if (call.name === UI_TOOL_NAME) {
+      let shown = new Set<string>(request.uiSelected)
+      let names: string[] = []
+      let note = 'No further component matched. Use what the list already offers.'
+      if (request.uiSelected.length === 0) {
+        note = 'Every component is already described in the system prompt.'
+      } else {
+        let found = await findUiComponentsByEmbedding(need, UI_SEARCH_LIMIT, shown)
+        if (found !== null) {
+          names = found
+        } else {
+          // Index not ready: hand back every component not yet shown, so
+          // the model is never left without the one it asked for.
+          for (let c of optionalComponents()) { if (!shown.has(c.name)) { names.push(c.name) } }
+        }
+      }
+      console.info('VERA-UI-TOOL round=' + round.toString() + ' need="' + need + '" found=[' +
+        names.join(', ') + ']')
+      let uiResult = uiResultsJson(names, note)
+      traceTool('gen', round, call.name, need, callStartedAt, uiResult)
+      return toolResultMessage(call.id, uiResult)
+    }
+    return toolResultMessage(call.id, 'Unknown discovery tool.')
   }
 
   /**

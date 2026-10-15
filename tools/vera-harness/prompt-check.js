@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const cp = require('node:child_process');
 const ts = (process.env.VERA_TYPESCRIPT_PATH ? require(process.env.VERA_TYPESCRIPT_PATH) : require('typescript'));
 const root = path.resolve(process.argv[2] || path.join(__dirname, '../..'));
-const output = path.resolve(process.argv[3] || 'prompt-verification.json');
+const output = path.resolve(process.argv[3] || '/tmp/vera-prompt-verification.json');
 const base = path.join(root, 'entry/src/main/ets/vera');
 const requests = [], responses = [], cache = new Map(), checks = [];
 const http = {RequestMethod:{POST:'POST'}, createHttp(){
@@ -49,12 +49,12 @@ const runtime=load(path.join(base,'VeraInterpreter.ets'));
 const ui=load(path.join(base,'VeraUi.ets'));
 const catalog=load(path.join(base,'VeraUiCatalog.ets'));
 const selection=load(path.join(base,'VeraUiSelect.ets'));
-const example=skill.slice(skill.lastIndexOf('\nimport * as ui from "std/ui"')+1).trim();
+const example=skill.slice(skill.indexOf('\n@jsonable', skill.lastIndexOf('\nExample'))+1).trim();
 let machine,host,state,tree;
 function render(current){host.effectsAllowed=false;const result=ui.decodeVeraUi(machine.execute('view',[current]));return result;}
 function countNodes(nodes){return nodes.reduce((sum,n)=>sum+1+countNodes(n.children),0)}
 run('Prompt template assembly: full, selected, widget',()=>{
-  for(const [name,note,selected] of [['full','',null],['selected',selection.UI_TOOL_NOTE,new Set(['IntField'])],['widget','',null]]){
+  for(const [name,note,selected] of [['full','',null],['selected',selection.UI_TOOL_NOTE,new Set(['NumberField'])],['widget','',null]]){
     let text=skill.replace('{{UI_CATALOG}}',catalog.describeCatalogForPrompt(selected)).replace('{{UI_TOOL_NOTE}}\n',note)+(name==='widget'?widget:'');
     assert(!/\{\{UI_/.test(text),'Unresolved placeholder in '+name);
     assert(text.includes('ui.AppTheme'),'Root theme absent');
@@ -75,13 +75,13 @@ run('Render initial state through real VM and UI decoder',()=>{
 run('Edit input and add entry without mutating earlier state',()=>{
   const before=JSON.stringify(runtime.encodeRuntimeValue(state));
   host.effectsAllowed=true;
-  let adjusted=machine.execute('setSize',[state,new runtime.VeraIntValue(30)]);
-  let added=machine.execute('add',[adjusted,new runtime.VeraIntValue(0)]);
+  let adjusted=machine.execute('setSize',[state,new runtime.VeraNumberValue(30)]);
+  let added=machine.execute('add',[adjusted,new runtime.VeraNumberValue(0)]);
   assert.equal(JSON.stringify(runtime.encodeRuntimeValue(state)),before,'Add handler mutated an earlier state');
   const raw=runtime.encodeRuntimeValue(added); assert(raw);
   assert.equal(added.fields.get('log').elements.length,1);
   const first=JSON.stringify(runtime.encodeRuntimeValue(added));
-  let addedAgain=machine.execute('add',[added,new runtime.VeraIntValue(0)]);
+  let addedAgain=machine.execute('add',[added,new runtime.VeraNumberValue(0)]);
   assert.equal(JSON.stringify(runtime.encodeRuntimeValue(added)),first,'Second add mutated prior state');
   assert.equal(addedAgain.fields.get('log').elements.length,2);
   state=addedAgain;return {entries:2};
@@ -101,21 +101,44 @@ run('Intent callback classification through compile, dispatch and render',()=>{
   for(const [answer,expected] of cases){let st=m.execute('onAnswer',[m.execute('init'),new runtime.VeraStringValue(answer)]);const nodes=ui.decodeVeraUi(m.execute('view',[st]));assert.equal(nodes[0].children[0].text,answer);assert.equal(nodes[0].children[1].text,String(expected));}
   return {cases:cases.length,rawAnswersPreserved:true};
 });
-run('Widget currency helper handles cents and negative amounts',()=>{
-  const begin=widget.indexOf('function money(');assert(begin>=0,'Currency helper missing');
-  let open=widget.indexOf('{',begin),depth=1,end=open+1;
-  while(depth>0&&end<widget.length){if(widget[end]==='{')depth++;if(widget[end]==='}')depth--;end++;}
-  const helper=widget.slice(begin,end);
-  const source='import * as ui from "std/ui"\n'+helper+'\n@jsonable class AppState { cents: int; }\nfunction init(): AppState { return {cents: 0}; }\nfunction set(state: AppState, value: int): AppState { return {cents: value}; }\nfunction view(state: AppState): ui.View { return ui.AppTheme("technical", "", [ui.Text("body", money(state.cents))]); }';
+run('Widget money guidance formats cents, rounding and negative amounts',()=>{
+  // The widget prompt now tells the model to keep money as a number and let
+  // ui.formatNumber / ui.NumberText write it, and to read typed amounts with
+  // strings.toNumber. This runs exactly that path.
+  assert(widget.includes('ui.formatNumber(amount, 2)')&&widget.includes('strings.toNumber(value, 0)'),'Money guidance missing');
+  const source='import * as ui from "std/ui"\nimport * as math from "std/math"\nimport * as strings from "std/strings"\n@jsonable class AppState { typed: string; }\nfunction init(): AppState { return {typed: ""}; }\nfunction set(state: AppState, value: string): AppState { return {typed: value}; }\nfunction view(state: AppState): ui.View { let amount: number = strings.toNumber(state.typed, 0); let tip: number = math.round(amount * 0.12 * 100) / 100; return ui.AppTheme("technical", "", [ui.Text("body", "$" + ui.formatNumber(amount, 2)), ui.Text("body", ui.formatNumber(tip, 2))]); }';
   const h=new ui.UiHostEnvironment();const m=new runtime.VirtualMachine(runtime.deserializeVbc2(compiler.compileVeraSource(source).vbc2),h);
-  const cases=[[0,'$0.00'],[2248,'$22.48'],[18740,'$187.40'],[-1,'-$0.01'],[-105,'-$1.05'],[2147483647,'$21474836.47'],[-2147483648,'-$21474836.48']];
-  for(const [input,expected] of cases){let st=m.execute('set',[m.execute('init'),new runtime.VeraIntValue(input)]);const nodes=ui.decodeVeraUi(m.execute('view',[st]));assert.equal(nodes[0].children[0].text,expected,'Currency for '+input);}
+  const cases=[['','$0.00','0.00'],['187.40','$187.40','22.49'],['187,40','$187.40','22.49'],['-0.01','$-0.01','0.00'],['-1.05','$-1.05','-0.13'],['21474836.47','$21474836.47','2576980.38'],['abc','$0.00','0.00']];
+  for(const [input,amount,tip] of cases){let st=m.execute('set',[m.execute('init'),new runtime.VeraStringValue(input)]);const nodes=ui.decodeVeraUi(m.execute('view',[st]));assert.equal(nodes[0].children[0].text,amount,'Amount for '+input);assert.equal(nodes[0].children[1].text,tip,'Tip for '+input);}
   return {cases:cases.length};
+});
+run('String escapes: \\uXXXX and \\u{...} as in TypeScript, malformed ones left as text',()=>{
+  // The model wrote " · " for a middle dot; the backslash used to be
+  // dropped and the egg timer read "Soft boiled u00b7 360 min".
+  const literals=['"a \\u00b7 b"','"\\u{1F95A}"','"\\u00E9t\\u00e9"','"\\u12"','"\\u{}x"','"\\uZZZZ"','"tab\\tq\\"\\\\"','"\\u0041\\u0042"'];
+  const want=['a · b','\u{1F95A}','été','u12','u{}x','uZZZZ','tab\tq"\\','AB'];
+  const source='@jsonable class AppState { n: number; }\nfunction init(): AppState { return {n: 0}; }\nfunction view(state: AppState): ui.View { return ui.AppTheme("clean", "", ['+literals.map(l=>'ui.Text("body", '+l+')').join(', ')+']); }';
+  const h=new ui.UiHostEnvironment();const m=new runtime.VirtualMachine(runtime.deserializeVbc2(compiler.compileVeraSource(source).vbc2),h);
+  const texts=ui.decodeVeraUi(m.execute('view',[m.execute('init')]))[0].children.map(n=>n.text);
+  assert.deepEqual(texts,want);
+  return {texts};
+});
+run('String case: s.toUpperCase(), s.toLowerCase() and the strings functions',()=>{
+  // egg-3 wrote label.toUpperCase() and lost a repair round to E2033.
+  const source='@jsonable class AppState { label: string; }\nfunction init(): AppState { return {label: "Soft Été"}; }\nfunction view(state: AppState): ui.View { let words: string[] = ["a", "b"]; return ui.AppTheme("clean", "", [ui.Text("body", state.label.toUpperCase() + " BOILED"), ui.Text("body", state.label.toLowerCase()), ui.Text("body", strings.toUpperCase("x") + strings.toLowerCase("Y")), ui.Text("body", ("ab" + "c").toUpperCase())]); }';
+  const h=new ui.UiHostEnvironment();const m=new runtime.VirtualMachine(runtime.deserializeVbc2(compiler.compileVeraSource(source).vbc2),h);
+  const texts=ui.decodeVeraUi(m.execute('view',[m.execute('init')]))[0].children.map(n=>n.text);
+  assert.deepEqual(texts,['SOFT ÉTÉ BOILED','soft été','Xy','ABC']);
+  let message='';try{compiler.compileVeraSource('@jsonable class AppState { n: number; }\nfunction init(): AppState { return {n: 1}; }\nfunction view(state: AppState): ui.View { return ui.Text("body", state.n.toUpperCase()); }')}catch(e){message=e.message}
+  assert(/E2033/.test(message),'A number has no toUpperCase');
+  assert(skill.includes('strings.toUpperCase(s), strings.toLowerCase(s)'));
+  return {texts};
 });
 (async()=>{
   const llama=load(path.join(base,'LlamaEngine.ets'));
   const deep=load(path.join(base,'DeepSeekEngine.ets'));
   const chat=load(path.join(base,'VeraChat.ets'));
+  const repairMod=load(path.join(base,'VeraRepair.ets'));
   const settings=load(path.join(base,'SettingsStore.ets')).settings;
   settings.getApiKey=()=> 'host-test-key';settings.hasApiKey=()=>true;
   settings.getModel=()=> 'test-model';settings.getBaseUrl=()=> 'https://host-test.invalid';
@@ -146,11 +169,12 @@ run('Widget currency helper handles cents and negative amounts',()=>{
     assert.equal((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).length,0,'Extracted generation controller syntax');
     const globals={ensureCapabilities:async()=>{},logStep:()=>{},logMark:()=>{},trace:()=>{},traceCompile:()=>{},getContext:()=>({}),UI_SELECT_FULL:selection.UI_SELECT_FULL,UI_SELECT_PROMPT:selection.UI_SELECT_PROMPT,settings,deepseek:deep.deepseek,DEEPSEEK_GENERATION_MAX_TOKENS:deep.DEEPSEEK_GENERATION_MAX_TOKENS,
       GenerateRequest:llama.GenerateRequest,GenerateResult:llama.GenerateResult,compileVeraSource:compiler.compileVeraSource,CompileError:compiler.CompileError,
+      repairPrompt:repairMod.repairPrompt,applyRepair:repairMod.applyRepair,
       engine:{generate(request){return {text:example,inputTokens:1,outputTokens:1,request}}}};
     const mod={exports:{}};new Function('module',...Object.keys(globals),compiled.outputText)(mod,...Object.values(globals));
     const c=new mod.exports();
     Object.assign(c,{mode:'deepseek',attempt:1,systemPrompt:skill,uiSelected:[],grammar:'',previousSource:'',failedSource:'',
-      attempts:[],compiledVbc2:'',cancelRequested:false,genStartTime:Date.now(),generatedSource:'',generating:true});
+      attempts:[],compiledVbc2:'',cancelRequested:false,repairByEdit:true,genStartTime:Date.now(),generatedSource:'',generating:true});
     c.addToProgram=()=>{};c.currentRun=()=>null;c.startRun=()=>{};
     c.startAttemptOne=ask=>{c.pending=c.runAttempt(ask,'');};
     return c;
@@ -234,7 +258,7 @@ run('Widget currency helper handles cents and negative amounts',()=>{
     assert.equal(result.error,'');assert.equal(result.attempts,2);assert(result.vbc2.startsWith('["VBC2"'));assertUniform();
     const repair=requests[1].messages;
     assert.equal(repair[1].content,'function broken(');assert(repair[2].content.includes('A log with an editable amount.'));assert(repair[2].content.includes(compilerError('function broken(')));
-    assert(/complete program|complete replacement|complete.*program/i.test(repair[2].content));
+    assert(repair[2].content.includes('<<<<<<< SEARCH')&&repair[2].content.includes('>>>>>>> REPLACE'),'Repair asks for edits');
     return {attempts:result.attempts,failedSourceReplayed:true};
   });
   await runAsync('Truncated widget generation repairs a complete replacement',async()=>{
@@ -244,6 +268,72 @@ run('Widget currency helper handles cents and negative amounts',()=>{
     const repair=requests[1].messages.at(-1).content;
     assert(/cut off|truncat/i.test(repair));assert(repair.includes('An editable amount log.'));
     return {attempts:2,truncationFeedback:true};
+  });
+  // A compile error one edit away from the prompt example, and the edit that fixes it.
+  const exampleLine=example.split('\n').find(l=>l.includes('ui.numberToString('));
+  const brokenExample=example.replace(exampleLine,exampleLine.replace('ui.numberToString(','ui.numberToStrin('));
+  // Copied without its indentation, as the model often does: matched in place.
+  const fixEdit='<<<<<<< SEARCH\n'+exampleLine.replace('ui.numberToString(','ui.numberToStrin(').trim()+'\n=======\n'+exampleLine.trim()+'\n>>>>>>> REPLACE';
+  await runAsync('Widget repair by edit applies SEARCH/REPLACE to the failed source',async()=>{
+    requests.length=0;responses.push(brokenExample,fixEdit);
+    const result=await chat.buildMiniApp(skill+widget,'A log with an editable amount.',()=>{});
+    assert.equal(result.error,'');assert.equal(result.attempts,2);assert.equal(result.source,example.trim());assertUniform();
+    assert.equal(requests[1].messages[1].content,brokenExample);assert(requests[1].messages.at(-1).content.includes('<<<<<<< SEARCH'));
+    assert(requests[1].messages.at(-1).content.includes(' | '+exampleLine.replace('ui.numberToString(','ui.numberToStrin(')),'Diagnostic quotes its source line');
+    assert(!/Return a complete replacement of the program above/.test(requests[1].messages.at(-1).content),'Edit repair is not wrapped as a rewrite');
+    assert(Array.isArray(requests[1].tools)&&requests[1].tools.length>0&&requests[1].tool_choice==='none','Edit repair keeps tools defined but not callable');
+    assert.notEqual(requests[0].tool_choice,'none');
+    return {attempts:2,editApplied:true};
+  });
+  await runAsync('Widget edit that does not apply falls back to a full rewrite of the same failed source',async()=>{
+    requests.length=0;responses.push(brokenExample,'<<<<<<< SEARCH\nlet nothing = 1\n=======\nlet nothing = 2\n>>>>>>> REPLACE',example);
+    const result=await chat.buildMiniApp(skill+widget,'A log with an editable amount.',()=>{});
+    assert.equal(result.error,'');assert.equal(result.attempts,3);assert.equal(result.stats[1].verdict,'edit not applied');
+    const last=requests[2].messages;assert.equal(last[1].content,brokenExample);
+    assert(/complete replacement/i.test(last.at(-1).content)&&!last.at(-1).content.includes('<<<<<<< SEARCH'));
+    return {attempts:3,fallback:'rewrite'};
+  });
+  await runAsync('Truncated widget repair is a rewrite, not an edit',async()=>{
+    requests.length=0;responses.push({content:'function incomplete(',finish:'length'},example);
+    await chat.buildMiniApp(skill+widget,'An editable amount log.',()=>{});
+    const repair=requests[1].messages.at(-1).content;assert(!repair.includes('<<<<<<< SEARCH'));assert(/complete replacement/i.test(repair));
+    return {rewrite:true};
+  });
+  await runAsync('Generate screen repair by edit, then rewrite when an edit does not apply',async()=>{
+    reset();responses.push(brokenExample,fixEdit);let c=page();await c.runAttempt('An editable amount log.','');
+    assert.equal(c.compiled,true);assert.equal(c.attempt,2);assert.equal(c.compiledSource,example.trim());
+    assert(requests[1].messages.at(-1).content.includes('<<<<<<< SEARCH'));
+    reset();responses.push(brokenExample,'<<<<<<< SEARCH\nnot in it\n=======\nx\n>>>>>>> REPLACE',example);c=page();await c.runAttempt('An editable amount log.','');
+    assert.equal(c.compiled,true);assert.equal(c.attempt,3);assert.equal(c.attempts[1].failLayer,'edit');
+    assert.equal(requests[2].messages[1].content,brokenExample);assert(/complete replacement/i.test(requests[2].messages.at(-1).content));
+    return {editAttempts:2,fallbackAttempts:3};
+  });
+  run('Repair diagnostics quote the line they point at, with a caret under the column',()=>{
+    const src='let a = 1\nlet b = "x"\nlet c = a + b';
+    const q=repairMod.quoteDiagnostics(src,'3:13 E2028 arithmetic operands must have identical types\nnot a located diagnostic');
+    assert.equal(q,'3:13 E2028 arithmetic operands must have identical types\n    2 | let b = "x"\n    3 | let c = a + b\n'+' '.repeat(8+12)+'^\nnot a located diagnostic');
+    assert(repairMod.repairPrompt('Goal.','1:1 E1001 x',true,'bad line').includes('    1 | bad line'));
+    assert.equal(repairMod.quoteDiagnostics('','1:1 E1 x'),'1:1 E1 x');
+    return {quoted:true};
+  });
+  run('applyRepair: indentation-tolerant, unique matches only, fences and whole programs',()=>{
+    const src='function a(): number {\n  return 1;\n}\nfunction b(): number {\n  return 1;\n}';
+    const ok=repairMod.applyRepair(src,'```\n<<<<<<< SEARCH\nfunction b(): number {\nreturn 1;\n=======\nfunction b(): number {\n  return 2;\n>>>>>>> REPLACE\n```');
+    assert.equal(ok.source,'function a(): number {\n  return 1;\n}\nfunction b(): number {\n  return 2;\n}');assert.equal(ok.edits,1);
+    const ambiguous=repairMod.applyRepair(src,'<<<<<<< SEARCH\n  return 1;\n=======\n  return 3;\n>>>>>>> REPLACE');
+    assert.equal(ambiguous.source,'');assert(/exactly once/.test(ambiguous.error));
+    const open=repairMod.applyRepair(src,'<<<<<<< SEARCH\nfunction a(): number {\n=======\nx');assert.equal(open.source,'');assert(/not closed/.test(open.error));
+    const whole=repairMod.applyRepair(src,'```vera\nfunction c(): number { return 0; }\n```');assert.equal(whole.source,'function c(): number { return 0; }');assert.equal(whole.edits,0);
+    return {cases:4};
+  });
+  await runAsync('One round of tool calls runs together and answers in call order',async()=>{
+    reset();
+    const two={toolCalls:[{index:0,id:'first',type:'function',function:{name:'find_sdk_function',arguments:'{"need":"battery level"}'}},{index:1,id:'second',type:'function',function:{name:'find_intent_function',arguments:'{"need":"open maps"}'}}]};
+    responses.push(two,example);const c=page();await c.runAttempt('An editable amount log.','');
+    assert.equal(c.compiled,true);const tools=requests[1].messages.filter(m=>m.role==='tool').map(m=>m.tool_call_id);
+    assert.deepEqual(tools,['first','second']);
+    const engine=read('entry/src/main/ets/vera/DeepSeekEngine.ets');assert(/Promise\.all\(pendingResults\)/.test(engine));
+    return {order:tools};
   });
   await runAsync('UI needs parser accepts one requirement without padding',async()=>{
     responses.push('["editable numeric amount"]');

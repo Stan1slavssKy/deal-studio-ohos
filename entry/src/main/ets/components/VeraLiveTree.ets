@@ -52,10 +52,11 @@ export class LiveNode {
   @Trace series2Label: string = ''
   @Trace categories: string[] = []
   // The typed numeric layer; see VeraUiNode.
-  @Trace intValue: number = 0
+  @Trace numberValue: number = 0
   @Trace prefix: string = ''
   @Trace suffix: string = ''
   @Trace minimumDigits: number = 1
+  @Trace decimals: number = -1
   @Trace icon: string = ''
   // ui.TextField validation; see VeraUiNode.
   @Trace keyboardType: string = ''
@@ -100,10 +101,11 @@ export function toLive(node: VeraUiNode): LiveNode {
   live.seriesLabel = node.seriesLabel
   live.series2Label = node.series2Label
   live.categories = node.categories
-  live.intValue = node.intValue
+  live.numberValue = node.numberValue
   live.prefix = node.prefix
   live.suffix = node.suffix
   live.minimumDigits = node.minimumDigits
+  live.decimals = node.decimals
   live.icon = node.icon
   live.keyboardType = node.keyboardType
   live.required = node.required
@@ -172,10 +174,11 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.seriesLabel !== next.seriesLabel) { live.seriesLabel = next.seriesLabel }
   if (live.series2Label !== next.series2Label) { live.series2Label = next.series2Label }
   if (live.categories.join('\u0000') !== next.categories.join('\u0000')) { live.categories = next.categories }
-  if (live.intValue !== next.intValue) { live.intValue = next.intValue }
+  if (live.numberValue !== next.numberValue) { live.numberValue = next.numberValue }
   if (live.prefix !== next.prefix) { live.prefix = next.prefix }
   if (live.suffix !== next.suffix) { live.suffix = next.suffix }
   if (live.minimumDigits !== next.minimumDigits) { live.minimumDigits = next.minimumDigits }
+  if (live.decimals !== next.decimals) { live.decimals = next.decimals }
   if (live.icon !== next.icon) { live.icon = next.icon }
   if (live.keyboardType !== next.keyboardType) { live.keyboardType = next.keyboardType }
   if (live.required !== next.required) { live.required = next.required }

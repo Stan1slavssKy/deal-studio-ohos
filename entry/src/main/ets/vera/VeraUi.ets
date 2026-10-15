@@ -1,6 +1,5 @@
 import {
   RuntimeValue,
-  VeraIntValue,
   VeraNumberValue,
   VeraStringValue,
   VeraBooleanValue,
@@ -33,7 +32,7 @@ export class VeraUiNode {
   minimum: number = 0
   maximum: number = 100
   options: string[] = []
-  /** A chart's raw values, for ui.Sparkline -- the one int[] prop in the language. */
+  /** A chart's raw values, for ui.Sparkline -- the one number[] prop in the language. */
   series: number[] = []
   /** ui.Sparkline: draw series as separate bars instead of a connected line. */
   bars: boolean = false
@@ -50,22 +49,15 @@ export class VeraUiNode {
   children: VeraUiNode[] = []
 
   /**
-   * The typed numeric layer.
-   *
-   * A number used to reach the screen only as a string the program had already
-   * built -- ui.intToString, and a hand-written pad2 for anything wider than
-   * one digit, because the language has no number formatting and no way back
-   * from a string to an int. So every count was formatted by the program, and
-   * a program that wanted "07" wrote the function to produce it.
-   *
-   * These carry the number itself and say how to show it, and the renderer does
-   * the formatting. `intValue` is the number; `eventValue` stays what it always
-   * was, the payload of a tap, so a row can carry both.
+   * The typed numeric layer: the number itself and how to show it, formatted by
+   * formatVeraNumber. `numberValue` is the number; `eventValue` stays the
+   * payload of a tap, so a row can carry both. decimals -1 means "as it is".
    */
-  intValue: number = 0
+  numberValue: number = 0
   prefix: string = ''
   suffix: string = ''
   minimumDigits: number = 1
+  decimals: number = -1
 
   /** The name of an icon in VeraIcons; '' for none. */
   icon: string = ''
@@ -84,14 +76,68 @@ export class VeraUiNode {
   emailMessage: string = ''
 }
 
+/**
+ * A number as text: `decimals` fixed places (-1: as it is, without binary
+ * noise such as 0.30000000000000004), the whole part padded with zeros to
+ * minimumDigits. Shared by ui.numberToString, ui.formatNumber and the
+ * renderer's number components, so all three write numbers the same way.
+ */
+export function formatVeraNumber(n: number, decimals: number, minimumDigits: number): string {
+  if (!isFinite(n)) { return n.toString() }
+  let negative = n < 0
+  let a = Math.abs(n)
+  let text = decimals >= 0 ? a.toFixed(Math.min(Math.floor(decimals), 10))
+    : (Number.isInteger(a) ? a.toString() : parseFloat(a.toFixed(9)).toString())
+  let dot = text.indexOf('.')
+  let whole = dot >= 0 ? text.substring(0, dot) : text
+  let rest = dot >= 0 ? text.substring(dot) : ''
+  while (whole.length < minimumDigits) { whole = '0' + whole }
+  // -0.00 reads as a bug; a value that rounds to zero is just zero.
+  let zero = parseFloat(whole + rest) === 0
+  return (negative && !zero ? '-' : '') + whole + rest
+}
+
+/**
+ * Minutes since midnight as HH:MM, wrapped into one day; what ui.ClockText
+ * draws and ui.clockToString returns, so a time reads the same in both.
+ */
+export function formatVeraClock(total: number): string {
+  let m = isFinite(total) && total > 0 ? Math.floor(total) % 1440 : 0
+  let h = Math.floor(m / 60)
+  let mm = m % 60
+  return (h < 10 ? '0' : '') + h.toString() + ':' + (mm < 10 ? '0' : '') + mm.toString()
+}
+
+/**
+ * A length of time in seconds as M:SS, or H:MM:SS from an hour up, fractions
+ * dropped and negatives shown as 0:00: a countdown's "6:00", which ClockText
+ * (a time of day) cannot show.
+ */
+export function formatVeraDuration(seconds: number): string {
+  let s = isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0
+  let h = Math.floor(s / 3600)
+  let m = Math.floor((s % 3600) / 60)
+  let ss = s % 60
+  let tail = (ss < 10 ? ':0' : ':') + ss.toString()
+  if (h === 0) { return m.toString() + tail }
+  return h.toString() + (m < 10 ? ':0' : ':') + m.toString() + tail
+}
+
 function asString(v: RuntimeValue): string {
   if (v instanceof VeraStringValue) { return (v as VeraStringValue).value }
   throw new RuntimeTrap('R0020', 'expected string argument')
 }
 
-function asInt(v: RuntimeValue): number {
-  if (v instanceof VeraIntValue) { return (v as VeraIntValue).value }
-  throw new RuntimeTrap('R0020', 'expected int argument')
+function asNum(v: RuntimeValue): number {
+  if (v instanceof VeraNumberValue) { return (v as VeraNumberValue).value }
+  throw new RuntimeTrap('R0020', 'expected number argument')
+}
+
+/** A number that has to be whole -- a position in a string -- or a trap saying so. */
+function asWhole(v: RuntimeValue): number {
+  let n = asNum(v)
+  if (!Number.isInteger(n)) { throw new RuntimeTrap('R0009', 'expected a whole number, got ' + n.toString()) }
+  return n
 }
 
 function asBool(v: RuntimeValue): boolean {
@@ -123,9 +169,9 @@ function argString(args: RuntimeValue[], i: number, fallback: string = ''): stri
   return asString(args[i])
 }
 
-function argInt(args: RuntimeValue[], i: number, fallback: number = 0): number {
+function argNum(args: RuntimeValue[], i: number, fallback: number = 0): number {
   if (i >= args.length) { return fallback }
-  return asInt(args[i])
+  return asNum(args[i])
 }
 
 function argBool(args: RuntimeValue[], i: number, fallback: boolean = true): boolean {
@@ -155,96 +201,78 @@ function containerNode(type: string, args: RuntimeValue[]): RuntimeValue {
 }
 
 /**
- * The clock, as seen by a generated program.
- *
- * Local time, and every value an int: nowSeconds fits int32 until 2038, whereas
- * milliseconds (~1.8e12) would trip the VM's overflow check on arrival.
+ * The clock, as seen by a generated program. Local time, every value a number;
+ * nowMillis is Unix milliseconds, exact in a double.
  * daysSinceEpoch is what makes "is this the same day as the last dose?"
  * expressible without any date arithmetic in the language.
  */
 function invokeStdTime(name: string, args: RuntimeValue[]): RuntimeValue {
   let now = new Date()
   switch (name) {
+    case 'nowMillis':
+      return new VeraNumberValue(now.getTime())
     case 'nowSeconds':
-      return new VeraIntValue(Math.floor(now.getTime() / 1000))
+      return new VeraNumberValue(Math.floor(now.getTime() / 1000))
     case 'daysSinceEpoch':
       // Local midnights, not UTC: a dose taken at 23:30 belongs to that day for
       // the person holding the phone.
-      return new VeraIntValue(Math.floor(
+      return new VeraNumberValue(Math.floor(
         (now.getTime() - now.getTimezoneOffset() * 60000) / 86400000))
     case 'millisOfDay':
-      // Milliseconds since local midnight. A full epoch timestamp in
-      // milliseconds is ~1.8e12 and would not survive int32, but a day is only
-      // 86.4 million, so this is how a program gets sub-second resolution.
-      return new VeraIntValue(
+      // Milliseconds since local midnight.
+      return new VeraNumberValue(
         ((now.getHours() * 60 + now.getMinutes()) * 60 + now.getSeconds()) * 1000 +
         now.getMilliseconds())
-    case 'hourOfDay': return new VeraIntValue(now.getHours())
-    case 'minuteOfHour': return new VeraIntValue(now.getMinutes())
-    case 'weekday': return new VeraIntValue(now.getDay())
+    case 'hourOfDay': return new VeraNumberValue(now.getHours())
+    case 'minuteOfHour': return new VeraNumberValue(now.getMinutes())
+    case 'weekday': return new VeraNumberValue(now.getDay())
     // daysSinceEpoch can say "the same day" but not "which day". Anything read
     // back later -- a history row, a summary shown to another person -- needs
     // to name the date, so these three are the calendar.
-    case 'dayOfMonth': return new VeraIntValue(now.getDate())
-    case 'monthOfYear': return new VeraIntValue(now.getMonth() + 1)
-    case 'year': return new VeraIntValue(now.getFullYear())
+    case 'dayOfMonth': return new VeraNumberValue(now.getDate())
+    case 'monthOfYear': return new VeraNumberValue(now.getMonth() + 1)
+    case 'year': return new VeraNumberValue(now.getFullYear())
     default:
       throw new RuntimeTrap('R0015', `unknown std/time function: ${name}`)
   }
 }
-
-const INT32_MIN: number = -2147483648
-const INT32_MAX: number = 2147483647
 
 function asNumberArg(v: RuntimeValue): number {
   if (v instanceof VeraNumberValue) { return (v as VeraNumberValue).value }
   throw new RuntimeTrap('R0020', 'expected number argument')
 }
 
-/** Keep a host-produced int inside the range the VM will accept back. */
-function clampInt(v: number): number {
-  let n = Math.trunc(v)
-  if (n < INT32_MIN) { return INT32_MIN }
-  if (n > INT32_MAX) { return INT32_MAX }
-  return n
-}
-
 /**
  * Arithmetic the language cannot express, plus a deterministic generator.
  *
  * randomStep is xorshift32 done with JS bitwise operators, which wrap by
- * definition -- the VM's own multiply would trap on the overflow this needs, so
- * a pseudo-random sequence cannot be written in VERA-L at all.
+ * definition; its result is a whole number in the signed 32-bit range.
  */
 function invokeStdMath(name: string, args: RuntimeValue[]): RuntimeValue {
   switch (name) {
-    case 'intToNumber': return new VeraNumberValue(asInt(args[0]))
-    case 'numberToInt': return new VeraIntValue(clampInt(asNumberArg(args[0])))
     case 'pi': return new VeraNumberValue(Math.PI)
     case 'sqrt': return new VeraNumberValue(Math.sqrt(asNumberArg(args[0])))
     case 'sin': return new VeraNumberValue(Math.sin(asNumberArg(args[0])))
     case 'cos': return new VeraNumberValue(Math.cos(asNumberArg(args[0])))
     case 'atan2': return new VeraNumberValue(Math.atan2(asNumberArg(args[0]), asNumberArg(args[1])))
     case 'pow': return new VeraNumberValue(Math.pow(asNumberArg(args[0]), asNumberArg(args[1])))
-    case 'floorToInt': return new VeraIntValue(clampInt(Math.floor(asNumberArg(args[0]))))
-    case 'roundToInt': return new VeraIntValue(clampInt(Math.round(asNumberArg(args[0]))))
-    case 'absInt': return new VeraIntValue(clampInt(Math.abs(asInt(args[0]))))
-    case 'absNumber': return new VeraNumberValue(Math.abs(asNumberArg(args[0])))
-    case 'minInt': return new VeraIntValue(Math.min(asInt(args[0]), asInt(args[1])))
-    case 'maxInt': return new VeraIntValue(Math.max(asInt(args[0]), asInt(args[1])))
-    case 'minNumber': return new VeraNumberValue(Math.min(asNumberArg(args[0]), asNumberArg(args[1])))
-    case 'maxNumber': return new VeraNumberValue(Math.max(asNumberArg(args[0]), asNumberArg(args[1])))
+    case 'floor': return new VeraNumberValue(Math.floor(asNumberArg(args[0])))
+    case 'round': return new VeraNumberValue(Math.round(asNumberArg(args[0])))
+    case 'ceil': return new VeraNumberValue(Math.ceil(asNumberArg(args[0])))
+    case 'abs': return new VeraNumberValue(Math.abs(asNumberArg(args[0])))
+    case 'min': return new VeraNumberValue(Math.min(asNumberArg(args[0]), asNumberArg(args[1])))
+    case 'max': return new VeraNumberValue(Math.max(asNumberArg(args[0]), asNumberArg(args[1])))
     case 'randomStep': {
-      let x = asInt(args[0]) | 0
+      let x = asNum(args[0]) | 0
       if (x === 0) { x = 0x2545F491 }
       x = x ^ (x << 13); x = x ^ (x >>> 17); x = x ^ (x << 5)
-      return new VeraIntValue(clampInt(x | 0))
+      return new VeraNumberValue(x | 0)
     }
     case 'randomBelow': {
-      let seed = asInt(args[0]) | 0
-      let bound = asInt(args[1])
+      let seed = asNum(args[0]) | 0
+      let bound = Math.floor(asNum(args[1]))
       if (bound <= 0) { throw new RuntimeTrap('R0026', 'randomBelow needs a positive bound') }
-      return new VeraIntValue(Math.abs(seed) % bound)
+      return new VeraNumberValue(Math.abs(seed) % bound)
     }
     default:
       throw new RuntimeTrap('R0015', `unknown std/math function: ${name}`)
@@ -282,11 +310,11 @@ function isSpace(ch: string): boolean {
 function invokeStdStrings(name: string, args: RuntimeValue[]): RuntimeValue {
   switch (name) {
     case 'length':
-      return new VeraIntValue(scalars(asString(args[0])).length)
+      return new VeraNumberValue(scalars(asString(args[0])).length)
     case 'substring': {
       let chars = scalars(asString(args[0]))
-      let start = asInt(args[1])
-      let end = asInt(args[2])
+      let start = asWhole(args[1])
+      let end = asWhole(args[2])
       // The spec raises rather than clamping: a bad range is a bug in the
       // program, and silently returning a shorter string hides it.
       if (start < 0 || end < start || end > chars.length) {
@@ -333,6 +361,18 @@ function invokeStdStrings(name: string, args: RuntimeValue[]): RuntimeValue {
       }
       return new VeraArrayValue(parts)
     }
+    case 'toNumber': {
+      // Typed text as a number: spaces dropped, a decimal comma accepted, and
+      // anything that is not a plain number gives the fallback.
+      let text = asString(args[0]).replace(/\s/g, '')
+      if (text.indexOf('.') < 0) { text = text.replace(',', '.') }
+      if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(text)) { return new VeraNumberValue(asNum(args[1])) }
+      return new VeraNumberValue(parseFloat(text))
+    }
+    case 'toUpperCase':
+      return new VeraStringValue(asString(args[0]).toUpperCase())
+    case 'toLowerCase':
+      return new VeraStringValue(asString(args[0]).toLowerCase())
     case 'trim': {
       let chars = scalars(asString(args[0]))
       let start = 0
@@ -420,7 +460,7 @@ export class UiHostEnvironment extends HostEnvironment {
         return viewNode('path', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['commands', new VeraStringValue(argString(args, 1))],
-          ['spinPeriodMs', new VeraIntValue(argInt(args, 2))],
+          ['spinPeriodMs', new VeraNumberValue(argNum(args, 2))],
         ])
       case 'TextField':
         return viewNode('field', [
@@ -431,9 +471,9 @@ export class UiHostEnvironment extends HostEnvironment {
           ['keyboardType', new VeraStringValue(argString(args, 4))],
           ['required', new VeraBooleanValue(argBool(args, 5, false))],
           ['requiredMessage', new VeraStringValue(argString(args, 6))],
-          ['minLength', new VeraIntValue(argInt(args, 7, 0))],
+          ['minLength', new VeraNumberValue(argNum(args, 7, 0))],
           ['minLengthMessage', new VeraStringValue(argString(args, 8))],
-          ['maxLength', new VeraIntValue(argInt(args, 9, -1))],
+          ['maxLength', new VeraNumberValue(argNum(args, 9, -1))],
           ['maxLengthMessage', new VeraStringValue(argString(args, 10))],
           ['pattern', new VeraStringValue(argString(args, 11))],
           ['patternMessage', new VeraStringValue(argString(args, 12))],
@@ -452,9 +492,9 @@ export class UiHostEnvironment extends HostEnvironment {
         return viewNode('slider', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['label', new VeraStringValue(argString(args, 1))],
-          ['value', new VeraIntValue(argInt(args, 2))],
-          ['minimum', new VeraIntValue(argInt(args, 3))],
-          ['maximum', new VeraIntValue(argInt(args, 4))],
+          ['value', new VeraNumberValue(argNum(args, 2))],
+          ['minimum', new VeraNumberValue(argNum(args, 3))],
+          ['maximum', new VeraNumberValue(argNum(args, 4))],
           ['action', new VeraStringValue(argString(args, 5))],
         ])
       case 'Select':
@@ -462,13 +502,13 @@ export class UiHostEnvironment extends HostEnvironment {
           ['style', new VeraStringValue(argString(args, 0))],
           ['label', new VeraStringValue(argString(args, 1))],
           ['options', argArray(args, 2)],
-          ['value', new VeraIntValue(argInt(args, 3))],
+          ['value', new VeraNumberValue(argNum(args, 3))],
           ['action', new VeraStringValue(argString(args, 4))],
         ])
       case 'Grid':
         return viewNode('grid', [
           ['style', new VeraStringValue(argString(args, 0))],
-          ['columns', new VeraIntValue(argInt(args, 1))],
+          ['columns', new VeraNumberValue(argNum(args, 1))],
           ['children', argArray(args, 2)],
         ])
       case 'ListItem':
@@ -478,7 +518,7 @@ export class UiHostEnvironment extends HostEnvironment {
           ['label', new VeraStringValue(argString(args, 2))],
           ['value', new VeraStringValue(argString(args, 3))],
           ['action', new VeraStringValue(argString(args, 4))],
-          ['eventValue', new VeraIntValue(argInt(args, 5))],
+          ['eventValue', new VeraNumberValue(argNum(args, 5))],
           ['enabled', new VeraBooleanValue(argBool(args, 6))],
           ['icon', new VeraStringValue(argString(args, 7))],
         ])
@@ -486,7 +526,7 @@ export class UiHostEnvironment extends HostEnvironment {
         return viewNode('ticker', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['tickerId', new VeraStringValue(argString(args, 1))],
-          ['minimum', new VeraIntValue(argInt(args, 2))],
+          ['minimum', new VeraNumberValue(argNum(args, 2))],
           ['checked', new VeraBooleanValue(argBool(args, 3))],
           ['action', new VeraStringValue(argString(args, 4))],
         ])
@@ -502,15 +542,15 @@ export class UiHostEnvironment extends HostEnvironment {
         return viewNode('progress', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['label', new VeraStringValue(argString(args, 1))],
-          ['value', new VeraIntValue(argInt(args, 2))],
-          ['maximum', new VeraIntValue(argInt(args, 3))],
+          ['value', new VeraNumberValue(argNum(args, 2))],
+          ['maximum', new VeraNumberValue(argNum(args, 3))],
         ])
       case 'Button':
         return viewNode('button', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['text', new VeraStringValue(argString(args, 1))],
           ['action', new VeraStringValue(argString(args, 2))],
-          ['value', new VeraIntValue(argInt(args, 3))],
+          ['value', new VeraNumberValue(argNum(args, 3))],
           ['enabled', new VeraBooleanValue(argBool(args, 4))],
         ])
       case 'Cell':
@@ -518,7 +558,7 @@ export class UiHostEnvironment extends HostEnvironment {
           ['style', new VeraStringValue(argString(args, 0))],
           ['text', new VeraStringValue(argString(args, 1))],
           ['action', new VeraStringValue(argString(args, 2))],
-          ['value', new VeraIntValue(argInt(args, 3))],
+          ['value', new VeraNumberValue(argNum(args, 3))],
           ['enabled', new VeraBooleanValue(argBool(args, 4))],
         ])
       // The compositional layer. Every one of these reuses fields the decoder
@@ -543,7 +583,7 @@ export class UiHostEnvironment extends HostEnvironment {
       case 'AdaptiveColumns':
         return viewNode('adaptivecolumns', [
           ['style', new VeraStringValue(argString(args, 0))],
-          ['minimum', new VeraIntValue(argInt(args, 1))],
+          ['minimum', new VeraNumberValue(argNum(args, 1))],
           ['children', argArray(args, 2)],
         ])
       case 'Header':
@@ -606,67 +646,70 @@ export class UiHostEnvironment extends HostEnvironment {
       case 'MetricGroup':
         return viewNode('metricgroup', [
           ['style', new VeraStringValue(argString(args, 0))],
-          ['columns', new VeraIntValue(argInt(args, 1))],
+          ['columns', new VeraNumberValue(argNum(args, 1))],
           ['children', argArray(args, 2)],
         ])
       // The typed numeric layer. The number travels as a number and the
       // renderer formats it, so a program never builds a digit string and
       // never needs the padding function it cannot write.
-      case 'IntText':
-        return viewNode('inttext', [
+      case 'NumberText':
+        return viewNode('numbertext', [
           ['style', new VeraStringValue(argString(args, 0))],
-          ['intValue', new VeraIntValue(argInt(args, 1))],
+          ['numberValue', new VeraNumberValue(argNum(args, 1))],
           ['prefix', new VeraStringValue(argString(args, 2))],
           ['suffix', new VeraStringValue(argString(args, 3))],
-          ['minimumDigits', new VeraIntValue(argInt(args, 4))],
+          ['minimumDigits', new VeraNumberValue(argNum(args, 4))],
+          ['decimals', new VeraNumberValue(argNum(args, 5, -1))],
         ])
       case 'ClockText':
         return viewNode('clocktext', [
           ['style', new VeraStringValue(argString(args, 0))],
-          ['intValue', new VeraIntValue(argInt(args, 1))],
+          ['numberValue', new VeraNumberValue(argNum(args, 1))],
           ['prefix', new VeraStringValue(argString(args, 2))],
           ['suffix', new VeraStringValue(argString(args, 3))],
         ])
-      case 'IntStat':
-        return viewNode('intstat', [
+      case 'NumberStat':
+        return viewNode('numberstat', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['label', new VeraStringValue(argString(args, 1))],
-          ['intValue', new VeraIntValue(argInt(args, 2))],
+          ['numberValue', new VeraNumberValue(argNum(args, 2))],
           ['prefix', new VeraStringValue(argString(args, 3))],
           ['suffix', new VeraStringValue(argString(args, 4))],
-          ['minimumDigits', new VeraIntValue(argInt(args, 5))],
+          ['minimumDigits', new VeraNumberValue(argNum(args, 5))],
           ['value', new VeraStringValue(argString(args, 6))],
           ['icon', new VeraStringValue(argString(args, 7))],
+          ['decimals', new VeraNumberValue(argNum(args, 8, -1))],
         ])
-      case 'IntField':
-        return viewNode('intfield', [
+      case 'NumberField':
+        return viewNode('numberfield', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['label', new VeraStringValue(argString(args, 1))],
-          ['intValue', new VeraIntValue(argInt(args, 2))],
-          ['minimum', new VeraIntValue(argInt(args, 3))],
-          ['maximum', new VeraIntValue(argInt(args, 4))],
+          ['numberValue', new VeraNumberValue(argNum(args, 2))],
+          ['minimum', new VeraNumberValue(argNum(args, 3))],
+          ['maximum', new VeraNumberValue(argNum(args, 4))],
           ['action', new VeraStringValue(argString(args, 5))],
         ])
       case 'TimeField':
         return viewNode('timefield', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['label', new VeraStringValue(argString(args, 1))],
-          ['intValue', new VeraIntValue(argInt(args, 2))],
+          ['numberValue', new VeraNumberValue(argNum(args, 2))],
           ['action', new VeraStringValue(argString(args, 3))],
         ])
-      case 'IntListItem':
-        return viewNode('intlistitem', [
+      case 'NumberListItem':
+        return viewNode('numberlistitem', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['text', new VeraStringValue(argString(args, 1))],
           ['label', new VeraStringValue(argString(args, 2))],
-          ['intValue', new VeraIntValue(argInt(args, 3))],
+          ['numberValue', new VeraNumberValue(argNum(args, 3))],
           ['prefix', new VeraStringValue(argString(args, 4))],
           ['suffix', new VeraStringValue(argString(args, 5))],
-          ['minimumDigits', new VeraIntValue(argInt(args, 6))],
+          ['minimumDigits', new VeraNumberValue(argNum(args, 6))],
           ['action', new VeraStringValue(argString(args, 7))],
-          ['eventValue', new VeraIntValue(argInt(args, 8))],
+          ['eventValue', new VeraNumberValue(argNum(args, 8))],
           ['enabled', new VeraBooleanValue(argBool(args, 9))],
           ['icon', new VeraStringValue(argString(args, 10))],
+          ['decimals', new VeraNumberValue(argNum(args, 11, -1))],
         ])
       case 'ActionBar':
         return containerNode('actionbar', args)
@@ -683,7 +726,7 @@ export class UiHostEnvironment extends HostEnvironment {
           ['label', new VeraStringValue(argString(args, 2))],
           ['value', new VeraStringValue(argString(args, 3))],
           ['action', new VeraStringValue(argString(args, 4))],
-          ['eventValue', new VeraIntValue(argInt(args, 5))],
+          ['eventValue', new VeraNumberValue(argNum(args, 5))],
           ['enabled', new VeraBooleanValue(argBool(args, 6))],
           ['icon', new VeraStringValue(argString(args, 7))],
         ])
@@ -691,7 +734,7 @@ export class UiHostEnvironment extends HostEnvironment {
         return viewNode('table', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['options', argArray(args, 1)],
-          ['columns', new VeraIntValue(argInt(args, 2))],
+          ['columns', new VeraNumberValue(argNum(args, 2))],
           ['children', argArray(args, 3)],
         ])
       case 'TableRow':
@@ -702,7 +745,7 @@ export class UiHostEnvironment extends HostEnvironment {
       case 'KeyValueGroup':
         return viewNode('kvgroup', [
           ['style', new VeraStringValue(argString(args, 0))],
-          ['columns', new VeraIntValue(argInt(args, 1))],
+          ['columns', new VeraNumberValue(argNum(args, 1))],
           ['children', argArray(args, 2)],
         ])
       case 'KeyValueItem':
@@ -723,7 +766,7 @@ export class UiHostEnvironment extends HostEnvironment {
           ['icon', new VeraStringValue(argString(args, 1))],
           ['label', new VeraStringValue(argString(args, 2))],
           ['action', new VeraStringValue(argString(args, 3))],
-          ['value', new VeraIntValue(argInt(args, 4))],
+          ['value', new VeraNumberValue(argNum(args, 4))],
           ['enabled', new VeraBooleanValue(argBool(args, 5))],
         ])
       case 'Badge':
@@ -740,8 +783,8 @@ export class UiHostEnvironment extends HostEnvironment {
       case 'Skeleton':
         return viewNode('skeleton', [
           ['style', new VeraStringValue(argString(args, 0))],
-          ['minimum', new VeraIntValue(argInt(args, 1))],
-          ['maximum', new VeraIntValue(argInt(args, 2))],
+          ['minimum', new VeraNumberValue(argNum(args, 1))],
+          ['maximum', new VeraNumberValue(argNum(args, 2))],
           ['checked', new VeraBooleanValue(argBool(args, 3, false))],
         ])
       case 'Spinner':
@@ -760,7 +803,7 @@ export class UiHostEnvironment extends HostEnvironment {
         return viewNode('sparkline', [
           ['style', new VeraStringValue(argString(args, 0))],
           ['series', argArray(args, 1)],
-          ['maximum', new VeraIntValue(argInt(args, 2))],
+          ['maximum', new VeraNumberValue(argNum(args, 2))],
           ['label', new VeraStringValue(argString(args, 3))],
           ['bars', new VeraBooleanValue(argBool(args, 4, false))],
           ['series2', argArray(args, 5)],
@@ -768,17 +811,19 @@ export class UiHostEnvironment extends HostEnvironment {
           ['seriesLabel', new VeraStringValue(argString(args, 7))],
           ['series2Label', new VeraStringValue(argString(args, 8))],
           ['categories', argArray(args, 9)],
-          ['minimum', new VeraIntValue(argInt(args, 10, 0))],
+          ['minimum', new VeraNumberValue(argNum(args, 10, 0))],
         ])
       case 'When':
         if (asBool(args[0])) { return args[1] }
         return viewNode('spacer', [['style', new VeraStringValue('none')]])
-      case 'intToString':
-        return new VeraStringValue(asInt(args[0]).toString())
-      case 'numberToString': {
-        if (!(args[0] instanceof VeraNumberValue)) { throw new RuntimeTrap('R0020', 'expected number argument') }
-        return new VeraStringValue((args[0] as VeraNumberValue).value.toString())
-      }
+      case 'numberToString':
+        return new VeraStringValue(formatVeraNumber(asNum(args[0]), -1, 1))
+      case 'formatNumber':
+        return new VeraStringValue(formatVeraNumber(asNum(args[0]), asNum(args[1]), 1))
+      case 'durationToString':
+        return new VeraStringValue(formatVeraDuration(asNum(args[0])))
+      case 'clockToString':
+        return new VeraStringValue(formatVeraClock(asNum(args[0])))
       case 'booleanToString':
         return new VeraStringValue(asBool(args[0]) ? 'true' : 'false')
       default:
@@ -823,7 +868,7 @@ export class UiHostEnvironment extends HostEnvironment {
     effect.rawParams = order.join(' ')
     effect.rawMode = mode
     this.pendingEffects.push(effect)
-    return new VeraIntValue(id)
+    return new VeraNumberValue(id)
   }
 }
 
@@ -901,31 +946,34 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
         break
       // 'value' carries the text of a field, the position of a slider or
       // select, and the trailing text of a list row, so it arrives as either a
-      // string or an int and means something different in each.
+      // string or a number and means something different in each.
       case 'value':
-        if (v instanceof VeraIntValue) { node.eventValue = (v as VeraIntValue).value }
+        if (v instanceof VeraNumberValue) { node.eventValue = (v as VeraNumberValue).value }
         else if (v instanceof VeraStringValue) { node.value = (v as VeraStringValue).value }
         break
       case 'eventValue':
-        if (v instanceof VeraIntValue) { node.eventValue = (v as VeraIntValue).value }
+        if (v instanceof VeraNumberValue) { node.eventValue = (v as VeraNumberValue).value }
         break
-      case 'intValue':
-        if (v instanceof VeraIntValue) { node.intValue = (v as VeraIntValue).value }
+      case 'numberValue':
+        if (v instanceof VeraNumberValue) { node.numberValue = (v as VeraNumberValue).value }
         break
       case 'minimumDigits':
-        if (v instanceof VeraIntValue) { node.minimumDigits = (v as VeraIntValue).value }
+        if (v instanceof VeraNumberValue) { node.minimumDigits = (v as VeraNumberValue).value }
+        break
+      case 'decimals':
+        if (v instanceof VeraNumberValue) { node.decimals = (v as VeraNumberValue).value }
         break
       case 'spinPeriodMs':
-        if (v instanceof VeraIntValue) { node.spinPeriodMs = (v as VeraIntValue).value }
+        if (v instanceof VeraNumberValue) { node.spinPeriodMs = (v as VeraNumberValue).value }
         break
       case 'columns':
-        if (v instanceof VeraIntValue) { node.columns = (v as VeraIntValue).value }
+        if (v instanceof VeraNumberValue) { node.columns = (v as VeraNumberValue).value }
         break
       case 'minimum':
-        if (v instanceof VeraIntValue) { node.minimum = (v as VeraIntValue).value }
+        if (v instanceof VeraNumberValue) { node.minimum = (v as VeraNumberValue).value }
         break
       case 'maximum':
-        if (v instanceof VeraIntValue) { node.maximum = (v as VeraIntValue).value }
+        if (v instanceof VeraNumberValue) { node.maximum = (v as VeraNumberValue).value }
         break
       case 'checked':
         if (v instanceof VeraBooleanValue) { node.checked = (v as VeraBooleanValue).value }
@@ -949,7 +997,7 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
         if (v instanceof VeraArrayValue) {
           let nums: number[] = []
           for (let n of (v as VeraArrayValue).elements) {
-            if (n instanceof VeraIntValue) { nums.push((n as VeraIntValue).value) }
+            if (n instanceof VeraNumberValue) { nums.push((n as VeraNumberValue).value) }
           }
           node.series = nums
         }
@@ -958,7 +1006,7 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
         if (v instanceof VeraArrayValue) {
           let nums2: number[] = []
           for (let n of (v as VeraArrayValue).elements) {
-            if (n instanceof VeraIntValue) { nums2.push((n as VeraIntValue).value) }
+            if (n instanceof VeraNumberValue) { nums2.push((n as VeraNumberValue).value) }
           }
           node.series2 = nums2
         }
@@ -991,13 +1039,13 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
         if (v instanceof VeraStringValue) { node.requiredMessage = (v as VeraStringValue).value }
         break
       case 'minLength':
-        if (v instanceof VeraIntValue) { node.minLength = (v as VeraIntValue).value }
+        if (v instanceof VeraNumberValue) { node.minLength = (v as VeraNumberValue).value }
         break
       case 'minLengthMessage':
         if (v instanceof VeraStringValue) { node.minLengthMessage = (v as VeraStringValue).value }
         break
       case 'maxLength':
-        if (v instanceof VeraIntValue) { node.maxLength = (v as VeraIntValue).value }
+        if (v instanceof VeraNumberValue) { node.maxLength = (v as VeraNumberValue).value }
         break
       case 'maxLengthMessage':
         if (v instanceof VeraStringValue) { node.maxLengthMessage = (v as VeraStringValue).value }

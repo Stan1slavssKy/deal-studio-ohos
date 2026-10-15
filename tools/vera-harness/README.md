@@ -73,7 +73,7 @@ When semantic family fields are absent, the proof retains the previous all-role 
 Each new process loads its selected sources again, so a previous build cannot supply stale output.
 
 `examples/*.vera` also contain focused Select, feedback, Sparkline, TextField, and BackHandler workflows.
-`compatibility/*.json` stores pre-change bytecode and saved state for the five visual workflows.
+`compatibility/*.json` stores bytecode and saved state from the current build for the five visual workflows, so a change to the bytecode or saved-state format shows up as a failure. The pre-redesign set from `b3acfcf` stopped loading when `int` was removed (its bytecode calls `IntText`); it is still in git history.
 `visual-check.js` records the tested revision, command, decoded trees, and expected-versus-observed checks in JSON.
 Native validation still requires the toolchain described in `CLAUDE.md`.
 
@@ -107,6 +107,6 @@ node tools/vera-harness/visual-proofs.js /tmp/vera-visual-proofs "$VISUAL_BASELI
 
 Set `NODE_PATH` when an existing `sharp` installation requires an explicit module path.
 The matrix includes 96 SVG/PNG proofs, decoded trees, source hashes, and 16 labeled contact sheets.
-The baseline uses saved pre-change bytecode for full-screen fixtures and the original theme source.
+The baseline renders the bytecode in `compatibility/*.json` with the theme source from the baseline snapshot. Since those fixtures were regenerated after the `int` removal, it no longer shows the pre-redesign composition; check out `b3acfcf` to reproduce the original comparison.
 The candidate uses current fixture sources. Compact counter widgets use the same source in both phases.
 The matrix changes composition and rendering together, so it does not isolate their individual effects.
