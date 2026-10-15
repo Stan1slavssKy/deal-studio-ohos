@@ -15,6 +15,7 @@ import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
+import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
 
 const DOMAIN = 0x0000
 
@@ -44,6 +45,7 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkEval(want)
     this.extractUiEval(want)
     this.extractUiAb(want)
+    this.extractTemplateSelect(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -61,6 +63,7 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkEval(want)
     this.extractUiEval(want)
     this.extractUiAb(want)
+    this.extractTemplateSelect(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
     }
@@ -275,6 +278,26 @@ export default class EntryAbility extends UIAbility {
     if (flag === null || flag === undefined) { return }
     requestUiAb()
     hilog.info(DOMAIN, 'VERA', 'VERA-UI-AB requested from launch parameter')
+  }
+
+  /**
+   * The Jev template path is on by default (VeraTemplateSelectFlag.ets); `--ps veraTemplateSelect 0`
+   * switches it off for this session so a generation can be compared with the plain path. It also
+   * needs the TypeSafe key (extractSelectorKey); without it generation goes straight to the model.
+   */
+  private extractTemplateSelect(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraTemplateSelect']
+    if (flag === null || flag === undefined) { return }
+    let text = String(flag).trim()
+    if (text === '0' || text === 'false' || text === 'off') {
+      disableTemplateSelect()
+      hilog.info(DOMAIN, 'VERA', 'VERA-TEMPLATE-SELECT disabled from launch parameter')
+    } else {
+      enableTemplateSelect()
+      hilog.info(DOMAIN, 'VERA', 'VERA-TEMPLATE-SELECT enabled from launch parameter')
+    }
   }
 
   private extractProjectId(want: Want): void {

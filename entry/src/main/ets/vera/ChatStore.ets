@@ -36,6 +36,13 @@ export class StoredMessage {
   searchMs: number = 0
   widgetMs: number = 0
   attempts: AttemptStat[] = []
+  /**
+   * Experiment only (experiment/jev-template-select branch): what
+   * tryTemplateSelectForChat (ChatPage.ets) decided for this message, kept
+   * here because hilog's ring buffer does not survive a busy widget's own
+   * logging and gets overwritten within seconds -- this persists instead.
+   */
+  templatePick: string = ''
 }
 
 export class StoredChat {
@@ -127,6 +134,7 @@ function parseMessage(raw: Object): StoredMessage {
   m.searches = num(o, 'searches')
   m.searchMs = num(o, 'searchMs')
   m.widgetMs = num(o, 'widgetMs')
+  m.templatePick = str(o, 'templatePick')
   let attempts = o['attempts'] as Object[]
   if (attempts !== null && attempts !== undefined) {
     for (let a of attempts) { m.attempts.push(parseAttempt(a)) }

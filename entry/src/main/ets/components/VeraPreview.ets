@@ -71,6 +71,18 @@ class LiveTheme {
  */
 const ASK_BEFORE_CALLS: boolean = false
 
+/**
+ * One bar of a ui.Sparkline drawn with bars: true -- its height in vp, the category name under it
+ * and its value over it. Built once per frame by VeraPreview.barItems and handed to a ForEach, so
+ * the item builder reads nothing but the item's own fields (see the comment at the ForEach for why
+ * that matters).
+ */
+class BarItem {
+  height: number = 0
+  label: string = ''
+  value: string = ''
+}
+
 @Component
 export struct VeraPreview {
   /**
@@ -1022,6 +1034,8 @@ export struct VeraPreview {
    * SPARKLINE_HEIGHT alone would.
    */
   private static readonly SPARKLINE_HEIGHT: number = 260
+  /** Room a bars: true chart keeps above and below the tallest bar for its value and its name. */
+  private static readonly BAR_LABEL_ROOM: number = 48
 
   /**
    * A ui.Sparkline's series as an SVG path, directly in vp -- x across
@@ -1147,6 +1161,23 @@ export struct VeraPreview {
       heights.push((clamped / max) * VeraPreview.SPARKLINE_HEIGHT)
     }
     return heights
+  }
+
+  /**
+   * The bars of a bars: true ui.Sparkline with the name under each and its value over it. Like
+   * barHeights this is called once, as the ForEach's data source, never from inside an item builder.
+   */
+  private barItems(node: LiveNode): BarItem[] {
+    let heights = this.barHeights(node)
+    let items: BarItem[] = []
+    for (let i = 0; i < heights.length; i++) {
+      let item = new BarItem()
+      item.height = heights[i]
+      item.label = i < node.categories.length ? node.categories[i] : ''
+      item.value = node.series[i].toString()
+      items.push(item)
+    }
+    return items
   }
 
   /** ui.Sparkline's x-axis caption, its categories joined the same way a program would build it by hand. */
@@ -2573,16 +2604,34 @@ export struct VeraPreview {
             // node.maximum exactly once, outside any item builder, and
             // hands ForEach the one thing already proven safe inside one:
             // each item's own plain closure variable.
-            ForEach(this.barHeights(node), (h: number, index: number) => {
-              Column()
-                .layoutWeight(1)
-                .height(h)
-                .borderRadius(2)
-                .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
-            }, (h: number, index: number) => index.toString())
+            ForEach(this.barItems(node), (item: BarItem, index: number) => {
+              // One column per bar: its value over it, the bar, its name under it. The value and the
+              // name come from the item, never from node, for the reason above.
+              Column({ space: 4 }) {
+                Text(item.value).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+                  .fontColor(this.t().ink).maxLines(1)
+                Column()
+                  .width('100%')
+                  .height(item.height)
+                  .borderRadius(2)
+                  .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
+                if (item.label.length > 0) {
+                  Text(item.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
+                    .fontColor(this.t().inkSoft).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .textAlign(TextAlign.Center).width('100%')
+                }
+              }
+              .layoutWeight(1)
+              .height(VeraPreview.SPARKLINE_HEIGHT + VeraPreview.BAR_LABEL_ROOM)
+              .justifyContent(FlexAlign.End)
+            // The key carries everything the column shows: with the index alone a bar that was drawn
+            // at 0 (its friend had paid nothing yet) kept that height when the series changed, because
+            // ForEach does not rebuild an item whose key is unchanged. Seen with the shared-costs
+            // prompt: Anna paid first, Ben second, and only Anna's bar ever showed.
+            }, (item: BarItem, index: number) => index.toString() + ':' + item.height.toFixed(1) + ':' + item.value + ':' + item.label)
           }
           .width('100%')
-          .height(VeraPreview.SPARKLINE_HEIGHT)
+          .height(VeraPreview.SPARKLINE_HEIGHT + VeraPreview.BAR_LABEL_ROOM)
           .alignItems(VerticalAlign.Bottom)
         } else {
           Row({ space: this.t().gapTight }) {
@@ -2665,7 +2714,7 @@ export struct VeraPreview {
           }
           .width('100%')
         }
-        if (node.categories.length > 0) {
+        if (node.categories.length > 0 && !node.bars) {
           Text(this.sparklineAxisText(node)).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
             .fontColor(this.t().inkSoft).width('100%')
         }

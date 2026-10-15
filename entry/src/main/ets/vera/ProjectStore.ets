@@ -20,6 +20,12 @@ export class Version {
    * program was built from was lost as soon as it exceeded a hundred characters.
    */
   prompt: string = ''
+  /**
+   * How the version came about when it began as a composed template: the section kinds Jev chose,
+   * comma-separated ("log_entries,bar_chart"), with "+model" appended when the model then rewrote
+   * it. Empty for a program written from scratch and for versions saved before this was kept.
+   */
+  origin: string = ''
   createdAt: number = 0
 }
 
@@ -221,7 +227,7 @@ export class ProjectStore {
   }
 
   createVersion(projectId: string, source: string, vbc2: string, note: string,
-      prompt: string = ''): Version {
+      prompt: string = '', origin: string = ''): Version {
     ensureDir(this.projectDir(projectId))
     let v = new Version()
     v.id = generateId()
@@ -230,6 +236,7 @@ export class ProjectStore {
     v.vbc2 = vbc2
     v.note = note
     v.prompt = prompt.length > 0 ? prompt : note
+    v.origin = origin
     v.createdAt = Date.now()
     let obj: Record<string, Object> = {}
     obj['id'] = v.id
@@ -238,6 +245,7 @@ export class ProjectStore {
     obj['vbc2'] = v.vbc2
     obj['note'] = v.note
     obj['prompt'] = v.prompt
+    obj['origin'] = v.origin
     obj['createdAt'] = v.createdAt
     writeJson(this.versionPath(projectId, v.id), JSON.stringify(obj))
     return v
@@ -255,6 +263,7 @@ export class ProjectStore {
     obj['note'] = v!.note
     // Rewriting the bytecode must not drop the request this version came from.
     obj['prompt'] = v!.prompt
+    obj['origin'] = v!.origin
     obj['createdAt'] = v!.createdAt
     writeJson(this.versionPath(projectId, versionId), JSON.stringify(obj))
   }
@@ -281,6 +290,7 @@ export class ProjectStore {
       v.note = (obj['note'] as string) || ''
       // Versions saved before prompts were kept fall back to the truncated note.
       v.prompt = (obj['prompt'] as string) || v.note
+      v.origin = (obj['origin'] as string) || ''
       v.createdAt = obj['createdAt'] as number
       return v
     } catch (_e) { return null }

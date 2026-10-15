@@ -26,10 +26,18 @@ import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
 import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
 import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
+import { buildFromTemplates, TemplateBuild, BUILD_CANCELLED, BUILD_SCRATCH, BUILD_COMPLETE } from '../vera/VeraTemplatePipeline'
+import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
 const UI_SELECT_MODE: string = UI_SELECT_PROMPT
 const MAX_RETRIES: number = 3
+
+// Appended to the request when the program above is a composed template, not the model's own earlier work.
+const COMPLETION_NOTE: string = '\n\nThe program above is a ready-made screen chosen for this request. ' +
+  'Keep its layout, theme and structure. Edit it so that everything the request asks for works: replace placeholder ' +
+  'text with real content, and add the state, buttons, inputs and calculations the request needs. ' +
+  'Return the complete program as source only.'
 // vera-server's address is not written down here. It lives in settings, given
 // the same way as the API key -- `--ps veraServer http://host:port` -- because
 // one person's machine address has no business in a shared repository.
@@ -207,6 +215,17 @@ struct GeneratePage {
   @State attempt: number = 0
   @State compiled: boolean = false
   @State compileErrors: string = ''
+  /**
+   * Experiment only (experiment/jev-template-select branch): what
+   * tryTemplateSelect decided for the most recent attempt, regardless of
+   * outcome -- mirrors ChatMessage.templatePick (ChatPage.ets), which this
+   * page lacked until it became clear hilog's ring buffer and the transient
+   * `status` line (overwritten by the next phase) left no way to check
+   * after the fact whether Jev was even asked. Cleared at the start of each
+   * doGenerate() so a stale answer from a previous attempt is never shown
+   * against the current one.
+   */
+  @State lastTemplatePick: string = ''
   @State compiledVbc2: string = ''
   @State compiledSource: string = ''
   @State refinePrompt: string = ''
@@ -220,6 +239,11 @@ struct GeneratePage {
   @State tab: string = TAB_PREVIEW
   @State attempts: AttemptMetrics[] = []
   @State totalMs: number = 0
+  @State fastPathRan: boolean = false
+  @State fastJevMs: number = 0
+  /** -1 means grounding wasn't needed this run -- distinct from a genuinely instant search. */
+  @State fastSearchMs: number = -1
+  @State fastContentMs: number = 0
   private systemPrompt: string = ''
   /** The skill with std/ui spliced in. */
   private promptTemplate: string = ''
@@ -231,6 +255,15 @@ struct GeneratePage {
   private previousSource: string = ''
   /** The next repair asks for SEARCH/REPLACE edits (VeraRepair); false after edits failed to apply. */
   private repairByEdit: boolean = true
+  /**
+   * A composed template that still needs its logic written (SectionPickOutcome.needsLogic). While set,
+   * every attempt edits this program instead of writing one from scratch, and a failed last attempt
+   * falls back to it as it stands. Cleared when a new generation starts.
+   */
+  private completionBase: string = ''
+  /** The section kinds of the last composed screen, kept with a saved version as its origin; empty after a scratch run. */
+  private templateKinds: string[] = []
+  private completionBaseVbc2: string = ''
   private genStartTime: number = 0
   private cancelRequested: boolean = false
   private lastRequest: string = ''
@@ -458,11 +491,19 @@ struct GeneratePage {
     this.attempt = 1
     this.attempts = []
     this.totalMs = 0
+    this.fastPathRan = false
+    this.fastJevMs = 0
+    this.fastSearchMs = -1
+    this.fastContentMs = 0
     this.serverBytecode = ''
     this.compiledVbc2 = ''
     this.compiledSource = ''
     this.cancelRequested = false
     this.failedSource = ''
+    this.lastTemplatePick = ''
+    this.completionBase = ''
+    this.completionBaseVbc2 = ''
+    this.templateKinds = []
     this.program = new RunTotals()
     this.delta = new SourceDelta()
     this.runs = []
@@ -480,7 +521,57 @@ struct GeneratePage {
     // itself, mid-generation, the first time either is worth calling.
     // JevSelector.ets is unchanged and still callable; nothing here calls it.
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
+    // Experiment only (experiment/jev-template-select branch): try a Jev
+    // section composition first, gated behind --ps veraTemplateSelect 1 plus
+    // the TypeSafe key. Off, no key, unreachable, low confidence, a tripped
+    // veto, or a composed source that fails to compile all fall straight
+    // through to the normal path inside tryTemplateSelect/startAttemptOne --
+    // see VeraSectionCompose.ets.
+    if (templateSelectEnabled() && settings.hasSelectorKey()) {
+      this.tryTemplateSelect(this.prompt.trim())
+      return
+    }
     this.startAttemptOne(this.prompt.trim())
+  }
+
+  /**
+   * The Jev template path (VeraTemplatePipeline.ets). A composed screen that compiles, runs and is
+   * judged to cover the request is the result; one that is the right base but not enough is handed
+   * to the model to finish (completionBase), with the bare template as the fallback; anything else
+   * falls through to generation from scratch.
+   */
+  private async tryTemplateSelect(userPrompt: string): Promise<void> {
+    let build: TemplateBuild = await buildFromTemplates(userPrompt, this.mode, (s: string): void => { this.status = s },
+      (): boolean => this.cancelRequested)
+    this.fastJevMs = build.jevMs
+    this.fastPathRan = true
+    this.fastSearchMs = build.searchMs
+    this.fastContentMs = build.contentMs
+    if (build.action === BUILD_CANCELLED) { return }
+    this.lastTemplatePick = build.note
+    if (build.action === BUILD_SCRATCH) {
+      if (build.status.length > 0) { this.status = build.status }
+      this.startAttemptOne(userPrompt)
+      return
+    }
+    this.templateKinds = build.kinds
+    if (build.action === BUILD_COMPLETE) {
+      this.completionBase = build.source
+      this.completionBaseVbc2 = build.vbc2
+      this.status = build.status
+      this.startAttemptOne(userPrompt, 'Completing template')
+      return
+    }
+    this.generatedSource = build.source
+    this.compiledVbc2 = build.vbc2
+    this.compiledSource = build.source
+    this.composerOpen = false
+    this.tab = TAB_PREVIEW
+    this.compiled = true
+    this.compileErrors = ''
+    this.generating = false
+    this.totalMs = Date.now() - this.genStartTime
+    this.status = build.status
   }
 
   /**
@@ -529,6 +620,10 @@ struct GeneratePage {
     this.compileErrors = ''
     this.attempts = []
     this.totalMs = 0
+    this.fastPathRan = false
+    this.fastJevMs = 0
+    this.fastSearchMs = -1
+    this.fastContentMs = 0
     this.serverBytecode = ''
     this.compiledVbc2 = ''
     this.compiledSource = ''
@@ -652,6 +747,9 @@ struct GeneratePage {
       request.previousSource = this.failedSource
       request.repairByEdit = editing
       request.userPrompt = repairPrompt(userPrompt, errorFeedback, editing, this.failedSource)
+    } else if (this.completionBase.length > 0) {
+      request.previousSource = this.completionBase
+      request.userPrompt = userPrompt + COMPLETION_NOTE
     } else if (this.previousSource.length > 0) {
       request.previousSource = this.previousSource
       request.userPrompt = userPrompt
@@ -814,9 +912,21 @@ struct GeneratePage {
       await this.runAttempt(userPrompt, errors)
     } else {
       this.totalMs = Date.now() - this.genStartTime
-      this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
-      this.traceEnd('compile')
       this.generating = false
+      if (this.completionBase.length > 0) {
+        // The model could not finish the logic; the template it started from still works.
+        this.generatedSource = this.completionBase
+        this.compiledSource = this.completionBase
+        this.compiledVbc2 = this.completionBaseVbc2
+        this.compileErrors = ''
+        this.compiled = true
+        this.composerOpen = false
+        this.tab = TAB_PREVIEW
+        this.status = 'Logic step failed to compile after ' + MAX_RETRIES + ' attempts; showing the template without it'
+      } else {
+        this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
+        this.traceEnd('compile')
+      }
     }
   }
 
@@ -1076,12 +1186,18 @@ struct GeneratePage {
     // Refine from the last program that compiled, not from generatedSource --
     // a failed attempt leaves its broken text in there.
     this.previousSource = this.compiledSource
+    this.completionBase = ''
+    this.completionBaseVbc2 = ''
     this.generating = true
     this.compiled = false
     this.compileErrors = ''
     this.attempt = 1
     this.attempts = []
     this.totalMs = 0
+    this.fastPathRan = false
+    this.fastJevMs = 0
+    this.fastSearchMs = -1
+    this.fastContentMs = 0
     this.serverBytecode = ''
     this.cancelRequested = false
     this.failedSource = ''
@@ -1115,10 +1231,19 @@ struct GeneratePage {
         vbc2 = result.vbc2
       } catch (_e) {}
     }
-    store.createVersion(this.projectId, source, vbc2, note, fullPrompt)
+    store.createVersion(this.projectId, source, vbc2, note, fullPrompt, this.originLabel())
     this.status = vbc2.length > 0 ? 'Saved with compiled bytecode' : 'Saved (source only — compile errors)'
     refreshForms()
     router.back()
+  }
+
+  /** The saved version's origin: the kinds of the composed screen it began as, "+model" when the model finished or rewrote it. */
+  private originLabel(): string {
+    let kinds = this.templateKinds.filter((k: string): boolean => k !== 'none')
+    if (kinds.length === 0) { return '' }
+    let label = kinds.join(',')
+    if (this.completionBase.length > 0 && this.compiledSource !== this.completionBase) { label = label + '+model' }
+    return label
   }
 
   private formatMs(ms: number): string {
@@ -1338,6 +1463,23 @@ struct GeneratePage {
         .width('100%')
         .padding({ left: 16, right: 16, top: 8, bottom: 4 })
 
+        // Experiment only (experiment/jev-template-select branch): survives
+        // the next status change and hilog's ring buffer getting
+        // overwritten -- see ChatMessage.templatePick for the Chat-side
+        // equivalent and why this exists.
+        if (this.lastTemplatePick.length > 0) {
+          Row({ space: 8 }) {
+            Text('Jev: ' + this.lastTemplatePick)
+              .fontSize(11)
+              .fontColor('#8A6D00')
+              .maxLines(3)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 0, bottom: 4 })
+        }
+
         Row({ space: 6 }) {
           Button('Preview')
             .type(ButtonType.Normal)
@@ -1434,9 +1576,9 @@ struct GeneratePage {
         } else {
           Scroll() {
             Column({ space: 10 }) {
-              if (this.attempts.length === 0) {
+              if (this.attempts.length === 0 && !this.fastPathRan) {
                 Text('No run yet').fontSize(13).fontColor('#BBBBBB').width('100%')
-              } else {
+              } else if (this.attempts.length > 0) {
                 // The headline is two of the same tiles as everything else:
                 // a right-aligned column inside a full-width row kept landing
                 // past the edge, and this needs no special case.
@@ -1537,6 +1679,25 @@ struct GeneratePage {
                   ForEach(this.pastRuns(), (record: RunRecord) => {
                     this.pastRun(record, this.indexOfRun(record))
                   })
+                }
+              } else {
+                // Fast path composed the result directly; no DeepSeek "attempt" ran at all.
+                Row({ space: 8 }) {
+                  this.cell('Time', this.formatMs(this.totalMs), 'fast path, no code generation')
+                }
+                .width('100%')
+                Row({ space: 8 }) {
+                  this.cell('Jev', this.formatMs(this.fastJevMs), 'classify + pick fragments')
+                  if (this.fastSearchMs >= 0) {
+                    this.cell('Search', this.formatMs(this.fastSearchMs), 'real-data grounding')
+                  }
+                }
+                .width('100%')
+                if (this.fastContentMs > 0) {
+                  Row({ space: 8 }) {
+                    this.cell('Fill', this.formatMs(this.fastContentMs), 'content for the template')
+                  }
+                  .width('100%')
                 }
               }
             }
