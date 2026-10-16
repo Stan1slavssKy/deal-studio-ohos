@@ -70,7 +70,6 @@ const names = ['Anna', 'Ben', 'Carol', 'Dan']
 
 // the balance chart variant and the count: cosmetic slots flip what the readers show
 {
-  const spec = k => fragments().find(f => f.kind === k)
   const vals = ALL.map(k => values(k, {labels: names}))
   vals[1].set('__SHOW_COUNT_IDX__', 'true'); vals[3].set('__USE_BALANCES_IDX__', 'true')
   const r = compileVeraSource(composeProgram(ALL, globals, vals))

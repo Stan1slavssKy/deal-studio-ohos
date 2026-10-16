@@ -4,8 +4,6 @@
 'use strict'
 const assert = require('node:assert/strict')
 const {loadVera} = require('./source-loader')
-const {fragments} = loadVera('VeraTemplates')
-const {expandListRows} = loadVera('VeraTemplateContent')
 const compose = loadVera('VeraSectionCompose')
 const judge = loadVera('VeraCoverageJudge')
 const {deepseek} = loadVera('DeepSeekEngine')
@@ -13,7 +11,7 @@ const {settings} = loadVera('SettingsStore')
 const {buildFromTemplates} = loadVera('VeraTemplatePipeline')
 const C = loadVera('VeraComposition')
 const {compileVeraSource} = loadVera('VeraCompiler')
-const {VirtualMachine, deserializeVbc2, decodeRuntimeValue} = loadVera('VeraInterpreter')
+const {VirtualMachine, deserializeVbc2} = loadVera('VeraInterpreter')
 const {UiHostEnvironment, decodeVeraUi} = loadVera('VeraUi')
 
 settings.getSelectorKey = () => 'test-key'

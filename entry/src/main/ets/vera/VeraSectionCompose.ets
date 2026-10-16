@@ -36,7 +36,7 @@
 import http from '@ohos.net.http'
 import hilog from '@ohos.hilog'
 import { layouts, arrangeInLayout, completeRequiredSlots, swapForLayout, layoutKinds, kindsOfLayout, placeKinds, fitToSlots, LAYOUT_NONE, LAYOUT_STACK } from './VeraLayouts'
-import { FragmentSpec, StateFieldSpec, SlotSpec, VetoSpec, ContentFieldSpec, PortSpec, fragments, vetoes, bannerSectionView } from './VeraTemplates'
+import { FragmentSpec, StateFieldSpec, SlotSpec, VetoSpec, ContentFieldSpec, fragments, vetoes, bannerSectionView } from './VeraTemplates'
 
 const DOMAIN = 0x0000
 const ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
