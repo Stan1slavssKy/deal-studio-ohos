@@ -275,7 +275,7 @@ struct GeneratePage {
   private completionComposition: string = ''
   /** True once a model-written program compiled in this generation; the saved origin then says "+model". */
   private modelWrote: boolean = false
-  /** Bumped by every Generate and Stop, so a template run that was stopped knows it is stale when a new one resets cancelRequested. */
+  /** Bumped by every Generate, refine and Stop, so a run that was stopped knows it is stale when a new one resets cancelRequested. */
   private runId: number = 0
   private genStartTime: number = 0
   private cancelRequested: boolean = false
@@ -609,6 +609,7 @@ struct GeneratePage {
    * the retries, which only rewrite the user prompt.
    */
   private async startAttemptOne(userPrompt: string, label: string = 'Generating'): Promise<void> {
+    let run = this.runId
     this.systemPrompt = this.promptTemplate
     this.uiSelected = []
     if (UI_SELECT_MODE !== UI_SELECT_FULL && this.mode === MODE_DEEPSEEK && this.skillText.length > 0) {
@@ -616,7 +617,7 @@ struct GeneratePage {
       let selectStartedAt = Date.now()
       let selected = await selectUiForPrompt(UI_SELECT_MODE, userPrompt, this.previousSource)
       logStep('ui-select', selectStartedAt, 'mode=' + UI_SELECT_MODE)
-      if (this.cancelRequested) { return }
+      if (run !== this.runId || this.cancelRequested) { return }
       if (selected === null) {
         console.info('VERA-UI-SELECT fallback to the whole catalogue')
       } else {
@@ -750,6 +751,7 @@ struct GeneratePage {
   }
 
   private async runAttempt(userPrompt: string, errorFeedback: string): Promise<void> {
+    let run = this.runId
     this.generatedSource = ''
     let metrics = new AttemptMetrics()
     metrics.attempt = this.attempt
@@ -792,10 +794,12 @@ struct GeneratePage {
         if (firstTokenAt === 0) { firstTokenAt = Date.now() }
         this.generatedSource += token
       })
+      if (run !== this.runId) { return }
       if (genResult.text.length > 0) {
         this.generatedSource = genResult.text
       }
     } catch (e) {
+      if (run !== this.runId) { return }
       metrics.genMs = Date.now() - genStart
       metrics.failLayer = 'request'
       this.attempts = [...this.attempts, metrics]
@@ -1245,15 +1249,13 @@ struct GeneratePage {
     }
     this.generating = true
     this.cancelRequested = false
+    let run = ++this.runId
     this.genStartTime = Date.now()
     this.status = 'Checking whether this changes the structure...'
     let result: EditResult = await editComposition(ask, record, this.mode,
       (request: string, c: Composition): Promise<CompositionEdit> => selectEdit(request, c, settings.getSelectorKey()))
-    if (this.cancelRequested) {
-      this.generating = false
-      this.status = 'Stopped'
-      return
-    }
+    // Stop bumps runId too, and has already said Stopped.
+    if (run !== this.runId) { return }
     this.lastTemplatePick = result.note
     if (!result.applied || result.composition === null) {
       this.refineWithModel(ask)
@@ -1295,6 +1297,7 @@ struct GeneratePage {
     this.fastContentMs = 0
     this.serverBytecode = ''
     this.cancelRequested = false
+    this.runId++
     this.failedSource = ''
     this.delta = new SourceDelta()
     this.startRun(ask)

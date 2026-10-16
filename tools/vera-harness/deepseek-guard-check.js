@@ -1,5 +1,5 @@
 // DeepSeekEngine with its network turn stubbed: the web search budget holds per call, not per round, and the
-// template-content side call does not take over the engine while another generation runs. No network.
+// template-content and UI-needs side calls do not take over the engine while another generation runs. No network.
 'use strict'
 const assert = require('node:assert/strict')
 const {loadVera} = require('./source-loader')
@@ -34,8 +34,9 @@ async function sideCallKeepsFlags() {
   deepseek.cancelled = true
   let streamed = 0
   deepseek.streamOnce = async () => { streamed++; return {content: '{}', toolCalls: []} }
-  const out = await deepseek.extractTemplateContent('s', 'u', 100)
-  assert.equal(out, null, 'a side call while generating answers null')
+  for (const call of [() => deepseek.extractTemplateContent('s', 'u', 100), () => deepseek.extractUiNeeds('u')]) {
+    assert.equal(await call(), null, 'a side call while generating answers null')
+  }
   assert.equal(streamed, 0, 'no request is sent while generating')
   assert.equal(deepseek.generating, true, 'generating is kept')
   assert.equal(deepseek.cancelled, true, 'cancelled is kept')

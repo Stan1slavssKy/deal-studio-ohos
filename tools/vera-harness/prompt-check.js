@@ -164,18 +164,22 @@ run('String case: s.toUpperCase(), s.toLowerCase() and the strings functions',()
   const pipeline=load(path.join(base,'VeraTemplatePipeline.ets'));
   // The template pipeline and the trace are swapped per check: tpl.build answers buildFromTemplates, traces collects trace().
   const tpl={build:async()=>{throw Error('No template build set')}},traces=[];
+  // side.selectUi answers selectUiForPrompt and side.edit answers editComposition.
+  const side={selectUi:async()=>null,edit:async()=>{throw Error('No structural edit set')}};
   function templateBuild(action,fields){return Object.assign(new pipeline.TemplateBuild(),{action,source:'TEMPLATE',vbc2:'["VBC2"]',kinds:['list'],composition:'{"blocks":1}',status:action},fields);}
   async function settle(c){for(let i=0;i<5;i++)await new Promise(r=>setTimeout(r,0));if(c.pending)await c.pending;}
   function page(){
     const src=read('entry/src/main/ets/pages/GeneratePage.ets');
     const prefix=src.slice(0,src.indexOf('@Entry')).replace(/^import .*$/gm,'');
-    const code=prefix+'\nclass Controller { '+['callModel','runAttempt','doRefine','traceEnd','doGenerate','tryTemplateSelect','fallBackToTemplate','refineWithModel','stopGeneration','originLabel'].map(n=>method(src,n)).join('\n')+' } module.exports=Controller;';
+    const code=prefix+'\nclass Controller { '+['callModel','runAttempt','doRefine','traceEnd','doGenerate','tryTemplateSelect','startAttemptOne','tryStructuralEdit','fallBackToTemplate','refineWithModel','stopGeneration','originLabel'].map(n=>method(src,n)).join('\n')+' } module.exports=Controller;';
     const compiled=ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020},reportDiagnostics:true});
     assert.equal((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).length,0,'Extracted generation controller syntax');
     const globals={ensureCapabilities:async()=>{},logStep:()=>{},logMark:()=>{},trace:(name,fields)=>{traces.push({name,fields});},
       templateSelectEnabled:()=>true,buildFromTemplates:(...a)=>tpl.build(...a),BUILD_CANCELLED:pipeline.BUILD_CANCELLED,BUILD_SCRATCH:pipeline.BUILD_SCRATCH,BUILD_COMPLETE:pipeline.BUILD_COMPLETE,traceCompile:()=>{},getContext:()=>({}),UI_SELECT_FULL:selection.UI_SELECT_FULL,UI_SELECT_PROMPT:selection.UI_SELECT_PROMPT,settings,deepseek:deep.deepseek,DEEPSEEK_GENERATION_MAX_TOKENS:deep.DEEPSEEK_GENERATION_MAX_TOKENS,
       GenerateRequest:llama.GenerateRequest,GenerateResult:llama.GenerateResult,compileVeraSource:compiler.compileVeraSource,CompileError:compiler.CompileError,
       repairPrompt:repairMod.repairPrompt,applyRepair:repairMod.applyRepair,
+      selectUiForPrompt:(...a)=>side.selectUi(...a),describeCatalogForPrompt:()=>'',UI_TOOL_NOTE:'',
+      compositionFromJson:j=>j.length>0?{}:null,compositionToJson:()=>'EDITED-RECORD',editComposition:(...a)=>side.edit(...a),selectEdit:()=>null,
       engine:{stop(){},generate(request){return {text:example,inputTokens:1,outputTokens:1,request}}}};
     const mod={exports:{}};new Function('module',...Object.keys(globals),compiled.outputText)(mod,...Object.values(globals));
     const c=new mod.exports();
@@ -228,6 +232,32 @@ run('String case: s.toUpperCase(), s.toLowerCase() and the strings functions',()
     finishOld(templateBuild(pipeline.BUILD_TEMPLATE,{source:'OLD'}));await settle(c);
     assert.notEqual(c.compiledSource,'OLD');assert.equal(c.generating,true);
     return {staleRunCancelled:true,newRunKept:true};
+  });
+  // A Stop followed by a new run resets cancelRequested, so each await below must see the old run as stale by its runId.
+  function stopThenGenerate(c){c.stopGeneration();tpl.build=()=>new Promise(()=>{});c.prompt='second';c.doGenerate();}
+  await runAsync('Generate screen ignores a stopped UI selection after a new Generate',async()=>{
+    reset();const c=page();c.skillText=skill;c.promptTemplate=skill;let finishOld,attempts=0;
+    side.selectUi=()=>new Promise(r=>{finishOld=r;});c.runAttempt=async()=>{attempts++;};
+    const old=Object.getPrototypeOf(c).startAttemptOne.call(c,'first');stopThenGenerate(c);
+    finishOld(new Set(['Text']));await old;
+    assert.deepEqual(c.uiSelected,[]);assert.equal(attempts,0,'the stopped run makes no attempt');assert.equal(c.generating,true);
+    return {staleRunIgnored:true};
+  });
+  await runAsync('Generate screen ignores a stopped model answer after a new Generate',async()=>{
+    reset();const c=page();let finishOld;
+    c.callModel=()=>new Promise(r=>{finishOld=r;});
+    const old=c.runAttempt('first','');stopThenGenerate(c);
+    finishOld(Object.assign(new llama.GenerateResult(),{text:example}));await old;
+    assert.notEqual(c.compiledSource,example);assert.equal(c.attempts.length,0);assert.equal(c.generating,true);
+    return {staleRunIgnored:true};
+  });
+  await runAsync('Generate screen ignores a stopped structural edit after a new Generate',async()=>{
+    reset();const c=page();c.compositionJson='{"blocks":1}';let finishOld;
+    side.edit=()=>new Promise(r=>{finishOld=r;});
+    const old=c.tryStructuralEdit('add a chart');stopThenGenerate(c);
+    finishOld({applied:true,note:'n',source:'EDITED',vbc2:'v',composition:{kinds:()=>['chart']}});await old;
+    assert.notEqual(c.compiledSource,'EDITED');assert.equal(c.generating,true);
+    return {staleRunIgnored:true};
   });
   await runAsync('Generate screen keeps +model in the origin after a model refine of a completed template',async()=>{
     reset();responses.push(example,example);const c=page();tpl.build=async()=>templateBuild(pipeline.BUILD_COMPLETE);

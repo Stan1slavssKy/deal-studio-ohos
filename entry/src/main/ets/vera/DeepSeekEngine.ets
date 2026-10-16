@@ -740,7 +740,8 @@ export class DeepSeekEngine {
    * JSON array -- and the caller then describes the whole catalogue.
    */
   async extractUiNeeds(userPrompt: string): Promise<string[] | null> {
-    if (!settings.hasApiKey()) { return null }
+    // Same guard as extractTemplateContent: a stale run must not take the engine's flags from a generation.
+    if (!settings.hasApiKey() || this.generating) { return null }
     let messages: Record<string, Object>[] = []
     messages.push(plainMessage('system', UI_NEEDS_PROMPT))
     messages.push(plainMessage('user', userPrompt))
