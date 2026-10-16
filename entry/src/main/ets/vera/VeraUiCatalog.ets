@@ -180,7 +180,7 @@ export const CATALOG: ComponentSpec[] = [
       new PropSpec('email', 'boolean', '', true),
       new PropSpec('emailMessage', 'string', '', true)],
     'text the user types; the handler takes (state, value: string)', 'string',
-    'keyboardType is "", "number", "phone" or "email" and only changes which keys the ' +
+    'keyboardType is "", "number" (digits and a decimal point), "phone" or "email" and only changes which keys the ' +
     'on-screen keyboard offers -- it never rejects a character. required, minLength, ' +
     'maxLength, pattern (a regex) and email each turn on one check, shown under the ' +
     'field in its own words via the matching ...Message prop (a sensible default is ' +

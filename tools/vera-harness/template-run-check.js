@@ -10,7 +10,7 @@ const {compileVeraSource} = loadVera('VeraCompiler')
 const {VirtualMachine, deserializeVbc2, decodeRuntimeValue} = loadVera('VeraInterpreter')
 // Handler arguments are VM values, in the same tagged form run.js takes for a state.
 const str = v => decodeRuntimeValue(['s', v])
-const int = v => decodeRuntimeValue(['i', v])
+const int = v => decodeRuntimeValue(['n', v])
 const {UiHostEnvironment, decodeVeraUi} = loadVera('VeraUi')
 
 const globals = new Map([['__THEME__', 'clean'], ['__HEADER_STYLE__', 'default'], ['__BANNER_SECTION__', 'hide'], ['__TITLE__', 'Check']])
@@ -73,17 +73,17 @@ const trap = `import * as ui from "std/ui"
 
 @jsonable
 class AppState {
-  items: int[];
+  items: number[];
 }
 
 function init(): AppState {
-  let empty: int[] = [];
+  let empty: number[] = [];
   return {items: empty};
 }
 
 function view(state: AppState): ui.View {
-  let v: int = state.items[3];
-  return ui.Column("default", [ui.Text("body", ui.intToString(v))]);
+  let v: number = state.items[3];
+  return ui.Column("default", [ui.Text("body", ui.numberToString(v))]);
 }`
 const bad = smokeRun(compileVeraSource(trap).vbc2)
 assert.equal(bad.ok, false); assert.ok(bad.error.length > 0)

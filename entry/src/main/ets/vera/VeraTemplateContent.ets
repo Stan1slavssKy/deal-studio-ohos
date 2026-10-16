@@ -201,7 +201,7 @@ export function escapeForVeraString(raw: string, maxLength: number): string {
 }
 
 /**
- * Strips raw model text down to a bare int literal Vera can splice unquoted into an array.
+ * Strips raw model text down to a bare number literal Vera can splice unquoted into an array.
  * Truncates at the first decimal point rather than deleting it -- a model answering with a real
  * decimal figure (e.g. "176.5" cm) must not have its digits concatenated into "1765".
  */

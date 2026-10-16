@@ -57,11 +57,32 @@ const run = async (outcome, covers, opts = {}) => {
   // a composition that compiles but cannot run must not reach the screen: break the checklist view for this run
   const templates = loadVera('VeraTemplates'), real = templates.fragments
   templates.fragments = () => real().map(f => {
-    if (f.kind === 'checklist') f.viewBlock = f.viewBlock.replace('let count: int = state.itemsIDX.length();', 'let count: int = state.itemsIDX.length(); let boom: int = state.itemsIDX[99].detail.length();')
+    if (f.kind === 'checklist') f.viewBlock = f.viewBlock.replace('let count: number = state.itemsIDX.length();', 'let count: number = state.itemsIDX.length(); let boom: number = state.itemsIDX[99].detail.length();')
     return f
   })
   ;({build} = await run(jev(['checklist']), 0.9))
   templates.fragments = real
   assert.equal(build.action, 'scratch'); assert.match(build.note, /did not run/)
+  // a filter beside a list: the model is asked for the match rule too, and an answer without it keeps the default
+  {
+    const saved = deepseek.extractTemplateContent
+    const rowsAnswer = {title: 'Books', section2_items: [['Dune', 'Sand.'], ['Emma', 'Manners.'], ['Ulysses', 'Dublin.']]}
+    const lower = 'return query.length() === 0 || strings.contains(strings.toLowerCase(label), strings.toLowerCase(query));'
+    let calls = 0
+    deepseek.extractTemplateContent = async () => { calls++; return JSON.stringify(Object.assign({holes: {rowMatches2: lower}}, rowsAnswer)) }
+    ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view']), 0.9))
+    assert.equal(build.action, 'template'); assert.match(build.note, /holes=filled\(1\)/); assert.match(build.source, /strings\.toLowerCase\(label\)/)
+    deepseek.extractTemplateContent = async () => JSON.stringify(rowsAnswer)
+    ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view']), 0.9))
+    assert.equal(build.action, 'template'); assert.match(build.note, /holes=default\(unusable answer\)/); assert.match(build.source, /strings\.contains\(label, query\)/)
+    // no filter: the model is not asked about holes at all
+    calls = 0
+    deepseek.extractTemplateContent = async () => { calls++; return JSON.stringify(rowsAnswer) }
+    ;({build} = await run(jev(['master_list', 'detail_view']), 0.9))
+    assert.equal(build.action, 'template'); assert.doesNotMatch(build.note, /holes=/)
+    assert.equal(calls, 1, 'only the content call')
+    deepseek.extractTemplateContent = saved
+  }
+
   console.log('pipeline-check: ok')
 })().catch(e => { console.error(e); process.exit(1) })

@@ -18,12 +18,15 @@
  */
 
 import { settings } from './SettingsStore'
-import { selectSections, composeProgram, SectionPickOutcome } from './VeraSectionCompose'
+import { selectSections, composeProgram, SectionPickOutcome, SectionPick } from './VeraSectionCompose'
 import { fillSectionsContent } from './VeraTemplateContent'
 import { compileVeraSource } from './VeraCompiler'
 import { smokeRun, SmokeResult } from './VeraSmokeRun'
 import { judgeCoverage, COVERS_BELOW } from './VeraCoverageJudge'
 import { webSearch } from './VeraWebSearch'
+import { deepseek } from './DeepSeekEngine'
+import { holesOf, holeValues, holeBodiesBySlot, fillHoles, HoleFill } from './VeraHoles'
+import { Composition, Block, compositionToJson } from './VeraComposition'
 
 export const BUILD_TEMPLATE: string = 'template'
 export const BUILD_COMPLETE: string = 'complete'
@@ -46,6 +49,21 @@ export class TemplateBuild {
   contentMs: number = 0
   /** Jev's probability that the screen covers the request, -1 when it was not asked or did not answer. */
   covers: number = -1
+  /** The composition record (VeraComposition.ets) as JSON, for template and complete; the program above is rebuilt from it. */
+  composition: string = ''
+  layout: string = 'stack'
+}
+
+/** Per-slot copies of `values` with `extra` added; the caller's maps are not changed. */
+function mergeHoleValues(values: Map<string, string>[], extra: Map<string, string>[]): Map<string, string>[] {
+  let out: Map<string, string>[] = []
+  for (let i = 0; i < values.length; i++) {
+    let merged: Map<string, string> = new Map<string, string>()
+    values[i].forEach((v: string, k: string) => { merged.set(k, v) })
+    if (i < extra.length) { extra[i].forEach((v: string, k: string) => { merged.set(k, v) }) }
+    out.push(merged)
+  }
+  return out
 }
 
 function scratch(note: string, status: string, build: TemplateBuild): TemplateBuild {
@@ -72,8 +90,12 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     if (outcome.sections === null) {
       return scratch(outcome.note, '', build)
     }
-    let sections = outcome.sections
+    // Empty sections are dropped: the composition record keeps only blocks that exist, and the
+    // numbers in the generated names follow the blocks that are really there.
+    let sections = outcome.sections.filter((p: SectionPick): boolean => p.kind !== 'none')
+    if (sections.length === 0) { return scratch(outcome.note, '', build) }
     for (let section of sections) { build.kinds.push(section.kind) }
+    build.layout = outcome.layout
 
     // needs_real_data alone does not null outcome.sections -- it means this composition has to be
     // grounded in one real search before it is trusted. A trend_chart needs grounding whatever Jev
@@ -118,6 +140,25 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     let note = outcome.note + searchTag + (content.note.length > 0 ? ' ' + content.note : '')
     let shown = build.kinds.filter((k: string): boolean => k !== 'none').join('+')
 
+    // Holes: function bodies the model writes for the chosen blocks (the filter's match rule), settled
+    // against the compiler. Defaults apply when the model cannot or the mode has no model to ask.
+    let baseValues = instanceValues
+    let holeBodies: Map<string, string> = new Map<string, string>()
+    if (holesOf(build.kinds).length > 0) {
+      if (mode === 'deepseek') {
+        onStatus('Writing the details...')
+        let kinds = build.kinds
+        let fill: HoleFill = await fillHoles(prompt, kinds,
+          (system: string, user: string): Promise<string | null> => deepseek.extractTemplateContent(system, user, 500),
+          (bodies: Map<string, string>): string => composeProgram(kinds, globalValues, mergeHoleValues(instanceValues, holeValues(kinds, bodies))))
+        if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+        holeBodies = fill.bodies
+        instanceValues = mergeHoleValues(instanceValues, holeValues(kinds, fill.bodies))
+        if (fill.note.length > 0) { note = note + ' ' + fill.note }
+      } else {
+        note = note + ' holes=default(' + mode + ')'
+      }
+    }
     let source = composeProgram(build.kinds, globalValues, instanceValues)
     let vbc2 = ''
     try {
@@ -133,6 +174,13 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     }
     build.source = source
     build.vbc2 = vbc2
+    let record = new Composition()
+    record.layout = build.layout
+    record.prompt = prompt
+    globalValues.forEach((v: string, k: string) => { record.globals.set(k, v) })
+    let bodiesBySlot = holeBodiesBySlot(build.kinds, holeBodies)
+    for (let i = 0; i < build.kinds.length; i++) { record.blocks.push(new Block(build.kinds[i], baseValues[i], bodiesBySlot[i])) }
+    build.composition = compositionToJson(record)
 
     if (outcome.needsLogic) {
       build.action = BUILD_COMPLETE

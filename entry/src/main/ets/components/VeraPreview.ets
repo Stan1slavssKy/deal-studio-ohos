@@ -1270,7 +1270,8 @@ export struct VeraPreview {
   }
 
   private textFieldKeyboard(node: LiveNode): InputType {
-    if (node.keyboardType === 'number') { return InputType.Number }
+    // Digits and a decimal point: InputType.Number is digits only, and the catalogue sends money, weights and distances here.
+    if (node.keyboardType === 'number') { return InputType.NUMBER_DECIMAL }
     if (node.keyboardType === 'phone') { return InputType.PhoneNumber }
     if (node.keyboardType === 'email') { return InputType.Email }
     return InputType.Normal
@@ -1853,6 +1854,10 @@ export struct VeraPreview {
         .alignItems(VerticalAlign.Center)
         Text(this.formatNumber(node))
           .fontSize(this.renderTextSize('metric'))
+          // One line, shrunk to fit its column: "$120.50" in half a screen wrapped its last digit onto a second line.
+          .maxLines(1)
+          .minFontSize(14)
+          .maxFontSize(this.renderTextSize('metric'))
           .fontFamily(this.textFamily('metric'))
           .fontWeight(this.t().weightMetric)
           .fontColor(toneInk(this.t(), node.style, this.t().ink))

@@ -32,12 +32,19 @@ export class SlotSpec {
   instructions: string
   /** criteria text per value, only used for 'choice' slots (key = value). */
   criteria: Map<string, string>
-  constructor(token: string, values: string[], kind: string, instructions: string, criteria: Map<string, string>) {
+  /**
+   * Probability a 'noul' slot must exceed to take its second value; -1 uses the cosmetic default. A slot that
+   * changes what a block shows, not just how it looks, needs a higher bar than a cosmetic one: Jev said yes at
+   * 0.3 to "show the balances instead of the totals" for a request that only mentioned both.
+   */
+  above: number
+  constructor(token: string, values: string[], kind: string, instructions: string, criteria: Map<string, string>, above: number = -1) {
     this.token = token
     this.values = values
     this.kind = kind
     this.instructions = instructions
     this.criteria = criteria
+    this.above = above
   }
 }
 
@@ -89,7 +96,7 @@ export class ContentFieldSpec {
   hint: string
   /** Hard cap on visible characters, enforced before substitution. */
   maxLength: number
-  /** True for a bare int literal spliced unquoted into an array (e.g. a chart value), not a quoted string. */
+  /** True for a bare number literal spliced unquoted into an array (e.g. a chart value), not a quoted string. */
   numeric: boolean
   constructor(token: string, key: string, fallback: string, hint: string, maxLength: number, numeric: boolean = false) {
     this.token = token
@@ -151,7 +158,7 @@ class Item {
 @jsonable
 class AppState {
   items: Item[];
-  lastToggled: int;
+  lastToggled: number;
 }
 
 function init(): AppState {
@@ -163,9 +170,9 @@ function init(): AppState {
   return {items: items, lastToggled: -1};
 }
 
-function toggle(state: AppState, index: int): AppState {
+function toggle(state: AppState, index: number): AppState {
   let out: Item[] = [];
-  let i: int = 0;
+  let i: number = 0;
   while (i < state.items.length()) {
     let it: Item = state.items[i];
     if (i === index) {
@@ -179,15 +186,15 @@ function toggle(state: AppState, index: int): AppState {
 }
 
 function view(state: AppState): ui.View {
-  let count: int = state.items.length();
-  let doneCount: int = 0;
-  let i: int = 0;
+  let count: number = state.items.length();
+  let doneCount: number = 0;
+  let i: number = 0;
   while (i < count) {
     if (state.items[i].done) { doneCount = doneCount + 1; }
     i = i + 1;
   }
   let rows: ui.View[] = [];
-  let j: int = 0;
+  let j: number = 0;
   while (j < count) {
     let it: Item = state.items[j];
     let icon: string = "pin";
@@ -197,7 +204,7 @@ function view(state: AppState): ui.View {
     j = j + 1;
   }
   return ui.AppTheme("__THEME__", "", [
-    ui.Header("__HEADER_STYLE__", "__TITLE__", "", ui.intToString(doneCount) + " of " + ui.intToString(count) + " done", "check"),
+    ui.Header("__HEADER_STYLE__", "__TITLE__", "", ui.numberToString(doneCount) + " of " + ui.numberToString(count) + " done", "check"),
     ui.Section("content", "", "", [
       ui.When(count === 0, ui.EmptyState("default", "Nothing here", "Add an item to get started.", "", "", "pin")),
       ui.When(count > 0, ui.ListGroup("__LIST_STYLE__", "", rows))
@@ -210,31 +217,31 @@ const DASHBOARD_SOURCE: string = `import * as ui from "std/ui"
 
 @jsonable
 class AppState {
-  count: int;
-  total: int;
+  count: number;
+  total: number;
 }
 
 function init(): AppState {
   return {count: 0, total: 100};
 }
 
-function increment(state: AppState, ignored: int): AppState {
+function increment(state: AppState, ignored: number): AppState {
   return {count: state.count + 1, total: state.total};
 }
 
-function reset(state: AppState, ignored: int): AppState {
+function reset(state: AppState, ignored: number): AppState {
   return {count: 0, total: state.total};
 }
 
 function view(state: AppState): ui.View {
-  let remaining: int = state.total - state.count;
+  let remaining: number = state.total - state.count;
   return ui.AppTheme("__THEME__", "", [
     ui.Header("default", "__TITLE__", "", "A canned template screen with generic numbers", "clock"),
     ui.Section("summary", "", "", [
       ui.MetricGroup("__METRIC_STYLE__", 3, [
-        ui.IntStat("default", "__STAT1_LABEL__", state.count, "", "", 1, "", "pin"),
-        ui.IntStat("__ACCENT_STAT__", "__STAT2_LABEL__", state.total, "", "", 1, "", "check"),
-        ui.IntStat("default", "__STAT3_LABEL__", remaining, "", "", 1, "", "clock")
+        ui.NumberStat("default", "__STAT1_LABEL__", state.count, "", "", 1, "", "pin"),
+        ui.NumberStat("__ACCENT_STAT__", "__STAT2_LABEL__", state.total, "", "", 1, "", "check"),
+        ui.NumberStat("default", "__STAT3_LABEL__", remaining, "", "", 1, "", "clock")
       ])
     ]),
     ui.Section("content", "", "", [
@@ -367,7 +374,7 @@ export class ListFieldSpec {
   maxRows: number
   /** The rows used when the answer is missing or unusable; one string[] per row, one string per column. */
   fallbackRows: string[][]
-  /** Indices of columns that are whole numbers, spliced unquoted (as a bare int literal) instead of as escaped text. */
+  /** Indices of columns that are whole numbers, spliced unquoted (as a bare number literal) instead of as escaped text. */
   numericColumns: number[]
   constructor(token: string, key: string, hint: string, columnHints: string[], columnMax: number[], rowTemplate: string,
       separator: string, minRows: number, maxRows: number, fallbackRows: string[][], numericColumns: number[] = []) {
@@ -382,6 +389,70 @@ export class ListFieldSpec {
     this.maxRows = maxRows
     this.fallbackRows = fallbackRows
     this.numericColumns = numericColumns
+  }
+}
+
+/**
+ * A typed gap in a fragment that the model fills with the body of one function. The fragment text
+ * carries `token` inside `function <name>IDX(<params>): <returns> { token }`; the composer splices in
+ * either the model's body or `defaultBody`, wrapped in //@hole markers so a compile error can be
+ * traced back to this hole (VeraHoles.ets). `defaultBody` must always compile and behave sensibly:
+ * a hole the model cannot fill costs nothing but the customisation.
+ */
+export class HoleSpec {
+  /** Stable key without the instance number, e.g. "rowMatches"; the model's answer key is key + slot number. */
+  key: string
+  /** Token in the fragment text, containing "IDX". */
+  token: string
+  /** What the model is told the function is: name, parameters and return type. */
+  signature: string
+  /** What the function decides, one or two sentences for the model. */
+  purpose: string
+  /** Body used when the model gives none or a body that does not compile. */
+  defaultBody: string
+  /** A kind that must also be on the screen for the model to be asked; '' asks whenever the fragment is. The default body applies either way. */
+  when: string
+  constructor(key: string, token: string, signature: string, purpose: string, defaultBody: string, when: string = '') {
+    this.key = key
+    this.token = token
+    this.signature = signature
+    this.purpose = purpose
+    this.defaultBody = defaultBody
+    this.when = when
+  }
+}
+
+/**
+ * A connection point of a fragment to state another fragment owns or provides. A `writes` port
+ * publishes one of the fragment's own state fields under a shared `name`; a `reads` port asks for
+ * a value of that `name` and `type`. The composer (VeraSectionCompose.ets's bindPorts) replaces a
+ * reads port's `token` in the fragment text with `state.<field>` of a chosen publisher, or with
+ * `fallback` when no chosen fragment publishes that name and type -- so a fragment never needs to
+ * know which other fragments are on the screen.
+ */
+export class PortSpec {
+  /** 'writes' (publishes a field) or 'reads' (consumes a value). */
+  dir: string
+  /** Shared key, e.g. "selected". A reads port binds only to a writes port of the same name and type. */
+  name: string
+  /** Vera type of the value, e.g. "number" or "Entry[]". */
+  type: string
+  /** writes: the state field published, containing "IDX". reads: the token in the fragment text, e.g. "__PORT_selected__". */
+  ref: string
+  /** reads only: a Vera expression of `type` used when nothing publishes this name. */
+  fallback: string
+  /**
+   * writes only: `ref` is a Vera expression over `state` (containing "IDX"), not a state field name --
+   * a value derived from the fragment's state, such as how many rows are done.
+   */
+  computed: boolean
+  constructor(dir: string, name: string, type: string, ref: string, fallback: string = '', computed: boolean = false) {
+    this.dir = dir
+    this.name = name
+    this.type = type
+    this.ref = ref
+    this.fallback = fallback
+    this.computed = computed
   }
 }
 
@@ -421,9 +492,20 @@ export class FragmentSpec {
   imports: string[]
   /** List-valued parameters, filled the same way as contentFields but with a model-chosen number of rows. */
   listFields: ListFieldSpec[]
+  /** Connection points to other fragments' state; empty for a self-contained fragment. */
+  ports: PortSpec[]
+  /** Typed gaps the model fills with function bodies; empty for a fragment with nothing to customise that way. */
+  holes: HoleSpec[]
+  /**
+   * Veto keys (VeraTemplates.vetoes) whose concern this block already handles: a form with several
+   * fields, per-person running totals, a calculation. When any chosen block covers a veto, that veto no
+   * longer sends the request to the model to add what the block already has.
+   */
+  covers: string[]
   constructor(kind: string, criteria: string, supportClass: string, stateFields: StateFieldSpec[],
       initStatements: string, initEntries: string, functions: string, viewBlock: string,
-      slots: SlotSpec[], contentFields: ContentFieldSpec[], imports: string[] = [], listFields: ListFieldSpec[] = []) {
+      slots: SlotSpec[], contentFields: ContentFieldSpec[], imports: string[] = [], listFields: ListFieldSpec[] = [],
+      ports: PortSpec[] = [], holes: HoleSpec[] = [], covers: string[] = []) {
     this.kind = kind
     this.criteria = criteria
     this.supportClass = supportClass
@@ -436,6 +518,9 @@ export class FragmentSpec {
     this.contentFields = contentFields
     this.imports = imports
     this.listFields = listFields
+    this.ports = ports
+    this.holes = holes
+    this.covers = covers
   }
 }
 
@@ -453,14 +538,14 @@ class Item {
   detail: string;
   done: boolean;
 }`,
-    [new StateFieldSpec('itemsIDX', 'Item[]'), new StateFieldSpec('lastToggledIDX', 'int')],
+    [new StateFieldSpec('itemsIDX', 'Item[]'), new StateFieldSpec('lastToggledIDX', 'number')],
     `  let itemsIDX: Item[] = [
     __ITEMS_IDX__
   ];`,
     `itemsIDX: itemsIDX, lastToggledIDX: -1`,
-    `function toggleIDX(state: AppState, index: int): AppState {
+    `function toggleIDX(state: AppState, index: number): AppState {
   let out: Item[] = [];
-  let i: int = 0;
+  let i: number = 0;
   while (i < state.itemsIDX.length()) {
     let it: Item = state.itemsIDX[i];
     if (i === index) {
@@ -471,11 +556,22 @@ class Item {
     i = i + 1;
   }
   return {itemsIDX: out, lastToggledIDX: index__PASSTHROUGH__};
+}
+
+function doneCountIDX(state: AppState): number {
+  let n: number = 0;
+  let i: number = 0;
+  while (i < state.itemsIDX.length()) {
+    let it: Item = state.itemsIDX[i];
+    if (it.done) { n = n + 1; }
+    i = i + 1;
+  }
+  return n;
 }`,
     `{
-    let count: int = state.itemsIDX.length();
+    let count: number = state.itemsIDX.length();
     let rows: ui.View[] = [];
-    let j: int = 0;
+    let j: number = 0;
     while (j < count) {
       let it: Item = state.itemsIDX[j];
       let icon: string = "pin";
@@ -498,7 +594,9 @@ class Item {
       'The things on the list, as many as the request needs (3 to 8); each with an optional short detail such as a quantity',
       ['name of the item', 'short detail such as a quantity or a note, or an empty string'], [28, 20],
       '{label: "{0}", detail: "{1}", done: false}', ',\n    ', 3, 8,
-      [['First item', ''], ['Second item', ''], ['Third item', '']])]
+      [['First item', ''], ['Second item', ''], ['Third item', '']])],
+    [new PortSpec('writes', 'done', 'number', 'doneCountIDX(state)', '', true),
+     new PortSpec('writes', 'total', 'number', 'state.itemsIDX.length()', '', true)]
   )
 }
 
@@ -514,23 +612,23 @@ function metricsFragment(): FragmentSpec {
     'metrics',
     'A small dashboard of a few summary numbers with a couple of actions',
     '',
-    [new StateFieldSpec('countIDX', 'int'), new StateFieldSpec('totalIDX', 'int')],
+    [new StateFieldSpec('countIDX', 'number'), new StateFieldSpec('totalIDX', 'number')],
     '',
     `countIDX: 0, totalIDX: 100`,
-    `function incrementIDX(state: AppState, ignored: int): AppState {
+    `function incrementIDX(state: AppState, ignored: number): AppState {
   return {countIDX: state.countIDX + 1, totalIDX: state.totalIDX__PASSTHROUGH__};
 }
 
-function resetIDX(state: AppState, ignored: int): AppState {
+function resetIDX(state: AppState, ignored: number): AppState {
   return {countIDX: 0, totalIDX: state.totalIDX__PASSTHROUGH__};
 }`,
     `{
-    let remaining: int = state.totalIDX - state.countIDX;
+    let remaining: number = state.totalIDX - state.countIDX;
     sections.push(ui.Section("summary", "", "", [
       ui.MetricGroup("__METRIC_STYLE_IDX__", 3, [
-        ui.IntStat("default", "__STAT1_LABEL_IDX__", state.countIDX, "", "", 1, "", "pin"),
-        ui.IntStat("__ACCENT_STAT_IDX__", "__STAT2_LABEL_IDX__", state.totalIDX, "", "", 1, "", "check"),
-        ui.IntStat("default", "__STAT3_LABEL_IDX__", remaining, "", "", 1, "", "clock")
+        ui.NumberStat("default", "__STAT1_LABEL_IDX__", state.countIDX, "", "", 1, "", "pin"),
+        ui.NumberStat("__ACCENT_STAT_IDX__", "__STAT2_LABEL_IDX__", state.totalIDX, "", "", 1, "", "check"),
+        ui.NumberStat("default", "__STAT3_LABEL_IDX__", remaining, "", "", 1, "", "clock")
       ])
     ]));
     sections.push(ui.Section("content", "", "", [
@@ -565,10 +663,10 @@ function timerFragment(): FragmentSpec {
     'timer',
     'A countdown or stopwatch that ticks by itself, with a start/pause toggle and a reset',
     '',
-    [new StateFieldSpec('elapsedMsIDX', 'int'), new StateFieldSpec('runningIDX', 'boolean')],
+    [new StateFieldSpec('elapsedMsIDX', 'number'), new StateFieldSpec('runningIDX', 'boolean')],
     '',
     `elapsedMsIDX: 0, runningIDX: true`,
-    `function onTickIDX(state: AppState, elapsedMs: int): AppState {
+    `function onTickIDX(state: AppState, elapsedMs: number): AppState {
   return {elapsedMsIDX: state.elapsedMsIDX + elapsedMs, runningIDX: state.runningIDX__PASSTHROUGH__};
 }
 
@@ -576,16 +674,16 @@ function toggleRunningIDX(state: AppState, value: boolean): AppState {
   return {elapsedMsIDX: state.elapsedMsIDX, runningIDX: value__PASSTHROUGH__};
 }
 
-function resetTimerIDX(state: AppState, ignored: int): AppState {
+function resetTimerIDX(state: AppState, ignored: number): AppState {
   return {elapsedMsIDX: 0, runningIDX: state.runningIDX__PASSTHROUGH__};
 }`,
     `{
-    let remainingMs: int = 1500000 - state.elapsedMsIDX;
+    let remainingMs: number = 1500000 - state.elapsedMsIDX;
     if (remainingMs < 0) { remainingMs = 0; }
-    let remainingSec: int = remainingMs / 1000;
+    let remainingSec: number = remainingMs / 1000;
     sections.push(ui.Section("content", "", "", [
       ui.Ticker("default", "timerIDX", 1000, state.runningIDX, "onTickIDX"),
-      ui.IntText("display", remainingSec, "", "s left", 1),
+      ui.NumberText("display", remainingSec, "", "s left", 1),
       ui.Toggle("default", "__TIMER_LABEL_IDX__", state.runningIDX, "toggleRunningIDX"),
       ui.ActionBar("spread", [
         ui.Button("secondary", "Reset", "resetTimerIDX", 0, true)
@@ -623,7 +721,7 @@ function calendarEventFragment(): FragmentSpec {
     [new StateFieldSpec('lastResultIDX', 'string')],
     '',
     `lastResultIDX: ""`,
-    `function addToCalendarIDX(state: AppState, ignored: int): AppState {
+    `function addToCalendarIDX(state: AppState, ignored: number): AppState {
   sdk.call("CalendarKit.Calendar.addEvent",
     ["title", "__EVENT_TITLE_IDX__", "hour", "__EVENT_HOUR_IDX__", "minute", "0",
      "durationMinutes", "60", "repeat", "once"], "onAnswerIDX");
@@ -662,15 +760,15 @@ function actionsFragment(): FragmentSpec {
     [new StateFieldSpec('lastActionIDX', 'string')],
     '',
     `lastActionIDX: ""`,
-    `function tapAction1IDX(state: AppState, ignored: int): AppState {
+    `function tapAction1IDX(state: AppState, ignored: number): AppState {
   return {lastActionIDX: "__ACTION1_IDX__"__PASSTHROUGH__};
 }
 
-function tapAction2IDX(state: AppState, ignored: int): AppState {
+function tapAction2IDX(state: AppState, ignored: number): AppState {
   return {lastActionIDX: "__ACTION2_IDX__"__PASSTHROUGH__};
 }
 
-function tapAction3IDX(state: AppState, ignored: int): AppState {
+function tapAction3IDX(state: AppState, ignored: number): AppState {
   return {lastActionIDX: "__ACTION3_IDX__"__PASSTHROUGH__};
 }`,
     `{
@@ -703,14 +801,14 @@ function progressGoalFragment(): FragmentSpec {
     'progress_goal',
     'A single visual progress bar toward a goal, with a button to add progress and one to reset',
     '',
-    [new StateFieldSpec('progressIDX', 'int'), new StateFieldSpec('goalIDX', 'int')],
+    [new StateFieldSpec('progressIDX', 'number'), new StateFieldSpec('goalIDX', 'number')],
     '',
     `progressIDX: 0, goalIDX: 10`,
-    `function addProgressIDX(state: AppState, ignored: int): AppState {
+    `function addProgressIDX(state: AppState, ignored: number): AppState {
   return {progressIDX: state.progressIDX + 1, goalIDX: state.goalIDX__PASSTHROUGH__};
 }
 
-function resetProgressIDX(state: AppState, ignored: int): AppState {
+function resetProgressIDX(state: AppState, ignored: number): AppState {
   return {progressIDX: 0, goalIDX: state.goalIDX__PASSTHROUGH__};
 }`,
     `{
@@ -786,11 +884,11 @@ function trendChartFragment(): FragmentSpec {
     '',
     '',
     `{
-    let series: int[] = [__V1_IDX__, __V2_IDX__, __V3_IDX__, __V4_IDX__];
+    let series: number[] = [__V1_IDX__, __V2_IDX__, __V3_IDX__, __V4_IDX__];
     let categories: string[] = ["__Y1_IDX__", "__Y2_IDX__", "__Y3_IDX__", "__Y4_IDX__"];
-    let maxV: int = series[0];
-    let minV: int = series[0];
-    let i: int = 1;
+    let maxV: number = series[0];
+    let minV: number = series[0];
+    let i: number = 1;
     while (i < series.length()) {
       if (series[i] > maxV) { maxV = series[i]; }
       if (series[i] < minV) { minV = series[i]; }
@@ -846,10 +944,10 @@ function ratingFragment(): FragmentSpec {
     'rating',
     'A single slider from 1 to 10 the person can set, with a live readout',
     '',
-    [new StateFieldSpec('ratingIDX', 'int')],
+    [new StateFieldSpec('ratingIDX', 'number')],
     '',
     `ratingIDX: 5`,
-    `function setRatingIDX(state: AppState, value: int): AppState {
+    `function setRatingIDX(state: AppState, value: number): AppState {
   return {ratingIDX: value__PASSTHROUGH__};
 }`,
     `{
@@ -912,7 +1010,7 @@ function searchListFragment(): FragmentSpec {
     let q: string = state.queryIDX;
     let names: string[] = [__NAMES_IDX__];
     let rows: ui.View[] = [];
-    let j: int = 0;
+    let j: number = 0;
     while (j < names.length()) {
       let name: string = names[j];
       if (q.length() === 0 || strings.contains(name, q)) {
@@ -934,7 +1032,537 @@ function searchListFragment(): FragmentSpec {
     [new ListFieldSpec('__NAMES_IDX__', 'names',
       'The entries the person can search, as many as the request needs (3 to 8), each name all lower case',
       ['name of the entry, all lower case'], [24], '"{0}"', ', ', 3, 8,
-      [['first item'], ['second item'], ['third item'], ['fourth item']])]
+      [['first item'], ['second item'], ['third item'], ['fourth item']])],
+    [],
+    [],
+    ['needs_search_or_form']
+  )
+}
+
+/** Shared by master_list and detail_view; the composer dedupes identical support classes. */
+const ENTRY_CLASS: string = `@jsonable
+class Entry {
+  label: string;
+  detail: string;
+}`
+
+/**
+ * A list whose rows can be selected, publishing the entries and the selected index for a
+ * detail_view elsewhere on the screen. Unlike checklist (private state, rows are toggled) this
+ * one exists to drive another block.
+ */
+function masterListFragment(): FragmentSpec {
+  return new FragmentSpec(
+    'master_list',
+    'A list of named items where tapping one selects it so its details can be shown in another part of the screen',
+    ENTRY_CLASS,
+    [new StateFieldSpec('itemsIDX', 'Entry[]'), new StateFieldSpec('selectedIDX', 'number')],
+    `  let itemsIDX: Entry[] = [
+    __ITEMS_IDX__
+  ];`,
+    `itemsIDX: itemsIDX, selectedIDX: -1`,
+    `function selectIDX(state: AppState, index: number): AppState {
+  return {itemsIDX: state.itemsIDX, selectedIDX: index__PASSTHROUGH__};
+}
+
+function rowMatchesIDX(query: string, label: string, detail: string): boolean {
+__HOLE_ROWMATCHES_IDX__
+}`,
+    `{
+    let q: string = __PORT_query__;
+    let rows: ui.View[] = [];
+    let j: number = 0;
+    while (j < state.itemsIDX.length()) {
+      let it: Entry = state.itemsIDX[j];
+      if (rowMatchesIDX(q, it.label, it.detail)) {
+        let icon: string = "list";
+        if (j === state.selectedIDX) { icon = "check"; }
+        rows.push(ui.ListItem("default", it.label, "", "", "selectIDX", j, true, icon));
+      }
+      j = j + 1;
+    }
+    sections.push(ui.Section("content", "", "", [
+      ui.When(rows.length() === 0, ui.EmptyState("default", "No matches", "Try a different word.", "", "", "list")),
+      ui.When(rows.length() > 0, ui.ListGroup("default", "", rows))
+    ]));
+  }`,
+    [],
+    [],
+    ['import * as strings from "std/strings"'],
+    [new ListFieldSpec('__ITEMS_IDX__', 'items',
+      'The things to choose from, as many as the request needs (3 to 8); each has a short name and a one or two sentence description shown when it is selected',
+      ['name of the item', 'one or two sentence description of the item'], [28, 90],
+      '{label: "{0}", detail: "{1}"}', ',\n    ', 3, 8,
+      [['First item', 'Tap an item to see its details.'], ['Second item', 'Tap an item to see its details.'], ['Third item', 'Tap an item to see its details.']])],
+    [new PortSpec('writes', 'items', 'Entry[]', 'itemsIDX'), new PortSpec('writes', 'selected', 'number', 'selectedIDX'),
+     new PortSpec('reads', 'query', 'string', '__PORT_query__', '""')],
+    [new HoleSpec('rowMatches', '__HOLE_ROWMATCHES_IDX__',
+      'rowMatches(query: string, label: string, detail: string): boolean',
+      'Decides whether one row of the list stays visible for the text typed into the filter box. query is what the person typed (empty when nothing is typed: every row must stay visible then); label is the row title, detail is its description.',
+      '  return query.length() === 0 || strings.contains(label, query) || strings.contains(detail, query);', 'filter_box')]
+  )
+}
+
+/** A text box whose text a list elsewhere on the screen reads to narrow its rows. */
+function filterBoxFragment(): FragmentSpec {
+  return new FragmentSpec(
+    'filter_box',
+    'A text box the person types into to narrow a list on the same screen; only useful together with such a list',
+    '',
+    [new StateFieldSpec('queryIDX', 'string')],
+    '',
+    `queryIDX: ""`,
+    `function setFilterIDX(state: AppState, value: string): AppState {
+  return {queryIDX: value__PASSTHROUGH__};
+}`,
+    `{
+    sections.push(ui.Section("content", "", "", [
+      ui.TextField("default", "__FILTER_LABEL_IDX__", state.queryIDX, "setFilterIDX")
+    ]));
+  }`,
+    [],
+    [new ContentFieldSpec('__FILTER_LABEL_IDX__', 'filter_label', 'Filter', 'Short label for the filter box (1-2 words)', 16)],
+    [],
+    [],
+    [new PortSpec('writes', 'query', 'string', 'queryIDX')],
+    [],
+    ['needs_search_or_form']
+  )
+}
+
+/** Shows the entry that a list elsewhere on the screen has selected; reads, owns no state. */
+function detailViewFragment(): FragmentSpec {
+  return new FragmentSpec(
+    'detail_view',
+    'The details of whichever item is selected in a list on the same screen; only useful together with such a list',
+    ENTRY_CLASS,
+    [],
+    '',
+    '',
+    '',
+    `{
+    let all: Entry[] = __PORT_items__;
+    let sel: number = __PORT_selected__;
+    let shownTitle: string = "Nothing selected";
+    let shownBody: string = "Tap an item in the list to see its details here.";
+    if (sel >= 0 && sel < all.length()) {
+      let e: Entry = all[sel];
+      shownTitle = e.label;
+      shownBody = e.detail;
+    }
+    sections.push(ui.Section("content", "", "", [
+      ui.KeyValueGroup("default", 1, [ui.KeyValueItem("default", shownTitle, shownBody, "")])
+    ]));
+  }`,
+    [],
+    [],
+    [],
+    [],
+    [new PortSpec('reads', 'items', 'Entry[]', '__PORT_items__', '[]'), new PortSpec('reads', 'selected', 'number', '__PORT_selected__', '-1')]
+  )
+}
+
+/** Read-only numbers about a checklist elsewhere on the screen: how many are done, how many in all, how many left. */
+function listSummaryFragment(): FragmentSpec {
+  return new FragmentSpec(
+    'list_summary',
+    'Summary numbers about a checklist on the same screen: how many items are done, how many there are and how many are left; only useful together with a checklist',
+    '',
+    [],
+    '',
+    '',
+    '',
+    `{
+    let doneN: number = __PORT_done__;
+    let totalN: number = __PORT_total__;
+    sections.push(ui.Section("summary", "", "", [
+      ui.MetricGroup("default", 3, [
+        ui.NumberStat("default", "__DONE_LABEL_IDX__", doneN, "", "", 1, "", "check"),
+        ui.NumberStat("default", "__TOTAL_LABEL_IDX__", totalN, "", "", 1, "", "list"),
+        ui.NumberStat("default", "__LEFT_LABEL_IDX__", totalN - doneN, "", "", 1, "", "clock")
+      ])
+    ]));
+  }`,
+    [],
+    [
+      new ContentFieldSpec('__DONE_LABEL_IDX__', 'done_label', 'Done', 'Label for the number of finished items (1-2 words)', 16),
+      new ContentFieldSpec('__TOTAL_LABEL_IDX__', 'total_label', 'Total', 'Label for the number of all items (1-2 words)', 16),
+      new ContentFieldSpec('__LEFT_LABEL_IDX__', 'left_label', 'Left', 'Label for the number of items still to do (1-2 words)', 16)
+    ],
+    [],
+    [],
+    [new PortSpec('reads', 'done', 'number', '__PORT_done__', '0'), new PortSpec('reads', 'total', 'number', '__PORT_total__', '0')]
+  )
+}
+
+/** Shared by record_log only: one entry of the log, tagged with the index of one of its named labels. */
+const TALLY_CLASS: string = `@jsonable
+class Tally {
+  who: number;
+  amount: number;
+  note: string;
+}`
+
+/**
+ * The source of a "records tagged with one of N named things" screen: the person picks who (or which
+ * category, player, day...), types an amount with cents and a note, adds it, removes the last one or starts
+ * over. It publishes everything other blocks can show or work out from the records, so readers need no state
+ * of their own: the labels, the total per label, the overall total, the average per label, how far each label
+ * is from that average (signed, sums to zero) and the number of entries. Nothing here says "expenses": the
+ * labels, the captions and the currency come from the request.
+ */
+function recordLogFragment(): FragmentSpec {
+  return new FragmentSpec(
+    'record_log',
+    'A form where the person adds records one at a time, each tagged with one of several named people or categories ' +
+    'and an amount (with cents), plus a note; the records are listed newest first and can be removed or cleared. ' +
+    'The source of figures worked out per person or category: totals, an average, who is above or below it',
+    TALLY_CLASS,
+    [new StateFieldSpec('labelsIDX', 'string[]'), new StateFieldSpec('recordsIDX', 'Tally[]'),
+     new StateFieldSpec('draftWhoIDX', 'number'), new StateFieldSpec('draftAmountIDX', 'string'),
+     new StateFieldSpec('draftNoteIDX', 'string'), new StateFieldSpec('currencyIDX', 'string')],
+    `  let labelsIDX: string[] = [__LABELS_IDX__];
+  let recordsIDX: Tally[] = [];
+  let currencyIDX: string = "__CURRENCY_IDX__";`,
+    `labelsIDX: labelsIDX, recordsIDX: recordsIDX, draftWhoIDX: 0, draftAmountIDX: "", draftNoteIDX: "", currencyIDX: currencyIDX`,
+    `function setWhoIDX(state: AppState, index: number): AppState {
+  return {labelsIDX: state.labelsIDX, recordsIDX: state.recordsIDX, draftWhoIDX: index, draftAmountIDX: state.draftAmountIDX, draftNoteIDX: state.draftNoteIDX, currencyIDX: state.currencyIDX__PASSTHROUGH__};
+}
+
+function setAmountIDX(state: AppState, value: string): AppState {
+  return {labelsIDX: state.labelsIDX, recordsIDX: state.recordsIDX, draftWhoIDX: state.draftWhoIDX, draftAmountIDX: value, draftNoteIDX: state.draftNoteIDX, currencyIDX: state.currencyIDX__PASSTHROUGH__};
+}
+
+function setNoteIDX(state: AppState, value: string): AppState {
+  return {labelsIDX: state.labelsIDX, recordsIDX: state.recordsIDX, draftWhoIDX: state.draftWhoIDX, draftAmountIDX: state.draftAmountIDX, draftNoteIDX: value, currencyIDX: state.currencyIDX__PASSTHROUGH__};
+}
+
+function addRecordIDX(state: AppState, ignored: number): AppState {
+  let amount: number = math.round(strings.toNumber(state.draftAmountIDX, 0) * 100) / 100;
+  if (amount <= 0) { return state; }
+  let out: Tally[] = [];
+  let i: number = 0;
+  while (i < state.recordsIDX.length()) {
+    out.push(state.recordsIDX[i]);
+    i = i + 1;
+  }
+  out.push({who: state.draftWhoIDX, amount: amount, note: state.draftNoteIDX});
+  return {labelsIDX: state.labelsIDX, recordsIDX: out, draftWhoIDX: state.draftWhoIDX, draftAmountIDX: "", draftNoteIDX: "", currencyIDX: state.currencyIDX__PASSTHROUGH__};
+}
+
+function removeLastRecordIDX(state: AppState, ignored: number): AppState {
+  let out: Tally[] = [];
+  let i: number = 0;
+  while (i < state.recordsIDX.length() - 1) {
+    out.push(state.recordsIDX[i]);
+    i = i + 1;
+  }
+  return {labelsIDX: state.labelsIDX, recordsIDX: out, draftWhoIDX: state.draftWhoIDX, draftAmountIDX: state.draftAmountIDX, draftNoteIDX: state.draftNoteIDX, currencyIDX: state.currencyIDX__PASSTHROUGH__};
+}
+
+function clearRecordsIDX(state: AppState, ignored: number): AppState {
+  let out: Tally[] = [];
+  return {labelsIDX: state.labelsIDX, recordsIDX: out, draftWhoIDX: 0, draftAmountIDX: "", draftNoteIDX: "", currencyIDX: state.currencyIDX__PASSTHROUGH__};
+}
+
+function totalsIDX(state: AppState): number[] {
+  let out: number[] = [];
+  let i: number = 0;
+  while (i < state.labelsIDX.length()) {
+    out.push(0);
+    i = i + 1;
+  }
+  for (let r: Tally of state.recordsIDX) {
+    if (r.who >= 0 && r.who < out.length()) { out[r.who] = math.round((out[r.who] + r.amount) * 100) / 100; }
+  }
+  return out;
+}
+
+function totalSumIDX(state: AppState): number {
+  let sum: number = 0;
+  for (let r: Tally of state.recordsIDX) { sum = sum + r.amount; }
+  return math.round(sum * 100) / 100;
+}
+
+function averageIDX(state: AppState): number {
+  let n: number = state.labelsIDX.length();
+  if (n === 0) { return 0; }
+  return math.round(totalSumIDX(state) / n * 100) / 100;
+}
+
+function balancesIDX(state: AppState): number[] {
+  let totals: number[] = totalsIDX(state);
+  let n: number = state.labelsIDX.length();
+  let totalCents: number = math.round(totalSumIDX(state) * 100);
+  let shareCents: number = 0;
+  let extra: number = 0;
+  if (n > 0) {
+    shareCents = math.floor(totalCents / n);
+    extra = totalCents - shareCents * n;
+  }
+  let out: number[] = [];
+  let i: number = 0;
+  while (i < totals.length()) {
+    let owed: number = shareCents;
+    if (i < extra) { owed = owed + 1; }
+    out.push((math.round(totals[i] * 100) - owed) / 100);
+    i = i + 1;
+  }
+  return out;
+}`,
+    `{
+    let n: number = state.recordsIDX.length();
+    let rows: ui.View[] = [];
+    let k: number = n - 1;
+    while (k >= 0) {
+      let r: Tally = state.recordsIDX[k];
+      let who: string = "?";
+      if (r.who >= 0 && r.who < state.labelsIDX.length()) { who = state.labelsIDX[r.who]; }
+      rows.push(ui.ListItem("default", who, r.note, state.currencyIDX + ui.formatNumber(r.amount, 2), "", k, false, "list"));
+      k = k - 1;
+    }
+    let typed: number = strings.toNumber(state.draftAmountIDX, 0);
+    sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
+      ui.Select("default", "__WHO_LABEL_IDX__", state.labelsIDX, state.draftWhoIDX, "setWhoIDX"),
+      ui.TextField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, "setAmountIDX", "number"),
+      ui.TextField("default", "Note", state.draftNoteIDX, "setNoteIDX"),
+      ui.ActionBar("end", [
+        ui.Button("danger", "Start over", "clearRecordsIDX", 0, n > 0),
+        ui.Button("secondary", "Remove last", "removeLastRecordIDX", 0, n > 0),
+        ui.Button("primary", "Add", "addRecordIDX", 0, typed > 0)
+      ])
+    ]));
+    sections.push(ui.Section("content", "", "", [
+      ui.When(n === 0, ui.EmptyState("default", "Nothing yet", "Add the first record above.", "", "", "list")),
+      ui.When(n > 0, ui.ListGroup("default", "", rows))
+    ]));
+  }`,
+    [],
+    [
+      new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add a record', 'Heading of the form (2-4 words)', 24),
+      new ContentFieldSpec('__WHO_LABEL_IDX__', 'who_label', 'Who', 'Label of the choice of person or category (1-2 words, e.g. Paid by)', 16),
+      new ContentFieldSpec('__AMOUNT_LABEL_IDX__', 'amount_label', 'Amount', 'Label of the amount field (1-3 words)', 20),
+      new ContentFieldSpec('__CURRENCY_IDX__', 'currency', '$', 'Currency symbol shown before amounts, or an empty string when the amounts are not money', 3)
+    ],
+    ['import * as strings from "std/strings"'],
+    [new ListFieldSpec('__LABELS_IDX__', 'labels',
+      'The named people or categories a record can be tagged with, taken from the request (2 to 8)',
+      ['name of the person or category (1-2 words)'], [16], '"{0}"', ', ', 2, 8,
+      [['Person 1'], ['Person 2'], ['Person 3']])],
+    [new PortSpec('writes', 'labels', 'string[]', 'labelsIDX'),
+     new PortSpec('writes', 'totals', 'number[]', 'totalsIDX(state)', '', true),
+     new PortSpec('writes', 'balances', 'number[]', 'balancesIDX(state)', '', true),
+     new PortSpec('writes', 'total', 'number', 'totalSumIDX(state)', '', true),
+     new PortSpec('writes', 'average', 'number', 'averageIDX(state)', '', true),
+     new PortSpec('writes', 'count', 'number', 'state.recordsIDX.length()', '', true),
+     new PortSpec('writes', 'currency', 'string', 'currencyIDX')],
+    [],
+    ['needs_search_or_form', 'needs_multiple_counters', 'needs_logic']
+  )
+}
+
+/** Headline numbers worked out from a record_log elsewhere on the screen: the total, the average per person or category, the count. */
+function numberStripFragment(): FragmentSpec {
+  let count: Map<string, string> = new Map<string, string>()
+  count.set('true', 'yes, also show how many records there are')
+  count.set('false', 'no, the total and the average are enough')
+  return new FragmentSpec(
+    'number_strip',
+    'A strip of headline numbers worked out from records entered on the same screen: the total, the average (equal share) per person or category and optionally how many records; only useful together with such records',
+    '',
+    [],
+    '',
+    '',
+    '',
+    `{
+    let showCount: boolean = __SHOW_COUNT_IDX__;
+    let cur: string = __PORT_currency__;
+    let stats: ui.View[] = [];
+    stats.push(ui.NumberStat("accent", "__TOTAL_LABEL_IDX__", __PORT_total__, cur, "", 1, "", "chart", 2));
+    stats.push(ui.NumberStat("default", "__AVERAGE_LABEL_IDX__", __PORT_average__, cur, "", 1, "", "user", 2));
+    if (showCount) {
+      stats.push(ui.NumberStat("default", "__COUNT_LABEL_IDX__", __PORT_count__, "", "", 1, "", "list"));
+    }
+    sections.push(ui.Section("summary", "", "", [ui.MetricGroup("default", stats.length(), stats)]));
+  }`,
+    [new SlotSpec('__SHOW_COUNT_IDX__', ['false', 'true'], 'noul', 'Should the strip also show how many records there are?', count, 0.6)],
+    [
+      new ContentFieldSpec('__TOTAL_LABEL_IDX__', 'total_label', 'Total', 'Label for the total of all records (1-3 words)', 20),
+      new ContentFieldSpec('__AVERAGE_LABEL_IDX__', 'average_label', 'Average', 'Label for the average per person or category, such as Each share (1-3 words)', 20),
+      new ContentFieldSpec('__COUNT_LABEL_IDX__', 'count_label', 'Records', 'Label for the number of records (1-2 words)', 16)
+    ],
+    [],
+    [],
+    [new PortSpec('reads', 'total', 'number', '__PORT_total__', '0'), new PortSpec('reads', 'average', 'number', '__PORT_average__', '0'),
+     new PortSpec('reads', 'count', 'number', '__PORT_count__', '0'), new PortSpec('reads', 'currency', 'string', '__PORT_currency__', '""')],
+    [],
+    ['needs_logic']
+  )
+}
+
+/** One row per person or category with the total and how far from the average, from a record_log elsewhere on the screen. */
+function breakdownTableFragment(): FragmentSpec {
+  return new FragmentSpec(
+    'breakdown_table',
+    'A table with one row per person or category showing figures worked out from records entered on the same screen: the total of each and how far each is above or below the average; only useful together with such records',
+    '',
+    [],
+    '',
+    '',
+    '',
+    `{
+    let names: string[] = __PORT_labels__;
+    let totals: number[] = __PORT_totals__;
+    let bals: number[] = __PORT_balances__;
+    let cur: string = __PORT_currency__;
+    let rows: ui.View[] = [];
+    let i: number = 0;
+    while (i < names.length()) {
+      let totalText: string = "-";
+      if (i < totals.length()) { totalText = cur + ui.formatNumber(totals[i], 2); }
+      let balText: string = "-";
+      let tone: string = "default";
+      if (i < bals.length()) {
+        let b: number = bals[i];
+        if (b > 0.004) {
+          balText = "+" + cur + ui.formatNumber(b, 2);
+          tone = "success";
+        } else {
+          if (b < -0.004) {
+            balText = "-" + cur + ui.formatNumber(0 - b, 2);
+            tone = "danger";
+          } else {
+            balText = cur + "0.00";
+          }
+        }
+      }
+      rows.push(ui.TableRow(tone, [names[i], totalText, balText]));
+      i = i + 1;
+    }
+    sections.push(ui.Section("content", "", "", [
+      ui.Table("default", ["__H1_IDX__", "__H2_IDX__", "__H3_IDX__"], 3, rows)
+    ]));
+  }`,
+    [],
+    [
+      new ContentFieldSpec('__H1_IDX__', 'h1', 'Name', 'Header of the first column: the person or category (1-2 words)', 14),
+      new ContentFieldSpec('__H2_IDX__', 'h2', 'Total', 'Header of the second column: what each has recorded in all (1-2 words)', 14),
+      new ContentFieldSpec('__H3_IDX__', 'h3', 'Balance', 'Header of the third column: how far above or below the average, such as Balance (1-2 words)', 14)
+    ],
+    [],
+    [],
+    [new PortSpec('reads', 'labels', 'string[]', '__PORT_labels__', '[]'), new PortSpec('reads', 'totals', 'number[]', '__PORT_totals__', '[]'),
+     new PortSpec('reads', 'balances', 'number[]', '__PORT_balances__', '[]'), new PortSpec('reads', 'currency', 'string', '__PORT_currency__', '""')],
+    [],
+    ['needs_logic']
+  )
+}
+
+/** A bar chart with one bar per person or category, from a record_log elsewhere on the screen: the totals, or the balances. */
+function seriesChartFragment(): FragmentSpec {
+  let useBalances: Map<string, string> = new Map<string, string>()
+  useBalances.set('true', 'yes, show how far each is above or below the average')
+  useBalances.set('false', 'no, show the total of each')
+  return new FragmentSpec(
+    'series_chart',
+    'A bar chart with one bar per person or category, drawn from records entered on the same screen (the total of each, or how far each is from the average); only useful together with such records',
+    '',
+    [],
+    '',
+    '',
+    '',
+    `{
+    let names: string[] = __PORT_labels__;
+    let totals: number[] = __PORT_totals__;
+    let bals: number[] = __PORT_balances__;
+    let useBalances: boolean = __USE_BALANCES_IDX__;
+    let vals: number[] = totals;
+    if (useBalances) { vals = bals; }
+    let top: number = 1;
+    let low: number = 0;
+    for (let v: number of vals) {
+      if (v > top) { top = v; }
+      if (v < low) { low = v; }
+    }
+    let none: number[] = [];
+    sections.push(ui.Section("content", "", "", [
+      ui.Sparkline("default", vals, top, "__CHART_LABEL_IDX__", true, none, "accent", "", "", names, low)
+    ]));
+  }`,
+    [new SlotSpec('__USE_BALANCES_IDX__', ['false', 'true'], 'noul', 'Should the bars show how far each is above or below the average instead of each total?', useBalances, 0.6)],
+    [new ContentFieldSpec('__CHART_LABEL_IDX__', 'chart_label', 'Per person', 'Short caption for the chart (2-5 words)', 32)],
+    [],
+    [],
+    [new PortSpec('reads', 'labels', 'string[]', '__PORT_labels__', '[]'), new PortSpec('reads', 'totals', 'number[]', '__PORT_totals__', '[]'),
+     new PortSpec('reads', 'balances', 'number[]', '__PORT_balances__', '[]')]
+  )
+}
+
+/**
+ * Nets signed balances (positive: is owed, negative: owes; they sum to zero) into the few transfers that
+ * settle them. Greedy: the largest creditor is paid by the largest debtor until nobody owes anything, so at
+ * most n-1 transfers; that is the minimum in the common cases but not always (the true minimum is NP-hard).
+ * Written once here on purpose: a loop the model writes for this is where a runaway loop came from.
+ */
+function settleUpFragment(): FragmentSpec {
+  return new FragmentSpec(
+    'settle_up',
+    'Works out from the balances of records entered on the same screen who should pay whom so that everyone ends up even, in few payments; only useful together with such records',
+    '',
+    [],
+    '',
+    '',
+    '',
+    `{
+    let names: string[] = __PORT_labels__;
+    let bals: number[] = __PORT_balances__;
+    let cur: string = __PORT_currency__;
+    let work: number[] = [];
+    for (let b: number of bals) { work.push(b); }
+    let rows: ui.View[] = [];
+    let guard: number = 0;
+    let finished: boolean = false;
+    while (!finished && guard < 16) {
+      guard = guard + 1;
+      let hi: number = -1;
+      let lo: number = -1;
+      let k: number = 0;
+      while (k < work.length()) {
+        if (work[k] > 0.004 && (hi === -1 || work[k] > work[hi])) { hi = k; }
+        if (work[k] < -0.004 && (lo === -1 || work[k] < work[lo])) { lo = k; }
+        k = k + 1;
+      }
+      if (hi === -1 || lo === -1 || hi >= names.length() || lo >= names.length()) {
+        finished = true;
+      } else {
+        let amt: number = work[hi];
+        if (0 - work[lo] < amt) { amt = 0 - work[lo]; }
+        amt = math.round(amt * 100) / 100;
+        if (amt <= 0) {
+          finished = true;
+        } else {
+          rows.push(ui.ListItem("default", names[lo] + " __PAYS_IDX__ " + names[hi], "", cur + ui.formatNumber(amt, 2), "", 0, false, "navigate"));
+          work[hi] = math.round((work[hi] - amt) * 100) / 100;
+          work[lo] = math.round((work[lo] + amt) * 100) / 100;
+        }
+      }
+    }
+    sections.push(ui.Section("content", "__SETTLE_TITLE_IDX__", "", [
+      ui.When(rows.length() === 0, ui.EmptyState("default", "All settled up", "Nobody owes anyone.", "", "", "check")),
+      ui.When(rows.length() > 0, ui.ListGroup("default", "", rows))
+    ]));
+  }`,
+    [],
+    [
+      new ContentFieldSpec('__SETTLE_TITLE_IDX__', 'settle_title', 'Settle up', 'Heading of the list of payments that even everyone out (2-3 words)', 20),
+      new ContentFieldSpec('__PAYS_IDX__', 'pays_word', 'pays', 'The word between who pays and who is paid, as in "Ben pays Anna" (1 word)', 10)
+    ],
+    [],
+    [],
+    [new PortSpec('reads', 'labels', 'string[]', '__PORT_labels__', '[]'), new PortSpec('reads', 'balances', 'number[]', '__PORT_balances__', '[]'),
+     new PortSpec('reads', 'currency', 'string', '__PORT_currency__', '""')],
+    [],
+    ['needs_logic']
   )
 }
 
@@ -1024,11 +1652,11 @@ function barChartFragment(): FragmentSpec {
     '',
     `{
     let names: string[] = [];
-    let vals: int[] = [];
-    let none: int[] = [];
+    let vals: number[] = [];
+    let none: number[] = [];
     __BARS_IDX__
-    let top: int = 1;
-    for (let v: int of vals) {
+    let top: number = 1;
+    for (let v: number of vals) {
       if (v > top) { top = v; }
     }
     sections.push(ui.Section("content", "", "", [
@@ -1057,26 +1685,26 @@ function barChartFragment(): FragmentSpec {
 function logEntriesFragment(): FragmentSpec {
   return new FragmentSpec(
     'log_entries',
-    'A form where the person adds entries one at a time, each with a short note and a whole-number amount, listed newest first with a running total and a button to remove the last one',
+    'A form where the person adds entries one at a time, each with a short note and a whole-number amount, listed newest first with a running total and a button to remove the last one; one running list with one total, not tied to named people or categories',
     `@jsonable
 class LogEntry {
   note: string;
-  amount: int;
+  amount: number;
 }`,
-    [new StateFieldSpec('logIDX', 'LogEntry[]'), new StateFieldSpec('draftNoteIDX', 'string'), new StateFieldSpec('draftAmountIDX', 'int')],
+    [new StateFieldSpec('logIDX', 'LogEntry[]'), new StateFieldSpec('draftNoteIDX', 'string'), new StateFieldSpec('draftAmountIDX', 'number')],
     `  let logIDX: LogEntry[] = [];`,
     `logIDX: logIDX, draftNoteIDX: "", draftAmountIDX: 0`,
     `function setNoteIDX(state: AppState, value: string): AppState {
   return {logIDX: state.logIDX, draftNoteIDX: value, draftAmountIDX: state.draftAmountIDX__PASSTHROUGH__};
 }
 
-function setAmountIDX(state: AppState, value: int): AppState {
+function setAmountIDX(state: AppState, value: number): AppState {
   return {logIDX: state.logIDX, draftNoteIDX: state.draftNoteIDX, draftAmountIDX: value__PASSTHROUGH__};
 }
 
-function addEntryIDX(state: AppState, ignored: int): AppState {
+function addEntryIDX(state: AppState, ignored: number): AppState {
   let out: LogEntry[] = [];
-  let i: int = 0;
+  let i: number = 0;
   while (i < state.logIDX.length()) {
     out.push(state.logIDX[i]);
     i = i + 1;
@@ -1087,9 +1715,9 @@ function addEntryIDX(state: AppState, ignored: int): AppState {
   return {logIDX: out, draftNoteIDX: "", draftAmountIDX: 0__PASSTHROUGH__};
 }
 
-function removeLastIDX(state: AppState, ignored: int): AppState {
+function removeLastIDX(state: AppState, ignored: number): AppState {
   let out: LogEntry[] = [];
-  let i: int = 0;
+  let i: number = 0;
   while (i < state.logIDX.length() - 1) {
     out.push(state.logIDX[i]);
     i = i + 1;
@@ -1097,25 +1725,25 @@ function removeLastIDX(state: AppState, ignored: int): AppState {
   return {logIDX: out, draftNoteIDX: state.draftNoteIDX, draftAmountIDX: state.draftAmountIDX__PASSTHROUGH__};
 }`,
     `{
-    let n: int = state.logIDX.length();
-    let total: int = 0;
+    let n: number = state.logIDX.length();
+    let total: number = 0;
     let rows: ui.View[] = [];
-    let k: int = n - 1;
+    let k: number = n - 1;
     while (k >= 0) {
       let e: LogEntry = state.logIDX[k];
       total = total + e.amount;
-      rows.push(ui.ListItem("default", e.note, "", ui.intToString(e.amount), "", k, false, "list"));
+      rows.push(ui.ListItem("default", e.note, "", ui.numberToString(e.amount), "", k, false, "list"));
       k = k - 1;
     }
     sections.push(ui.Section("summary", "", "", [
       ui.MetricGroup("default", 2, [
-        ui.Stat("accent", "Total", ui.intToString(total), "all entries", "chart"),
-        ui.Stat("default", "Entries", ui.intToString(n), "logged", "list")
+        ui.Stat("accent", "Total", ui.numberToString(total), "all entries", "chart"),
+        ui.Stat("default", "Entries", ui.numberToString(n), "logged", "list")
       ])
     ]));
     sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
       ui.TextField("default", "Note", state.draftNoteIDX, "setNoteIDX"),
-      ui.IntField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, 0, 100000, "setAmountIDX"),
+      ui.NumberField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, 0, 100000, "setAmountIDX"),
       ui.ActionBar("end", [
         ui.Button("secondary", "Remove last", "removeLastIDX", 0, n > 0),
         ui.Button("primary", "Add", "addEntryIDX", 0, state.draftAmountIDX > 0)
@@ -1147,7 +1775,9 @@ export function fragments(): FragmentSpec[] {
     actionsFragment(), progressGoalFragment(), keyFactsFragment(), trendChartFragment(),
     noteFragment(), ratingFragment(), spotlightFragment(),
     searchListFragment(), dataTableFragment(), timelineFragment(),
-    barChartFragment(), logEntriesFragment()
+    barChartFragment(), logEntriesFragment(),
+    masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
+    recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment()
   ]
 }
 

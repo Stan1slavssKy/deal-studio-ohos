@@ -28,6 +28,7 @@ import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } fro
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 import { buildFromTemplates, TemplateBuild, BUILD_CANCELLED, BUILD_SCRATCH, BUILD_COMPLETE } from '../vera/VeraTemplatePipeline'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
+import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
 const UI_SELECT_MODE: string = UI_SELECT_PROMPT
@@ -263,6 +264,12 @@ struct GeneratePage {
   private completionBase: string = ''
   /** The section kinds of the last composed screen, kept with a saved version as its origin; empty after a scratch run. */
   private templateKinds: string[] = []
+  /**
+   * The composition record (VeraComposition.ets) of the program on screen while it is a composed screen the
+   * model has not rewritten; a refine that only adds, removes, replaces or moves a block rebuilds from it.
+   * Empty after a scratch or model-finished program.
+   */
+  private compositionJson: string = ''
   private completionBaseVbc2: string = ''
   private genStartTime: number = 0
   private cancelRequested: boolean = false
@@ -278,7 +285,10 @@ struct GeneratePage {
     }
     if (this.baseVersionId.length > 0) {
       let v = store.getVersion(this.projectId, this.baseVersionId)
-      if (v !== null) { this.previousSource = v!.source }
+      if (v !== null) {
+        this.previousSource = v!.source
+        this.compositionJson = v!.composition
+      }
     }
     settings.init(getContext(this).filesDir)
     initTrace(getContext(this).filesDir)
@@ -504,6 +514,7 @@ struct GeneratePage {
     this.completionBase = ''
     this.completionBaseVbc2 = ''
     this.templateKinds = []
+    this.compositionJson = ''
     this.program = new RunTotals()
     this.delta = new SourceDelta()
     this.runs = []
@@ -565,6 +576,7 @@ struct GeneratePage {
     this.generatedSource = build.source
     this.compiledVbc2 = build.vbc2
     this.compiledSource = build.source
+    this.compositionJson = build.composition
     this.composerOpen = false
     this.tab = TAB_PREVIEW
     this.compiled = true
@@ -1183,6 +1195,56 @@ struct GeneratePage {
   private doRefine(): void {
     let ask = this.refinePrompt.trim()
     if (ask.length === 0 || this.compiledSource.length === 0) { return }
+    // A change that only adds, removes, replaces or moves a block of a composed screen is made on its
+    // record, with no model rewrite; anything else, and any step that does not hold, refines as before.
+    if (this.compositionJson.length > 0 && this.mode === MODE_DEEPSEEK && templateSelectEnabled() && settings.hasSelectorKey()) {
+      this.tryStructuralEdit(ask)
+      return
+    }
+    this.refineWithModel(ask)
+  }
+
+  private async tryStructuralEdit(ask: string): Promise<void> {
+    let record: Composition | null = compositionFromJson(this.compositionJson)
+    if (record === null) {
+      this.compositionJson = ''
+      this.refineWithModel(ask)
+      return
+    }
+    this.generating = true
+    this.cancelRequested = false
+    this.genStartTime = Date.now()
+    this.status = 'Checking whether this changes the structure...'
+    let result: EditResult = await editComposition(ask, record, this.mode,
+      (request: string, c: Composition): Promise<CompositionEdit> => selectEdit(request, c, settings.getSelectorKey()))
+    if (this.cancelRequested) {
+      this.generating = false
+      this.status = 'Stopped'
+      return
+    }
+    this.lastTemplatePick = result.note
+    if (!result.applied || result.composition === null) {
+      this.refineWithModel(ask)
+      return
+    }
+    this.startRun(ask)
+    this.lastRequest = ask
+    this.previousSource = this.compiledSource
+    this.generatedSource = result.source
+    this.compiledSource = result.source
+    this.compiledVbc2 = result.vbc2
+    this.compositionJson = compositionToJson(result.composition!)
+    this.templateKinds = result.composition!.kinds()
+    this.compiled = true
+    this.compileErrors = ''
+    this.generating = false
+    this.refinePrompt = ''
+    this.totalMs = Date.now() - this.genStartTime
+    this.status = 'Changed the structure: ' + result.note
+  }
+
+  private refineWithModel(ask: string): void {
+    this.compositionJson = ''
     // Refine from the last program that compiled, not from generatedSource --
     // a failed attempt leaves its broken text in there.
     this.previousSource = this.compiledSource
@@ -1231,7 +1293,7 @@ struct GeneratePage {
         vbc2 = result.vbc2
       } catch (_e) {}
     }
-    store.createVersion(this.projectId, source, vbc2, note, fullPrompt, this.originLabel())
+    store.createVersion(this.projectId, source, vbc2, note, fullPrompt, this.originLabel(), this.compositionJson)
     this.status = vbc2.length > 0 ? 'Saved with compiled bytecode' : 'Saved (source only — compile errors)'
     refreshForms()
     router.back()

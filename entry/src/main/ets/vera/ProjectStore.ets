@@ -26,6 +26,11 @@ export class Version {
    * it. Empty for a program written from scratch and for versions saved before this was kept.
    */
   origin: string = ''
+  /**
+   * The composition record (VeraComposition.ets) as JSON when this version is a composed screen the
+   * model has not rewritten: what a structural edit rebuilds the program from. Empty otherwise.
+   */
+  composition: string = ''
   createdAt: number = 0
 }
 
@@ -227,7 +232,7 @@ export class ProjectStore {
   }
 
   createVersion(projectId: string, source: string, vbc2: string, note: string,
-      prompt: string = '', origin: string = ''): Version {
+      prompt: string = '', origin: string = '', composition: string = ''): Version {
     ensureDir(this.projectDir(projectId))
     let v = new Version()
     v.id = generateId()
@@ -237,6 +242,7 @@ export class ProjectStore {
     v.note = note
     v.prompt = prompt.length > 0 ? prompt : note
     v.origin = origin
+    v.composition = composition
     v.createdAt = Date.now()
     let obj: Record<string, Object> = {}
     obj['id'] = v.id
@@ -246,6 +252,7 @@ export class ProjectStore {
     obj['note'] = v.note
     obj['prompt'] = v.prompt
     obj['origin'] = v.origin
+    obj['composition'] = v.composition
     obj['createdAt'] = v.createdAt
     writeJson(this.versionPath(projectId, v.id), JSON.stringify(obj))
     return v
@@ -264,6 +271,7 @@ export class ProjectStore {
     // Rewriting the bytecode must not drop the request this version came from.
     obj['prompt'] = v!.prompt
     obj['origin'] = v!.origin
+    obj['composition'] = v!.composition
     obj['createdAt'] = v!.createdAt
     writeJson(this.versionPath(projectId, versionId), JSON.stringify(obj))
   }
@@ -291,6 +299,7 @@ export class ProjectStore {
       // Versions saved before prompts were kept fall back to the truncated note.
       v.prompt = (obj['prompt'] as string) || v.note
       v.origin = (obj['origin'] as string) || ''
+      v.composition = (obj['composition'] as string) || ''
       v.createdAt = obj['createdAt'] as number
       return v
     } catch (_e) { return null }

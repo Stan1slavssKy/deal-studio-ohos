@@ -35,19 +35,26 @@
 
 import http from '@ohos.net.http'
 import hilog from '@ohos.hilog'
-import { FragmentSpec, StateFieldSpec, SlotSpec, VetoSpec, ContentFieldSpec, fragments, vetoes, bannerSectionView } from './VeraTemplates'
+import { layouts, arrangeInLayout, completeRequiredSlots, swapForLayout, layoutKinds, kindsOfLayout, placeKinds, LAYOUT_NONE, LAYOUT_STACK } from './VeraLayouts'
+import { FragmentSpec, StateFieldSpec, SlotSpec, VetoSpec, ContentFieldSpec, PortSpec, fragments, vetoes, bannerSectionView } from './VeraTemplates'
 
 const DOMAIN = 0x0000
 const ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
 const MODEL: string = 'jev-latest'
 
 /** Ordered section slots composed into one screen. Small and bounded -- see this file's header comment and the plan's "no per-node round trips" non-goal. */
-const SECTION_COUNT: number = 4
+const SECTION_COUNT: number = 6
 
 /** Top-level bar for a section's fragment-kind choice: a wrong answer here skips that slot entirely. */
 const SECTION_PICK_ABOVE: number = 0.5
 /** Per-slot cosmetic bar, same role as VeraTemplateSelect.ets's SLOT_PICK_ABOVE. */
 const SLOT_PICK_ABOVE: number = 0.25
+/**
+ * Bar for a per-part "does the request ask for this" answer once a layout is chosen. These are independent yes/no
+ * questions, so unlike a section's one-of-many choice (whose confidence is spread over every kind) a part the
+ * request plainly asks for scores high.
+ */
+const INCLUDE_ABOVE: number = 0.5
 
 /**
  * Vetoes that no longer drop a request to generation from scratch: whatever they flag (a calculation,
@@ -130,6 +137,8 @@ export class SectionPickOutcome {
    * hands it to the model to finish, instead of dropping to generation from scratch.
    */
   needsLogic: boolean
+  /** The layout the sections were arranged in ('stack' when Jev chose none or the placement broke a slot rule). */
+  layout: string = LAYOUT_STACK
   constructor(sections: SectionPick[] | null, globalValues: Map<string, string>, note: string, needsRealData: boolean = false,
       needsLogic: boolean = false) {
     this.sections = sections
@@ -174,9 +183,10 @@ export function buildSectionRequest(prompt: string): string {
     let question: Record<string, Object> = {}
     question['type'] = 'choice'
     question['instructions'] = 'What belongs in section ' + i.toString() + ' of the screen (in top-to-bottom order)? ' +
-      'Answer none if this section is not needed, or if what is needed is anything beyond generic ' +
-      'placeholder content and simple taps -- search, forms, or calling any ' +
-      'phone API, SDK function or other app. A specific real-world fact, price, or figure is fine to ' +
+      'Answer none if this section is not needed, or if what is needed is anything beyond the listed ' +
+      'parts -- a part that is not listed, or calling any phone API, SDK function or other app. A form, a ' +
+      'search box or figures worked out from entered records are fine when one of the listed parts is exactly that. ' +
+      'A specific real-world fact, price, or figure is fine to ' +
       'show as a plain labelled number or short fact, even though its exact value is not known yet -- ' +
       'so is a simple chart of a handful of data points.'
     question['criteria'] = kindCriteria
@@ -192,6 +202,29 @@ export function buildSectionRequest(prompt: string): string {
       }
     }
   }
+
+  let includeCriteria: Map<string, string> = new Map<string, string>()
+  includeCriteria.set('true', 'yes, the request asks for this part')
+  includeCriteria.set('false', 'no, it does not')
+  for (let kind of layoutKinds()) {
+    let spec = findFragment(specs, kind)
+    if (spec === null) { continue }
+    let includeQuestion: Record<string, Object> = {}
+    includeQuestion['type'] = 'noul'
+    includeQuestion['instructions'] = 'Does the request ask for this part of the screen: ' + spec.criteria + '?'
+    includeQuestion['criteria'] = criteriaRecord(includeCriteria)
+    questions['include.' + kind] = includeQuestion
+  }
+
+  let layoutCriteria: Record<string, Object> = {}
+  for (let layout of layouts()) { layoutCriteria[layout.id] = layout.criteria }
+  layoutCriteria[LAYOUT_NONE] = 'no particular arrangement'
+  let layoutQuestion: Record<string, Object> = {}
+  layoutQuestion['type'] = 'choice'
+  layoutQuestion['instructions'] = 'How are the parts of this screen related? Pick master_detail only when the person ' +
+    'chooses an item in a list and its details appear in another part of the screen.'
+  layoutQuestion['criteria'] = layoutCriteria
+  questions['__LAYOUT__'] = layoutQuestion
 
   let themeQuestion: Record<string, Object> = {}
   themeQuestion['type'] = 'choice'
@@ -231,7 +264,7 @@ function findFragment(specs: FragmentSpec[], kind: string): FragmentSpec | null 
   return null
 }
 
-function readChoiceValue(answers: Record<string, Object>, key: string, allowed: string[], above: number, fallback: string): string {
+export function readChoiceValue(answers: Record<string, Object>, key: string, allowed: string[], above: number, fallback: string): string {
   let raw = answers[key]
   if (raw === null || raw === undefined) { return fallback }
   let answer = raw as Record<string, Object>
@@ -263,7 +296,7 @@ function readSlotValue(answers: Record<string, Object>, slotIndex: number, kind:
   if (slot.kind === 'noul') {
     let value = answer['noul']
     if (value === null || value === undefined || typeof value !== 'number') { return fallback }
-    return (value as number) > SLOT_PICK_ABOVE ? slot.values[1] : slot.values[0]
+    return (value as number) > (slot.above >= 0 ? slot.above : SLOT_PICK_ABOVE) ? slot.values[1] : slot.values[0]
   }
   let choice = answer['choice']
   if (choice === null || choice === undefined || typeof choice !== 'string') { return fallback }
@@ -366,19 +399,63 @@ export function readSectionPick(body: string): SectionPickOutcome {
     notes.push('section' + i.toString() + '=' + kind)
   }
 
+  let layoutIds: string[] = [LAYOUT_NONE]
+  for (let layout of layouts()) { layoutIds.push(layout.id) }
+  let layoutId = readChoiceValue(answers, '__LAYOUT__', layoutIds, SECTION_PICK_ABOVE, LAYOUT_NONE)
+  let layoutNote = ''
+  let placed: SectionPick[] = picks
+  let usedLayout = LAYOUT_STACK
+  if (layoutId !== LAYOUT_NONE && layoutId !== LAYOUT_STACK) {
+    let kindsNow: string[] = []
+    for (let pick of picks) { kindsNow.push(pick.kind) }
+    let addedNote = ''
+    let wanted: string[] = []
+    for (let kind of kindsOfLayout(layoutId)) {
+      if (readNoulValue(answers, 'include.' + kind, INCLUDE_ABOVE)) { wanted.push(kind) }
+    }
+    let swapped = swapForLayout(layoutId, kindsNow)
+    let included = placeKinds(kindsNow, wanted)
+    let filled = swapped.concat(included).concat(completeRequiredSlots(layoutId, kindsNow))
+    for (let i of filled) {
+      let added = findFragment(specs, kindsNow[i])
+      if (added === null) { continue }
+      let addedValues: Map<string, string> = new Map<string, string>()
+      for (let slot of added.slots) { addedValues.set(slot.token, readSlotValue(answers, i + 1, added.kind, slot)) }
+      picks[i] = new SectionPick(added.kind, addedValues)
+      addedNote = addedNote + ' +' + added.kind
+    }
+    let order = arrangeInLayout(layoutId, kindsNow)
+    if (order === null) {
+      layoutNote = ' layout=' + layoutId + '(rejected, stack)' + addedNote
+    } else {
+      placed = []
+      for (let i of order) { placed.push(picks[i]) }
+      usedLayout = layoutId
+      layoutNote = ' layout=' + layoutId + addedNote
+    }
+  }
+
   let anyChosen = false
-  for (let pick of picks) { if (pick.kind !== 'none') { anyChosen = true } }
+  for (let pick of placed) { if (pick.kind !== 'none') { anyChosen = true } }
   if (!anyChosen) {
     return new SectionPickOutcome(null, emptyGlobals, 'none (' + notes.join(' ') + ')')
   }
 
-  // A chosen search_list already is the search a needs_search_or_form veto asks for; keeping the veto
-  // would pay for a model completion that adds nothing.
-  let hasSearchList = false
-  for (let pick of picks) { if (pick.kind === 'search_list') { hasSearchList = true } }
-  if (hasSearchList) {
+  // A soft veto a chosen block already covers (VeraTemplates.ets FragmentSpec.covers: a search box is the
+  // search a needs_search_or_form veto asks for, a record log is the several-field form and the running
+  // totals) would only pay for a model completion that adds nothing.
+  let covered: string[] = []
+  for (let pick of placed) {
+    let spec = findFragment(specs, pick.kind)
+    if (spec === null) { continue }
+    for (let key of spec.covers) { if (covered.indexOf(key) < 0) { covered.push(key) } }
+  }
+  if (covered.length > 0) {
     let kept: string[] = []
-    for (let tag of logicNotes) { if (!tag.startsWith('needs_search_or_form=')) { kept.push(tag) } }
+    for (let tag of logicNotes) {
+      let key = tag.split('=')[0]
+      if (covered.indexOf(key) < 0) { kept.push(tag) }
+    }
     logicNotes = kept
   }
 
@@ -387,10 +464,12 @@ export function readSectionPick(body: string): SectionPickOutcome {
   globals.set('__HEADER_STYLE__', readChoiceValue(answers, '__HEADER_STYLE__', ['default', 'center'], SLOT_PICK_ABOVE, 'default'))
   globals.set('__BANNER_SECTION__', readNoulValue(answers, '__BANNER_SECTION__', SLOT_PICK_ABOVE) ? 'show' : 'hide')
 
-  let note = notes.join(' ')
+  let note = notes.join(' ') + layoutNote
   if (needsRealData) { note = note + ' needs_real_data=' + realDataProbability.toFixed(2) }
   if (logicNotes.length > 0) { note = note + ' logic=' + logicNotes.join(',') }
-  return new SectionPickOutcome(picks, globals, note, needsRealData, logicNotes.length > 0)
+  let outcome = new SectionPickOutcome(placed, globals, note, needsRealData, logicNotes.length > 0)
+  outcome.layout = usedLayout
+  return outcome
 }
 
 /**
@@ -420,6 +499,70 @@ function resolveInstanceText(text: string, idx: string, values: Map<string, stri
       resolved = resolved.split(resolvedToken).join(value)
     })
   }
+  return resolved
+}
+
+/**
+ * A hole's text as it goes into the program: the body between two //@hole marker lines, so a compile
+ * error can be traced back to the hole (VeraHoles.ets reads the markers). `instance` is the slot's
+ * 1-based number, the same one "IDX" resolves to.
+ */
+export function markedHole(key: string, instance: string, body: string): string {
+  return '//@hole ' + key + instance + ' begin\n' + body + '\n//@hole ' + key + instance + ' end'
+}
+
+/** instanceValues for one slot plus the default body of every hole the caller left unfilled. */
+function withHoleDefaults(spec: FragmentSpec, idx: string, values: Map<string, string> | undefined): Map<string, string> {
+  let merged: Map<string, string> = new Map<string, string>()
+  if (values !== undefined) { values.forEach((v: string, k: string) => { merged.set(k, v) }) }
+  for (let hole of spec.holes) {
+    if (!merged.has(hole.token)) { merged.set(hole.token, markedHole(hole.key, idx, hole.defaultBody)) }
+  }
+  return merged
+}
+
+/**
+ * Port binding. For every reads port of the fragment in slot i, the publishers are the other chosen
+ * slots with a writes port of the same name and type; the port is bound to the first of them (state
+ * field of that slot's instance), or to the port's own fallback expression when there is none.
+ * Returns, per slot, token -> Vera expression, to be applied to that slot's text. A slot with no
+ * reads ports (or 'none') gets an empty map. Exported for the host checks.
+ */
+export function bindPorts(chosenKinds: string[]): Map<string, string>[] {
+  let allSpecs = fragments()
+  let out: Map<string, string>[] = []
+  for (let i = 0; i < chosenKinds.length; i++) {
+    let bound: Map<string, string> = new Map<string, string>()
+    let spec = findFragment(allSpecs, chosenKinds[i])
+    if (spec !== null) {
+      for (let port of spec.ports) {
+        if (port.dir !== 'reads') { continue }
+        let expr = port.fallback
+        for (let j = 0; j < chosenKinds.length; j++) {
+          if (j === i) { continue }
+          let other = findFragment(allSpecs, chosenKinds[j])
+          if (other === null) { continue }
+          let found = ''
+          for (let candidate of other.ports) {
+            if (candidate.dir === 'writes' && candidate.name === port.name && candidate.type === port.type) {
+              let resolvedRef = candidate.ref.split('IDX').join((j + 1).toString())
+              found = candidate.computed ? resolvedRef : 'state.' + resolvedRef
+              break
+            }
+          }
+          if (found.length > 0) { expr = found; break }
+        }
+        bound.set(port.ref, expr)
+      }
+    }
+    out.push(bound)
+  }
+  return out
+}
+
+function applyPorts(text: string, bound: Map<string, string>): string {
+  let resolved = text
+  bound.forEach((expr: string, token: string) => { resolved = resolved.split(token).join(expr) })
   return resolved
 }
 
@@ -457,13 +600,19 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     allFieldNames.push(names)
   }
 
+  let portBindings = bindPorts(chosenKinds)
+  let slotValues: Map<string, string>[] = []
+  for (let i = 0; i < specAt.length; i++) {
+    let spec = specAt[i]
+    slotValues.push(spec === null ? new Map<string, string>() : withHoleDefaults(spec, (i + 1).toString(), instanceValues[i]))
+  }
   let initStatementLines: string[] = []
   let initEntryParts: string[] = []
   for (let i = 0; i < specAt.length; i++) {
     let spec = specAt[i]
     if (spec === null) { continue }
     let idx = (i + 1).toString()
-    if (spec.initStatements.length > 0) { initStatementLines.push(resolveInstanceText(spec.initStatements, idx, instanceValues[i])) }
+    if (spec.initStatements.length > 0) { initStatementLines.push(applyPorts(resolveInstanceText(spec.initStatements, idx, slotValues[i]), portBindings[i])) }
     if (spec.initEntries.length > 0) { initEntryParts.push(spec.initEntries.split('IDX').join(idx)) }
   }
 
@@ -477,7 +626,7 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
       if (j === i) { continue }
       for (let name of allFieldNames[j]) { passthrough = passthrough + ', ' + name + ': state.' + name }
     }
-    let fn = resolveInstanceText(spec.functions, idx, instanceValues[i])
+    let fn = applyPorts(resolveInstanceText(spec.functions, idx, slotValues[i]), portBindings[i])
     fn = fn.split('__PASSTHROUGH__').join(passthrough)
     functionBlocks.push(fn)
   }
@@ -487,7 +636,7 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     let spec = specAt[i]
     if (spec === null) { continue }
     let idx = (i + 1).toString()
-    let block = resolveInstanceText(spec.viewBlock, idx, instanceValues[i])
+    let block = applyPorts(resolveInstanceText(spec.viewBlock, idx, slotValues[i]), portBindings[i])
     viewBlocks.push(block)
   }
 
@@ -525,6 +674,35 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
   return lines.join('\n')
 }
 
+/** The section and layout answers with their confidence, one short line for the log: what Jev said before any bar was applied. */
+function rawAnswers(body: string): string {
+  try {
+    let parsed = JSON.parse(body) as Record<string, Object>
+    let answers = parsed['answers'] as Record<string, Object>
+    let parts: string[] = []
+    for (let i = 1; i <= SECTION_COUNT; i++) {
+      let a = answers['section' + i.toString()] as Record<string, Object>
+      if (a === undefined || a === null) { continue }
+      let conf = a['confidence']
+      parts.push('s' + i.toString() + '=' + (a['choice'] as string) + '@' + (typeof conf === 'number' ? (conf as number).toFixed(2) : '?'))
+    }
+    for (let kind of layoutKinds()) {
+      let inc = answers['include.' + kind] as Record<string, Object>
+      if (inc !== undefined && inc !== null && typeof inc['noul'] === 'number' && (inc['noul'] as number) > 0.05) {
+        parts.push('+' + kind + '@' + (inc['noul'] as number).toFixed(2))
+      }
+    }
+    let layout = answers['__LAYOUT__'] as Record<string, Object>
+    if (layout !== undefined && layout !== null) {
+      let conf = layout['confidence']
+      parts.push('layout=' + (layout['choice'] as string) + '@' + (typeof conf === 'number' ? (conf as number).toFixed(2) : '?'))
+    }
+    return parts.join(' ')
+  } catch (_e) {
+    return '(unreadable)'
+  }
+}
+
 /**
  * Live call. Never throws and never rejects -- a selector that cannot answer must not stop
  * generation, same rule VeraTemplateSelect.ets's selectTemplate and JevSelector.ets follow.
@@ -552,6 +730,7 @@ export async function selectSections(prompt: string, apiKey: string): Promise<Se
     }
     let outcome = readSectionPick(response.result as string)
     hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS ms=' + (Date.now() - started).toString() + ' picked=' + outcome.note)
+    hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS raw ' + rawAnswers(response.result as string))
     return outcome
   } catch (e) {
     hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS failed: ' + (e as Error).message)
