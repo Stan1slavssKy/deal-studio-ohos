@@ -683,6 +683,33 @@ export class DeepSeekEngine {
    * with. null on any failure -- no key, no network, an answer that is not a
    * JSON array -- and the caller then describes the whole catalogue.
    */
+  /**
+   * The sketch for VeraCompose.ets: the request as JSON data, no code. Thinking off and a small
+   * budget, like extractUiNeeds; null on any failure, and the caller generates from scratch.
+   */
+  async extractSketch(systemPrompt: string, userPrompt: string): Promise<string | null> {
+    if (!settings.hasApiKey()) { return null }
+    let messages: Record<string, Object>[] = []
+    messages.push(plainMessage('system', systemPrompt))
+    messages.push(plainMessage('user', userPrompt))
+    let savedThinking = this.thinking
+    this.thinking = false
+    this.cancelled = false
+    this.generating = true
+    let startedAt = Date.now()
+    try {
+      let turn = await this.streamOnce(messages, 0, 1500, (_token: string): void => {}, TOOLS_OFF, 'sketch', 1)
+      console.info('VERA-COMPOSE sketch ms=' + (Date.now() - startedAt).toString())
+      return turn.content
+    } catch (e) {
+      console.warn('VERA-COMPOSE sketch failed: ' + (e as Error).message)
+      return null
+    } finally {
+      this.thinking = savedThinking
+      this.generating = false
+    }
+  }
+
   async extractUiNeeds(userPrompt: string): Promise<string[] | null> {
     if (!settings.hasApiKey()) { return null }
     let messages: Record<string, Object>[] = []

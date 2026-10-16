@@ -26,6 +26,7 @@ import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
 import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
 import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
+import { composeFromPrompt, composeEnabled, ComposeResult } from '../vera/VeraCompose'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
 const UI_SELECT_MODE: string = UI_SELECT_PROMPT
@@ -480,7 +481,61 @@ struct GeneratePage {
     // itself, mid-generation, the first time either is worth calling.
     // JevSelector.ets is unchanged and still callable; nothing here calls it.
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
+    // A new screen in DeepSeek mode is first composed (VeraCompose.ets); a refinement, or a request the
+    // composer cannot serve, is generated as before.
+    if (this.mode === MODE_DEEPSEEK && this.previousSource.length === 0 && composeEnabled() && settings.hasSelectorKey()) {
+      this.tryCompose(this.prompt.trim())
+      return
+    }
     this.startAttemptOne(this.prompt.trim())
+  }
+
+  private async tryCompose(userPrompt: string): Promise<void> {
+    this.status = 'Composing...'
+    let result: ComposeResult = await composeFromPrompt(userPrompt, settings.getSelectorKey())
+    if (this.cancelRequested) { return }
+    let vbc2 = ''
+    let errors = ''
+    if (result.source.length > 0) {
+      try {
+        vbc2 = compileVeraSource(result.source).vbc2
+      } catch (e) {
+        errors = e instanceof CompileError ? (e as CompileError).message : (e as Error).message
+      }
+      traceCompile('compose', 0, result.source, errors)
+    }
+    let fields: Record<string, Object> = {}
+    fields['served'] = vbc2.length > 0
+    fields['note'] = errors.length > 0 ? result.note + '; compile failed: ' + errors : result.note
+    fields['sketchMs'] = result.sketchMs
+    fields['jevMs'] = result.jevMs
+    fields['ms'] = Date.now() - this.genStartTime
+    fields['sketch'] = result.sketch
+    fields['answers'] = result.answers
+    fields['source'] = result.source
+    trace('compose', fields)
+    console.info('VERA-COMPOSE ' + (vbc2.length > 0 ? 'served' : 'fell through') + ' ' + (fields['note'] as string))
+    if (vbc2.length === 0) {
+      this.startAttemptOne(userPrompt)
+      return
+    }
+    this.generatedSource = result.source
+    this.compiledSource = result.source
+    this.compiledVbc2 = vbc2
+    this.compiled = true
+    this.compileErrors = ''
+    this.composerOpen = false
+    this.tab = TAB_PREVIEW
+    this.generating = false
+    this.totalMs = Date.now() - this.genStartTime
+    this.status = 'Composed in ' + (this.totalMs / 1000).toFixed(1) + ' s (sketch ' + (result.sketchMs / 1000).toFixed(1) +
+      ' s, Jev ' + (result.jevMs / 1000).toFixed(1) + ' s), no generation'
+    let endFields: Record<string, Object> = {}
+    endFields['ok'] = true
+    endFields['attempt'] = 0
+    endFields['totalMs'] = this.totalMs
+    endFields['via'] = 'compose'
+    trace('gen-end', endFields)
   }
 
   /**

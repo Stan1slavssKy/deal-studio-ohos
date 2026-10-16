@@ -13,6 +13,7 @@ import { requestBenchmark } from '../vera/VeraSearchBenchmark'
 import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
+import { setComposeEnabled } from '../vera/VeraCompose'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 
@@ -44,6 +45,7 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkEval(want)
     this.extractUiEval(want)
     this.extractUiAb(want)
+    this.extractCompose(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -61,6 +63,7 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkEval(want)
     this.extractUiEval(want)
     this.extractUiAb(want)
+    this.extractCompose(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
     }
@@ -275,6 +278,16 @@ export default class EntryAbility extends UIAbility {
     if (flag === null || flag === undefined) { return }
     requestUiAb()
     hilog.info(DOMAIN, 'VERA', 'VERA-UI-AB requested from launch parameter')
+  }
+
+  private extractCompose(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraCompose']
+    if (flag === null || flag === undefined) { return }
+    let text = String(flag).trim()
+    setComposeEnabled(!(text === '0' || text === 'false' || text === 'off'))
+    hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE ' + text + ' from launch parameter')
   }
 
   private extractProjectId(want: Want): void {
