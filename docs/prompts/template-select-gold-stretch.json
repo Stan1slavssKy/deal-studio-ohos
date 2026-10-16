@@ -1,0 +1,12 @@
+[
+  {"id": "habit-tracker", "label": "list_detail", "prompt": "Track my habits", "note": "debatable: habit tracking is checklist-shaped, but usually implies streaks/dates a static 3-row list can't show"},
+  {"id": "contacts-callback", "label": "none", "prompt": "A list of contacts I need to call back today", "note": "debatable: 'contacts' may imply real phone contacts integration"},
+  {"id": "medication-reminder", "label": "none", "prompt": "A medication reminder app with a list of pills to take", "note": "debatable: 'reminder' implies scheduling/notifications, not just a static list"},
+  {"id": "nutrition-tracker", "label": "none", "prompt": "A nutrition tracker logging meals and calories against a daily target", "note": "debatable: 'logging meals' needs data entry the dashboard template can't do"},
+  {"id": "sleep-tracker", "label": "none", "prompt": "A sleep tracker showing hours slept versus a goal", "note": "debatable: needs a way to log hours slept, not just view a static total"},
+  {"id": "project-tracker", "label": "none", "prompt": "A project tracker with tasks, assignees, and due dates", "note": "debatable: assignees/due dates are extra fields list_detail doesn't have"},
+  {"id": "travel-itinerary", "label": "none", "prompt": "A travel itinerary app with multiple stops and bookings", "note": "debatable: 'bookings' implies real data/external state"},
+  {"id": "warehouse-inventory", "label": "none", "prompt": "An inventory checklist for warehouse items with quantities", "note": "debatable: per-item quantity is an extra field list_detail doesn't have"},
+  {"id": "vague-app", "label": "none", "prompt": "An app", "note": "too vague to fit either template confidently"},
+  {"id": "organize-day", "label": "list_detail", "prompt": "Something to help me organize my day", "note": "generic enough that a to-do-list reading is defensible"}
+]

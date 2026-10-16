@@ -101,6 +101,38 @@ was pinned down twice, the second time without a confound. The program is still
 right to say where each leg begins, and every leg after the first is correct as
 soon as you are standing at the stop it starts from.
 
+## 3a. Shared costs between four friends
+
+```
+Shared costs between four friends, Anna, Ben, Carol and Dan: any of them sometimes
+pays for everyone. Let me pick who paid, enter the amount in dollars and cents and
+add it with a short note, and keep the list of all payments. Everything is split
+equally among the four. Show the total spent, each person's equal share, how much
+each one has paid so far, and each person's balance (positive means the others owe
+them, negative means they owe). Show who should pay whom to settle everything with
+the fewest transfers, and a bar chart of what each friend has paid. Give me a
+button to remove the last payment and one to start over.
+```
+
+The calculation prompt: no phone API, but real arithmetic on user input, a list that
+grows, and a chart. Added after the Shanghai prompt because it sits at the other end
+of the range — Shanghai is all device integration, this is all logic. It is also the
+kind of request the Jev template path now has to hand to the model: a list, a form
+and a bar chart are fragments, the money maths is not.
+
+**What to check.** Enter Anna 120.00, Ben 60.00, Dan 20.00 and nothing for Carol:
+the total is 200.00 and each share 50.00. Balances are Anna +70.00, Ben +10.00,
+Carol -50.00, Dan -30.00, and the settlement has three transfers: Carol pays Anna
+50.00, Dan pays Anna 20.00, Dan pays Ben 10.00. The bars read 120, 60, 0 and 20.
+Remove the last payment and every figure redraws without it.
+
+**Where it can go wrong.** Amounts are money, so they should be kept in cents and
+shown through a helper, never as floating point: 0.10 + 0.20 must come out as 0.30.
+A total that does not divide by four leaves a cent over; the program should say who
+carries it rather than make the balances not sum to zero. The sum of all four
+balances is always zero, which is a cheap check on any run. A bar chart with all
+payments at zero must not divide by zero.
+
 ## 4. Blink melody, flashlight in time
 
 ```
