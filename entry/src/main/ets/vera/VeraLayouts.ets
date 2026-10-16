@@ -63,9 +63,15 @@ export function layouts(): LayoutSpec[] {
         new LayoutSlot('result', ['settle_up'], 1, false),
         new LayoutSlot('extra', ['*'], 2, false)
       ]),
+    new LayoutSpec('itinerary_day', 'An ordered list of places or steps with times, each marked reached one by one, optionally opened in the maps app or added to the phone calendar: a day plan, a tour, a route of stops',
+      [
+        new LayoutSlot('route', ['itinerary'], 1, true),
+        new LayoutSlot('progress', ['progress_line', 'list_summary'], 1, false),
+        new LayoutSlot('extra', ['*'], 2, false)
+      ]),
     new LayoutSpec('progress_list', 'A checklist with summary numbers about how many of its items are done',
       [
-        new LayoutSlot('summary', ['list_summary'], 1, true),
+        new LayoutSlot('summary', ['list_summary'], 1, false),
         new LayoutSlot('list', ['checklist'], 1, true),
         new LayoutSlot('extra', ['*'], 2, false)
       ])
@@ -185,4 +191,39 @@ export function placeKinds(kinds: string[], wanted: string[]): number[] {
     }
   }
   return filled
+}
+
+/**
+ * The wanted kinds that still fit the layout's slots, in the order given (best first): a kind whose named slot is already full
+ * -- by what is on the screen or by an earlier wanted kind -- is dropped, so two readers competing for a slot of one keep the
+ * likelier one and the layout is not rejected for it. A kind no named slot takes (or already on the screen) is passed through
+ * or skipped respectively.
+ */
+export function fitToSlots(layoutId: string, kinds: string[], wanted: string[]): string[] {
+  let layout = findLayout(layoutId)
+  if (layout === null) { return wanted }
+  let counts: number[] = []
+  for (let s = 0; s < layout.slots.length; s++) { counts.push(0) }
+  for (let kind of kinds) {
+    if (kind === 'none') { continue }
+    let slot = namedSlotOf(layout, kind)
+    if (slot >= 0) { counts[slot] = counts[slot] + 1 }
+  }
+  let out: string[] = []
+  for (let kind of wanted) {
+    if (kinds.indexOf(kind) >= 0) { continue }
+    let slot = namedSlotOf(layout, kind)
+    if (slot < 0) { out.push(kind); continue }
+    if (counts[slot] >= layout.slots[slot].max) { continue }
+    counts[slot] = counts[slot] + 1
+    out.push(kind)
+  }
+  return out
+}
+
+function namedSlotOf(layout: LayoutSpec, kind: string): number {
+  for (let s = 0; s < layout.slots.length; s++) {
+    if (layout.slots[s].accepts.indexOf(kind) >= 0) { return s }
+  }
+  return -1
 }

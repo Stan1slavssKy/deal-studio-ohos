@@ -21,7 +21,7 @@ def hdc(*args):
 
 
 def sections_line():
-    out = hdc('shell', 'hilog -x | grep VERA-SECTIONS | tail -1')
+    out = hdc('shell', 'hilog -x | grep "VERA-SECTIONS ms=" | tail -1')
     m = LINE.search(out.strip())
     return (int(m.group(1)), m.group(2).strip()) if m else None
 

@@ -63,7 +63,7 @@ assert.deepEqual(kinds(o), ['master_list', 'detail_view']); assert.equal(o.layou
 o = readSectionPick(withLayout(['master_list', 'metrics', 'timer', 'checklist'], 'master_detail'))
 assert.equal(o.layout, 'stack')
 o = readSectionPick(withLayout(['checklist', 'none', 'none', 'none'], 'progress_list'))
-assert.deepEqual(kinds(o), ['list_summary', 'checklist']); assert.equal(o.layout, 'progress_list')
+assert.deepEqual(kinds(o), ['checklist']); assert.equal(o.layout, 'progress_list', 'the layout only orders; the summary comes when it is asked for')
 o = readSectionPick(body(['filter_box', 'master_list', 'detail_view', 'none'], {needs_search_or_form: 0.95}))
 assert.equal(o.needsLogic, false, 'a filter box is the search the veto asks for')
 // search_list picked on its own, then a master_detail layout: the search becomes the filter wired to the list
@@ -93,10 +93,10 @@ const withIncludes = (sections, layout, includes, vetoes = {}) => {
   for (const [k, v] of Object.entries(includes)) b.answers['include.' + k] = {noul: v}
   return JSON.stringify(b)
 }
-o = readSectionPick(withIncludes(['record_log', 'none', 'none'], 'log_report', {record_log: 0.9, number_strip: 0.8, breakdown_table: 0.7, series_chart: 0.6, settle_up: 0.95, master_list: 0.1, detail_view: 0.05}, costs))
+o = readSectionPick(withIncludes(['record_log', 'none', 'none'], 'log_report', {record_log: 0.9, number_strip: 0.8, breakdown_table: 0.7, series_chart: 0.7, settle_up: 0.95, master_list: 0.1, detail_view: 0.05}, costs))
 assert.deepEqual(kinds(o), ['record_log', 'number_strip', 'breakdown_table', 'series_chart', 'settle_up'], 'low section confidence no longer loses the parts the request asks for')
 assert.equal(o.layout, 'log_report'); assert.equal(o.needsLogic, false)
-o = readSectionPick(withIncludes(['none', 'none'], 'log_report', {record_log: 0.9, settle_up: 0.3, series_chart: 0.49}))
+o = readSectionPick(withIncludes(['none', 'none'], 'log_report', {record_log: 0.9, settle_up: 0.3, series_chart: 0.64}))
 assert.deepEqual(kinds(o), ['record_log'], 'below the bar they are not added')
 o = readSectionPick(withIncludes(['checklist', 'none'], '', {settle_up: 0.99}))
 assert.deepEqual(kinds(o), pad(['checklist']), 'no layout, no include answers read')
@@ -107,6 +107,45 @@ assert.deepEqual(kinds(o), ['record_log', 'settle_up'], 'a part Jev already put 
   const slotAnswer = noul => { const b = JSON.parse(body(['number_strip', 'none'], {})); b.answers['section1.number_strip.show_count'] = {noul}; b.answers['section1.bar_chart.bar_style'] = {choice: 'accent', confidence: 0.3}; return JSON.stringify(b) }
   o = readSectionPick(slotAnswer(0.4)); assert.equal(o.sections[0].slotValues.get('__SHOW_COUNT_IDX__'), 'false')
   o = readSectionPick(slotAnswer(0.7)); assert.equal(o.sections[0].slotValues.get('__SHOW_COUNT_IDX__'), 'true')
+}
+// itinerary_day: a hard integration veto is decided after the blocks are known
+{
+  const day = (slots, vetoes, sections = ['none', 'none']) => {
+    const b = JSON.parse(body(sections, vetoes))
+    b.answers.__LAYOUT__ = {choice: 'itinerary_day', confidence: 1}
+    b.answers['include.itinerary'] = {noul: 0.9}; b.answers['include.progress_line'] = {noul: 0.8}
+    for (const [k, v] of Object.entries(slots)) b.answers['section1.itinerary.' + k] = {noul: v}
+    return JSON.stringify(b)
+  }
+  o = readSectionPick(day({navigate: 0.9, calendar: 0.9}, {needs_integration: 0.97, needs_logic: 0.9, needs_real_data: 0.6}))
+  assert.deepEqual(kinds(o), ['itinerary', 'progress_line']); assert.equal(o.layout, 'itinerary_day')
+  assert.equal(o.needsLogic, false, 'integration and logic are covered'); assert.equal(o.needsRealData, true)
+  assert.equal(o.sections[0].slotValues.get('__NAVIGATE_IDX__'), 'true')
+  o = readSectionPick(day({navigate: 0.1, calendar: 0.3}, {needs_integration: 0.97}))
+  assert.equal(o.sections, null); assert.match(o.note, /vetoed needs_integration=0\.97/, 'the actions it was asked for are off: not covered')
+  o = readSectionPick(day({calendar: 0.7}, {needs_integration: 0.95}))
+  assert.deepEqual(kinds(o), ['itinerary', 'progress_line'], 'one switched-on action covers the veto')
+  o = readSectionPick(withVetoes(['checklist', 'none'], '', {needs_integration: 0.97}))
+  assert.equal(o.sections, null, 'a request no block covers (camera, video call) stays rejected')
+  o = readSectionPick(day({}, {}, ['itinerary', 'none']))
+  assert.deepEqual(kinds(o), ['itinerary', 'progress_line'], 'a section pick and an include do not duplicate')
+}
+// two readers compete for the one progress slot: the likelier is kept and the layout is not rejected for it
+o = readSectionPick(withIncludes(['none', 'none'], 'itinerary_day', {itinerary: 0.97, progress_line: 0.8, list_summary: 0.96}))
+assert.deepEqual(kinds(o), ['itinerary', 'list_summary']); assert.equal(o.layout, 'itinerary_day')
+o = readSectionPick(withIncludes(['none', 'none'], 'itinerary_day', {itinerary: 0.97, progress_line: 0.96, list_summary: 0.8}))
+assert.deepEqual(kinds(o), ['itinerary', 'progress_line'], 'order follows the layout, not the order of the answers')
+// what the phone answered for a plain "Grocery list app": a weak layout and weak includes must change nothing
+{
+  const b = JSON.parse(body(['checklist', 'checklist', 'none', 'none', 'none', 'none'], {}))
+  b.answers.__LAYOUT__ = {choice: 'progress_list', confidence: 0.68}
+  for (const [k, v] of Object.entries({filter_box: 0.23, master_list: 0.46, detail_view: 0.2, record_log: 0.09, number_strip: 0.08, progress_line: 0.16, list_summary: 0.23, checklist: 0.68})) b.answers['include.' + k] = {noul: v}
+  o = readSectionPick(JSON.stringify(b))
+  assert.deepEqual(kinds(o), pad(['checklist'])); assert.equal(o.layout, 'stack'); assert.equal(o.needsLogic, false)
+  b.answers.__LAYOUT__ = {choice: 'progress_list', confidence: 1}
+  b.answers['include.list_summary'] = {noul: 0.9}
+  o = readSectionPick(JSON.stringify(b))
+  assert.deepEqual(kinds(o), ['list_summary', 'checklist'], 'asked for with a sure layout: the summary comes')
 }
 const {arrangeInLayout} = loadVera('VeraLayouts')
 assert.equal(arrangeInLayout('master_detail', ['master_list', 'detail_view', 'a', 'b', 'c']), null)   // 3 extras > max 2

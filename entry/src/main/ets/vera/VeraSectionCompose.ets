@@ -35,7 +35,7 @@
 
 import http from '@ohos.net.http'
 import hilog from '@ohos.hilog'
-import { layouts, arrangeInLayout, completeRequiredSlots, swapForLayout, layoutKinds, kindsOfLayout, placeKinds, LAYOUT_NONE, LAYOUT_STACK } from './VeraLayouts'
+import { layouts, arrangeInLayout, completeRequiredSlots, swapForLayout, layoutKinds, kindsOfLayout, placeKinds, fitToSlots, LAYOUT_NONE, LAYOUT_STACK } from './VeraLayouts'
 import { FragmentSpec, StateFieldSpec, SlotSpec, VetoSpec, ContentFieldSpec, PortSpec, fragments, vetoes, bannerSectionView } from './VeraTemplates'
 
 const DOMAIN = 0x0000
@@ -54,7 +54,13 @@ const SLOT_PICK_ABOVE: number = 0.25
  * questions, so unlike a section's one-of-many choice (whose confidence is spread over every kind) a part the
  * request plainly asks for scores high.
  */
-const INCLUDE_ABOVE: number = 0.5
+const INCLUDE_ABOVE: number = 0.65
+/**
+ * Bar for the layout answer. A layout is not just an order: its required slots add blocks nobody asked for, so it must be
+ * sure. Measured on the phone: a plain "Grocery list app" got progress_list at 0.68 (and list_summary was then forced in);
+ * the prompts a layout is for got 1.00. Includes follow the same gap: wanted parts scored 0.77 and up, unwanted ones 0.46 and less.
+ */
+const LAYOUT_ABOVE: number = 0.8
 
 /**
  * Vetoes that no longer drop a request to generation from scratch: whatever they flag (a calculation,
@@ -278,6 +284,14 @@ export function readChoiceValue(answers: Record<string, Object>, key: string, al
   return picked
 }
 
+function readNoulProbability(answers: Record<string, Object>, key: string): number {
+  let raw = answers[key]
+  if (raw === null || raw === undefined) { return 0 }
+  let value = (raw as Record<string, Object>)['noul']
+  if (value === null || value === undefined || typeof value !== 'number') { return 0 }
+  return value as number
+}
+
 function readNoulValue(answers: Record<string, Object>, key: string, above: number): boolean {
   let raw = answers[key]
   if (raw === null || raw === undefined) { return false }
@@ -357,12 +371,6 @@ export function readSectionPick(body: string): SectionPickOutcome {
       }
     }
   }
-  if (vetoNotes.length > 0) {
-    let note = 'vetoed ' + vetoNotes.join(' ')
-    if (needsRealData) { note = note + ' needs_real_data=' + realDataProbability.toFixed(2) }
-    return new SectionPickOutcome(null, emptyGlobals, note)
-  }
-
   let kindIds: string[] = []
   for (let spec of specs) { kindIds.push(spec.kind) }
   let allowedKinds: string[] = kindIds.concat(['none'])
@@ -401,7 +409,7 @@ export function readSectionPick(body: string): SectionPickOutcome {
 
   let layoutIds: string[] = [LAYOUT_NONE]
   for (let layout of layouts()) { layoutIds.push(layout.id) }
-  let layoutId = readChoiceValue(answers, '__LAYOUT__', layoutIds, SECTION_PICK_ABOVE, LAYOUT_NONE)
+  let layoutId = readChoiceValue(answers, '__LAYOUT__', layoutIds, LAYOUT_ABOVE, LAYOUT_NONE)
   let layoutNote = ''
   let placed: SectionPick[] = picks
   let usedLayout = LAYOUT_STACK
@@ -410,11 +418,19 @@ export function readSectionPick(body: string): SectionPickOutcome {
     for (let pick of picks) { kindsNow.push(pick.kind) }
     let addedNote = ''
     let wanted: string[] = []
+    let wantedP: number[] = []
     for (let kind of kindsOfLayout(layoutId)) {
-      if (readNoulValue(answers, 'include.' + kind, INCLUDE_ABOVE)) { wanted.push(kind) }
+      let p = readNoulProbability(answers, 'include.' + kind)
+      if (p > INCLUDE_ABOVE) {
+        // likeliest first, so a full slot keeps the part the request asks for most
+        let at = 0
+        while (at < wantedP.length && wantedP[at] >= p) { at = at + 1 }
+        wanted.splice(at, 0, kind)
+        wantedP.splice(at, 0, p)
+      }
     }
     let swapped = swapForLayout(layoutId, kindsNow)
-    let included = placeKinds(kindsNow, wanted)
+    let included = placeKinds(kindsNow, fitToSlots(layoutId, kindsNow, wanted))
     let filled = swapped.concat(included).concat(completeRequiredSlots(layoutId, kindsNow))
     for (let i of filled) {
       let added = findFragment(specs, kindsNow[i])
@@ -435,20 +451,30 @@ export function readSectionPick(body: string): SectionPickOutcome {
     }
   }
 
-  let anyChosen = false
-  for (let pick of placed) { if (pick.kind !== 'none') { anyChosen = true } }
-  if (!anyChosen) {
-    return new SectionPickOutcome(null, emptyGlobals, 'none (' + notes.join(' ') + ')')
-  }
-
-  // A soft veto a chosen block already covers (VeraTemplates.ets FragmentSpec.covers: a search box is the
-  // search a needs_search_or_form veto asks for, a record log is the several-field form and the running
-  // totals) would only pay for a model completion that adds nothing.
+  // A veto a chosen block already covers (VeraTemplates.ets FragmentSpec.covers: a search box is the search a
+  // needs_search_or_form veto asks for, a record log is the several-field form and the running totals) would only pay for a
+  // model completion that adds nothing. coversIf is the same for a block whose phone actions are slots: it covers
+  // needs_integration only when one of them came out true. A hard veto is decided here, after the blocks are known, and
+  // stays a rejection when nothing chosen covers it.
   let covered: string[] = []
   for (let pick of placed) {
     let spec = findFragment(specs, pick.kind)
     if (spec === null) { continue }
     for (let key of spec.covers) { if (covered.indexOf(key) < 0) { covered.push(key) } }
+    for (let rule of spec.coversIf) {
+      let parts = rule.split('=')
+      if (parts.length !== 2) { continue }
+      for (let token of parts[1].split('|')) {
+        if (pick.slotValues.get(token) === 'true' && covered.indexOf(parts[0]) < 0) { covered.push(parts[0]) }
+      }
+    }
+  }
+  let remainingHard: string[] = []
+  for (let tag of vetoNotes) { if (covered.indexOf(tag.split('=')[0]) < 0) { remainingHard.push(tag) } }
+  if (remainingHard.length > 0) {
+    let hardNote = 'vetoed ' + remainingHard.join(' ')
+    if (needsRealData) { hardNote = hardNote + ' needs_real_data=' + realDataProbability.toFixed(2) }
+    return new SectionPickOutcome(null, emptyGlobals, hardNote)
   }
   if (covered.length > 0) {
     let kept: string[] = []
@@ -457,6 +483,12 @@ export function readSectionPick(body: string): SectionPickOutcome {
       if (covered.indexOf(key) < 0) { kept.push(tag) }
     }
     logicNotes = kept
+  }
+
+  let anyChosen = false
+  for (let pick of placed) { if (pick.kind !== 'none') { anyChosen = true } }
+  if (!anyChosen) {
+    return new SectionPickOutcome(null, emptyGlobals, 'none (' + notes.join(' ') + ')')
   }
 
   let globals: Map<string, string> = new Map<string, string>()
@@ -666,7 +698,11 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
   for (let fb of functionBlocks) { lines.push(fb); lines.push('') }
   lines.push('function view(state: AppState): ui.View {')
   lines.push('  let sections: ui.View[] = [];')
-  lines.push('  sections.push(ui.Header("' + headerStyle + '", "' + title + '", "", "", "check"));')
+  let eyebrow = globalValues.get('__EYEBROW__')
+  if (eyebrow === undefined) { eyebrow = '' }
+  let supporting = globalValues.get('__SUPPORTING__')
+  if (supporting === undefined) { supporting = '' }
+  lines.push('  sections.push(ui.Header("' + headerStyle + '", "' + title + '", "' + eyebrow + '", "' + supporting + '", "check"));')
   for (let vb of viewBlocks) { lines.push('  ' + vb.split('\n').join('\n  ')) }
   if (bannerShow) { lines.push('  sections.push(' + bannerSectionView() + ');') }
   lines.push('  return ui.AppTheme("' + theme + '", "", sections);')

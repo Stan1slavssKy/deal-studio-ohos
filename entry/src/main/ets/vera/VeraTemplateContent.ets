@@ -114,6 +114,29 @@ function escapeListCell(raw: string, maxLength: number): string {
   return escapeForVeraString(raw.split('{').join('(').split('}').join(')'), maxLength)
 }
 
+/** A decimal such as "31.2397" or "-121.5" within [-limit, limit], else ''. Text kept as written, only trimmed. */
+function checkedCoordinate(raw: string, limit: number): string {
+  let text = raw.trim()
+  if (!/^-?[0-9]{1,3}(\.[0-9]{1,8})?$/.test(text)) { return '' }
+  let value = parseFloat(text)
+  if (value > limit || value < -limit) { return '' }
+  return text
+}
+
+/** One cell of a row as it is spliced: a number literal, a checked value or escaped text, by the column's kind and check. */
+function renderCell(spec: ListFieldSpec, column: number, cell: string): string {
+  let check = column < spec.columnChecks.length ? spec.columnChecks[column] : ''
+  if (check === 'lat') { return checkedCoordinate(cell, 90) }
+  if (check === 'lon') { return checkedCoordinate(cell, 180) }
+  if (check === 'minutes') {
+    let digits = sanitizeVeraInt(cell, '60')
+    let n = parseInt(digits)
+    return (n >= 5 && n <= 600) ? n.toString() : '60'
+  }
+  if (spec.numericColumns.indexOf(column) >= 0) { return sanitizeVeraInt(cell, '0') }
+  return escapeListCell(cell, spec.columnMax[column])
+}
+
 function renderListRows(spec: ListFieldSpec, rows: string[][]): string {
   let out: string[] = []
   for (let row of rows) {
@@ -155,7 +178,7 @@ export function expandListRows(raw: Object | undefined, spec: ListFieldSpec): Li
       let row: string[] = []
       for (let c = 0; c < columns; c++) {
         let cell = c < cells.length ? cells[c] : ''
-        row.push(spec.numericColumns.indexOf(c) >= 0 ? sanitizeVeraInt(cell, '0') : escapeListCell(cell, spec.columnMax[c]))
+        row.push(renderCell(spec, c, cell))
       }
       rows.push(row)
       if (rows.length >= spec.maxRows) { break }
@@ -168,7 +191,7 @@ export function expandListRows(raw: Object | undefined, spec: ListFieldSpec): Li
       let escaped: string[] = []
       for (let c = 0; c < columns; c++) {
         let cell = c < row.length ? row[c] : ''
-        escaped.push(spec.numericColumns.indexOf(c) >= 0 ? sanitizeVeraInt(cell, '0') : escapeListCell(cell, spec.columnMax[c]))
+        escaped.push(renderCell(spec, c, cell))
       }
       fallback.push(escaped)
     }
@@ -335,6 +358,8 @@ function listFieldsForKind(kind: string): ListFieldSpec[] {
 export async function fillSectionsContent(chosenKinds: string[], userPrompt: string, mode: string, searchText: string = ''): Promise<SectionContentFillResult> {
   let flat: FlatContentField[] = []
   flat.push(new FlatContentField(-1, '__TITLE__', 'title', 'Demo Screen', 'Short title for the whole screen (2-4 words)', 24))
+  flat.push(new FlatContentField(-1, '__EYEBROW__', 'eyebrow', '', 'A short line above the title, only when the request itself gives one (a date, a place, a kind of day); otherwise an empty string', 24))
+  flat.push(new FlatContentField(-1, '__SUPPORTING__', 'supporting', '', 'A line under the title, only when the request itself gives one (a schedule, a tagline); otherwise an empty string', 60))
   for (let i = 0; i < chosenKinds.length; i++) {
     if (chosenKinds[i] === 'none') { continue }
     for (let field of contentFieldsForKind(chosenKinds[i])) {

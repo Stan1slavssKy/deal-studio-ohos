@@ -376,8 +376,14 @@ export class ListFieldSpec {
   fallbackRows: string[][]
   /** Indices of columns that are whole numbers, spliced unquoted (as a bare number literal) instead of as escaped text. */
   numericColumns: number[]
+  /**
+   * Per column, a value check applied before splicing: '' none, 'lat' and 'lon' (a decimal within the range of a
+   * latitude / longitude, else the cell becomes empty), 'minutes' (a whole number 5 to 600, else 60).
+   */
+  columnChecks: string[]
   constructor(token: string, key: string, hint: string, columnHints: string[], columnMax: number[], rowTemplate: string,
-      separator: string, minRows: number, maxRows: number, fallbackRows: string[][], numericColumns: number[] = []) {
+      separator: string, minRows: number, maxRows: number, fallbackRows: string[][], numericColumns: number[] = [],
+      columnChecks: string[] = []) {
     this.token = token
     this.key = key
     this.hint = hint
@@ -389,6 +395,7 @@ export class ListFieldSpec {
     this.maxRows = maxRows
     this.fallbackRows = fallbackRows
     this.numericColumns = numericColumns
+    this.columnChecks = columnChecks
   }
 }
 
@@ -502,10 +509,16 @@ export class FragmentSpec {
    * longer sends the request to the model to add what the block already has.
    */
   covers: string[]
+  /**
+   * Vetoes covered only in some configurations: "needs_integration=__NAVIGATE_IDX__|__CALENDAR_IDX__" covers that veto when
+   * any of the named noul slots came out 'true' -- a block whose phone actions are switched off does not cover a request that
+   * wanted them.
+   */
+  coversIf: string[]
   constructor(kind: string, criteria: string, supportClass: string, stateFields: StateFieldSpec[],
       initStatements: string, initEntries: string, functions: string, viewBlock: string,
       slots: SlotSpec[], contentFields: ContentFieldSpec[], imports: string[] = [], listFields: ListFieldSpec[] = [],
-      ports: PortSpec[] = [], holes: HoleSpec[] = [], covers: string[] = []) {
+      ports: PortSpec[] = [], holes: HoleSpec[] = [], covers: string[] = [], coversIf: string[] = []) {
     this.kind = kind
     this.criteria = criteria
     this.supportClass = supportClass
@@ -521,6 +534,7 @@ export class FragmentSpec {
     this.ports = ports
     this.holes = holes
     this.covers = covers
+    this.coversIf = coversIf
   }
 }
 
@@ -1566,6 +1580,293 @@ function settleUpFragment(): FragmentSpec {
   )
 }
 
+/** One stop of an itinerary. Coordinates are text on purpose: they go to the maps intent as strings and an empty one means "by name only". */
+const STOP_CLASS: string = `@jsonable
+class Stop {
+  name: string;
+  minutes: number;
+  latitude: string;
+  longitude: string;
+  done: boolean;
+  eventId: string;
+}`
+
+/**
+ * An ordered day of places: each with a duration and (checked) coordinates, a window computed from the start time,
+ * and a "reached" mark. Two phone actions are switched on by Jev's slot answers, not by the block: a Navigate button per
+ * stop (Petal Maps' StartNavigate through sdk.call) and calendar tools (add each stop to the phone calendar, open the
+ * calendar, remove what this app added). The answers follow docs/intent-call-contract.md: only "declined..." and
+ * "error..." are failures, anything else is success, and a failure is shown, never swallowed.
+ *
+ * Petal Maps accepts srcLocation, answers 0 and routes from where the phone is (VeraIntentCatalog.ets); the origin is sent
+ * anyway, so every leg after the first is right as soon as the person stands where it starts.
+ * Calendar events are today, in the phone's own time zone (hour and minute, no epoch): CalendarKit's flat fields.
+ * Publishes done and total, the names checklist publishes, so list_summary and progress_line read either.
+ */
+function itineraryFragment(): FragmentSpec {
+  let navigate: Map<string, string> = new Map<string, string>()
+  navigate.set('true', 'yes, each stop has a button that opens it in the maps app for directions')
+  navigate.set('false', 'no navigation is asked for')
+  let calendar: Map<string, string> = new Map<string, string>()
+  calendar.set('true', 'yes, each stop can be added to the phone calendar, with buttons to open the calendar and remove the added events')
+  calendar.set('false', 'no calendar is asked for')
+  return new FragmentSpec(
+    'itinerary',
+    'An ordered list of places or steps with a time window and duration each, which the person marks as reached one by one; ' +
+    'it can also open a stop in the maps app and add stops to the phone calendar. A day plan, a tour, a route of stops',
+    STOP_CLASS,
+    [new StateFieldSpec('stopsIDX', 'Stop[]'), new StateFieldSpec('startMinIDX', 'number'), new StateFieldSpec('gapIDX', 'number'),
+     new StateFieldSpec('startPlaceIDX', 'string'), new StateFieldSpec('startLatIDX', 'string'), new StateFieldSpec('startLonIDX', 'string'),
+     new StateFieldSpec('lastIDX', 'number'), new StateFieldSpec('pendingIDX', 'number'), new StateFieldSpec('resultIDX', 'string')],
+    `  let stopsIDX: Stop[] = [
+    __STOPS_IDX__
+  ];
+  let startMinIDX: number = __START_TIME_IDX__;
+  if (startMinIDX < 0 || startMinIDX > 1439) { startMinIDX = 540; }
+  let gapIDX: number = __GAP_IDX__;
+  if (gapIDX < 0 || gapIDX > 180) { gapIDX = 15; }
+  let startPlaceIDX: string = "__START_PLACE_IDX__";
+  let startLatIDX: string = "__START_LAT_IDX__";
+  let startLonIDX: string = "__START_LON_IDX__";
+  let latCheckIDX: number = strings.toNumber(startLatIDX, 1000);
+  let lonCheckIDX: number = strings.toNumber(startLonIDX, 1000);
+  if (latCheckIDX < -90 || latCheckIDX > 90 || lonCheckIDX < -180 || lonCheckIDX > 180) { startLatIDX = ""; startLonIDX = ""; }`,
+    `stopsIDX: stopsIDX, startMinIDX: startMinIDX, gapIDX: gapIDX, startPlaceIDX: startPlaceIDX, startLatIDX: startLatIDX, startLonIDX: startLonIDX, lastIDX: -1, pendingIDX: -1, resultIDX: ""`,
+    `function rebuildIDX(state: AppState, stops: Stop[], last: number, pending: number, result: string): AppState {
+  return {stopsIDX: stops, startMinIDX: state.startMinIDX, gapIDX: state.gapIDX, startPlaceIDX: state.startPlaceIDX, startLatIDX: state.startLatIDX, startLonIDX: state.startLonIDX, lastIDX: last, pendingIDX: pending, resultIDX: result__PASSTHROUGH__};
+}
+
+function failedIDX(value: string): boolean {
+  return strings.startsWith(value, "declined") || strings.startsWith(value, "error");
+}
+
+function reachedCountIDX(state: AppState): number {
+  let n: number = 0;
+  for (let s: Stop of state.stopsIDX) { if (s.done) { n = n + 1; } }
+  return n;
+}
+
+function toggleStopIDX(state: AppState, index: number): AppState {
+  let out: Stop[] = [];
+  let last: number = state.lastIDX;
+  let highest: number = -1;
+  let i: number = 0;
+  while (i < state.stopsIDX.length()) {
+    let s: Stop = state.stopsIDX[i];
+    let done: boolean = s.done;
+    if (i === index) {
+      done = !s.done;
+      if (done) { last = index; } else { if (last === index) { last = -2; } }
+    }
+    if (done) { highest = i; }
+    out.push({name: s.name, minutes: s.minutes, latitude: s.latitude, longitude: s.longitude, done: done, eventId: s.eventId});
+    i = i + 1;
+  }
+  if (last === -2) { last = highest; }
+  return rebuildIDX(state, out, last, state.pendingIDX, state.resultIDX);
+}
+
+function navigateIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.stopsIDX.length()) { return state; }
+  let target: Stop = state.stopsIDX[index];
+  let fromName: string = state.startPlaceIDX;
+  let fromLat: string = state.startLatIDX;
+  let fromLon: string = state.startLonIDX;
+  if (state.lastIDX >= 0 && state.lastIDX < state.stopsIDX.length()) {
+    let prev: Stop = state.stopsIDX[state.lastIDX];
+    fromName = prev.name;
+    fromLat = prev.latitude;
+    fromLon = prev.longitude;
+  }
+  let params: string[] = ["dstLocation.locationName", target.name];
+  if (target.latitude !== "" && target.longitude !== "") {
+    params.push("dstLocation.latitude");
+    params.push(target.latitude);
+    params.push("dstLocation.longitude");
+    params.push(target.longitude);
+  }
+  if (fromName !== "") {
+    params.push("srcLocation.locationName");
+    params.push(fromName);
+  }
+  if (fromLat !== "" && fromLon !== "") {
+    params.push("srcLocation.latitude");
+    params.push(fromLat);
+    params.push("srcLocation.longitude");
+    params.push(fromLon);
+  }
+  params.push("trafficType");
+  params.push("Drive");
+  sdk.call("com.huawei.hmos.maps.app/entry/EntryAbility/StartNavigate", params, "onNavigatedIDX", "foreground");
+  return rebuildIDX(state, state.stopsIDX, state.lastIDX, state.pendingIDX, "Opening maps...");
+}
+
+function onNavigatedIDX(state: AppState, value: string): AppState {
+  let result: string = "";
+  if (failedIDX(value)) { result = value; }
+  return rebuildIDX(state, state.stopsIDX, state.lastIDX, state.pendingIDX, result);
+}
+
+function addEventIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.stopsIDX.length()) { return state; }
+  let s: Stop = state.stopsIDX[index];
+  let start: number = state.startMinIDX;
+  let i: number = 0;
+  while (i < index) {
+    start = start + state.stopsIDX[i].minutes + state.gapIDX;
+    i = i + 1;
+  }
+  let minute: number = start % 60;
+  let hour: number = ((start - minute) / 60) % 24;
+  let where: string = s.name;
+  if (s.latitude !== "" && s.longitude !== "") { where = s.name + ", " + s.latitude + ", " + s.longitude; }
+  sdk.call("CalendarKit.Calendar.addEvent",
+    ["title", s.name, "hour", ui.numberToString(hour), "minute", ui.numberToString(minute),
+     "durationMinutes", ui.numberToString(s.minutes), "location", where, "remindBefore", "15", "repeat", "once"], "onAddedIDX");
+  return rebuildIDX(state, state.stopsIDX, state.lastIDX, index, "Adding to the calendar...");
+}
+
+function onAddedIDX(state: AppState, value: string): AppState {
+  if (failedIDX(value)) { return rebuildIDX(state, state.stopsIDX, state.lastIDX, -1, value); }
+  let out: Stop[] = [];
+  let i: number = 0;
+  while (i < state.stopsIDX.length()) {
+    let s: Stop = state.stopsIDX[i];
+    let id: string = s.eventId;
+    if (i === state.pendingIDX) { id = value; }
+    out.push({name: s.name, minutes: s.minutes, latitude: s.latitude, longitude: s.longitude, done: s.done, eventId: id});
+    i = i + 1;
+  }
+  return rebuildIDX(state, out, state.lastIDX, -1, "Added to the calendar");
+}
+
+function wipeEventsIDX(state: AppState, ignored: number): AppState {
+  let ids: string = "";
+  for (let s: Stop of state.stopsIDX) {
+    if (s.eventId !== "") {
+      if (ids !== "") { ids = ids + ","; }
+      ids = ids + s.eventId;
+    }
+  }
+  if (ids === "") { return rebuildIDX(state, state.stopsIDX, state.lastIDX, state.pendingIDX, "No events added by this app"); }
+  sdk.call("CalendarKit.Calendar.deleteEvents", ["ids", ids], "onWipedIDX");
+  return rebuildIDX(state, state.stopsIDX, state.lastIDX, state.pendingIDX, "Removing events...");
+}
+
+function onWipedIDX(state: AppState, value: string): AppState {
+  if (failedIDX(value)) { return rebuildIDX(state, state.stopsIDX, state.lastIDX, state.pendingIDX, value); }
+  let out: Stop[] = [];
+  for (let s: Stop of state.stopsIDX) {
+    out.push({name: s.name, minutes: s.minutes, latitude: s.latitude, longitude: s.longitude, done: s.done, eventId: ""});
+  }
+  return rebuildIDX(state, out, state.lastIDX, state.pendingIDX, "Events removed");
+}
+
+function openCalendarIDX(state: AppState, ignored: number): AppState {
+  sdk.call("com.huawei.hmos.calendar/phone/MainAbility", [], "onOpenedIDX");
+  return state;
+}
+
+function onOpenedIDX(state: AppState, value: string): AppState {
+  if (failedIDX(value)) { return rebuildIDX(state, state.stopsIDX, state.lastIDX, state.pendingIDX, value); }
+  return state;
+}`,
+    `{
+    let count: number = state.stopsIDX.length();
+    let showNav: boolean = __NAVIGATE_IDX__;
+    let showCal: boolean = __CALENDAR_IDX__;
+    let rows: ui.View[] = [];
+    let at: number = state.startMinIDX;
+    let j: number = 0;
+    while (j < count) {
+      let s: Stop = state.stopsIDX[j];
+      let icon: string = "pin";
+      if (s.done) { icon = "check"; }
+      let subtitle: string = ui.clockToString(at) + " - " + ui.clockToString(at + s.minutes) + " | " + ui.numberToString(s.minutes) + " min";
+      if (s.latitude !== "" && s.longitude !== "") { subtitle = subtitle + " | " + s.latitude + ", " + s.longitude; }
+      rows.push(ui.ListItem("default", s.name, subtitle, "", "toggleStopIDX", j, true, icon));
+      let buttons: ui.View[] = [];
+      if (showCal) {
+        let calText: string = "Add to calendar";
+        if (s.eventId !== "") { calText = "In calendar"; }
+        buttons.push(ui.Button("secondary", calText, "addEventIDX", j, s.eventId === ""));
+      }
+      if (showNav) { buttons.push(ui.Button("primary", "Navigate", "navigateIDX", j, true)); }
+      if (buttons.length() > 0) { rows.push(ui.ActionBar("end", buttons)); }
+      at = at + s.minutes + state.gapIDX;
+      j = j + 1;
+    }
+    sections.push(ui.Section("content", "", "", [
+      ui.When(count === 0, ui.EmptyState("default", "No stops", "Nothing is planned yet.", "", "", "pin")),
+      ui.When(count > 0, ui.ListGroup("default", "", rows))
+    ]));
+    let notes: ui.View[] = [];
+    if (state.resultIDX !== "") {
+      let tone: string = "default";
+      if (failedIDX(state.resultIDX)) { tone = "warning"; }
+      notes.push(ui.InsetBanner(tone, "Last action", state.resultIDX, "", "", "info"));
+    }
+    if (showCal) {
+      notes.push(ui.ActionBar("spread", [
+        ui.Button("secondary", "Open calendar", "openCalendarIDX", 0, true),
+        ui.Button("danger", "Wipe added events", "wipeEventsIDX", 0, true)
+      ]));
+    }
+    if (notes.length() > 0) { sections.push(ui.Section("supporting", "", "", notes)); }
+  }`,
+    [new SlotSpec('__NAVIGATE_IDX__', ['false', 'true'], 'noul', 'Should each stop have a button that opens it in the maps app for directions?', navigate, 0.6),
+     new SlotSpec('__CALENDAR_IDX__', ['false', 'true'], 'noul', 'Should each stop be addable to the phone calendar, with buttons to open the calendar and to remove the events this app added?', calendar, 0.6)],
+    [
+      new ContentFieldSpec('__START_TIME_IDX__', 'start_time', '540', 'When the first stop starts, as minutes after midnight (09:00 is 540)', 6, true),
+      new ContentFieldSpec('__GAP_IDX__', 'gap_minutes', '15', 'Minutes of travel or slack between two stops (0 to 180)', 4, true),
+      new ContentFieldSpec('__START_PLACE_IDX__', 'start_place', '', 'Where the day starts (an airport, a hotel), or an empty string if the request does not say', 40),
+      new ContentFieldSpec('__START_LAT_IDX__', 'start_latitude', '', 'Latitude of the starting place as a decimal, or an empty string if unknown', 12),
+      new ContentFieldSpec('__START_LON_IDX__', 'start_longitude', '', 'Longitude of the starting place as a decimal, or an empty string if unknown', 12)
+    ],
+    ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"'],
+    [new ListFieldSpec('__STOPS_IDX__', 'stops',
+      'The stops of the day in order, as many as the request needs (5 to 12): each with a name, how long it takes in minutes, and its latitude and longitude as decimals (an empty string when not known with confidence)',
+      ['name of the place (1-4 words)', 'minutes spent there, a whole number', 'latitude as a decimal such as 31.2397, or an empty string', 'longitude as a decimal such as 121.4900, or an empty string'],
+      [28, 4, 12, 12],
+      '{name: "{0}", minutes: {1}, latitude: "{2}", longitude: "{3}", done: false, eventId: ""}', ',\n    ', 5, 12,
+      [['Stop 1', '60', '', ''], ['Stop 2', '60', '', ''], ['Stop 3', '60', '', ''], ['Stop 4', '60', '', ''], ['Stop 5', '60', '', '']],
+      [1], ['', 'minutes', 'lat', 'lon'])],
+    [new PortSpec('writes', 'done', 'number', 'reachedCountIDX(state)', '', true),
+     new PortSpec('writes', 'total', 'number', 'state.stopsIDX.length()', '', true)],
+    [],
+    ['needs_logic'],
+    ['needs_integration=__NAVIGATE_IDX__|__CALENDAR_IDX__']
+  )
+}
+
+/** "N of M" with a bar, from the done and total of a checklist, itinerary or any block that publishes them. */
+function progressLineFragment(): FragmentSpec {
+  return new FragmentSpec(
+    'progress_line',
+    'A single progress line, such as "3 of 9 reached", with a bar, for the items marked done in a list on the same screen; only useful together with such a list',
+    '',
+    [],
+    '',
+    '',
+    '',
+    `{
+    let doneN: number = __PORT_done__;
+    let totalN: number = __PORT_total__;
+    let maxN: number = totalN;
+    if (maxN < 1) { maxN = 1; }
+    sections.push(ui.Section("summary", "", "", [
+      ui.SectionHeader("default", "__PROGRESS_LABEL_IDX__", "", ui.numberToString(doneN) + " of " + ui.numberToString(totalN)),
+      ui.Progress("default", "", doneN, maxN)
+    ]));
+  }`,
+    [],
+    [new ContentFieldSpec('__PROGRESS_LABEL_IDX__', 'progress_label', 'Progress', 'What is being counted, such as Stops reached (1-3 words)', 24)],
+    [],
+    [],
+    [new PortSpec('reads', 'done', 'number', '__PORT_done__', '0'), new PortSpec('reads', 'total', 'number', '__PORT_total__', '0')]
+  )
+}
+
 /** Three columns, three rows of sample records, display-only. Same no-state shape as key_facts. */
 function dataTableFragment(): FragmentSpec {
   return new FragmentSpec(
@@ -1777,7 +2078,8 @@ export function fragments(): FragmentSpec[] {
     searchListFragment(), dataTableFragment(), timelineFragment(),
     barChartFragment(), logEntriesFragment(),
     masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
-    recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment()
+    recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
+    itineraryFragment(), progressLineFragment()
   ]
 }
 
