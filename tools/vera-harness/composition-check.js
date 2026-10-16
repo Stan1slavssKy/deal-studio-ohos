@@ -5,7 +5,6 @@
 const assert = require('node:assert/strict')
 const {loadVera} = require('./source-loader')
 const compose = loadVera('VeraSectionCompose')
-const judge = loadVera('VeraCoverageJudge')
 const {deepseek} = loadVera('DeepSeekEngine')
 const {settings} = loadVera('SettingsStore')
 const {buildFromTemplates} = loadVera('VeraTemplatePipeline')
@@ -29,7 +28,6 @@ function jev(sections, layout) {
 }
 const built = async (outcome) => {
   compose.selectSections = async () => outcome
-  judge.judgeCoverage = async () => 0.9
   return buildFromTemplates('books', 'deepseek', () => {}, () => false)
 }
 const runs = src => { const r = compileVeraSource(src); const vm = new VirtualMachine(deserializeVbc2(r.vbc2 !== undefined ? r.vbc2 : r), new UiHostEnvironment()); decodeVeraUi(vm.execute('view', [vm.execute('init')])); return vm }

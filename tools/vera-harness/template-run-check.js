@@ -54,20 +54,12 @@ assert.ok(shown.indexOf('Taxi') < shown.indexOf('Lunch'), 'newest first')
 call('removeLast1', int(0))
 shown = texts(view(vm, state)).join('|')
 assert.match(shown, /\|12\|/); assert.doesNotMatch(shown, /Taxi/)
-// the judge must see a chart's numbers, not only its caption
-{
-  const bars = values('bar_chart'), spec = fragments().find(f => f.kind === 'bar_chart').listFields[0]
-  bars.set(spec.token, expandListRows([['Bananas', '40'], ['Apples', '20'], ['Pineapple', '50']], spec).text)
-  const sum = loadVera('VeraSmokeRun').smokeRun(compileVeraSource(composeProgram(['bar_chart'], globals, [bars])).vbc2).summary
-  assert.match(sum, /chart Bananas=40, Apples=20, Pineapple=50/, sum)
-}
-// smokeRun and the judge's request/answer helpers
+// smokeRun: every fragment starts and draws something; a program that traps in view() does not pass
 const {smokeRun} = loadVera('VeraSmokeRun')
-const {buildJudgeRequest, readJudgeAnswer} = loadVera('VeraCoverageJudge')
 for (const f of fragments()) {
   const src = composeProgram([f.kind], globals, [values(f.kind)])
   const r = smokeRun(compileVeraSource(src).vbc2)
-  assert.ok(r.ok, f.kind + ': ' + r.error); assert.ok(r.nodes >= 2); assert.match(r.summary, /^components: /); assert.ok(r.summary.length <= 700)
+  assert.ok(r.ok, f.kind + ': ' + r.error); assert.ok(r.nodes >= 2)
 }
 const trap = `import * as ui from "std/ui"
 
@@ -87,8 +79,4 @@ function view(state: AppState): ui.View {
 }`
 const bad = smokeRun(compileVeraSource(trap).vbc2)
 assert.equal(bad.ok, false); assert.ok(bad.error.length > 0)
-const req = JSON.parse(buildJudgeRequest('grocery list for 10 people', 'components: list'))
-assert.equal(req.questions.covers.type, 'noul'); assert.match(req.state, /grocery list for 10 people/)
-assert.equal(readJudgeAnswer('{"answers":{"covers":{"noul":0.12}}}'), 0.12)
-assert.equal(readJudgeAnswer('{"answers":{}}'), -1); assert.equal(readJudgeAnswer('nope'), -1); assert.equal(readJudgeAnswer('{"answers":{"covers":{"noul":7}}}'), -1)
 console.log('template-run-check: ok (' + fragments().length + ' fragments)')

@@ -1,10 +1,9 @@
-// buildFromTemplates with canned Jev, model and judge answers: template, complete (soft veto and judge),
-// scratch (hard veto, did not compile) and cancelled. No network.
+// buildFromTemplates with canned Jev and model answers: template, complete (soft veto, a screen of placeholder
+// buttons only), scratch (hard veto, did not compile) and cancelled. No network.
 'use strict'
 const assert = require('node:assert/strict')
 const {loadVera} = require('./source-loader')
 const compose = loadVera('VeraSectionCompose')
-const judge = loadVera('VeraCoverageJudge')
 const content = loadVera('VeraTemplateContent')
 const {deepseek} = loadVera('DeepSeekEngine')
 const {settings} = loadVera('SettingsStore')
@@ -21,37 +20,38 @@ function jev(sections, vetoes) {
     answers['veto.' + k] = {noul: (vetoes || {})[k] || 0}
   return compose.readSectionPick(JSON.stringify({answers}))
 }
-const run = async (outcome, covers, opts = {}) => {
+const run = async (outcome, opts = {}) => {
   compose.selectSections = async () => outcome
-  judge.judgeCoverage = async () => covers
   let cancelled = false
   const statuses = []
   const build = await buildFromTemplates('grocery', 'deepseek', s => { statuses.push(s) }, () => opts.cancelAfterJev ? true : cancelled)
   return {build, statuses}
 }
 ;(async () => {
-  let {build} = await run(jev(['checklist']), 0.9)
-  assert.equal(build.action, 'template'); assert.match(build.note, /covers=0\.90/); assert.match(build.source, /label: "Milk", detail: "2 L"/); assert.ok(build.vbc2.length > 0)
+  let {build} = await run(jev(['checklist']))
+  assert.equal(build.action, 'template'); assert.match(build.source, /label: "Milk", detail: "2 L"/); assert.ok(build.vbc2.length > 0)
+  // no coverage judge: its scores did not separate good screens from bad ones, and nothing read them
+  assert.doesNotMatch(build.note, /covers=/); assert.equal('covers' in build, false)
 
-  ;({build} = await run(jev(['checklist']), 0.03))
-  assert.equal(build.action, 'template', 'the judge only reports; it does not start a model call'); assert.match(build.note, /covers=0\.03/); assert.ok(build.source.length > 0)
+  // buttons that only note which one was tapped are not a finished screen: the model has to make them do something
+  ;({build} = await run(jev(['actions'])))
+  assert.equal(build.action, 'complete'); assert.match(build.note, /placeholder buttons only/); assert.ok(build.source.length > 0); assert.ok(build.vbc2.length > 0)
+  ;({build} = await run(jev(['metrics', 'actions'])))
+  assert.equal(build.action, 'template', 'actions beside a real block stays a template')
 
-  ;({build} = await run(jev(['checklist']), -1))
-  assert.equal(build.action, 'template', 'no judge answer never blocks')
-
-  ;({build} = await run(jev(['checklist'], {needs_logic: 0.95}), 0.9))
+  ;({build} = await run(jev(['checklist'], {needs_logic: 0.95})))
   assert.equal(build.action, 'complete'); assert.match(build.status, /adding the logic/)
 
-  ;({build} = await run(jev(['checklist'], {needs_integration: 0.97}), 0.9))
+  ;({build} = await run(jev(['checklist'], {needs_integration: 0.97})))
   assert.equal(build.action, 'scratch'); assert.match(build.note, /vetoed needs_integration/)
 
-  ;({build} = await run(jev(['none', 'none']), 0.9))
+  ;({build} = await run(jev(['none', 'none'])))
   assert.equal(build.action, 'scratch')
 
-  ;({build} = await run(jev(['checklist'], {needs_real_data: 0.9}), 0.9))
+  ;({build} = await run(jev(['checklist'], {needs_real_data: 0.9})))
   assert.equal(build.action, 'scratch'); assert.match(build.note, /no search available/)
 
-  ;({build} = await run(jev(['checklist']), 0.9, {cancelAfterJev: true}))
+  ;({build} = await run(jev(['checklist']), {cancelAfterJev: true}))
   assert.equal(build.action, 'cancelled')
 
   // a composition that compiles but cannot run must not reach the screen: break the checklist view for this run
@@ -60,7 +60,7 @@ const run = async (outcome, covers, opts = {}) => {
     if (f.kind === 'checklist') f.viewBlock = f.viewBlock.replace('let count: number = state.itemsIDX.length();', 'let count: number = state.itemsIDX.length(); let boom: number = state.itemsIDX[99].detail.length();')
     return f
   })
-  ;({build} = await run(jev(['checklist']), 0.9))
+  ;({build} = await run(jev(['checklist'])))
   templates.fragments = real
   assert.equal(build.action, 'scratch'); assert.match(build.note, /did not run/)
   // a filter beside a list: the model is asked for the match rule too, and an answer without it keeps the default
@@ -70,15 +70,15 @@ const run = async (outcome, covers, opts = {}) => {
     const lower = 'return query.length() === 0 || strings.contains(strings.toLowerCase(label), strings.toLowerCase(query));'
     let calls = 0
     deepseek.extractTemplateContent = async () => { calls++; return JSON.stringify(Object.assign({holes: {rowMatches2: lower}}, rowsAnswer)) }
-    ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view']), 0.9))
+    ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view'])))
     assert.equal(build.action, 'template'); assert.match(build.note, /holes=filled\(1\)/); assert.match(build.source, /strings\.toLowerCase\(label\)/)
     deepseek.extractTemplateContent = async () => JSON.stringify(rowsAnswer)
-    ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view']), 0.9))
+    ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view'])))
     assert.equal(build.action, 'template'); assert.match(build.note, /holes=default\(unusable answer\)/); assert.match(build.source, /strings\.contains\(label, query\)/)
     // no filter: the model is not asked about holes at all
     calls = 0
     deepseek.extractTemplateContent = async () => { calls++; return JSON.stringify(rowsAnswer) }
-    ;({build} = await run(jev(['master_list', 'detail_view']), 0.9))
+    ;({build} = await run(jev(['master_list', 'detail_view'])))
     assert.equal(build.action, 'template'); assert.doesNotMatch(build.note, /holes=/)
     assert.equal(calls, 1, 'only the content call')
     deepseek.extractTemplateContent = saved

@@ -3,12 +3,12 @@
  *
  * Jev picks the screen's sections (VeraSectionCompose.ets), a narrow model call fills their text
  * and lists (VeraTemplateContent.ets), the fragments are composed and compiled, the result is run
- * once (VeraSmokeRun.ets) and Jev is asked whether it covers the request (VeraCoverageJudge.ets).
+ * once (VeraSmokeRun.ets).
  * The caller gets one of three answers and acts on it:
  *
  *   template   the composed program is the result; show it as it is.
  *   complete   the composed program is the right base but not enough for the request (a soft veto
- *              fired, or the judge doubts it covers the request): hand `source` to the model to finish,
+ *              fired, or every block is placeholder buttons): hand `source` to the model to finish,
  *              keep it as the fallback if that fails.
  *   scratch    no usable composition (Jev picked nothing, a hard veto, no search for data the request
  *              needs, the composition did not compile or did not run): generate from scratch.
@@ -22,7 +22,6 @@ import { selectSections, composeProgram, SectionPickOutcome, SectionPick } from 
 import { fillSectionsContent } from './VeraTemplateContent'
 import { compileVeraSource } from './VeraCompiler'
 import { smokeRun, SmokeResult } from './VeraSmokeRun'
-import { judgeCoverage, COVERS_BELOW } from './VeraCoverageJudge'
 import { webSearch } from './VeraWebSearch'
 import { deepseek } from './DeepSeekEngine'
 import { holesOf, holeValues, holeBodiesBySlot, fillHoles, HoleFill } from './VeraHoles'
@@ -47,8 +46,6 @@ export class TemplateBuild {
   /** -1 when no search was made. */
   searchMs: number = -1
   contentMs: number = 0
-  /** Jev's probability that the screen covers the request, -1 when it was not asked or did not answer. */
-  covers: number = -1
   /** The composition record (VeraComposition.ets) as JSON, for template and complete; the program above is rebuilt from it. */
   composition: string = ''
   layout: string = 'stack'
@@ -188,15 +185,12 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
       build.status = 'Composed ' + shown + ', adding the logic the request needs...'
       return build
     }
-
-    // A screen of the right kind that cannot do what was asked passes every check above. Ask.
-    build.covers = await judgeCoverage(prompt, smoke.summary, settings.getSelectorKey())
-    if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
-    if (build.covers >= 0) { note = note + ' covers=' + build.covers.toFixed(2) }
-    if (build.covers >= 0 && build.covers < COVERS_BELOW) {
+    // The actions block's buttons only note which one was tapped. A screen of nothing else looks finished and does
+    // nothing: phone-action requests ("a button for the torch") landed here without tripping needs_integration.
+    if (sections.every((p: SectionPick): boolean => p.kind === 'actions')) {
       build.action = BUILD_COMPLETE
-      build.note = note
-      build.status = 'Composed ' + shown + ', but it does not cover the request; adding what is missing...'
+      build.note = note + ' (placeholder buttons only)'
+      build.status = 'Composed ' + shown + ', making its buttons do what the request asks...'
       return build
     }
     build.action = BUILD_TEMPLATE
