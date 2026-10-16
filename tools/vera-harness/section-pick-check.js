@@ -167,5 +167,26 @@ assert.equal(low('intent_panel', 0.35, {}).sections, null)
 assert.equal(low('intent_panel', 0.2, {needs_integration: 0.95}).sections, null)
 assert.equal(low('checklist', 0.35, {needs_integration: 0.95}).sections, null)
 assert.equal(low('search_list', 0.35, {needs_search_or_form: 0.6}).sections, null, 'a veto under its bar did not fire')
+// A weak pick whose ports connect to nothing on the screen is dropped: a reader would show its fallbacks, a writer
+// would publish to nobody. Live host runs served these three alone as finished templates.
+assert.equal(low('number_strip', 0.35, {needs_logic: 0.99}).sections, null, 'tip calculator: totals of no records')
+assert.equal(low('breakdown_table', 0.35, {needs_logic: 0.99}).sections, null, 'demo-5: a breakdown of no records')
+assert.equal(low('filter_box', 0.35, {needs_search_or_form: 0.95}).sections, null, 'inventory-search: a filter of no list')
+{
+  const weakWith = (weak, strong, layout, vetoes) => {
+    const b = JSON.parse(body(['none'].concat(strong), vetoes)); b.answers.section1 = {choice: weak, confidence: 0.35}
+    if (layout) b.answers.__LAYOUT__ = {choice: layout, confidence: 0.9}
+    return readSectionPick(JSON.stringify(b))
+  }
+  o = weakWith('number_strip', ['metrics'], '', {needs_logic: 0.99})
+  assert.deepEqual(kinds(o), pad(['none', 'metrics'])); assert.equal(o.needsLogic, true, 'the dropped pick no longer covers the veto')
+  assert.match(o.note, /section1=none\(number_strip has no partner\)/)
+  o = weakWith('number_strip', ['record_log'], '', costs)
+  assert.deepEqual(kinds(o), pad(['number_strip', 'record_log']), 'its writer is on the screen: kept')
+  o = weakWith('settle_up', ['none'], 'log_report', costs)
+  assert.deepEqual(kinds(o), ['record_log', 'settle_up'], 'the layout brings the partner: kept')
+  o = weakWith('filter_box', ['none'], 'master_detail', {needs_search_or_form: 0.95})
+  assert.deepEqual(kinds(o), ['filter_box', 'master_list', 'detail_view'])
+}
 
 console.log('section-pick-check: ok')

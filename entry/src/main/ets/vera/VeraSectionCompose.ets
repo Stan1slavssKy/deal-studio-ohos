@@ -328,6 +328,22 @@ function readSlotValue(answers: Record<string, Object>, slotIndex: number, kind:
   return picked
 }
 
+/** True when the block at `at` has no ports, or one of them meets a port of the other direction, name and type on the screen. */
+function hasPartner(specs: FragmentSpec[], placed: SectionPick[], at: number): boolean {
+  let spec = findFragment(specs, placed[at].kind)
+  if (spec === null || spec.ports.length === 0) { return true }
+  for (let j = 0; j < placed.length; j++) {
+    let other = j === at ? null : findFragment(specs, placed[j].kind)
+    if (other === null) { continue }
+    for (let port of spec.ports) {
+      for (let candidate of other.ports) {
+        if (candidate.dir !== port.dir && candidate.name === port.name && candidate.type === port.type) { return true }
+      }
+    }
+  }
+  return false
+}
+
 /** Missing/unreadable is treated as triggered (1), not 0 -- same rule as VeraTemplateSelect.ets's readVetoProbability. */
 function readVetoProbability(answers: Record<string, Object>, veto: VetoSpec): number {
   let raw = answers['veto.' + veto.key]
@@ -385,6 +401,9 @@ export function readSectionPick(body: string): SectionPickOutcome {
 
   let picks: SectionPick[] = []
   let notes: string[] = []
+  /** Picks kept under SECTION_PICK_ABOVE because they cover a veto, and their index in notes. */
+  let weakPicks: SectionPick[] = []
+  let weakNoteAt: number[] = []
   for (let i = 1; i <= SECTION_COUNT; i++) {
     let kind = readChoiceValue(answers, 'section' + i.toString(), allowedKinds, SECTION_PICK_ABOVE, 'none')
     let coverNote = ''
@@ -422,6 +441,7 @@ export function readSectionPick(body: string): SectionPickOutcome {
       slotValues.set(slot.token, readSlotValue(answers, i, kind, slot))
     }
     picks.push(new SectionPick(kind, slotValues))
+    if (coverNote.length > 0) { weakPicks.push(picks[picks.length - 1]); weakNoteAt.push(notes.length) }
     notes.push('section' + i.toString() + '=' + kind + coverNote)
   }
 
@@ -467,6 +487,18 @@ export function readSectionPick(body: string): SectionPickOutcome {
       usedLayout = layoutId
       layoutNote = ' layout=' + layoutId + addedNote
     }
+  }
+
+  // A weak pick is two answers that agree only when the block works on its own. A block with ports (a number strip, a
+  // filter box) works only beside the block at the other end of one of them; with none on the screen, a reader shows its
+  // fallbacks and a writer publishes to nobody. Checked after the layout, which can add that partner. Only the pick goes:
+  // the veto it covered is then decided like any other, below.
+  for (let w = 0; w < weakPicks.length; w++) {
+    let at = placed.indexOf(weakPicks[w])
+    if (at < 0 || hasPartner(specs, placed, at)) { continue }
+    placed[at] = new SectionPick('none', new Map<string, string>())
+    let slot = notes[weakNoteAt[w]].split('=')[0]
+    notes[weakNoteAt[w]] = slot + '=none(' + weakPicks[w].kind + ' has no partner)'
   }
 
   // A veto a chosen block already covers (VeraTemplates.ets FragmentSpec.covers: a search box is the search a
