@@ -70,6 +70,7 @@ const UI_SEARCH_LIMIT = 3
  * is configured, and only up to this many calls per generation.
  */
 const MAX_SEARCHES_GEN = 2
+const SEARCH_BUDGET_USED = 'The web search budget for this request is used up. Use the results you already have.'
 /**
  * Mirrors VeraChat.ets's SEARCH_NOTE, adapted for a generation prompt rather than a chat reply.
  * Prepended, not appended: live testing found the model reliably skipped web_search when this was
@@ -623,7 +624,14 @@ export class DeepSeekEngine {
       let pendingResults: Promise<Record<string, Object>>[] = []
       for (let call of turn.toolCalls) {
         toolNames.push(call.name)
-        if (call.name === SEARCH_TOOL_NAME) { searches++ }
+        if (call.name === SEARCH_TOOL_NAME) {
+          // One round can ask for several searches; the budget counts each call, not each round.
+          if (searches >= MAX_SEARCHES_GEN) {
+            pendingResults.push(Promise.resolve(toolResultMessage(call.id, SEARCH_BUDGET_USED)))
+            continue
+          }
+          searches++
+        }
         pendingResults.push(this.runToolCall(call, request, round))
       }
       let results = await Promise.all(pendingResults)
@@ -774,7 +782,8 @@ export class DeepSeekEngine {
    * request this engine makes, not a second generation attempt.
    */
   async extractTemplateContent(systemPrompt: string, userPrompt: string, maxTokens: number): Promise<string | null> {
-    if (!settings.hasApiKey()) { return null }
+    // The engine holds one request and one set of flags: a stale template run must not take them from a generation.
+    if (!settings.hasApiKey() || this.generating) { return null }
     let messages: Record<string, Object>[] = []
     messages.push(plainMessage('system', systemPrompt))
     messages.push(plainMessage('user', userPrompt))

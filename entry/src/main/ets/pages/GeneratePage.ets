@@ -271,6 +271,12 @@ struct GeneratePage {
    */
   private compositionJson: string = ''
   private completionBaseVbc2: string = ''
+  /** The composition record of completionBase, restored with it when the model cannot finish the template. */
+  private completionComposition: string = ''
+  /** True once a model-written program compiled in this generation; the saved origin then says "+model". */
+  private modelWrote: boolean = false
+  /** Bumped by every Generate and Stop, so a template run that was stopped knows it is stale when a new one resets cancelRequested. */
+  private runId: number = 0
   private genStartTime: number = 0
   private cancelRequested: boolean = false
   private lastRequest: string = ''
@@ -513,6 +519,9 @@ struct GeneratePage {
     this.lastTemplatePick = ''
     this.completionBase = ''
     this.completionBaseVbc2 = ''
+    this.completionComposition = ''
+    this.modelWrote = false
+    this.runId++
     this.templateKinds = []
     this.compositionJson = ''
     this.program = new RunTotals()
@@ -554,8 +563,11 @@ struct GeneratePage {
    * falls through to generation from scratch.
    */
   private async tryTemplateSelect(userPrompt: string): Promise<void> {
-    let build: TemplateBuild = await buildFromTemplates(userPrompt, this.mode, (s: string): void => { this.status = s },
-      (): boolean => this.cancelRequested)
+    let run = this.runId
+    let build: TemplateBuild = await buildFromTemplates(userPrompt, this.mode,
+      (s: string): void => { if (run === this.runId) { this.status = s } },
+      (): boolean => run !== this.runId || this.cancelRequested)
+    if (run !== this.runId) { return }
     this.fastJevMs = build.jevMs
     this.fastPathRan = true
     this.fastSearchMs = build.searchMs
@@ -571,6 +583,7 @@ struct GeneratePage {
     if (build.action === BUILD_COMPLETE) {
       this.completionBase = build.source
       this.completionBaseVbc2 = build.vbc2
+      this.completionComposition = build.composition
       this.status = build.status
       this.startAttemptOne(userPrompt, 'Completing template')
       return
@@ -904,6 +917,7 @@ struct GeneratePage {
       if (!hadProgram) { this.tab = TAB_PREVIEW }
       this.compiled = true
       this.compileErrors = ''
+      this.modelWrote = true
       this.status = 'Compiled successfully on attempt ' + this.attempt
       logMark('gen-compiled', 'attempt=' + this.attempt.toString())
       let endFields: Record<string, Object> = {}
@@ -933,9 +947,9 @@ struct GeneratePage {
     } else {
       this.totalMs = Date.now() - this.genStartTime
       this.generating = false
+      this.traceEnd('compile')
       if (!this.fallBackToTemplate('Logic step failed to compile after ' + MAX_RETRIES + ' attempts')) {
         this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
-        this.traceEnd('compile')
       }
     }
   }
@@ -950,6 +964,7 @@ struct GeneratePage {
     this.generatedSource = this.completionBase
     this.compiledSource = this.completionBase
     this.compiledVbc2 = this.completionBaseVbc2
+    this.compositionJson = this.completionComposition
     this.compileErrors = ''
     this.compiled = true
     this.composerOpen = false
@@ -1267,6 +1282,7 @@ struct GeneratePage {
     this.previousSource = this.compiledSource
     this.completionBase = ''
     this.completionBaseVbc2 = ''
+    this.completionComposition = ''
     this.generating = true
     this.compiled = false
     this.compileErrors = ''
@@ -1290,6 +1306,7 @@ struct GeneratePage {
 
   private stopGeneration(): void {
     this.cancelRequested = true
+    this.runId++
     if (this.mode === MODE_LOCAL) { engine.stop() }
     if (this.mode === MODE_DEEPSEEK) { deepseek.stop() }
     this.generating = false
@@ -1321,7 +1338,7 @@ struct GeneratePage {
     let kinds = this.templateKinds.filter((k: string): boolean => k !== 'none')
     if (kinds.length === 0) { return '' }
     let label = kinds.join(',')
-    if (this.completionBase.length > 0 && this.compiledSource !== this.completionBase) { label = label + '+model' }
+    if (this.modelWrote) { label = label + '+model' }
     return label
   }
 
