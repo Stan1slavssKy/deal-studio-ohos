@@ -61,6 +61,12 @@ const INCLUDE_ABOVE: number = 0.65
  * the prompts a layout is for got 1.00. Includes follow the same gap: wanted parts scored 0.77 and up, unwanted ones 0.46 and less.
  */
 const LAYOUT_ABOVE: number = 0.8
+/**
+ * Bar for a section's top choice when that kind covers a veto that fired (FragmentSpec.covers): the veto and the choice
+ * are two answers that agree. On the 59 intent prompts Jev put intent_panel first at 0.26-0.48 on 11 of them, most with
+ * needs_integration above 0.8.
+ */
+const COVERING_PICK_ABOVE: number = 0.25
 
 /**
  * Vetoes that no longer drop a request to generation from scratch: whatever they flag (a calculation,
@@ -356,10 +362,12 @@ export function readSectionPick(body: string): SectionPickOutcome {
   let logicNotes: string[] = []
   let needsRealData = false
   let realDataProbability = 0
+  let fired: string[] = []
   for (let veto of vetoes()) {
     let probability = readVetoProbability(answers, veto)
     let bar = SOFT_FLOORED.indexOf(veto.key) >= 0 ? Math.max(veto.above, SOFT_MIN_ABOVE) : veto.above
     if (probability > bar) {
+      fired.push(veto.key)
       let tag = veto.key + '=' + probability.toFixed(2)
       if (veto.key === 'needs_real_data') {
         needsRealData = true
@@ -379,6 +387,16 @@ export function readSectionPick(body: string): SectionPickOutcome {
   let notes: string[] = []
   for (let i = 1; i <= SECTION_COUNT; i++) {
     let kind = readChoiceValue(answers, 'section' + i.toString(), allowedKinds, SECTION_PICK_ABOVE, 'none')
+    let coverNote = ''
+    if (kind === 'none') {
+      let weak = readChoiceValue(answers, 'section' + i.toString(), allowedKinds, COVERING_PICK_ABOVE, 'none')
+      let weakSpec = findFragment(specs, weak)
+      if (weakSpec !== null) {
+        for (let key of weakSpec.covers) {
+          if (fired.indexOf(key) >= 0 && coverNote.length === 0) { kind = weak; coverNote = '(covers ' + key + ')' }
+        }
+      }
+    }
     if (kind === 'none') {
       picks.push(new SectionPick('none', new Map<string, string>()))
       notes.push('section' + i.toString() + '=none')
@@ -404,7 +422,7 @@ export function readSectionPick(body: string): SectionPickOutcome {
       slotValues.set(slot.token, readSlotValue(answers, i, kind, slot))
     }
     picks.push(new SectionPick(kind, slotValues))
-    notes.push('section' + i.toString() + '=' + kind)
+    notes.push('section' + i.toString() + '=' + kind + coverNote)
   }
 
   let layoutIds: string[] = [LAYOUT_NONE]

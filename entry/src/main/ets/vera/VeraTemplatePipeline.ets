@@ -24,8 +24,9 @@ import { compileVeraSource } from './VeraCompiler'
 import { smokeRun, SmokeResult } from './VeraSmokeRun'
 import { webSearch } from './VeraWebSearch'
 import { deepseek } from './DeepSeekEngine'
-import { holesOf, holeValues, holeBodiesBySlot, fillHoles, HoleFill } from './VeraHoles'
+import { holesOf, holeValues, holeBodiesBySlot, fillHoles, HoleFill, HoleInstance } from './VeraHoles'
 import { Composition, Block, compositionToJson } from './VeraComposition'
+import { fillIntentRows, IntentRowsFill } from './VeraIntentPanel'
 
 export const BUILD_TEMPLATE: string = 'template'
 export const BUILD_COMPLETE: string = 'complete'
@@ -113,6 +114,13 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
       if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
     }
 
+    // The intent panel's rows are a call of their own, made while the content is filled: it needs only the request.
+    let rowsKinds = build.kinds
+    let rowsFill: Promise<IntentRowsFill> | null = null
+    if (rowsKinds.indexOf('intent_panel') >= 0 && mode === 'deepseek') {
+      rowsFill = fillIntentRows(prompt, rowsKinds,
+        (system: string, user: string): Promise<string | null> => deepseek.extractTemplateContent(system, user, 600))
+    }
     let contentStart = Date.now()
     let content = await fillSectionsContent(build.kinds, prompt, mode, searchText)
     build.contentMs = Date.now() - contentStart
@@ -141,7 +149,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     // against the compiler. Defaults apply when the model cannot or the mode has no model to ask.
     let baseValues = instanceValues
     let holeBodies: Map<string, string> = new Map<string, string>()
-    if (holesOf(build.kinds).length > 0) {
+    if (holesOf(build.kinds).some((h: HoleInstance): boolean => h.spec.byModel)) {
       if (mode === 'deepseek') {
         onStatus('Writing the details...')
         let kinds = build.kinds
@@ -154,6 +162,20 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
         if (fill.note.length > 0) { note = note + ' ' + fill.note }
       } else {
         note = note + ' holes=default(' + mode + ')'
+      }
+    }
+    let panelRows = -1
+    if (build.kinds.indexOf('intent_panel') >= 0) {
+      panelRows = 0
+      if (rowsFill !== null) {
+        let rows: IntentRowsFill = await rowsFill
+        if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
+        rows.bodies.forEach((v: string, k: string) => { holeBodies.set(k, v) })
+        instanceValues = mergeHoleValues(instanceValues, holeValues(build.kinds, rows.bodies))
+        panelRows = rows.rows
+        note = note + ' ' + rows.note
+      } else {
+        note = note + ' intents=none(' + mode + ')'
       }
     }
     let source = composeProgram(build.kinds, globalValues, instanceValues)
@@ -183,6 +205,13 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
       build.action = BUILD_COMPLETE
       build.note = note
       build.status = 'Composed ' + shown + ', adding the logic the request needs...'
+      return build
+    }
+    // An intent panel without rows shows only "No actions": the model writes the calls instead.
+    if (panelRows === 0) {
+      build.action = BUILD_COMPLETE
+      build.note = note
+      build.status = 'Composed ' + shown + ', finding the phone actions the request needs...'
       return build
     }
     // The actions block's buttons only note which one was tapped. A screen of nothing else looks finished and does

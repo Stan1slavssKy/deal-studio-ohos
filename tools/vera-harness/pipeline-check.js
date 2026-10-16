@@ -84,5 +84,26 @@ const run = async (outcome, opts = {}) => {
     deepseek.extractTemplateContent = saved
   }
 
+  // an intent panel: its rows come from a call of their own, made beside the content call; with no usable row the
+  // panel is only a base for the model, never a finished screen
+  {
+    const reg = loadVera('VeraIntentRegistry'), saved = deepseek.extractTemplateContent, savedReg = reg.registryEntries
+    const torch = new reg.RegistryEntry()
+    Object.assign(torch, {target: 'com.ohos.sceneboard/entry/EntryAbility/OpenFlashlight', bundle: 'com.ohos.sceneboard',
+      intentName: 'OpenFlashlight', modes: 'background', domain: 'system', params: [], paramHints: [], words: 'grocery torch'})
+    reg.registryEntries = () => [torch]
+    let rowsAnswer = JSON.stringify({section1: [{n: 1, label: 'Torch on'}]})
+    deepseek.extractTemplateContent = async (system) => /phone actions/.test(system) ? rowsAnswer : JSON.stringify({title: 'Torch'})
+    ;({build} = await run(jev(['intent_panel'])))
+    assert.equal(build.action, 'template'); assert.match(build.note, /intents=1\/1/)
+    assert.match(build.source, /target: "com\.ohos\.sceneboard\/entry\/EntryAbility\/OpenFlashlight"/)
+    assert.match(build.composition, /OpenFlashlight/, 'the record keeps the rows')
+    rowsAnswer = 'no'
+    ;({build} = await run(jev(['intent_panel'])))
+    assert.equal(build.action, 'complete'); assert.match(build.note, /intents=none/); assert.match(build.status, /phone actions/)
+    deepseek.extractTemplateContent = saved
+    reg.registryEntries = savedReg
+  }
+
   console.log('pipeline-check: ok')
 })().catch(e => { console.error(e); process.exit(1) })

@@ -256,7 +256,7 @@ function without(bodies: Map<string, string>, drop: string[]): Map<string, strin
  * throws: every failure ends as the default bodies with the reason in `note`.
  */
 export async function fillHoles(userPrompt: string, kinds: string[], ask: HoleAsk, build: HoleBuild): Promise<HoleFill> {
-  let holes = holesOf(kinds)
+  let holes = holesOf(kinds).filter((h: HoleInstance): boolean => h.spec.byModel)
   let empty: Map<string, string> = new Map<string, string>()
   if (holes.length === 0) { return new HoleFill(empty, '', 0) }
   try {

@@ -152,4 +152,20 @@ assert.equal(arrangeInLayout('master_detail', ['master_list', 'detail_view', 'a'
 assert.equal(arrangeInLayout('nope', ['master_list']), null)
 assert.deepEqual(arrangeInLayout('master_detail', ['none', 'detail_view', 'master_list']), [2, 1])
 
+// A top choice under the bar is kept when it covers a veto that fired: two answers agree on what the request needs.
+// Without the veto, or for a kind that does not cover it, the bar stands.
+function low(kind, confidence, vetoes) {
+  const b = JSON.parse(body([], vetoes)); b.answers.section1 = {choice: kind, confidence}
+  for (let i = 2; i <= SLOTS; i++) b.answers['section' + i] = {choice: 'none', confidence: 0.6}
+  return readSectionPick(JSON.stringify(b))
+}
+o = low('intent_panel', 0.35, {needs_integration: 0.95})
+assert.deepEqual(kinds(o), pad(['intent_panel'])); assert.match(o.note, /section1=intent_panel\(covers needs_integration\)/)
+o = low('intent_panel', 0.35, {needs_integration: 0.6})
+assert.deepEqual(kinds(o), pad(['intent_panel'])); assert.equal(o.needsLogic, false)
+assert.equal(low('intent_panel', 0.35, {}).sections, null)
+assert.equal(low('intent_panel', 0.2, {needs_integration: 0.95}).sections, null)
+assert.equal(low('checklist', 0.35, {needs_integration: 0.95}).sections, null)
+assert.equal(low('search_list', 0.35, {needs_search_or_form: 0.6}).sections, null, 'a veto under its bar did not fire')
+
 console.log('section-pick-check: ok')

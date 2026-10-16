@@ -419,13 +419,17 @@ export class HoleSpec {
   defaultBody: string
   /** A kind that must also be on the screen for the model to be asked; '' asks whenever the fragment is. The default body applies either way. */
   when: string
-  constructor(key: string, token: string, signature: string, purpose: string, defaultBody: string, when: string = '') {
+  /** false for a hole the host fills from data it checked (the intent panel's rows): the model is never asked for it. */
+  byModel: boolean
+  constructor(key: string, token: string, signature: string, purpose: string, defaultBody: string, when: string = '',
+      byModel: boolean = true) {
     this.key = key
     this.token = token
     this.signature = signature
     this.purpose = purpose
     this.defaultBody = defaultBody
     this.when = when
+    this.byModel = byModel
   }
 }
 
@@ -769,7 +773,8 @@ function onAnswerIDX(state: AppState, value: string): AppState {
 function actionsFragment(): FragmentSpec {
   return new FragmentSpec(
     'actions',
-    'A row of a few quick action buttons, with a note of which one was last tapped',
+    'A row of a few quick buttons that only note which one was last tapped, for a choice made on this screen (a mood, a ' +
+    'category); they make nothing happen on the phone or in another app',
     '',
     [new StateFieldSpec('lastActionIDX', 'string')],
     '',
@@ -1839,6 +1844,105 @@ function onOpenedIDX(state: AppState, value: string): AppState {
   )
 }
 
+/**
+ * Phone actions as a list: each row is one sdk.call whose target, parameters and mode the host took from the phone's
+ * intent registry (VeraIntentPanel.ets) -- the rows hole is never written by the model. params is "name\nvalue\n..."
+ * because a @jsonable field cannot hold a list of text; "{input}" in a value is replaced by the text box's value.
+ */
+function intentPanelFragment(): FragmentSpec {
+  return new FragmentSpec(
+    'intent_panel',
+    'Controls that make the phone, its settings or one of its apps do something, one action per tap: switch a setting on or ' +
+    'off (torch, Wi-Fi, do not disturb, one-handed mode), open a page of an app, create a note or an event, start navigation ' +
+    'or music, set an alarm, read a value the phone keeps. Each shows what the phone answered',
+    `@jsonable
+class IntentRow {
+  label: string;
+  target: string;
+  params: string;
+  mode: string;
+  input: boolean;
+}`,
+    [new StateFieldSpec('actionsIDX', 'IntentRow[]'), new StateFieldSpec('answersIDX', 'string[]'),
+     new StateFieldSpec('pendingIDX', 'number'), new StateFieldSpec('inputIDX', 'string')],
+    `  let actionsIDX: IntentRow[] = intentRowsIDX();
+  let answersIDX: string[] = [];
+  for (let a: IntentRow of actionsIDX) { answersIDX.push(""); }`,
+    `actionsIDX: actionsIDX, answersIDX: answersIDX, pendingIDX: -1, inputIDX: ""`,
+    `function intentRowsIDX(): IntentRow[] {
+__HOLE_INTENTROWS_IDX__
+}
+
+function failedIDX(value: string): boolean {
+  return strings.startsWith(value, "declined") || strings.startsWith(value, "error");
+}
+
+function setInputIDX(state: AppState, value: string): AppState {
+  return {actionsIDX: state.actionsIDX, answersIDX: state.answersIDX, pendingIDX: state.pendingIDX, inputIDX: value__PASSTHROUGH__};
+}
+
+function runActionIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.actionsIDX.length()) { return state; }
+  let a: IntentRow = state.actionsIDX[index];
+  let params: string[] = [];
+  if (a.params !== "") {
+    for (let p: string of strings.split(a.params, "\\n")) { params.push(strings.replace(p, "{input}", state.inputIDX)); }
+  }
+  sdk.call(a.target, params, "onAnsweredIDX", a.mode);
+  let answers: string[] = [];
+  let i: number = 0;
+  while (i < state.answersIDX.length()) {
+    if (i === index) { answers.push("Working..."); } else { answers.push(state.answersIDX[i]); }
+    i = i + 1;
+  }
+  return {actionsIDX: state.actionsIDX, answersIDX: answers, pendingIDX: index, inputIDX: state.inputIDX__PASSTHROUGH__};
+}
+
+function onAnsweredIDX(state: AppState, value: string): AppState {
+  let shown: string = value;
+  if (value === "ok") { shown = "Done"; }
+  if (strings.length(shown) > 120) { shown = strings.substring(shown, 0, 117) + "..."; }
+  let answers: string[] = [];
+  let i: number = 0;
+  while (i < state.answersIDX.length()) {
+    if (i === state.pendingIDX) { answers.push(shown); } else { answers.push(state.answersIDX[i]); }
+    i = i + 1;
+  }
+  return {actionsIDX: state.actionsIDX, answersIDX: answers, pendingIDX: -1, inputIDX: state.inputIDX__PASSTHROUGH__};
+}`,
+    `{
+    let count: number = state.actionsIDX.length();
+    let rows: ui.View[] = [];
+    let wantsInput: boolean = false;
+    let j: number = 0;
+    while (j < count) {
+      let a: IntentRow = state.actionsIDX[j];
+      if (a.input) { wantsInput = true; }
+      let answer: string = state.answersIDX[j];
+      let icon: string = "navigate";
+      if (answer === "Done") { icon = "check"; }
+      if (failedIDX(answer)) { icon = "warning"; }
+      rows.push(ui.ListItem("default", a.label, answer, "", "runActionIDX", j, true, icon));
+      j = j + 1;
+    }
+    let body: ui.View[] = [];
+    if (wantsInput) { body.push(ui.TextField("default", "__INPUT_LABEL_IDX__", state.inputIDX, "setInputIDX")); }
+    body.push(ui.When(count === 0, ui.EmptyState("default", "No actions", "This phone has no app for that.", "", "", "info")));
+    body.push(ui.When(count > 0, ui.ListGroup("default", "", rows)));
+    sections.push(ui.Section("content", "", "", body));
+  }`,
+    [],
+    [new ContentFieldSpec('__INPUT_LABEL_IDX__', 'input_label', 'Text',
+      'Label of the text box whose value the actions use (a note text, a contact name), 1-3 words', 24)],
+    ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"'],
+    [],
+    [],
+    [new HoleSpec('intentRows', '__HOLE_INTENTROWS_IDX__', 'intentRows(): IntentRow[]',
+      'The phone actions, chosen and checked by the host.', '  return [];', '', false)],
+    ['needs_integration']
+  )
+}
+
 /** "N of M" with a bar, from the done and total of a checklist, itinerary or any block that publishes them. */
 function progressLineFragment(): FragmentSpec {
   return new FragmentSpec(
@@ -2079,7 +2183,7 @@ export function fragments(): FragmentSpec[] {
     barChartFragment(), logEntriesFragment(),
     masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
     recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
-    itineraryFragment(), progressLineFragment()
+    itineraryFragment(), progressLineFragment(), intentPanelFragment()
   ]
 }
 
