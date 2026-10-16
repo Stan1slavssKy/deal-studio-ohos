@@ -538,7 +538,9 @@ struct GeneratePage {
     // veto, or a composed source that fails to compile all fall straight
     // through to the normal path inside tryTemplateSelect/startAttemptOne --
     // see VeraSectionCompose.ets.
-    if (templateSelectEnabled() && settings.hasSelectorKey()) {
+    // Not on top of a saved program: with previousSource set this is a change to it (the model edits it), and a composed
+    // template would replace it. Chat makes the same choice for an existing widget.
+    if (templateSelectEnabled() && settings.hasSelectorKey() && this.previousSource.length === 0) {
       this.tryTemplateSelect(this.prompt.trim())
       return
     }
@@ -786,8 +788,10 @@ struct GeneratePage {
       this.attempts = [...this.attempts, metrics]
       this.totalMs = Date.now() - this.genStartTime
       this.addToProgram(metrics)
-      this.status = 'Generation failed: ' + (e as Error).message
       this.traceEnd('request: ' + (e as Error).message)
+      if (!this.fallBackToTemplate('Logic step failed (' + (e as Error).message + ')')) {
+        this.status = 'Generation failed: ' + (e as Error).message
+      }
       this.generating = false
       return
     }
@@ -830,8 +834,10 @@ struct GeneratePage {
           await this.runAttempt(userPrompt, errorFeedback)
         } else {
           this.totalMs = Date.now() - this.genStartTime
-          this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
           this.traceEnd('compile')
+          if (!this.fallBackToTemplate('Logic step failed: the edits did not apply after ' + MAX_RETRIES + ' attempts')) {
+            this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
+          }
           this.generating = false
         }
         return
@@ -842,7 +848,9 @@ struct GeneratePage {
     if (this.generatedSource.trim().length === 0) {
       metrics.failLayer = 'empty'
       this.traceEnd('empty')
-      this.status = 'Generation produced empty output'
+      if (!this.fallBackToTemplate('Logic step produced no program')) {
+        this.status = 'Generation produced empty output'
+      }
       this.generating = false
       this.attempts = [...this.attempts, metrics]
       this.totalMs = Date.now() - this.genStartTime
@@ -925,21 +933,30 @@ struct GeneratePage {
     } else {
       this.totalMs = Date.now() - this.genStartTime
       this.generating = false
-      if (this.completionBase.length > 0) {
-        // The model could not finish the logic; the template it started from still works.
-        this.generatedSource = this.completionBase
-        this.compiledSource = this.completionBase
-        this.compiledVbc2 = this.completionBaseVbc2
-        this.compileErrors = ''
-        this.compiled = true
-        this.composerOpen = false
-        this.tab = TAB_PREVIEW
-        this.status = 'Logic step failed to compile after ' + MAX_RETRIES + ' attempts; showing the template without it'
-      } else {
+      if (!this.fallBackToTemplate('Logic step failed to compile after ' + MAX_RETRIES + ' attempts')) {
         this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
         this.traceEnd('compile')
       }
     }
+  }
+
+  /**
+   * The composed template a model completion started from, shown when the model cannot finish it for any reason (a request that
+   * failed, an empty answer, edits that did not apply, a program that does not compile). False when there is no such template,
+   * and the caller reports the failure as before.
+   */
+  private fallBackToTemplate(reason: string): boolean {
+    if (this.completionBase.length === 0) { return false }
+    this.generatedSource = this.completionBase
+    this.compiledSource = this.completionBase
+    this.compiledVbc2 = this.completionBaseVbc2
+    this.compileErrors = ''
+    this.compiled = true
+    this.composerOpen = false
+    this.tab = TAB_PREVIEW
+    this.generating = false
+    this.status = reason + '; showing the template without it'
+    return true
   }
 
   /** The trace's closing event for a generation that ended without a program. */

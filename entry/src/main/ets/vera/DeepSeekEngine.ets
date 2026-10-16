@@ -187,7 +187,7 @@ function needParameter(description: string): Record<string, Object> {
   return parameters
 }
 
-/** The two tools DeepSeek is offered, each describing itself well enough to be found without a system-prompt mention. */
+/** The tools DeepSeek is offered (web search only when a key is set), each describing itself well enough to be found without a system-prompt mention. */
 export function toolSchemas(withUiTool: boolean, withSearchTool: boolean = false): Record<string, Object>[] {
   let sdkFn: Record<string, Object> = {}
   sdkFn['name'] = SDK_TOOL_NAME
@@ -213,7 +213,10 @@ export function toolSchemas(withUiTool: boolean, withSearchTool: boolean = false
   uiTool['type'] = 'function'
   uiTool['function'] = uiFn
 
-  return withUiTool ? [sdkTool, intentTool, uiTool] : [sdkTool, intentTool]
+  let tools: Record<string, Object>[] = withUiTool ? [sdkTool, intentTool, uiTool] : [sdkTool, intentTool]
+  // The system prompt tells the model to call web_search first (SEARCH_NOTE_GEN) whenever a key is set, so the tool has to be
+  // offered then; it was imported and handled in runToolCall but never put in this list.
+  return withSearchTool ? tools.concat(searchToolSchema()) : tools
 }
 
 /**
