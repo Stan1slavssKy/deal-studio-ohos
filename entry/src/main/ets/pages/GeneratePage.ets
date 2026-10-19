@@ -8,6 +8,7 @@ import { refreshForms } from '../vera/FormUpdater'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
 import { applyRepair, repairPrompt } from '../vera/VeraRepair'
+import { smokeRun } from '../vera/VeraSmoke'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
 import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS } from '../vera/DeepSeekEngine'
 import { VeraPreview } from '../components/VeraPreview'
@@ -26,7 +27,7 @@ import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
 import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
 import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
-import { composeFromPrompt, composeEnabled, ComposeResult } from '../vera/VeraCompose'
+import { composeFromPrompt, composeEnabled, composePlanEnabled, ComposeResult, Sketch, provisionalProgram, sketchPlan } from '../vera/VeraCompose'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
 const UI_SELECT_MODE: string = UI_SELECT_PROMPT
@@ -115,11 +116,12 @@ class SourceDelta {
  * the syntax, one rejected later reads fine and means the wrong thing.
  */
 function codeOf(errors: string): string {
-  let m = errors.match(/E\d{4}/)
+  let m = errors.match(/[ER]\d{4}/)
   return m === null ? '' : m[0]
 }
 
 function layerOf(errors: string): string {
+  if (errors.indexOf('The program compiled, but') >= 0) { return 'runtime' }
   let code = codeOf(errors)
   if (code.length === 0) { return 'compile' }
   let layer = code.substring(1, 2)
@@ -209,6 +211,13 @@ struct GeneratePage {
   @State compiled: boolean = false
   @State compileErrors: string = ''
   @State compiledVbc2: string = ''
+  /**
+   * A picture of the screen drawn from the composer's sketch while the real program is still on its way:
+   * it builds up as the sketch streams in, and stays up through a fallback generation. Taps are off;
+   * it is never saved, and the finished program replaces it.
+   */
+  @State previewVbc2: string = ''
+  @State previewNote: string = ''
   @State compiledSource: string = ''
   @State refinePrompt: string = ''
   @State program: RunTotals = new RunTotals()
@@ -462,6 +471,8 @@ struct GeneratePage {
     this.serverBytecode = ''
     this.compiledVbc2 = ''
     this.compiledSource = ''
+    this.previewVbc2 = ''
+    this.previewNote = ''
     this.cancelRequested = false
     this.failedSource = ''
     this.program = new RunTotals()
@@ -492,7 +503,21 @@ struct GeneratePage {
 
   private async tryCompose(userPrompt: string): Promise<void> {
     this.status = 'Composing...'
-    let result: ComposeResult = await composeFromPrompt(userPrompt, settings.getSelectorKey())
+    let firstPreviewMs = 0
+    let previews = 0
+    let result: ComposeResult = await composeFromPrompt(userPrompt, settings.getSelectorKey(), (partial: Sketch): void => {
+      if (this.cancelRequested) { return }
+      let source = provisionalProgram(partial)
+      if (source.length === 0) { return }
+      try {
+        this.previewVbc2 = compileVeraSource(source).vbc2
+        this.previewNote = 'Sketching the screen...'
+        previews++
+        if (firstPreviewMs === 0) { firstPreviewMs = Date.now() - this.genStartTime }
+      } catch (_e) {
+        // A partial sketch that does not compile is skipped; the next one replaces it.
+      }
+    })
     if (this.cancelRequested) { return }
     let vbc2 = ''
     let errors = ''
@@ -508,6 +533,8 @@ struct GeneratePage {
     fields['served'] = vbc2.length > 0
     fields['note'] = errors.length > 0 ? result.note + '; compile failed: ' + errors : result.note
     fields['sketchMs'] = result.sketchMs
+    fields['firstPreviewMs'] = firstPreviewMs
+    fields['previews'] = previews
     fields['jevMs'] = result.jevMs
     fields['ms'] = Date.now() - this.genStartTime
     fields['sketch'] = result.sketch
@@ -516,7 +543,11 @@ struct GeneratePage {
     trace('compose', fields)
     console.info('VERA-COMPOSE ' + (vbc2.length > 0 ? 'served' : 'fell through') + ' ' + (fields['note'] as string))
     if (vbc2.length === 0) {
-      this.startAttemptOne(userPrompt)
+      // The preview stays up while the program is generated; with the sketch as its plan, the finished
+      // program keeps the inputs and values the preview showed.
+      let plan = result.parsed !== null && composePlanEnabled() ? sketchPlan(result.parsed!) : ''
+      if (this.previewVbc2.length > 0) { this.previewNote = 'Preview from the sketch \u2014 writing the app...' }
+      this.startAttemptOne(userPrompt, 'Generating', plan)
       return
     }
     this.generatedSource = result.source
@@ -529,7 +560,8 @@ struct GeneratePage {
     this.generating = false
     this.totalMs = Date.now() - this.genStartTime
     this.status = 'Composed in ' + (this.totalMs / 1000).toFixed(1) + ' s (sketch ' + (result.sketchMs / 1000).toFixed(1) +
-      ' s, Jev ' + (result.jevMs / 1000).toFixed(1) + ' s), no generation'
+      ' s, Jev ' + (result.jevMs / 1000).toFixed(1) + ' s), no generation' +
+      (result.dropped.length > 0 ? '. Left out: ' + result.dropped.join('; ') : '')
     let endFields: Record<string, Object> = {}
     endFields['ok'] = true
     endFields['attempt'] = 0
@@ -545,7 +577,7 @@ struct GeneratePage {
    * ready), describes the whole catalogue. The choice is made once and kept for
    * the retries, which only rewrite the user prompt.
    */
-  private async startAttemptOne(userPrompt: string, label: string = 'Generating'): Promise<void> {
+  private async startAttemptOne(userPrompt: string, label: string = 'Generating', plan: string = ''): Promise<void> {
     this.systemPrompt = this.promptTemplate
     this.uiSelected = []
     if (UI_SELECT_MODE !== UI_SELECT_FULL && this.mode === MODE_DEEPSEEK && this.skillText.length > 0) {
@@ -574,7 +606,7 @@ struct GeneratePage {
       }
     }
     this.status = label + ' (attempt 1/' + MAX_RETRIES + ')...'
-    this.runAttempt(userPrompt, '')
+    this.runAttempt(plan.length > 0 ? userPrompt + '\n\n' + plan : userPrompt, '')
   }
 
   private async doServerGenerate(): Promise<void> {
@@ -801,7 +833,12 @@ struct GeneratePage {
     let compileStart = Date.now()
     try {
       let result = compileVeraSource(this.generatedSource.trim())
-      vbc2 = result.vbc2
+      // Run once before serving: a program that compiles can still stop at its first tap, and that is
+      // repaired here like a compile error rather than found on the screen.
+      let smokeStart = Date.now()
+      errors = smokeRun(result)
+      logStep('smoke', smokeStart, 'src=generate attempt=' + this.attempt.toString() + ' ok=' + (errors.length === 0).toString())
+      vbc2 = errors.length === 0 ? result.vbc2 : ''
     } catch (e) {
       if (e instanceof CompileError) {
         errors = e.message
@@ -865,11 +902,13 @@ struct GeneratePage {
       // repaired by edits.
       this.repairByEdit = !(this.mode === MODE_DEEPSEEK && deepseek.lastFinishReason() === 'length')
       this.attempt++
-      this.status = 'Compile failed, retrying (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
+      this.status = (metrics.failLayer === 'runtime' ? 'Stopped on its first run' : 'Compile failed') +
+        ', retrying (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
       await this.runAttempt(userPrompt, errors)
     } else {
       this.totalMs = Date.now() - this.genStartTime
-      this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
+      this.status = (metrics.failLayer === 'runtime' ? 'Still stopping on its first run' : 'Compilation failed') +
+        ' after ' + MAX_RETRIES + ' attempts'
       this.traceEnd('compile')
       this.generating = false
     }
@@ -1457,6 +1496,13 @@ struct GeneratePage {
           Column() {
             if (this.hasResult()) {
               VeraPreview({ vbc2: this.compiledVbc2 })
+            } else if (this.generating && this.previewVbc2.length > 0) {
+              Text(this.previewNote)
+                .fontSize(12)
+                .fontColor('#8A6D00')
+                .width('100%')
+                .padding({ left: 12, right: 12, top: 6, bottom: 2 })
+              VeraPreview({ previewOnly: true, vbc2: this.previewVbc2 })
             } else {
               Text(this.generating ? 'Building...' : 'The program will run here once it compiles')
                 .fontSize(13)

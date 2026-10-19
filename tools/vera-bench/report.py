@@ -98,11 +98,16 @@ def summarize(name, events):
     start = next((e for e in events if e["event"] == "gen-start"), None)
     end = next((e for e in events if e["event"] == "gen-end"), None)
     ui = next((e for e in events if e["event"] == "ui-select"), None)
+    compose = next((e for e in events if e["event"] == "compose"), None)
     wall = (end["at"] - start["at"]) if start and end else (events[-1]["at"] - start["at"] if start and events else 0)
     final_source = next((c["source"] for c in reversed(compiles) if c.get("ok")), compiles[-1]["source"] if compiles else "")
+    if compose and compose.get("served"):
+        final_source = compose.get("source", "")
+    route = "off" if not compose else ("composed" if compose.get("served") else "fell through")
     return {
         "name": name, "turns": turns, "tools": tools, "compiles": compiles, "start": start, "end": end,
-        "ui": ui, "wall": wall, "ok": bool(end and end.get("ok")),
+        "ui": ui, "compose": compose, "route": route,
+        "first_preview": (compose or {}).get("firstPreviewMs", 0), "wall": wall, "ok": bool(end and end.get("ok")),
         "failure": (end or {}).get("failure", "no gen-end" if not end else ""),
         "attempts": len(compiles), "first_ok": bool(compiles and compiles[0].get("ok")),
         "reason_ms": sum(t["reasonMs"] for t in turns), "reason_tok": sum(t["reasonTok"] for t in turns),
@@ -132,11 +137,11 @@ def main():
               f"Reasoning effort: {', '.join(efforts)}.\n")
 
     md.append("## 1. Runs\n")
-    md.append("| run | ok | attempts | wall s | requests | model s | reasoning s | reasoning tok | code s | tool calls | tools s |")
-    md.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    md.append("| run | ok | route | first preview s | attempts | wall s | requests | model s | reasoning s | reasoning tok | code s | tool calls | tools s |")
+    md.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for r in runs:
         ok = "yes" if r["ok"] else "**no** " + r["failure"][:40]
-        md.append(f"| {r['name']} | {ok} | {r['attempts']} | {secs(r['wall'])} | {r['requests']} | {secs(r['model_ms'])} | "
+        md.append(f"| {r['name']} | {ok} | {r['route']} | {secs(r['first_preview'])} | {r['attempts']} | {secs(r['wall'])} | {r['requests']} | {secs(r['model_ms'])} | "
                   f"{secs(r['reason_ms'])} | {r['reason_tok']} | {secs(r['content_ms'])} | {len(r['tools'])} | {secs(r['tool_ms'])} |")
 
     md.append("\n## 2. Per prompt\n")
@@ -150,6 +155,16 @@ def main():
         md.append(f"| {label} | {len(rs)} | {sum(r['ok'] for r in rs)} | {sum(r['first_ok'] for r in rs)}/{len(rs)} | "
                   f"{secs(statistics.median(walls))} | {secs(min(walls))}–{secs(max(walls))} | "
                   f"{int(statistics.median(r['reason_tok'] for r in rs))} | {statistics.median(r['requests'] for r in rs)} |")
+
+    composed = [r for r in runs if r["compose"]]
+    if composed:
+        md.append("\n### Composer\n")
+        md.append("| run | route | sketch s | Jev s | previews | note |")
+        md.append("|---|---|---|---|---|---|")
+        for r in composed:
+            c = r["compose"]
+            md.append(f"| {r['name']} | {r['route']} | {secs(c.get('sketchMs', 0))} | {secs(c.get('jevMs', 0))} | "
+                      f"{c.get('previews', 0)} | {c.get('note', '').replace('|', '/')[:160]} |")
 
     md.append("\n## 3. Compile errors\n")
     failed = [(r["name"], c) for r in runs for c in r["compiles"] if not c.get("ok")]

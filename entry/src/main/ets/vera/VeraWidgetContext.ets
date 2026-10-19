@@ -17,6 +17,8 @@ export class WidgetBuildContext {
   currentRequest: string = ''
   originalRequest: string = ''
   brief: string = ''
+  /** The marker's plain request, what the widget is for; the composer sketches from it. '' when the marker gave none. */
+  request: string = ''
   recentConversation: WidgetConversationTurn[] = []
   verifiedSearchResults: string[] = []
   source: string = ''

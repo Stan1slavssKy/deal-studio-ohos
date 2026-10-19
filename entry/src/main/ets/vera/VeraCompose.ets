@@ -6,17 +6,22 @@
  * recipes are generated per request instead of prepared in advance, and logic is a finite choice too:
  *
  *   1. sketch  -- the generating model, thinking off, turns the request into data: the inputs with
- *                 their ranges and options, the values the screen must show, a countdown, and the
- *                 events the request names. No code.
+ *                 their ranges and options, fixed numbers, the values the screen must show, a
+ *                 countdown or a stopwatch, a list the person adds entries to, the events, and
+ *                 whatever else the request asks for. No code.
  *   2. choose  -- Jev answers one independent question per requirement: which widget for each input,
- *                 which formula from a fixed library produces each value and from which operands
- *                 (only inputs, earlier values and the countdown's quantities are offered), what
- *                 drives the countdown, which effect from a fixed catalogue each event is.
+ *                 which unit-checked expression produces each value (operands: inputs, constants,
+ *                 earlier values, the clock's seconds, the list's count and total) and whether it
+ *                 is one step at all, what sets the countdown's length, which effect each event is
+ *                 and at which moment, and whether an item the sketch could not place is something
+ *                 a part already does.
  *   3. build   -- this file assembles a VERA program from the answers; the compiler checks it.
  *
  * Coverage is structural: a value with no formula, an operand that does not exist yet, or an event
  * with no effect is reported as unbound rather than replaced by a default, and a composition with
- * anything unbound is not served.
+ * anything unbound is not served. Only what the sketch added on its own -- an event the request did
+ * not ask for, a number nothing reads and Jev says it did not ask for -- is left out instead, and the
+ * status line names it.
  */
 
 import http from '@ohos.net.http'
@@ -29,20 +34,63 @@ let enabled: boolean = true
 export function setComposeEnabled(on: boolean): void { enabled = on }
 export function composeEnabled(): boolean { return enabled }
 
+/** Whether a request the composer cannot serve is generated with its sketch as a plan; `--ps veraComposePlan 0` turns that off. */
+let planEnabled: boolean = true
+export function setComposePlanEnabled(on: boolean): void { planEnabled = on }
+export function composePlanEnabled(): boolean { return planEnabled }
+
+/**
+ * The sketch prompt names the parts and what each one brings, and nothing about any particular app:
+ * examples of features drawn from test requests made the sketch report those features where nobody
+ * asked for them (an egg timer grew an alarm sound and "start, pause and reset" as a missing feature).
+ */
 export const SKETCH_PROMPT: string =
   'You turn a request for a small phone app into a JSON sketch of its data. Write no code. Answer with one JSON object:\n' +
   '{"title": short app title, "eyebrow": 1-3 word label in capitals, "subtitle": one short line,\n' +
-  ' "inputs": [{"id": camelCase, "label": shown label, "kind": "amount" | "percent" | "count" | "choice" | "toggle",\n' +
-  '   "measure": "money" | "percent" | "count" | "seconds" | "number", "min": number, "max": number, "value": starting number, "unit": "$" or "" ...,\n' +
-  '   "options": only for choice: [{"label": shown text, "value": number}]; a choice\'s "value" is the index of the starting option}],\n' +
-  ' "countdown": null, or {"label": what is being timed} when the app counts down a time,\n' +
+  ' "inputs": [{"id": camelCase, "label": shown label, "kind": "amount" | "percent" | "count" | "choice" | "toggle" | "text" | "time",\n' +
+  '   "measure": "money" | "percent" | "count" | "seconds" | "minutes" | "number", "min": number, "max": number, "value": starting number, "unit": the currency or unit the request uses, or "",\n' +
+  '   "options": only for choice: [{"label": shown text, "value": the number the option stands for, such as a length of time}];\n' +
+  '   a choice\'s own "value" is the index of the starting option}],\n' +
+  ' "constants": [{"id": camelCase, "label": what it is, "value": number, "measure": as for inputs}],\n' +
+  ' "countdown": null, or {"label": what is being timed, "length": the id of the input, constant or value that sets how long it runs}\n' +
+  '   when the app counts a length of time down to zero,\n' +
+  ' "stopwatch": null, or {"label": what is being timed} when the app counts time up from zero,\n' +
+  ' "list": null, or {"label": what the entries are, "fields": what each entry holds, up to 4: [{"id": camelCase, "label": shown label,\n' +
+  '   "kind": "text" | "number" | "time" | "toggle", "measure": for a number, as for inputs, "unit": as for inputs, "value": starting value}]\n' +
+  '   (no fields when adding an entry takes only a tap)} when the person keeps adding entries to a list,\n' +
   ' "values": [{"id": camelCase, "label": shown label, "means": what the number is, in plain words,\n' +
-  '   "format": "money" | "percent" | "count" | "seconds" | "fraction" | "plain", "unit": "$" or ""}],\n' +
-  ' "events": [{"id": camelCase, "when": the moment, "what": what the phone should do}]}\n' +
-  'Rules: inputs are only what the person sets. values are every number the request asks to show, in an order where ' +
-  'each can be worked out from inputs and the values before it; a progress bar is a value with format fraction. ' +
-  'Times are in seconds: a choice whose options are durations gives each option its duration in seconds as value. ' +
-  'events are only things the phone does by itself, such as vibrating; leave it empty otherwise. ' +
+  '   "format": "money" | "percent" | "count" | "seconds" | "minutes" | "time_of_day" | "fraction" | "plain", "unit": as for inputs,\n' +
+  '   "formula": how it is worked out, as an expression over the ids of inputs, constants, the values before it and the parts\' numbers,\n' +
+  '   with numbers, + - * / %, parentheses and floor, ceil, round, abs, min, max, pow, sqrt,\n' +
+  '   "example": {"given": {each input id or part number the formula needs, directly or through the values before it: a sample number},\n' +
+  '   "result": the number the formula gives for them}}],\n' +
+  ' "events": [{"id": camelCase, "when": the moment, "what": what the phone does, "asked": true if the request asks for it, false if you add it}],\n' +
+  ' "other": [what else the request asks for, in a few words each]}\n' +
+  'What each part already brings: an input, its control (a count has - and + buttons); a countdown, start, stop and reset buttons and the time left; ' +
+  'a stopwatch, start, stop and reset buttons and the time passed; a list, a form with its fields, an add button, the entries ' +
+  'with their fields and the time each was added, a way to remove one, and how many entries there are and what their first ' +
+  'number adds up to; when the phone does something as an entry is added, that entry shows what the phone answered. ' +
+  'The parts\' numbers, for formulas: a list\'s entryCount and entryTotal (its first number added up); a countdown\'s remaining, ' +
+  'elapsed and duration, in seconds; a stopwatch\'s elapsed, in seconds. ' +
+  'The app keeps its state between visits.\n' +
+  'Rules: inputs are only what the person sets once for the whole screen; what each entry of a list holds goes in its fields. ' +
+  'A time of day (an input or field of kind time, a value of format time_of_day) is minutes since midnight, 07:30 being 450; ' +
+  'a length of time, such as time left or a pace, is never a time of day. constants are fixed numbers the app needs and the person does not set. ' +
+  'values are every number the request asks to show, in an order where each can be worked out from inputs, constants, ' +
+  'the parts above and the values before it, in one step: two numbers added, subtracted, multiplied or divided, a percent ' +
+  'of a number, one number as a percent of another, a number rounded up, or one number divided by another and rounded up. ' +
+  'A number that takes more steps gets a value for each step before it. A progress bar is a value with format fraction. ' +
+  'A formula gives its value in the value\'s format: seconds or minutes as the format says, minutes since midnight for time_of_day, ' +
+  '0 to 100 for percent, 0 to 1 for fraction; in a formula a choice\'s id stands for its chosen option\'s value. ' +
+  'A length of time is in seconds, option values, constants and values included (it is shown as m:ss); only a number the ' +
+  'person types in minutes is in minutes, and its measure says so. ' +
+  'events are actions on the phone outside this screen, one per action: a detail of an action, such as its reminder or ' +
+  'its repeat, belongs in that event, and showing something on this screen is never an event; every number an event needs, ' +
+  'such as how many minutes before a reminder goes off, is an input, a field or a constant (a reminder whose lead time ' +
+  'the request does not name is a constant of 0 minutes, so it goes off at the start), and every time of day it needs, ' +
+  'such as when it starts, is a time input or a time field, even when the request does not name it. other lists everything the request asks for that the parts above ' +
+  'do not bring, and never repeats what they bring; it is empty only when nothing is left out. Leaving a requested feature out of the sketch is wrong. ' +
+  'Keep to what the request asks for: no inputs, values or events it does not need. ' +
   'Use the numbers the request gives; where it gives none, pick sensible ones.'
 
 export class SketchOption {
@@ -58,7 +106,7 @@ export class SketchInput {
   max: number = 100
   value: number = 0
   unit: string = ''
-  /** money, percent, count, seconds or number: what the input measures, for unit-checked formulas. */
+  /** money, percent, count, seconds, minutes or number: what the input measures, for unit-checked formulas. */
   measure: string = 'number'
   options: SketchOption[] = []
 }
@@ -69,12 +117,53 @@ export class SketchValue {
   means: string = ''
   format: string = 'plain'
   unit: string = ''
+  /** The sketch's own expression for it, used only where no formula of the vocabulary is chosen; '' when none. */
+  formula: string = ''
+  /** The sketch's worked example for the formula: sample numbers for what it reads, and what it gives for them. */
+  given: Map<string, number> = new Map<string, number>()
+  result: number = NaN
 }
 
 export class SketchEvent {
   id: string = ''
   when: string = ''
   what: string = ''
+  /** False when the sketch added the event on its own; such an event is dropped rather than refused. */
+  asked: boolean = true
+}
+
+export class SketchConstant {
+  id: string = ''
+  label: string = ''
+  value: number = 0
+  measure: string = 'number'
+}
+
+/** One thing each entry of a list holds: words, a number, a time of day or an on/off. */
+export class ListField {
+  id: string = ''
+  label: string = ''
+  kind: string = 'text'
+  /** For a number, what it measures, as for inputs. */
+  measure: string = 'number'
+  unit: string = ''
+  /** The form's starting value: minutes since midnight for a time, 1 for an on/off that starts on. */
+  value: number = 0
+}
+
+/** Entries the person adds through a form of up to four fields (none: one entry per tap), each stamped with the minute it was added. */
+export class SketchList {
+  label: string = ''
+  fields: ListField[] = []
+}
+
+const FIELD_KINDS: string[] = ['text', 'number', 'time', 'toggle']
+const MAX_FIELDS: number = 4
+
+/** The list's first field of `kind`, or null. */
+function firstField(l: SketchList, kind: string): ListField | null {
+  for (let f of l.fields) { if (f.kind === kind) { return f } }
+  return null
 }
 
 export class Sketch {
@@ -82,15 +171,26 @@ export class Sketch {
   eyebrow: string = ''
   subtitle: string = ''
   inputs: SketchInput[] = []
+  constants: SketchConstant[] = []
   values: SketchValue[] = []
   countdown: string = ''
   hasCountdown: boolean = false
+  /** The id the sketch says sets the countdown's length; a hint for Jev's question, not a binding. */
+  countdownLength: string = ''
+  stopwatch: string = ''
+  hasStopwatch: boolean = false
+  list: SketchList | null = null
   events: SketchEvent[] = []
+  /** What the request asks for beyond the fields above; anything here makes the request unbound. */
+  other: string[] = []
 }
 
-const INPUT_KINDS: string[] = ['amount', 'percent', 'count', 'choice', 'toggle']
-const VALUE_FORMATS: string[] = ['money', 'percent', 'count', 'seconds', 'fraction', 'plain']
-const MEASURES: string[] = ['money', 'percent', 'count', 'seconds', 'number']
+const INPUT_KINDS: string[] = ['amount', 'percent', 'count', 'choice', 'toggle', 'text', 'time']
+
+/** Kinds that hold a number a formula can use: not a switch, not typed words. */
+function isNumeric(kind: string): boolean { return kind !== 'toggle' && kind !== 'text' }
+const VALUE_FORMATS: string[] = ['money', 'percent', 'count', 'seconds', 'minutes', 'clock', 'fraction', 'plain']
+const MEASURES: string[] = ['money', 'percent', 'count', 'seconds', 'minutes', 'clock', 'number']
 
 function str(o: Record<string, Object>, key: string, fallback: string): string {
   let v = o[key]
@@ -106,9 +206,27 @@ function isIdentifier(s: string): boolean {
   return /^[a-z][A-Za-z0-9]*$/.test(s) && RESERVED_IDS.indexOf(s) < 0
 }
 
+/**
+ * The id as a usable name: a model's "duration" or a second "total" is renamed rather than dropped,
+ * since dropping it silently took the one input a countdown could run from. '' when it cannot be a name.
+ */
+function usableId(raw: string, seen: string[]): string {
+  if (!/^[a-z][A-Za-z0-9]*$/.test(raw)) { return '' }
+  let id = raw
+  let n = 1
+  while (!isIdentifier(id) || seen.indexOf(id) >= 0) {
+    id = raw + 'Item' + (n > 1 ? n.toString() : '')
+    n++
+  }
+  return id
+}
+
 /** Names the assembled program uses for itself; an input or value may not take them. */
 const RESERVED_IDS: string[] = ['state', 'value', 'elapsedMs', 'running', 'finished', 'effectStatus', 'remaining',
-  'elapsed', 'duration', 'view', 'init', 'ui', 'math', 'strings', 'sdk', 'time']
+  'elapsed', 'duration', 'view', 'init', 'ui', 'math', 'strings', 'sdk', 'time', 'entries', 'entryCount', 'entryTotal',
+  'draftText', 'draftNumberText', 'entry', 'out', 'rows', 'i', 'e', 'emptyEntries', 'total', 'next', 'startAt',
+  'effectNote', 'share', 'countdownSeconds', 'addEntry', 'removeEntry', 'ignored', 'onEntryAnswer', 'answered', 'marked',
+  'note', 'sub']
 
 /** The sketch from the model's reply, or null when it is not one. Ids that cannot be names are dropped. */
 export function parseSketch(text: string): Sketch | null {
@@ -131,8 +249,8 @@ export function parseSketch(text: string): Sketch | null {
     for (let raw of inputs as Object[]) {
       let r = raw as Record<string, Object>
       let input = new SketchInput()
-      input.id = str(r, 'id', '')
-      if (!isIdentifier(input.id) || seen.indexOf(input.id) >= 0) { continue }
+      input.id = usableId(str(r, 'id', ''), seen)
+      if (input.id.length === 0) { continue }
       input.label = str(r, 'label', input.id)
       input.kind = str(r, 'kind', 'count')
       if (INPUT_KINDS.indexOf(input.kind) < 0) { input.kind = 'count' }
@@ -141,7 +259,13 @@ export function parseSketch(text: string): Sketch | null {
       input.value = num(r, 'value', input.min)
       input.unit = str(r, 'unit', '')
       input.measure = str(r, 'measure', input.kind === 'percent' ? 'percent' : (input.kind === 'count' ? 'count' : 'number'))
-      if (MEASURES.indexOf(input.measure) < 0) { input.measure = 'number' }
+      if (MEASURES.indexOf(input.measure) < 0 || input.measure === 'clock') { input.measure = 'number' }
+      if (input.measure === 'money') { input.unit = currencySign(input.unit) }
+      // A time of day is minutes since midnight, whatever measure the sketch wrote.
+      if (input.kind === 'time') {
+        input.measure = 'clock'
+        input.value = Math.max(0, Math.min(1439, Math.round(num(r, 'value', 480))))
+      }
       let options = r['options']
       if (Array.isArray(options)) {
         for (let rawOption of options as Object[]) {
@@ -164,25 +288,120 @@ export function parseSketch(text: string): Sketch | null {
       sketch.inputs.push(input)
     }
   }
+  let constants = o['constants']
+  if (Array.isArray(constants)) {
+    for (let raw of constants as Object[]) {
+      let r = raw as Record<string, Object>
+      let constant = new SketchConstant()
+      constant.id = usableId(str(r, 'id', ''), seen)
+      if (constant.id.length === 0 || typeof r['value'] !== 'number') { continue }
+      constant.label = str(r, 'label', constant.id)
+      constant.value = num(r, 'value', 0)
+      constant.measure = str(r, 'measure', 'number')
+      if (MEASURES.indexOf(constant.measure) < 0 || constant.measure === 'clock') { constant.measure = 'number' }
+      seen.push(constant.id)
+      sketch.constants.push(constant)
+    }
+  }
   let countdown = o['countdown']
   if (countdown !== null && countdown !== undefined && typeof countdown === 'object') {
     sketch.hasCountdown = true
     sketch.countdown = str(countdown as Record<string, Object>, 'label', 'Timer')
+    sketch.countdownLength = str(countdown as Record<string, Object>, 'length', '')
+  }
+  let stopwatch = o['stopwatch']
+  if (stopwatch !== null && stopwatch !== undefined && typeof stopwatch === 'object') {
+    let label = str(stopwatch as Record<string, Object>, 'label', 'Stopwatch')
+    // One clock per screen: a stopwatch beside a countdown is something the parts do not make.
+    if (sketch.hasCountdown) { sketch.other.push('a stopwatch as well as a countdown') }
+    else { sketch.hasStopwatch = true; sketch.stopwatch = label }
+  }
+  let list = o['list']
+  if (list !== null && list !== undefined && typeof list === 'object' && !Array.isArray(list)) {
+    let r = list as Record<string, Object>
+    let l = new SketchList()
+    l.label = str(r, 'label', 'Entries')
+    // Names the entry record already has, and type names, are not field names.
+    let taken: string[] = ['minute', 'status', 'number', 'string', 'boolean']
+    let rawFields = r['fields']
+    let given: Record<string, Object>[] = []
+    if (Array.isArray(rawFields)) {
+      for (let raw of rawFields as Object[]) { given.push(raw as Record<string, Object>) }
+    } else {
+      // The older shape: words under "text", one number under "number".
+      if (str(r, 'text', '').length > 0) {
+        let t: Record<string, Object> = {}
+        t['id'] = 'words'
+        t['label'] = str(r, 'text', '')
+        t['kind'] = 'text'
+        given.push(t)
+      }
+      if (str(r, 'number', '').length > 0) {
+        let n: Record<string, Object> = {}
+        n['id'] = 'amount'
+        n['label'] = str(r, 'number', '')
+        n['kind'] = 'number'
+        n['measure'] = str(r, 'measure', 'number')
+        n['unit'] = str(r, 'unit', '')
+        given.push(n)
+      }
+    }
+    for (let rf of given) {
+      if (l.fields.length >= MAX_FIELDS) { break }
+      let field = new ListField()
+      field.id = usableId(str(rf, 'id', ''), taken)
+      if (field.id.length === 0) { continue }
+      field.label = str(rf, 'label', field.id)
+      field.kind = str(rf, 'kind', 'text')
+      if (FIELD_KINDS.indexOf(field.kind) < 0) { field.kind = 'text' }
+      field.measure = str(rf, 'measure', 'number')
+      if (MEASURES.indexOf(field.measure) < 0 || field.measure === 'clock') { field.measure = 'number' }
+      field.unit = field.measure === 'money' ? currencySign(str(rf, 'unit', '')) : str(rf, 'unit', '')
+      field.value = num(rf, 'value', field.kind === 'time' ? 480 : 0)
+      if (field.kind === 'time') {
+        field.measure = 'clock'
+        field.value = Math.max(0, Math.min(1439, Math.round(field.value)))
+      }
+      taken.push(field.id)
+      l.fields.push(field)
+    }
+    sketch.list = l
   }
   let values = o['values']
   if (Array.isArray(values)) {
     for (let raw of values as Object[]) {
       let r = raw as Record<string, Object>
       let value = new SketchValue()
-      value.id = str(r, 'id', '')
-      if (!isIdentifier(value.id) || seen.indexOf(value.id) >= 0) { continue }
+      value.id = usableId(str(r, 'id', ''), seen)
+      if (value.id.length === 0) { continue }
       value.label = str(r, 'label', value.id)
       value.means = str(r, 'means', value.label)
       value.format = str(r, 'format', 'plain')
-      if (VALUE_FORMATS.indexOf(value.format) < 0) { value.format = 'plain' }
-      value.unit = str(r, 'unit', '')
+      // "time_of_day" is the internal clock format; a sketch's own "clock" more often means a length of time.
+      if (value.format === 'time_of_day') { value.format = 'clock' }
+      else if (value.format === 'clock' || VALUE_FORMATS.indexOf(value.format) < 0) { value.format = 'plain' }
+      value.unit = value.format === 'money' ? currencySign(str(r, 'unit', '')) : str(r, 'unit', '')
+      value.formula = str(r, 'formula', '').trim()
+      let example = r['example']
+      if (example !== null && example !== undefined && typeof example === 'object') {
+        let ex = example as Record<string, Object>
+        let given = ex['given']
+        if (given !== null && given !== undefined && typeof given === 'object') {
+          let g = given as Record<string, Object>
+          for (let key of Object.keys(g)) {
+            if (typeof g[key] === 'number') { value.given.set(key, g[key] as number) }
+          }
+        }
+        value.result = num(ex, 'result', NaN)
+      }
       seen.push(value.id)
       sketch.values.push(value)
+    }
+  }
+  let other = o['other']
+  if (Array.isArray(other)) {
+    for (let item of other as Object[]) {
+      if (typeof item === 'string' && (item as string).trim().length > 0) { sketch.other.push((item as string).trim()) }
     }
   }
   let events = o['events']
@@ -193,10 +412,297 @@ export function parseSketch(text: string): Sketch | null {
       event.id = str(r, 'id', '')
       event.when = str(r, 'when', '')
       event.what = str(r, 'what', '')
+      event.asked = r['asked'] !== false
       if (event.what.length > 0) { sketch.events.push(event) }
     }
   }
   return sketch
+}
+
+// ---- Currency ----
+
+/** Currency names and codes a sketch writes, by the sign shown in front of an amount. */
+const CURRENCY_SIGNS: string[][] = [
+  ['CA$', 'canadian dollar', 'canadian dollars', 'cad'], ['A$', 'australian dollar', 'australian dollars', 'aud'],
+  ['NZ$', 'new zealand dollar', 'new zealand dollars', 'nzd'], ['HK$', 'hong kong dollar', 'hong kong dollars', 'hkd'],
+  ['S$', 'singapore dollar', 'singapore dollars', 'sgd'], ['MX$', 'mexican peso', 'mexican pesos', 'mxn'],
+  ['R$', 'real', 'reais', 'brazilian real', 'brl'], ['CN¥', 'yuan', 'renminbi', 'rmb', 'cny', 'chinese yuan'],
+  ['$', 'dollar', 'dollars', 'usd', 'us$', 'us dollar', 'us dollars', 'u.s. dollars'],
+  ['€', 'euro', 'euros', 'eur'], ['£', 'pound', 'pounds', 'gbp', 'sterling', 'pound sterling', 'pounds sterling', 'british pounds'],
+  ['¥', 'yen', 'jpy', 'japanese yen'], ['₹', 'rupee', 'rupees', 'inr', 'indian rupees'], ['₩', 'won', 'krw', 'korean won'],
+  ['₽', 'ruble', 'rubles', 'rouble', 'roubles', 'rub'], ['₺', 'lira', 'turkish lira', 'try'], ['₪', 'shekel', 'shekels', 'ils'],
+  ['₫', 'dong', 'vnd'], ['฿', 'baht', 'thb'], ['₱', 'philippine peso', 'philippine pesos', 'php'], ['CHF ', 'franc', 'francs', 'swiss franc', 'swiss francs', 'chf']]
+
+/**
+ * The sign an amount is shown with: a sketch writes its currency as "dollars" or "USD" as often as "$", and the
+ * screen showed "dollars22.44". A currency not known here keeps its own word, set apart from the number ("kr 12.00").
+ */
+export function currencySign(unit: string): string {
+  let u = unit.trim()
+  if (u.length === 0 || !/[A-Za-z]/.test(u)) { return u }
+  let key = u.toLowerCase().replace(/\s+/g, ' ')
+  for (let row of CURRENCY_SIGNS) {
+    for (let k = 1; k < row.length; k++) { if (row[k] === key) { return row[0] } }
+  }
+  return u + ' '
+}
+
+// ---- A value's written formula ----
+
+/**
+ * A formula the sketch writes for a value, used only where no formula of the vocabulary fits: numbers, the
+ * screen's own names, + - * / %, parentheses and a few of std/math. Parsed here rather than by the compiler,
+ * so that nothing else -- no call, no state, no other name -- can get in, and so that its worked example can
+ * be checked before the screen is built.
+ */
+class ExprNode {
+  kind: string = 'num'
+  value: number = 0
+  name: string = ''
+  op: string = ''
+  args: ExprNode[] = []
+}
+
+class ParsedExpr {
+  node: ExprNode | null = null
+  error: string = ''
+  /** The names it reads, each once. */
+  reads: string[] = []
+}
+
+/** std/math functions a formula may use, with how many arguments each takes. */
+const EXPR_FUNCTIONS: Map<string, number> = new Map<string, number>([['floor', 1], ['ceil', 1], ['round', 1], ['abs', 1],
+  ['sqrt', 1], ['min', 2], ['max', 2], ['pow', 2]])
+const MAX_FORMULA: number = 300
+const COMPARISONS: string[] = ['<', '<=', '>', '>=', '==', '!=', '===', '!==']
+
+function exprTokens(text: string): string[] {
+  let out: string[] = []
+  let i = 0
+  while (i < text.length) {
+    let c = text.charAt(i)
+    if (c === ' ' || c === '\t') { i++; continue }
+    let m = text.substring(i).match(/^(\d+(\.\d+)?|\.\d+|[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?|===|!==|<=|>=|==|!=|[-+*\/%(),<>])/)
+    if (m === null) { return ['?' + c] }
+    out.push(m[0])
+    i += m[0].length
+  }
+  return out
+}
+
+export function parseFormula(text: string, known: string[]): ParsedExpr {
+  let result = new ParsedExpr()
+  if (text.length === 0 || text.length > MAX_FORMULA) { result.error = text.length === 0 ? 'no formula' : 'too long'; return result }
+  let tokens = exprTokens(text)
+  let at = 0
+  let fail = (why: string): ExprNode => {
+    if (result.error.length === 0) { result.error = why }
+    return new ExprNode()
+  }
+  let peek = (): string => at < tokens.length ? tokens[at] : ''
+  let binary = (op: string, a: ExprNode, b: ExprNode): ExprNode => {
+    let n = new ExprNode()
+    n.kind = 'bin'
+    n.op = op
+    n.args = [a, b]
+    return n
+  }
+  // One comparison, worth 1 when it holds and 0 when not ("ready" is remaining <= 0); it does not chain.
+  let comparison = (): ExprNode => {
+    let left = expression()
+    let t = peek()
+    if (COMPARISONS.indexOf(t) < 0) { return left }
+    at++
+    let n = binary(t === '===' ? '==' : (t === '!==' ? '!=' : t), left, expression())
+    n.kind = 'cmp'
+    if (COMPARISONS.indexOf(peek()) >= 0) { return fail('compares twice in a row') }
+    return n
+  }
+  let expression = (): ExprNode => {
+    let left = term()
+    while (peek() === '+' || peek() === '-') { let op = tokens[at++]; left = binary(op, left, term()) }
+    return left
+  }
+  let term = (): ExprNode => {
+    let left = unary()
+    while (peek() === '*' || peek() === '/' || peek() === '%') { let op = tokens[at++]; left = binary(op, left, unary()) }
+    return left
+  }
+  let unary = (): ExprNode => {
+    if (peek() === '-') {
+      at++
+      let n = new ExprNode()
+      n.kind = 'neg'
+      n.args = [unary()]
+      return n
+    }
+    if (peek() === '+') { at++; return unary() }
+    return primary()
+  }
+  let primary = (): ExprNode => {
+    let t = peek()
+    if (t.length === 0) { return fail('ends too soon') }
+    at++
+    if (t === '(') {
+      let inner = comparison()
+      if (peek() !== ')') { return fail('a ( without its )') }
+      at++
+      return inner
+    }
+    if (/^(\d|\.)/.test(t)) {
+      let n = new ExprNode()
+      n.value = Number(t)
+      return n
+    }
+    if (/^[A-Za-z_]/.test(t)) {
+      if (peek() === '(') {
+        let name = t.replace(/^(math|Math)\./, '')
+        let arity = EXPR_FUNCTIONS.get(name)
+        if (arity === undefined) { return fail('uses ' + t + ', which a formula cannot') }
+        at++
+        let n = new ExprNode()
+        n.kind = 'call'
+        n.name = name
+        if (peek() !== ')') {
+          n.args.push(comparison())
+          while (peek() === ',') { at++; n.args.push(comparison()) }
+        }
+        if (peek() !== ')') { return fail(t + '( without its )') }
+        at++
+        // min and max of more than two fold into pairs.
+        if ((name === 'min' || name === 'max') && n.args.length > 2) {
+          let folded = n.args[0]
+          for (let k = 1; k < n.args.length; k++) {
+            let pair = new ExprNode()
+            pair.kind = 'call'
+            pair.name = name
+            pair.args = [folded, n.args[k]]
+            folded = pair
+          }
+          return folded
+        }
+        if (n.args.length !== arity) { return fail(name + ' takes ' + arity.toString() + ' numbers') }
+        return n
+      }
+      if (known.indexOf(t) < 0) { return fail('reads ' + t + ', which the screen does not have') }
+      let n = new ExprNode()
+      n.kind = 'id'
+      n.name = t
+      if (result.reads.indexOf(t) < 0) { result.reads.push(t) }
+      return n
+    }
+    return fail('has ' + t.replace(/^\?/, '') + ' where a number belongs')
+  }
+  let node = comparison()
+  if (result.error.length === 0 && at < tokens.length) { result.error = 'has ' + tokens[at].replace(/^\?/, '') + ' left over' }
+  if (result.error.length === 0) { result.node = node }
+  return result
+}
+
+/** The formula's number, names read from `env`; NaN when a name has no number. Division by 0 gives 0, as share() does. */
+function evalFormula(n: ExprNode, env: Map<string, number>): number {
+  if (n.kind === 'num') { return n.value }
+  if (n.kind === 'id') { return env.get(n.name) ?? NaN }
+  if (n.kind === 'neg') { return -evalFormula(n.args[0], env) }
+  let a = evalFormula(n.args[0], env)
+  let b = n.args.length > 1 ? evalFormula(n.args[1], env) : 0
+  if (n.kind === 'cmp') {
+    let holds = n.op === '<' ? a < b : n.op === '<=' ? a <= b : n.op === '>' ? a > b : n.op === '>=' ? a >= b :
+      n.op === '==' ? a === b : a !== b
+    return holds ? 1 : 0
+  }
+  if (n.kind === 'bin') {
+    if (n.op === '+') { return a + b }
+    if (n.op === '-') { return a - b }
+    if (n.op === '*') { return a * b }
+    if (n.op === '/') { return b === 0 ? 0 : a / b }
+    return b === 0 ? 0 : a % b
+  }
+  if (n.name === 'floor') { return Math.floor(a) }
+  if (n.name === 'ceil') { return Math.ceil(a) }
+  if (n.name === 'round') { return Math.round(a) }
+  if (n.name === 'abs') { return Math.abs(a) }
+  if (n.name === 'sqrt') { return Math.sqrt(a) }
+  if (n.name === 'min') { return Math.min(a, b) }
+  if (n.name === 'max') { return Math.max(a, b) }
+  return Math.pow(a, b)
+}
+
+/**
+ * The unit of time a written formula gives, when it only adds, subtracts, rounds or picks among lengths of one
+ * unit (a plain number goes with either): 'seconds', 'minutes', or '' for anything else -- a product or a
+ * quotient may already be the conversion itself (remaining / 60).
+ */
+function writtenMeasure(n: ExprNode, operands: Operand[]): string {
+  if (n.kind === 'num') { return 'any' }
+  if (n.kind === 'id') {
+    let o = operands.find((x: Operand): boolean => x.id === n.name)
+    return o !== undefined && isTime(o.measure) ? o.measure : ''
+  }
+  let alike = n.kind === 'neg' || (n.kind === 'bin' && (n.op === '+' || n.op === '-')) ||
+    (n.kind === 'call' && ['round', 'floor', 'ceil', 'abs', 'min', 'max'].indexOf(n.name) >= 0)
+  if (!alike) { return '' }
+  let unit = 'any'
+  for (let a of n.args) {
+    let m = writtenMeasure(a, operands)
+    if (m === '' || (m !== 'any' && unit !== 'any' && m !== unit)) { return '' }
+    if (m !== 'any') { unit = m }
+  }
+  return unit
+}
+
+/** The formula in VERA: the names are the view's locals, and division goes through share(). */
+function formulaVera(n: ExprNode): string {
+  if (n.kind === 'num') { return numberLiteral(n.value) }
+  if (n.kind === 'id') { return n.name }
+  if (n.kind === 'neg') { return '(0 - ' + formulaVera(n.args[0]) + ')' }
+  if (n.kind === 'call') {
+    let args: string[] = []
+    for (let a of n.args) { args.push(formulaVera(a)) }
+    return 'math.' + n.name + '(' + args.join(', ') + ')'
+  }
+  if (n.kind === 'cmp') {
+    let op = n.op === '==' ? '===' : (n.op === '!=' ? '!==' : n.op)
+    return 'whether(' + formulaVera(n.args[0]) + ' ' + op + ' ' + formulaVera(n.args[1]) + ')'
+  }
+  if (n.op === '/') { return 'share(' + formulaVera(n.args[0]) + ', ' + formulaVera(n.args[1]) + ')' }
+  return '(' + formulaVera(n.args[0]) + ' ' + n.op + ' ' + formulaVera(n.args[1]) + ')'
+}
+
+const COMPARISON_WORDS: Map<string, string> = new Map<string, string>([['<', 'is less than'], ['<=', 'is at most'],
+  ['>', 'is more than'], ['>=', 'is at least'], ['==', 'equals'], ['!=', 'differs from']])
+
+/** The formula in words for Jev: each name as its shown label. */
+function formulaWords(n: ExprNode, sketch: Sketch): string {
+  if (n.kind === 'num') { return numberLiteral(n.value) }
+  if (n.kind === 'id') { return '"' + partLabel(sketch, n.name) + '"' }
+  if (n.kind === 'neg') { return '-' + formulaWords(n.args[0], sketch) }
+  if (n.kind === 'call') {
+    let args: string[] = []
+    for (let a of n.args) { args.push(formulaWords(a, sketch)) }
+    return n.name + '(' + args.join(', ') + ')'
+  }
+  if (n.kind === 'cmp') {
+    return '(1 if ' + formulaWords(n.args[0], sketch) + ' ' + (COMPARISON_WORDS.get(n.op) ?? n.op) + ' ' +
+      formulaWords(n.args[1], sketch) + ', else 0)'
+  }
+  let op = n.op === '*' ? 'x' : n.op
+  return '(' + formulaWords(n.args[0], sketch) + ' ' + op + ' ' + formulaWords(n.args[1], sketch) + ')'
+}
+
+/** The label of an input, constant, value or part number, for a formula in words. */
+function partLabel(sketch: Sketch, id: string): string {
+  let own = labelOf(sketch, id)
+  if (own.length > 0) { return own }
+  for (let o of operandList(sketch, sketch.values.length)) { if (o.id === id) { return o.label } }
+  return id
+}
+
+/** The names value number `index`'s formula may read: numeric inputs, constants, the values before it and the parts' numbers. */
+function formulaNames(sketch: Sketch, index: number): string[] {
+  let out: string[] = []
+  for (let o of operandList(sketch, index)) { if (out.indexOf(o.id) < 0) { out.push(o.id) } }
+  return out
 }
 
 // ---- The vocabulary Jev chooses from ----
@@ -223,9 +729,13 @@ const FORMULAS: Formula[] = [
   new Formula('add', 2, 'the first operand plus the second'),
   new Formula('subtract', 2, 'the first operand minus the second'),
   new Formula('multiply', 2, 'the first operand times the second'),
-  new Formula('divide', 2, 'the first operand divided by the second (an equal share, a rate, or a fraction of a whole)'),
+  new Formula('divide', 2, 'the first operand divided by the second'),
+  new Formula('divide_up', 2, 'the first operand divided by the second, rounded up to a whole number'),
   new Formula('percent_of', 2, 'the second operand percent of the first, i.e. first * second / 100'),
-  new Formula('add_percent', 2, 'the first operand increased by the second operand percent, i.e. first * (1 + second / 100)')
+  new Formula('add_percent', 2, 'the first operand increased by the second operand percent, i.e. first * (1 + second / 100)'),
+  new Formula('subtract_percent', 2, 'the first operand reduced by the second operand percent, i.e. first * (1 - second / 100)'),
+  new Formula('round_up', 1, 'the first operand rounded up to a whole number'),
+  new Formula('ratio_percent', 2, 'the first operand as a percent of the second, i.e. first / second * 100')
 ]
 
 class Widget {
@@ -240,28 +750,151 @@ class Widget {
 }
 
 const WIDGETS: Widget[] = [
-  new Widget('typed_number', ['amount', 'count', 'percent'], 'a text field the person types a number into, for any amount such as money'),
-  new Widget('stepper', ['count', 'percent'], 'a whole number set with - and + buttons, for small counts such as people or servings'),
+  new Widget('typed_number', ['amount', 'count', 'percent'], 'a text field the person types a number into'),
+  new Widget('stepper', ['count', 'percent'], 'a whole number set with - and + buttons, one step at a time'),
   new Widget('slider', ['percent', 'count', 'amount'], 'a slider across a range, for a percentage or a level'),
   new Widget('select', ['choice'], 'a drop-down of the named options'),
-  new Widget('switch', ['toggle'], 'an on/off switch')
+  new Widget('switch', ['toggle'], 'an on/off switch'),
+  new Widget('text_field', ['text'], 'a text field for words'),
+  new Widget('time_field', ['time'], 'a time picker for a time of day')
 ]
+
+/**
+ * One argument of an effect, filled from the screen: a list field of the new entry, an input, a constant,
+ * or one of the fixed choices its kind offers. text and toggle go under `key`; a time of day goes as
+ * hour and minute; minutes go as a whole number.
+ */
+class EffectParam {
+  name: string
+  kind: string
+  key: string
+  describe: string
+  constructor(name: string, kind: string, key: string, describe: string) {
+    this.name = name
+    this.kind = kind
+    this.key = key
+    this.describe = describe
+  }
+}
 
 class Effect {
   id: string
   describe: string
-  call: string
-  constructor(id: string, describe: string, call: string) {
+  target: string
+  fixed: string[]
+  params: EffectParam[]
+  /** What an entry shows once the phone answers without an error; '' for an effect whose answer is not shown on an entry. */
+  done: string
+  /** sdk.call's mode for an intent target ("foreground"), '' for none. */
+  mode: string
+  /** The label of the button that does it, on the screen or on an entry. */
+  button: string
+  constructor(id: string, describe: string, target: string, fixed: string[], params: EffectParam[], done: string,
+      mode: string = '', button: string = 'Go') {
     this.id = id
     this.describe = describe
-    this.call = call
+    this.target = target
+    this.fixed = fixed
+    this.params = params
+    this.done = done
+    this.mode = mode
+    this.button = button
   }
 }
 
 const EFFECTS: Effect[] = [
-  new Effect('vibrate', 'vibrate the phone',
-    'sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "2000"], "onEffect");')
+  new Effect('vibrate', 'vibrate the phone', 'SensorServiceKit.vibrator.vibrate', ['duration', '2000'], [], ''),
+  // The platform tone generator (VeraSdkBackend's TonePlayer adapter): a short tone that plays out by itself.
+  new Effect('beep', 'play a short alert sound', 'AudioKit.TonePlayer.start', ['type', 'DOUBLE_BEEP'], [], ''),
+  // VeraCalendarSdk's flat addEvent: today at hour:minute, an hour long; it answers with the event's ID.
+  new Effect('calendar_add', 'add an event to the phone\'s calendar at a time of day, with a title, a reminder and, if wanted, a daily repeat',
+    'CalendarKit.Calendar.addEvent', [], [
+      new EffectParam('title', 'text', 'title', 'the title of the calendar event'),
+      new EffectParam('time', 'clock', '', 'the time of day the event starts'),
+      new EffectParam('repeat', 'toggle', 'repeat', 'whether the event repeats every day'),
+      new EffectParam('remind', 'minutes', 'remindBefore', 'how many minutes before the start the phone reminds')
+    ], 'In the calendar', '', 'Add to calendar'),
+  // VeraIntentCatalog's probed navigateTo: Petal Maps' StartNavigate to a place by name and, when known, coordinates.
+  // Its start point is not honoured (it routes from where the phone is), so none is offered.
+  new Effect('navigate', 'start navigation in the maps app to a place, given its name and, if known, its latitude and longitude',
+    'com.huawei.hmos.maps.app/entry/EntryAbility/StartNavigate', ['trafficType', 'Drive'], [
+      new EffectParam('place', 'text', 'dstLocation.locationName', 'the name of the place to go to'),
+      new EffectParam('latitude', 'number', 'dstLocation.latitude', 'the latitude of the place to go to'),
+      new EffectParam('longitude', 'number', 'dstLocation.longitude', 'the longitude of the place to go to')
+    ], '', 'foreground', 'Navigate'),
+  // deleteEvents takes the IDs addEvent answered with; the program keeps them (calendarIds) when it adds and clears.
+  new Effect('calendar_clear', 'delete every calendar event this app added', 'CalendarKit.Calendar.deleteEvents', [], [], '', '',
+    'Clear calendar'),
+  // A plain launch of the calendar app (VeraIntentCatalog's probed openCalendar): nothing to tell it.
+  new Effect('calendar_open', 'open the phone\'s calendar app', 'com.huawei.hmos.calendar/phone/MainAbility', [], [], '', '',
+    'Open calendar')
 ]
+
+/** The "none of these" of an argument, saying what it means for that kind, so a fixed choice is not passed over. */
+const OTHER_SOURCE: Map<string, string> = new Map<string, string>([
+  ['text', 'some other title, which none of these gives'],
+  ['clock', 'some other time of day, which none of these gives'],
+  ['toggle', 'some repeat other than once or every day'],
+  ['minutes', 'a number of minutes that none of these holds'],
+  ['number', 'some other number, which none of these gives']])
+
+function effectOf(id: string): Effect | undefined {
+  return EFFECTS.find((x: Effect): boolean => x.id === id)
+}
+
+/**
+ * Where an effect's argument can come from, keyed entry.<field>, input.<id>, const.<id> or fixed.<choice>.
+ * Only sources whose kind fits are offered, as with a formula's operands.
+ */
+function paramSources(sketch: Sketch, p: EffectParam): Map<string, string> {
+  let m: Map<string, string> = new Map<string, string>()
+  let numeric = (kind: string): boolean => kind !== 'text' && kind !== 'toggle' && kind !== 'time' && kind !== 'choice'
+  let fits = (kind: string, measure: string): boolean =>
+    (p.kind === 'text' && kind === 'text') || (p.kind === 'clock' && kind === 'time') || (p.kind === 'toggle' && kind === 'toggle') ||
+      (p.kind === 'minutes' && numeric(kind) && isTime(measure)) || (p.kind === 'number' && numeric(kind) && !isTime(measure))
+  let phrase = (what: string): string => p.kind === 'toggle' ? 'every day when ' + what + ' is on, once when it is off' : what
+  if (sketch.list !== null) {
+    for (let f of sketch.list.fields) {
+      if (fits(f.kind, f.measure)) { m.set('entry.' + f.id, phrase('the entry\'s "' + f.label + '" (the one just added, or the one whose button was tapped)')) }
+    }
+  }
+  for (let input of sketch.inputs) {
+    if (fits(input.kind, input.measure)) { m.set('input.' + input.id, phrase('"' + input.label + '" as set on the screen')) }
+  }
+  for (let c of sketch.constants) {
+    if (p.kind === 'minutes' && isTime(c.measure)) { m.set('const.' + c.id, 'the fixed ' + c.label + ', ' + numberLiteral(c.value) + ' ' + c.measure) }
+    if (p.kind === 'number' && !isTime(c.measure)) { m.set('const.' + c.id, 'the fixed ' + c.label + ', ' + numberLiteral(c.value)) }
+  }
+  if (p.kind === 'number') { m.set('fixed.blank', 'left out: not known, so the app goes by the other details') }
+  if (p.kind === 'text') { m.set('fixed.title', 'the app\'s title, "' + sketch.title + '"') }
+  if (p.kind === 'toggle') {
+    m.set('fixed.once', 'once, never repeating: what an event is when the request does not ask for a repeat')
+    m.set('fixed.daily', 'every day, always: the request asks for every event to repeat daily')
+  }
+  // A constant of 0 minutes is the same answer as fixed.zero: offering both would split Jev's confidence between them.
+  let zeroConstant = sketch.constants.some((c: SketchConstant): boolean => isTime(c.measure) && c.value === 0)
+  if (p.kind === 'minutes' && !zeroConstant) {
+    m.set('fixed.zero', '0: an alert right at the start time, which is what a reminder with no lead time named means, ' +
+      'also when the event itself is the reminder')
+  }
+  if (p.kind === 'minutes') {
+    m.set('fixed.none', 'no alert: the request asks for neither a reminder nor an alert')
+  }
+  return m
+}
+
+/** The moments an effect can happen at, each offered only when the screen has the part that makes it. */
+function momentsOf(sketch: Sketch): Map<string, string> {
+  let m: Map<string, string> = new Map<string, string>()
+  if (sketch.hasCountdown) { m.set('countdown_end', 'when the countdown reaches zero') }
+  if (sketch.list !== null) { m.set('entry_added', 'right after the person adds an entry to the list') }
+  if (sketch.list !== null) { m.set('row_button', 'when the person taps its button on one entry of the list, for that entry') }
+  m.set('button', 'when the person taps a button for it on the screen')
+  return m
+}
+
+/** The moments a person's tap starts, each with a handler of its own: do_<event> on the screen, row_<event> on an entry. */
+function tapMoment(moment: string): boolean { return moment === 'button' || moment === 'row_button' }
 
 const SHOWS: string[] = ['stat', 'hero', 'progress']
 
@@ -271,6 +904,7 @@ function describeInput(input: SketchInput): string {
     for (let o of input.options) { parts.push(o.label + ' = ' + o.value.toString()) }
     return 'input "' + input.label + '": the number of the chosen option (' + parts.join(', ') + ')'
   }
+  if (input.kind === 'time') { return 'input "' + input.label + '" (a time of day)' }
   return 'input "' + input.label + '" (' + input.kind + (input.unit.length > 0 ? ', ' + input.unit : '') + ')'
 }
 
@@ -288,8 +922,9 @@ class Operand {
 function operandList(sketch: Sketch, index: number): Operand[] {
   let out: Operand[] = []
   for (let input of sketch.inputs) {
-    if (input.kind !== 'toggle') { out.push(new Operand(input.id, input.label, input.measure)) }
+    if (isNumeric(input.kind)) { out.push(new Operand(input.id, input.label, input.measure)) }
   }
+  for (let c of sketch.constants) { out.push(new Operand(c.id, c.label + ' (fixed: ' + numberLiteral(c.value) + ')', c.measure)) }
   for (let i = 0; i < index; i++) {
     let v = sketch.values[i]
     out.push(new Operand(v.id, v.label, v.format === 'plain' ? 'number' : v.format))
@@ -299,6 +934,14 @@ function operandList(sketch: Sketch, index: number): Operand[] {
     out.push(new Operand('elapsed', 'seconds passed on the countdown', 'seconds'))
     out.push(new Operand('duration', 'whole length of the countdown', 'seconds'))
   }
+  if (sketch.hasStopwatch) { out.push(new Operand('elapsed', 'seconds passed on the stopwatch', 'seconds')) }
+  if (sketch.list !== null) {
+    out.push(new Operand('entryCount', 'how many ' + sketch.list.label + ' there are', 'count'))
+    let numberField = firstField(sketch.list, 'number')
+    if (numberField !== null) {
+      out.push(new Operand('entryTotal', numberField.label + ' of all ' + sketch.list.label + ' added up', numberField.measure))
+    }
+  }
   return out
 }
 
@@ -306,47 +949,94 @@ function operandList(sketch: Sketch, index: number): Operand[] {
 function resultMeasure(formula: string, a: Operand, b: Operand | null): string {
   let scalar = (m: string): boolean => m === 'count' || m === 'number'
   if (formula === 'copy') { return a.measure }
-  if (b === null || a.id === b.id) { return '' }
+  // A time of day is shown as it is; adding to it or scaling it is not offered.
+  if (a.measure === 'clock' || (b !== null && b.measure === 'clock')) { return '' }
+  // Rounding a plain number up makes a whole count of things; rounded money is still money.
+  if (formula === 'round_up') { return a.measure === 'number' || a.measure === 'fraction' ? 'count' : a.measure }
+  // A value times itself is a square; any other formula of an operand with itself is not worth offering.
+  if (b === null || (a.id === b.id && formula !== 'multiply')) { return '' }
   if (formula === 'add' || formula === 'subtract') { return a.measure === b.measure && a.measure !== 'percent' ? a.measure : '' }
   if (formula === 'multiply') { return scalar(b.measure) && a.measure !== 'percent' ? a.measure : '' }
   if (formula === 'divide') {
     if (scalar(b.measure)) { return a.measure }
     return a.measure === b.measure ? 'fraction' : ''
   }
-  if (formula === 'percent_of' || formula === 'add_percent') { return b.measure === 'percent' && a.measure !== 'percent' ? a.measure : '' }
+  if (formula === 'divide_up') {
+    let d = resultMeasure('divide', a, b)
+    return d === 'number' || d === 'fraction' || d === 'count' ? 'count' : d
+  }
+  if (formula === 'ratio_percent') { return a.measure === b.measure ? 'percent' : '' }
+  if (formula === 'percent_of' || formula === 'add_percent' || formula === 'subtract_percent') {
+    return b.measure === 'percent' && a.measure !== 'percent' ? a.measure : ''
+  }
   return ''
 }
 
 function expressionText(formula: string, a: Operand, b: Operand | null): string {
   let bl = b !== null ? b.label : ''
   if (formula === 'copy') { return a.label + ', as it is' }
+  if (formula === 'round_up') { return a.label + ', rounded up to a whole number' }
   if (formula === 'add') { return a.label + ' + ' + bl }
   if (formula === 'subtract') { return a.label + ' - ' + bl }
-  if (formula === 'multiply') { return a.label + ' x ' + bl }
+  if (formula === 'multiply') { return b !== null && b.id === a.id ? a.label + ' squared' : a.label + ' x ' + bl }
   if (formula === 'divide') { return a.label + ' / ' + bl }
+  if (formula === 'divide_up') { return a.label + ' / ' + bl + ', rounded up to a whole number' }
   if (formula === 'percent_of') { return bl + ' percent of ' + a.label }
+  if (formula === 'subtract_percent') { return a.label + ' reduced by ' + bl + ' percent' }
+  if (formula === 'ratio_percent') { return a.label + ' as a percent of ' + bl }
   return a.label + ' increased by ' + bl + ' percent'
 }
+
+/**
+ * Whether a result measured `m` can be a value of format `format`. A plain value is a number that is
+ * not money, a percent or a time; a fraction is any ratio of two like amounts (steps out of a goal).
+ */
+function fitsFormat(m: string, format: string, formula: string, a: Operand, b: Operand | null): boolean {
+  if (m.length === 0) { return false }
+  if (format === 'plain') { return m === 'number' || m === 'fraction' || (m === 'count' && formula !== 'round_up' && formula !== 'divide_up') }
+  if (format === 'fraction' && formula === 'divide' && b !== null && a.id !== b.id && a.measure === b.measure) { return true }
+  // A time in either unit can be a time value: the binding converts it to the value's own unit.
+  if (isTime(format) && isTime(m)) { return true }
+  return m === format
+}
+
+/** Says so when the composer turns a time in one unit into the value's other unit. */
+function converted(m: string, format: string): string {
+  return isTime(m) && isTime(format) && m !== format ? ', turned from ' + m + ' into ' + format : ''
+}
+
+/** The formulas whose operands can swap without changing the result: each pair is offered once. */
+const COMMUTATIVE: string[] = ['add', 'multiply']
 
 /** Every unit-consistent expression for value number `index`, keyed "formula:a:b". */
 export function expressionsFor(sketch: Sketch, index: number): Map<string, string> {
   let v = sketch.values[index]
-  let want = v.format === 'plain' ? '' : v.format
   let operands = operandList(sketch, index)
   let out: Map<string, string> = new Map<string, string>()
   for (let f of FORMULAS) {
-    for (let a of operands) {
+    for (let ai = 0; ai < operands.length; ai++) {
+      let a = operands[ai]
       if (f.operands === 1) {
         let m = resultMeasure(f.id, a, null)
-        if (m.length > 0 && (want.length === 0 || m === want)) { out.set(f.id + ':' + a.id + ':', expressionText(f.id, a, null)) }
+        if (fitsFormat(m, v.format, f.id, a, null)) { out.set(f.id + ':' + a.id + ':', expressionText(f.id, a, null) + converted(m, v.format)) }
         continue
       }
-      for (let b of operands) {
+      for (let bi = COMMUTATIVE.indexOf(f.id) >= 0 ? ai : 0; bi < operands.length; bi++) {
+        let b = operands[bi]
+        // The countdown's length less its time passed is its time left, already offered as such; two names for
+        // one number split Jev's answer between them.
+        if (f.id === 'subtract' && a.id === 'duration' && (b.id === 'elapsed' || b.id === 'remaining')) { continue }
         let m = resultMeasure(f.id, a, b)
-        if (m.length > 0 && (want.length === 0 || m === want)) { out.set(f.id + ':' + a.id + ':' + b.id, expressionText(f.id, a, b)) }
+        if (fitsFormat(m, v.format, f.id, a, b)) { out.set(f.id + ':' + a.id + ':' + b.id, expressionText(f.id, a, b) + converted(m, v.format)) }
       }
     }
   }
+  return out
+}
+
+function copyOf(m: Map<string, string>): Map<string, string> {
+  let out: Map<string, string> = new Map<string, string>()
+  m.forEach((v: string, k: string) => { out.set(k, v) })
   return out
 }
 
@@ -360,17 +1050,170 @@ function choice(instructions: string, criteria: Map<string, string>): Record<str
   return q
 }
 
+const FIELD_WORDS: Map<string, string> = new Map<string, string>([['text', 'words'], ['number', 'a number'],
+  ['time', 'a time of day'], ['toggle', 'on/off']])
+
+function describeList(l: SketchList): string {
+  let fields: string[] = []
+  for (let f of l.fields) { fields.push('"' + f.label + '" (' + (FIELD_WORDS.get(f.kind) ?? f.kind) + ')') }
+  let adding = fields.length > 0 ? 'the person fills in ' + fields.join(', ') + ' and adds an entry' : 'each tap on Add adds an entry'
+  return 'a list of ' + l.label + ': ' + adding + '; each entry shows what was filled in and the time it was added, ' +
+    'shows what the phone answered when the phone does something as it is added, and can be removed'
+}
+
+function isTime(measure: string): boolean { return measure === 'seconds' || measure === 'minutes' }
+
+const TIME_UNITS: Map<string, string> = new Map<string, string>([['seconds', 'a number of seconds'], ['minutes', 'a number of minutes'],
+  ['neither', 'not a length of time']])
+
+/** A choice not marked as a time, whose numbers might still be lengths: not money, not a percent. */
+function isLengthChoice(input: SketchInput): boolean {
+  return input.kind === 'choice' && !isTime(input.measure) && input.measure !== 'money' && input.measure !== 'percent'
+}
+
+function unitQuestion(label: string, numbers: string): string {
+  return 'Going by the request and these labels, is the number of "' + label + '" (' + numbers + ') a number of seconds or of minutes?'
+}
+
+/** An input's numbers as the person sees them: each option's label beside its number, or the range and unit. */
+function numbersOf(input: SketchInput): string {
+  if (input.kind === 'choice') {
+    let parts: string[] = []
+    for (let o of input.options) { parts.push(o.label + ' = ' + numberLiteral(o.value)) }
+    return parts.join(', ')
+  }
+  return numberLiteral(input.min) + ' to ' + numberLiteral(input.max) + ', starting at ' + numberLiteral(input.value) +
+    (input.unit.length > 0 ? ', unit ' + input.unit : '')
+}
+
+/** What the input, constant or value `id` measures, '' when it is none of them. */
+function measureOf(sketch: Sketch, id: string): string {
+  for (let i of sketch.inputs) { if (i.id === id) { return i.measure } }
+  for (let c of sketch.constants) { if (c.id === id) { return c.measure } }
+  for (let v of sketch.values) { if (v.id === id) { return v.format } }
+  return ''
+}
+
+/**
+ * The sources a countdown's length can come from: inputs, constants and values measured in seconds or minutes. Units are
+ * checked here as for formulas: Jev once ran a tea timer from the tea type's option number, 0 to 2.
+ */
+function lengthSources(sketch: Sketch): Map<string, string> {
+  let sources: Map<string, string> = new Map<string, string>()
+  for (let input of sketch.inputs) {
+    if (isNumeric(input.kind) && isTime(input.measure)) { sources.set(input.id, describeInput(input) + ', in ' + input.measure) }
+    // A choice's numbers are offered whatever measure the sketch wrote: its labels say what they are, and the
+    // unit question reads them (a tea timer's 120 / 180 / 300 came marked as a count).
+    else if (isLengthChoice(input)) { sources.set(input.id, describeInput(input)) }
+  }
+  for (let c of sketch.constants) {
+    // A fixed length of nothing is never what a countdown runs for.
+    if (isTime(c.measure) && c.value > 0) { sources.set(c.id, 'the fixed ' + c.label + ', ' + numberLiteral(c.value) + ' ' + c.measure) }
+  }
+  for (let v of sketch.values) {
+    if (isTime(v.format)) { sources.set(v.id, 'the worked-out "' + v.label + '": ' + v.means + ', in ' + v.format) }
+  }
+  return sources
+}
+
+/** Every name `id` is worked out from, itself included, following the chosen formulas back to inputs. */
+function dependsOn(comp: Composition, id: string): string[] {
+  let out: string[] = []
+  let todo: string[] = [id]
+  while (todo.length > 0) {
+    let next = todo.pop()!
+    if (next.length === 0 || out.indexOf(next) >= 0) { continue }
+    out.push(next)
+    let b = comp.bindings.get(next)
+    if (b !== undefined) {
+      todo.push(b.a)
+      todo.push(b.b)
+      for (let name of b.reads) { todo.push(name) }
+    }
+  }
+  return out
+}
+
+const CLOCK_OPERANDS: string[] = ['remaining', 'elapsed', 'duration']
+
+/**
+ * What each part on the screen provides, for asking Jev whether an item of the sketch's "other" is
+ * one of them after all. Each option is a part this screen actually has, described by what it does.
+ */
+function partsOf(sketch: Sketch): Map<string, string> {
+  let parts: Map<string, string> = new Map<string, string>()
+  // Each control an input can have, and a fraction's bar, as a part of its own: an item that names one
+  // ("a slider for the tip", "a progress bar toward the goal") is that part, and choosing it draws it so.
+  for (let input of sketch.inputs) {
+    for (let w of WIDGETS) {
+      if (w.kinds.indexOf(input.kind) >= 0) { parts.set('widget.' + input.id + '.' + w.id, w.describe + ', for "' + input.label + '"') }
+    }
+  }
+  for (let v of sketch.values) {
+    parts.set('value.' + v.id, 'the figure "' + v.label + '", shown as a number: ' + v.means)
+    if (v.format === 'fraction') { parts.set('bar.' + v.id, 'a progress bar that fills as "' + v.label + '" goes from 0 to 1: ' + v.means) }
+  }
+  // As drawn: the time as minutes and seconds (1:05:00 past an hour), ticking each second, and its three buttons.
+  if (sketch.hasCountdown) {
+    parts.set('countdown', 'the countdown: the time left, shown as minutes and seconds such as 5:30 and counting down each ' +
+      'second, with Start, Stop and Reset buttons')
+  }
+  if (sketch.hasStopwatch) {
+    parts.set('stopwatch', 'the stopwatch: the time passed, shown as minutes and seconds such as 5:30 and counting up each ' +
+      'second, with Start, Stop and Reset buttons')
+  }
+  if (sketch.list !== null) { parts.set('list', describeList(sketch.list)) }
+  // The figures as rows, with the fixed numbers they come from: what "a table of bill, tip and total" asks for.
+  if (sketch.values.length > 0 && sketch.list === null) {
+    parts.set('figures', 'a table or list of the figures, one row each: the fixed numbers they are worked out from, then ' +
+      'each worked-out figure, with its label and its value')
+  }
+  for (let e of sketch.events) {
+    if (e.asked) { parts.set('event.' + e.id, 'when ' + e.when + ', the phone will ' + e.what) }
+  }
+  parts.set('state', 'the app keeps everything between visits: what the person set or added is saved and is there when the app opens again')
+  return parts
+}
+
+/** The shown label of an input, constant or value, '' when the id is none of them. */
+function labelOf(sketch: Sketch, id: string): string {
+  for (let i of sketch.inputs) { if (i.id === id) { return i.label } }
+  for (let c of sketch.constants) { if (c.id === id) { return c.label } }
+  for (let v of sketch.values) { if (v.id === id) { return v.label } }
+  return ''
+}
+
 export function describeSketch(sketch: Sketch): string {
   let lines: string[] = []
   for (let input of sketch.inputs) { lines.push('- ' + describeInput(input)) }
-  if (sketch.hasCountdown) { lines.push('- a countdown: ' + sketch.countdown) }
+  for (let c of sketch.constants) { lines.push('- fixed: ' + c.label + ' = ' + numberLiteral(c.value)) }
+  if (sketch.hasCountdown) {
+    let length = labelOf(sketch, sketch.countdownLength)
+    lines.push('- a countdown: ' + sketch.countdown + (length.length > 0 ? ', as long as "' + length + '"' : ''))
+  }
+  if (sketch.hasStopwatch) { lines.push('- a stopwatch: ' + sketch.stopwatch) }
+  if (sketch.list !== null) { lines.push('- ' + describeList(sketch.list)) }
   for (let v of sketch.values) { lines.push('- shows "' + v.label + '": ' + v.means) }
   for (let e of sketch.events) { lines.push('- when ' + e.when + ': ' + e.what) }
   return lines.join('\n')
 }
 
+/**
+ * Whether an item of a chat widget's description is what it must show or do, or a detail of its look. A table,
+ * a chart or a picture of data is never a detail: left out, the widget would not show what was asked for.
+ */
+function detailQuestion(item: string): Record<string, Object> {
+  let part: Map<string, string> = new Map<string, string>()
+  part.set('core', 'something the widget must work out, show, keep or do for the request to be served: a figure, a table, ' +
+    'a chart or picture of data, a list, a timer, a game, a phone action, data from outside the phone, or what a button does ' +
+    'when that is more than calculating, resetting or clearing (choosing at random, playing, sending)')
+  part.set('detail', 'a detail of how the widget looks or is worked: layout, labels, units, number formatting, a note, message ' +
+    'or reference line, a validation message, a button that only calculates, resets or clears, or updating as inputs change')
+  return choice('In a widget for this request, what is "' + item + '"?', part)
+}
+
 /** The Jev request: one independent choice per requirement in the sketch. */
-export function buildComposeRequest(prompt: string, sketch: Sketch): string {
+export function buildComposeRequest(prompt: string, sketch: Sketch, widget: boolean = false): string {
   let questions: Record<string, Object> = {}
 
   let theme: Map<string, string> = new Map<string, string>()
@@ -389,14 +1232,47 @@ export function buildComposeRequest(prompt: string, sketch: Sketch): string {
     if (widgets.size > 1) {
       questions['widget.' + input.id] = choice('How should the person set "' + input.label + '"? Follow the request where it names a control.', widgets)
     }
+    // Whether a number nothing turns out to read is the sketch's extra, or something the request wants
+    // that the parts cannot use: only the request can tell, so Jev reads it rather than the sketch.
+    if (isNumeric(input.kind)) {
+      let asked: Map<string, string> = new Map<string, string>()
+      asked.set('asked', 'the request asks for it or clearly needs it')
+      asked.set('added', 'the request neither asks for it nor needs it')
+      questions['asked.' + input.id] = choice('Does the request ask for the person to set "' + input.label + '"?', asked)
+    }
   }
 
   for (let i = 0; i < sketch.values.length; i++) {
     let v = sketch.values[i]
+    // As for inputs: a figure the sketch added on its own is left out when nothing can work it out.
+    let asked: Map<string, string> = new Map<string, string>()
+    asked.set('asked', 'the request asks for it or clearly needs it')
+    asked.set('added', 'the request neither asks for it nor needs it')
+    questions['asked.value.' + v.id] = choice('Does the request ask to see "' + v.label + '" (' + v.means + ')?', asked)
+    // The sketch's own formula, in words, for when the vocabulary has none: Jev reads it against the request.
+    let written = parseFormula(v.formula, formulaNames(sketch, i))
+    if (written.node !== null) {
+      let verdict: Map<string, string> = new Map<string, string>()
+      verdict.set('right', 'yes: exactly that, with the right numbers, operations and units')
+      verdict.set('wrong', 'no: it uses a wrong number, operation or unit, or works out something else')
+      questions['written.' + v.id] = choice('Going by the request, is "' + v.label + '" (' + v.means + ') worked out as ' +
+        formulaWords(written.node, sketch) + '?', verdict)
+    }
     let expressions = expressionsFor(sketch, i)
-    if (expressions.size === 0) { continue }
-    expressions.set('unavailable', 'none of these is it')
-    questions['expr.' + v.id] = choice('Which of these works out "' + v.label + '" (' + v.means + ')?', expressions)
+    if (expressions.size === 0 || expressions.size >= MAX_CRITERIA) { continue }
+    expressions.set('unavailable', 'none of these is exactly it: it takes another operation, more steps, or other numbers')
+    questions['expr.' + v.id] = choice('Which of these is exactly how "' + v.label + '" (' + v.means + ') is worked out? ' +
+      'One that is only part of the calculation is wrong.', expressions)
+    // Asked apart from the pick: a value that takes several steps has no right option, and Jev then
+    // picks the nearest one (a mortgage payment as loan x monthly rate, litres as distance / 100).
+    let steps: Map<string, string> = new Map<string, string>()
+    steps.set('one', 'one of those numbers as it is, or one step from them: two added, subtracted, multiplied or divided, ' +
+      'a percent of one, one as a percent of another, one rounded up, or one divided by another and rounded up')
+    steps.set('more', 'more than one step, or something other than arithmetic')
+    let known: string[] = []
+    for (let o of operandList(sketch, i)) { known.push(o.label) }
+    questions['steps.' + v.id] = choice('The app already has these numbers: ' + known.join('; ') + '. Starting from them, ' +
+      'how is "' + v.label + '" worked out: ' + v.means + '?', steps)
     let shows: Map<string, string> = new Map<string, string>()
     shows.set('stat', 'one figure among the others in a row of figures')
     shows.set('hero', 'the one big number the screen is about')
@@ -405,18 +1281,72 @@ export function buildComposeRequest(prompt: string, sketch: Sketch): string {
   }
 
   if (sketch.hasCountdown) {
-    let sources: Map<string, string> = new Map<string, string>()
-    for (let input of sketch.inputs) {
-      if (input.kind !== 'toggle') { sources.set(input.id, describeInput(input)) }
+    let sources = lengthSources(sketch)
+    if (sources.size > 0) {
+      questions['countdown.length'] = choice('What sets how many seconds the countdown "' + sketch.countdown + '" runs?', sources)
     }
-    questions['countdown.length'] = choice('Which input sets how many seconds the countdown "' + sketch.countdown + '" runs?', sources)
+    // The unit of a length the person or the sketch gives, read from its labels rather than taken from the
+    // sketch's measure: a sketch once marked a choice of "1 minute = 60, 3 minutes = 180" as minutes.
+    for (let input of sketch.inputs) {
+      if (isNumeric(input.kind) && (isTime(input.measure) || isLengthChoice(input))) {
+        questions['unit.' + input.id] = choice(unitQuestion(input.label, numbersOf(input)), TIME_UNITS)
+      }
+    }
+    for (let c of sketch.constants) {
+      if (isTime(c.measure)) { questions['unit.' + c.id] = choice(unitQuestion(c.label, 'fixed at ' + numberLiteral(c.value)), TIME_UNITS) }
+    }
   }
 
+  // As for inputs: a field the sketch added on its own is left out, when nothing reads it.
+  if (sketch.list !== null) {
+    for (let f of sketch.list.fields) {
+      let asked: Map<string, string> = new Map<string, string>()
+      asked.set('asked', 'the request asks for it or clearly needs it')
+      asked.set('added', 'the request neither asks for it nor needs it')
+      questions['asked.field.' + f.id] = choice('Does the request ask the person to fill in "' + f.label + '" for each entry of ' +
+        sketch.list.label + '?', asked)
+    }
+  }
+
+  let moments = momentsOf(sketch)
   for (let e of sketch.events) {
     let effects: Map<string, string> = new Map<string, string>()
     for (let fx of EFFECTS) { effects.set(fx.id, fx.describe) }
     effects.set('unavailable', 'none of these')
     questions['effect.' + e.id] = choice('What should the phone do ' + e.when + ' ("' + e.what + '")?', effects)
+    for (let fx of EFFECTS) {
+      for (let prm of fx.params) {
+        let sources = paramSources(sketch, prm)
+        sources.set('unavailable', OTHER_SOURCE.get(prm.kind) ?? 'none of these')
+        questions['arg.' + e.id + '.' + fx.id + '.' + prm.name] = choice('Suppose the phone is to ' + fx.describe + ', at the moment "' +
+          e.when + '" ("' + e.what + '"). Going by the request, what gives ' + prm.describe + '?', sources)
+      }
+    }
+    if (moments.size > 0) {
+      let when: Map<string, string> = copyOf(moments)
+      when.set('unavailable', 'some other moment')
+      questions['moment.' + e.id] = choice('When does "' + e.what + '" happen (' + e.when + ')?', when)
+    }
+  }
+
+  let parts = partsOf(sketch)
+  for (let i = 0; i < sketch.other.length; i++) {
+    let options: Map<string, string> = copyOf(parts)
+    options.set('none', 'none of these: it needs something the app does not have')
+    questions['covers.' + i.toString()] = choice('The request also asks for "' + sketch.other[i] +
+      '". Is that exactly what one of these parts of the app already does?', options)
+    // As for inputs and values: an item the sketch added on its own is left out rather than refused.
+    let asked: Map<string, string> = new Map<string, string>()
+    asked.set('asked', 'the request asks for it or clearly needs it')
+    asked.set('added', 'the request neither asks for it nor needs it')
+    questions['asked.other.' + i.toString()] = choice('Does the request ask for this: "' + sketch.other[i] + '"?', asked)
+    // A chat widget's description is written as a spec, down to labels and buttons; a detail of how the widget
+    // looks or is worked is left out rather than refused, as long as what it works out or does is all there.
+    if (widget) { questions['detail.' + i.toString()] = detailQuestion(sketch.other[i]) }
+  }
+  // The same for an event no effect does: "show 'Egg is ready' at zero" was sketched as one.
+  if (widget) {
+    for (let e of sketch.events) { questions['detail.event.' + e.id] = detailQuestion(e.when + ': ' + e.what) }
   }
 
   let body: Record<string, Object> = {}
@@ -429,10 +1359,16 @@ export function buildComposeRequest(prompt: string, sketch: Sketch): string {
 // ---- Reading Jev's answers ----
 
 export class Binding {
+  /** A formula of the vocabulary, or 'written' for the sketch's own expression in `expr`. */
   formula: string = ''
   a: string = ''
   b: string = ''
+  /** For a written formula: the VERA expression, and the names it reads. */
+  expr: string = ''
+  reads: string[] = []
   show: string = 'stat'
+  /** ' * 60' or ' / 60' when the formula gives a time in the other unit from the value's format, else ''. */
+  scale: string = ''
 }
 
 export class Composition {
@@ -441,29 +1377,84 @@ export class Composition {
   widgets: Map<string, string> = new Map<string, string>()
   bindings: Map<string, Binding> = new Map<string, Binding>()
   countdownFrom: string = ''
+  /** seconds or minutes: what the countdown's length is counted in. */
+  countdownUnit: string = 'seconds'
   effects: Map<string, string> = new Map<string, string>()
+  /** For each kept event, where each of its effect's arguments comes from (a paramSources key). */
+  args: Map<string, Map<string, string>> = new Map<string, Map<string, string>>()
+  /** The moment each kept event happens at: countdown_end or entry_added. */
+  moments: Map<string, string> = new Map<string, string>()
+  /** The events the program carries out: the sketch's, less those it added on its own that nothing could do. */
+  events: SketchEvent[] = []
+  /** What was left out without refusing, for the trace. */
+  dropped: string[] = []
+  /** The inputs the screen shows: the sketch's, less numbers nothing reads. */
+  inputs: SketchInput[] = []
   /** Requirements nothing in the vocabulary was chosen for; a composition with any is not served. */
   unbound: string[] = []
   /** Every answer with its confidence, for the trace. */
   answers: string[] = []
+  /** A picture drawn from the sketch alone, before Jev answers: values it has no expression for show a dash. */
+  provisional: boolean = false
+  /**
+   * For a chat bubble (vera-widget.txt): no header or hero, at most two sections -- the result first, the
+   * controls under it -- and four rows of a list.
+   */
+  widget: boolean = false
+  /** The figures drawn as rows of a list, the fixed numbers they come from first: an item of "other" asked for a table. */
+  figures: boolean = false
   constructor(sketch: Sketch) { this.sketch = sketch }
 }
 
 const PICK_ABOVE: number = 0.25
 
-function answerOf(answers: Record<string, Object>, key: string, allowed: string[], log: string[]): string {
+/** The sketch with another list, for a composition that leaves some of the list's fields out. */
+function withList(sketch: Sketch, list: SketchList | null): Sketch {
+  let out = new Sketch()
+  out.title = sketch.title
+  out.eyebrow = sketch.eyebrow
+  out.subtitle = sketch.subtitle
+  out.inputs = sketch.inputs
+  out.constants = sketch.constants
+  out.values = sketch.values
+  out.countdown = sketch.countdown
+  out.hasCountdown = sketch.hasCountdown
+  out.countdownLength = sketch.countdownLength
+  out.stopwatch = sketch.stopwatch
+  out.hasStopwatch = sketch.hasStopwatch
+  out.list = list
+  out.events = sketch.events
+  out.other = sketch.other
+  return out
+}
+
+/**
+ * A formula decides what the screen computes, so a hesitant pick is refused: a fuel calculator's
+ * "distance x litres per 100 km" came at 0.30-0.38, while right picks have come at 0.42 and above.
+ */
+const FORMULA_ABOVE: number = 0.4
+
+/** How sure Jev must be that a value takes several steps before its pick is set aside. */
+const MORE_STEPS_ABOVE: number = 0.5
+
+/** Jev takes at most 255 criteria per question, the "unavailable" option included. */
+const MAX_CRITERIA: number = 255
+
+function answerOf(answers: Record<string, Object>, key: string, allowed: string[], log: string[],
+    above: number = PICK_ABOVE): string {
   let a = answers[key] as Record<string, Object>
   if (a === null || a === undefined) { log.push(key + '=?'); return '' }
   let c = a['choice']
   let confidence = typeof a['confidence'] === 'number' ? a['confidence'] as number : 1
   let picked = typeof c === 'string' ? c as string : ''
   log.push(key + '=' + picked + '@' + confidence.toFixed(2))
-  if (allowed.indexOf(picked) < 0 || confidence < PICK_ABOVE) { return '' }
+  if (allowed.indexOf(picked) < 0 || confidence < above) { return '' }
   return picked
 }
 
-export function readComposition(body: string, sketch: Sketch): Composition {
+export function readComposition(body: string, sketch: Sketch, widget: boolean = false): Composition {
   let comp = new Composition(sketch)
+  comp.widget = widget
   let answers: Record<string, Object> = {}
   try {
     let parsed = JSON.parse(body) as Record<string, Object>
@@ -483,50 +1474,373 @@ export function readComposition(body: string, sketch: Sketch): Composition {
     comp.widgets.set(input.id, picked.length > 0 ? picked : allowed[0])
   }
 
+  // Values nothing could work out, with why: refused, or left out at the end when the sketch added them.
+  let failed: Map<string, string> = new Map<string, string>()
   for (let i = 0; i < sketch.values.length; i++) {
     let v = sketch.values[i]
     let keys: string[] = []
     expressionsFor(sketch, i).forEach((_d: string, key: string) => { keys.push(key) })
     let binding = new Binding()
-    if (keys.length === 0) {
-      comp.unbound.push('"' + v.label + '": nothing to work it out from')
+    let show = answerOf(answers, 'show.' + v.id, SHOWS, comp.answers)
+    binding.show = show.length > 0 ? show : (v.format === 'fraction' ? 'progress' : 'stat')
+    if (keys.length === 0 || keys.length >= MAX_CRITERIA) {
+      let why = keys.length === 0 ? 'nothing to work it out from' : 'too many ways to work it out'
+      let fault = useWritten(comp, answers, i, binding)
+      if (fault.length > 0) { failed.set(v.id, why + '; ' + fault) }
       comp.bindings.set(v.id, binding)
       continue
     }
-    let picked = answerOf(answers, 'expr.' + v.id, keys, comp.answers)
+    let picked = answerOf(answers, 'expr.' + v.id, keys, comp.answers, FORMULA_ABOVE)
+    if (answerOf(answers, 'steps.' + v.id, ['more'], comp.answers, MORE_STEPS_ABOVE).length > 0) { picked = '' }
     if (picked.length > 0) {
       let parts = picked.split(':')
       binding.formula = parts[0]
       binding.a = parts[1]
       binding.b = parts[2]
+      binding.scale = timeScale(sketch, i, binding, v.format)
     }
-    let show = answerOf(answers, 'show.' + v.id, SHOWS, comp.answers)
-    binding.show = show.length > 0 ? show : (v.format === 'fraction' ? 'progress' : 'stat')
     let formula = FORMULAS.find((f: Formula): boolean => f.id === binding.formula)
+    let why = ''
     if (formula === undefined) {
-      comp.unbound.push('"' + v.label + '": no formula')
+      why = 'no formula'
     } else if (binding.a.length === 0 || (formula.operands === 2 && binding.b.length === 0)) {
-      comp.unbound.push('"' + v.label + '": ' + formula.id + ' without its operands')
+      why = formula.id + ' without its operands'
+    } else {
+      let stray = strayNumber(sketch, v, formula.id)
+      if (stray.length > 0) { why = 'uses ' + stray + ', which no fixed number holds' }
+    }
+    if (why.length > 0) {
+      let fault = useWritten(comp, answers, i, binding)
+      if (fault.length > 0) { failed.set(v.id, why + '; ' + fault) }
     }
     comp.bindings.set(v.id, binding)
   }
 
   if (sketch.hasCountdown) {
     let sources: string[] = []
-    for (let input of sketch.inputs) { if (input.kind !== 'toggle') { sources.push(input.id) } }
+    lengthSources(sketch).forEach((_d: string, key: string) => { sources.push(key) })
     comp.countdownFrom = answerOf(answers, 'countdown.length', sources, comp.answers)
     if (comp.countdownFrom.length === 0) { comp.unbound.push('countdown: nothing sets its length') }
+    else if (dependsOn(comp, comp.countdownFrom).some((d: string): boolean => CLOCK_OPERANDS.indexOf(d) >= 0)) {
+      comp.unbound.push('countdown: its length is worked out from the countdown itself')
+    } else {
+      // A worked-out value's unit is its format; an input's or a constant's is Jev's reading of its labels.
+      comp.countdownUnit = measureOf(sketch, comp.countdownFrom)
+      if (answers['unit.' + comp.countdownFrom] !== undefined) {
+        comp.countdownUnit = answerOf(answers, 'unit.' + comp.countdownFrom, ['seconds', 'minutes'], comp.answers, UNIT_ABOVE)
+        if (comp.countdownUnit.length === 0) { comp.unbound.push('countdown: not clear that its length is in seconds or minutes') }
+      }
+    }
   }
 
   let effectIds: string[] = []
   for (let fx of EFFECTS) { effectIds.push(fx.id) }
+  let momentIds: string[] = []
+  momentsOf(sketch).forEach((_d: string, key: string) => { momentIds.push(key) })
   for (let e of sketch.events) {
     let picked = answerOf(answers, 'effect.' + e.id, effectIds, comp.answers)
-    if (picked.length === 0) { comp.unbound.push('event "' + e.what + '": no effect') }
-    comp.effects.set(e.id, picked)
+    let moment = momentIds.length > 0 ? answerOf(answers, 'moment.' + e.id, momentIds, comp.answers) : ''
+    let missing = picked.length === 0 ? 'no effect' : (moment.length === 0 ? 'nothing on the screen marks that moment' : '')
+    let fx = effectOf(picked)
+    let args: Map<string, string> = new Map<string, string>()
+    if (missing.length === 0 && fx !== undefined) {
+      for (let prm of fx.params) {
+        let keys: string[] = []
+        paramSources(sketch, prm).forEach((_d: string, key: string) => { keys.push(key) })
+        let source = answerOf(answers, 'arg.' + e.id + '.' + fx.id + '.' + prm.name, keys, comp.answers, ARG_ABOVE)
+        if (source.length === 0) { missing = 'nothing gives ' + prm.describe; break }
+        if (source.startsWith('entry.') && moment !== 'entry_added' && moment !== 'row_button') {
+          missing = prm.describe + ' is an entry\'s, but no entry is added or tapped then'
+          break
+        }
+        args.set(prm.name, source)
+      }
+      // An entry shows one answer: two effects answering for the same new entry would overwrite each other.
+      if (missing.length === 0 && fx.done.length > 0 && moment === 'entry_added' && entryAnswerEvent(comp).length > 0) {
+        missing = 'a second answer for the same entry'
+      }
+    }
+    if (missing.length === 0) {
+      comp.args.set(e.id, args)
+      comp.effects.set(e.id, picked)
+      comp.moments.set(e.id, moment)
+      comp.events.push(e)
+    } else if (e.asked && comp.widget && missing === 'no effect' &&
+        answerOf(answers, 'detail.event.' + e.id, ['detail'], comp.answers, OTHER_ADDED_ABOVE) === 'detail') {
+      comp.dropped.push('event "' + e.what + '": a detail of how the widget looks or is worked')
+    } else if (e.asked) {
+      comp.unbound.push('event "' + e.what + '": ' + missing)
+    } else {
+      // The sketch's own idea, not the request's: leave it out rather than refuse the screen.
+      comp.dropped.push('event "' + e.what + '": ' + missing)
+    }
+  }
+
+  // An item of "other" may still be something a part does; only Jev's confident "this part" covers it.
+  let partIds: string[] = []
+  partsOf(sketch).forEach((_d: string, key: string) => { partIds.push(key) })
+  for (let i = 0; i < sketch.other.length; i++) {
+    let covered = answerOf(answers, 'covers.' + i.toString(), partIds, comp.answers)
+    let a = answers['covers.' + i.toString()] as Record<string, Object>
+    let confidence = a !== null && a !== undefined && typeof a['confidence'] === 'number' ? a['confidence'] as number : 0
+    if (covered.length > 0 && confidence >= COVERED_ABOVE) {
+      // The item names how a part is drawn: that control for the input, the bar for the fraction.
+      let named = covered.split('.')
+      if (named[0] === 'widget') { comp.widgets.set(named[1], named[2]) }
+      let bound = comp.bindings.get(named[1])
+      if (named[0] === 'bar' && bound !== undefined) { bound.show = 'progress' }
+      if (named[0] === 'figures') { comp.figures = true }
+    } else if (answerOf(answers, 'asked.other.' + i.toString(), ['added'], comp.answers, OTHER_ADDED_ABOVE) === 'added') {
+      comp.dropped.push('"' + sketch.other[i] + '": not asked for, and nothing does it')
+    } else if (comp.widget && answerOf(answers, 'detail.' + i.toString(), ['detail'], comp.answers, OTHER_ADDED_ABOVE) === 'detail') {
+      comp.dropped.push('"' + sketch.other[i] + '": a detail of how the widget looks or is worked')
+    } else {
+      comp.unbound.push('not in the vocabulary: ' + sketch.other[i])
+    }
+  }
+  // A field of the list that the request did not ask for and nothing reads -- not an argument, not the title
+  // (the first words), not the total (the first number) -- is left out, as an input is.
+  let list = sketch.list
+  if (list !== null) {
+    let used: string[] = []
+    comp.args.forEach((given: Map<string, string>) => {
+      given.forEach((source: string) => { if (source.startsWith('entry.')) { used.push(source.substring(6)) } })
+    })
+    let kept: ListField[] = []
+    for (let f of list.fields) {
+      let shown = f === firstField(list, 'text') || f === firstField(list, 'number')
+      let extra = answerOf(answers, 'asked.field.' + f.id, ['added'], comp.answers, ADDED_ABOVE) === 'added'
+      if (extra && !shown && used.indexOf(f.id) < 0) { comp.dropped.push('field "' + f.label + '": not asked for, and nothing reads it') }
+      else { kept.push(f) }
+    }
+    if (kept.length < list.fields.length) {
+      let trimmed = new SketchList()
+      trimmed.label = list.label
+      trimmed.fields = kept
+      comp.sketch = withList(sketch, trimmed)
+    }
+  }
+  dropValues(comp, answers, failed)
+  // An input nothing reads does nothing. A number the request did not ask for is the sketch's extra and is
+  // left out, and the note says so; one it asked for, a switch or words mean the request wants something
+  // the parts do not do with it.
+  let read: string[] = [comp.countdownFrom]
+  comp.bindings.forEach((b: Binding) => {
+    read.push(b.a)
+    read.push(b.b)
+    for (let name of b.reads) { read.push(name) }
+  })
+  comp.args.forEach((given: Map<string, string>) => {
+    given.forEach((source: string) => { if (source.startsWith('input.')) { read.push(source.substring(6)) } })
+  })
+  for (let input of sketch.inputs) {
+    if (read.indexOf(input.id) >= 0) { comp.inputs.push(input); continue }
+    let extra = isNumeric(input.kind) && answerOf(answers, 'asked.' + input.id, ['added'], comp.answers, ADDED_ABOVE) === 'added'
+    if (extra) { comp.dropped.push('input "' + input.label + '": not asked for, and nothing reads it') }
+    else { comp.unbound.push('input "' + input.label + '": nothing reads it') }
+  }
+  // Inputs that nothing reads make a form that does nothing: the sketch has lost what they were for.
+  if (sketch.values.length === 0 && !sketch.hasCountdown && !sketch.hasStopwatch && sketch.list === null && comp.events.length === 0) {
+    comp.unbound.push('nothing uses the inputs')
   }
   return comp
 }
+
+/**
+ * Of the values nothing could work out, those the request did not ask for and nothing kept reads -- no
+ * other value, not the countdown's length, not an item of "other" they were said to cover -- are left out,
+ * as an input is; the rest refuse the screen. A value read only by others left out goes with them.
+ */
+function dropValues(comp: Composition, answers: Record<string, Object>, failed: Map<string, string>): void {
+  let sketch = comp.sketch
+  // A value worked out from one that cannot be is no better off: its example passed on a number given to it.
+  for (let v of sketch.values) {
+    let b = comp.bindings.get(v.id)
+    if (failed.has(v.id) || b === undefined) { continue }
+    let from = [b.a, b.b].concat(b.reads).find((id: string): boolean => failed.has(id))
+    if (from !== undefined) { failed.set(v.id, 'reads "' + labelOf(sketch, from) + '", which nothing works out') }
+  }
+  let leaving: string[] = []
+  failed.forEach((_why: string, id: string) => {
+    if (answerOf(answers, 'asked.value.' + id, ['added'], comp.answers, ADDED_ABOVE) === 'added') { leaving.push(id) }
+  })
+  let covering: string[] = []
+  for (let i = 0; i < sketch.other.length; i++) {
+    let a = answers['covers.' + i.toString()] as Record<string, Object>
+    let part = a !== null && a !== undefined && typeof a['choice'] === 'string' ? (a['choice'] as string).split('.') : []
+    if (part.length === 2 && (part[0] === 'value' || part[0] === 'bar')) { covering.push(part[1]) }
+  }
+  let changed = true
+  while (changed) {
+    changed = false
+    let needed: string[] = dependsOn(comp, comp.countdownFrom).concat(covering)
+    for (let v of sketch.values) {
+      if (leaving.indexOf(v.id) >= 0) { continue }
+      let b = comp.bindings.get(v.id)
+      if (b !== undefined) { needed = needed.concat([b.a, b.b], b.reads) }
+    }
+    let kept = leaving.filter((id: string): boolean => needed.indexOf(id) < 0)
+    changed = kept.length < leaving.length
+    leaving = kept
+  }
+  failed.forEach((why: string, id: string) => {
+    let label = labelOf(sketch, id)
+    if (leaving.indexOf(id) < 0) { comp.unbound.push('"' + label + '": ' + why) }
+    else { comp.dropped.push('value "' + label + '": not asked for, and ' + why) }
+  })
+  if (leaving.length === 0) { return }
+  for (let id of leaving) { comp.bindings.delete(id) }
+  let out = withList(sketch, sketch.list)
+  out.values = sketch.values.filter((v: SketchValue): boolean => leaving.indexOf(v.id) < 0)
+  comp.sketch = out
+  if (out.values.length === 0 && !out.hasCountdown && !out.hasStopwatch && out.list === null && comp.events.length === 0) {
+    comp.unbound.push('nothing left to show once the values not asked for are left out')
+  }
+}
+
+/**
+ * A number the value's own description works with that no formula can reach: formulas take no literals,
+ * so "distance times consumption divided by 100" with no constant 100 has no right option, and Jev's
+ * pick among the wrong ones is the nearest, not the answer. The numbers inside a percent formula, and the
+ * 60 between seconds and minutes for a time value, count.
+ */
+function strayNumber(sketch: Sketch, v: SketchValue, formula: string): string {
+  let held: number[] = []
+  for (let c of sketch.constants) { held.push(c.value) }
+  if (formula === 'percent_of' || formula === 'add_percent' || formula === 'subtract_percent' || formula === 'ratio_percent') {
+    held.push(100)
+    held.push(1)
+  }
+  // A time value converts between seconds and minutes itself.
+  if (isTime(v.format)) { held.push(60) }
+  let found = v.means.match(/\d+(\.\d+)?/g)
+  if (found === null) { return '' }
+  for (let n of found) {
+    if (held.indexOf(Number(n)) < 0) { return n }
+  }
+  return ''
+}
+
+/**
+ * A written formula is used only when it parses into the names the screen has, reproduces the sketch's own
+ * worked example, and Jev reads it as right for the request.
+ */
+const WRITTEN_ABOVE: number = 0.5
+
+/**
+ * Binds value number `index` to the sketch's written formula, or says why not. The worked example is run
+ * through the values before it as they are bound, so a mistake earlier in the chain fails here too.
+ */
+function useWritten(comp: Composition, answers: Record<string, Object>, index: number, binding: Binding): string {
+  let sketch = comp.sketch
+  let v = sketch.values[index]
+  if (v.formula.length === 0) { return 'no written formula' }
+  let parsed = parseFormula(v.formula, formulaNames(sketch, index))
+  if (parsed.node === null) { return 'its written formula ' + parsed.error }
+  if (Number.isNaN(v.result)) { return 'its written formula has no worked example' }
+  let env = exampleNumbers(comp, index)
+  let got = evalFormula(parsed.node, env)
+  if (Number.isNaN(got)) {
+    let missing = parsed.reads.filter((name: string): boolean => !env.has(name) || Number.isNaN(env.get(name)!))
+    return 'its worked example gives no number for ' + (missing.length > 0 ? missing.join(', ') : 'it')
+  }
+  if (Math.abs(got - v.result) > Math.max(0.011, Math.abs(v.result) * 0.006)) {
+    return 'its written formula gives ' + numberLiteral(Math.round(got * 1000) / 1000) + ' for its worked example, not ' + numberLiteral(v.result)
+  }
+  if (answerOf(answers, 'written.' + v.id, ['right'], comp.answers, WRITTEN_ABOVE).length === 0) {
+    return 'Jev does not read its written formula as right'
+  }
+  binding.formula = 'written'
+  binding.expr = formulaVera(parsed.node)
+  binding.reads = parsed.reads
+  // As for the vocabulary's formulas: seconds shown as minutes are divided, not read as minutes. An egg timer's
+  // "time left", format minutes, was written as the countdown's remaining seconds and read 6:00:00 for 6 minutes.
+  let m = writtenMeasure(parsed.node, operandList(sketch, index))
+  binding.scale = m === 'seconds' && v.format === 'minutes' ? ' / 60' : (m === 'minutes' && v.format === 'seconds' ? ' * 60' : '')
+  comp.answers.push('written.' + v.id + ': ' + v.formula)
+  return ''
+}
+
+/**
+ * The numbers the worked example of value number `index` runs on: the example's own, then the inputs' starting
+ * numbers and the constants, then each value before it as bound so far.
+ */
+function exampleNumbers(comp: Composition, index: number): Map<string, number> {
+  let sketch = comp.sketch
+  let v = sketch.values[index]
+  let env: Map<string, number> = new Map<string, number>()
+  for (let input of sketch.inputs) {
+    if (!isNumeric(input.kind)) { continue }
+    if (input.kind === 'choice') {
+      let o = input.options[Math.round(input.value)]
+      env.set(input.id, o !== undefined ? o.value : NaN)
+    } else {
+      env.set(input.id, input.value)
+    }
+  }
+  for (let c of sketch.constants) { env.set(c.id, c.value) }
+  v.given.forEach((n: number, key: string) => { env.set(key, n) })
+  for (let k = 0; k < index; k++) {
+    let earlier = sketch.values[k]
+    if (v.given.has(earlier.id)) { continue }
+    env.set(earlier.id, boundNumber(comp, k, env))
+  }
+  return env
+}
+
+/** What value number `k` comes to under `env` as it is bound; NaN when it is not bound. */
+function boundNumber(comp: Composition, k: number, env: Map<string, number>): number {
+  let earlier = comp.sketch.values[k]
+  let b = comp.bindings.get(earlier.id)
+  if (b === undefined) { return NaN }
+  let n = NaN
+  if (b.formula === 'written') {
+    let parsed = parseFormula(earlier.formula, formulaNames(comp.sketch, k))
+    n = parsed.node !== null ? evalFormula(parsed.node, env) : NaN
+    return b.scale === ' / 60' ? n / 60 : (b.scale === ' * 60' ? n * 60 : n)
+  }
+  let a = env.get(b.a) ?? NaN
+  let o = env.get(b.b) ?? NaN
+  let share = (x: number, y: number): number => y === 0 ? 0 : x / y
+  if (b.formula === 'copy') { n = a }
+  else if (b.formula === 'add') { n = a + o }
+  else if (b.formula === 'subtract') { n = a - o }
+  else if (b.formula === 'multiply') { n = a * o }
+  else if (b.formula === 'divide') { n = share(a, o) }
+  else if (b.formula === 'divide_up') { n = Math.ceil(share(a, o)) }
+  else if (b.formula === 'percent_of') { n = a * o / 100 }
+  else if (b.formula === 'add_percent') { n = a * (1 + o / 100) }
+  else if (b.formula === 'subtract_percent') { n = a * (1 - o / 100) }
+  else if (b.formula === 'round_up') { n = Math.ceil(a) }
+  else if (b.formula === 'ratio_percent') { n = share(a, o) * 100 }
+  if (b.scale === ' / 60') { n = n / 60 }
+  if (b.scale === ' * 60') { n = n * 60 }
+  return n
+}
+
+/** The kept event whose effect's answer is shown on the entry it was added with, or ''. */
+function entryAnswerEvent(comp: Composition): string {
+  for (let e of comp.events) {
+    let fx = effectOf(comp.effects.get(e.id) ?? '')
+    if (fx !== undefined && fx.done.length > 0 && comp.moments.get(e.id) === 'entry_added') { return e.id }
+  }
+  return ''
+}
+
+/** Covering a missing feature serves a screen, so it takes more than picking a widget does. */
+const COVERED_ABOVE: number = 0.5
+/** An effect's argument decides what the phone is told, so it takes what a formula's operand takes. */
+const ARG_ABOVE: number = 0.4
+/** A length in the wrong unit runs the countdown sixty times too long or too short. */
+const UNIT_ABOVE: number = 0.5
+/** Leaving an input out hides it from the person, so Jev has to be as sure it was not asked for. */
+const ADDED_ABOVE: number = 0.5
+
+/**
+ * Higher than for an input or a value: an item of "other" is often the very thing the vocabulary lacks
+ * ("restaurants near me"), and leaving it out serves a screen without it. Set before any run, not tuned.
+ */
+const OTHER_ADDED_ABOVE: number = 0.7
 
 // ---- Assembling the program ----
 
@@ -551,10 +1865,12 @@ class Field {
 
 function stateFields(comp: Composition): Field[] {
   let fields: Field[] = []
-  for (let input of comp.sketch.inputs) {
+  for (let input of comp.inputs) {
     let widget = comp.widgets.get(input.id) ?? ''
     if (input.kind === 'toggle') {
       fields.push(new Field(input.id, 'boolean', input.value !== 0 ? 'true' : 'false'))
+    } else if (input.kind === 'text') {
+      fields.push(new Field(input.id, 'string', '""'))
     } else if (input.kind === 'choice') {
       let start = Math.max(0, Math.min(input.options.length - 1, Math.round(input.value)))
       fields.push(new Field(input.id + 'Index', 'number', start.toString()))
@@ -564,13 +1880,179 @@ function stateFields(comp: Composition): Field[] {
       fields.push(new Field(input.id, 'number', numberLiteral(input.value)))
     }
   }
-  if (comp.sketch.hasCountdown) {
+  if (hasClock(comp.sketch)) {
     fields.push(new Field('elapsedMs', 'number', '0'))
     fields.push(new Field('running', 'boolean', 'false'))
     fields.push(new Field('finished', 'boolean', 'false'))
   }
-  if (comp.sketch.events.length > 0) { fields.push(new Field('effectStatus', 'string', '""')) }
+  let list = comp.sketch.list
+  if (list !== null) {
+    fields.push(new Field('entries', 'Entry[]', 'emptyEntries'))
+    for (let f of list.fields) { fields.push(new Field(draftOf(f), draftType(f), draftInit(f))) }
+  }
+  if (hasBanner(comp)) { fields.push(new Field('effectStatus', 'string', '""')) }
+  if (keepsCalendarIds(comp)) { fields.push(new Field('calendarIds', 'string', '""')) }
   return fields
+}
+
+/** A countdown or a stopwatch: both run on a Ticker with start, stop and reset. */
+function hasClock(sketch: Sketch): boolean { return sketch.hasCountdown || sketch.hasStopwatch }
+
+/** The state field holding what the form has for `f` before the entry is added. */
+function draftOf(f: ListField): string { return 'draft_' + f.id }
+
+/** Words and numbers are typed, so their drafts are text; a time is minutes since midnight; an on/off is a boolean. */
+function draftType(f: ListField): string {
+  if (f.kind === 'time') { return 'number' }
+  if (f.kind === 'toggle') { return 'boolean' }
+  return 'string'
+}
+
+function draftInit(f: ListField): string {
+  if (f.kind === 'time') { return numberLiteral(f.value) }
+  if (f.kind === 'toggle') { return f.value !== 0 ? 'true' : 'false' }
+  return '""'
+}
+
+/** The entry's value of `f`, read from the form. */
+function draftValue(f: ListField): string {
+  if (f.kind === 'text') { return 'strings.trim(state.' + draftOf(f) + ')' }
+  if (f.kind === 'number') { return 'strings.toNumber(state.' + draftOf(f) + ', 0)' }
+  return 'state.' + draftOf(f)
+}
+
+function entryType(f: ListField): string {
+  if (f.kind === 'text') { return 'string' }
+  if (f.kind === 'toggle') { return 'boolean' }
+  return 'number'
+}
+
+/** Whether some kept event's answer goes to the screen's banner rather than to an entry. */
+function hasBanner(comp: Composition): boolean {
+  let answering = entryAnswerEvent(comp)
+  return comp.events.some((e: SketchEvent): boolean => e.id !== answering)
+}
+
+/** The expression a paramSources key stands for, where the call is made. */
+function sourceExpr(comp: Composition, source: string): string {
+  let dot = source.indexOf('.')
+  let scope = source.substring(0, dot)
+  let id = source.substring(dot + 1)
+  if (scope === 'entry') { return 'entry.' + id }
+  if (scope === 'fixed') { return id === 'title' ? quote(comp.sketch.title) : '0' }
+  if (scope === 'input') {
+    let input = comp.sketch.inputs.find((i: SketchInput): boolean => i.id === id)
+    // Numbers are locals (inputLocals); words and on/offs are read from state.
+    if (input !== undefined && !isNumeric(input.kind)) { return 'state.' + id }
+  }
+  return id
+}
+
+function sourceMeasure(sketch: Sketch, source: string): string {
+  let id = source.substring(source.indexOf('.') + 1)
+  if (source.startsWith('entry.') && sketch.list !== null) {
+    for (let f of sketch.list.fields) { if (f.id === id) { return f.measure } }
+  }
+  return measureOf(sketch, id)
+}
+
+/** Whether the calls at `moment` read a number input or a constant, which then need their locals. */
+function callsNeedLocals(comp: Composition, moment: string): boolean {
+  let needed = false
+  for (let e of comp.events) {
+    if (comp.moments.get(e.id) !== moment) { continue }
+    (comp.args.get(e.id) ?? new Map<string, string>()).forEach((source: string) => {
+      if (source.startsWith('const.') || (source.startsWith('input.') && sourceExpr(comp, source).indexOf('state.') < 0)) { needed = true }
+    })
+  }
+  return needed
+}
+
+/** The handler a tap at `moment` runs for event `id`. */
+function tapHandler(id: string, moment: string): string { return (moment === 'row_button' ? 'row_' : 'do_') + id }
+
+/** Lines adding `value` to state.calendarIds as `ids` when it is an event ID (addEvent answers with one). */
+function idCapture(): string[] {
+  return ['  let ids: string = state.calendarIds;',
+    '  if (strings.toNumber(value, 0) > 0) { if (ids === "") { ids = value; } else { ids = ids + "," + value; } }']
+}
+
+/** Whether the program keeps the IDs of the calendar events it adds: it also has an effect that deletes them. */
+function keepsCalendarIds(comp: Composition): boolean {
+  let kept: string[] = []
+  comp.effects.forEach((fx: string) => { kept.push(fx) })
+  return kept.indexOf('calendar_add') >= 0 && kept.indexOf('calendar_clear') >= 0
+}
+
+/**
+ * The lines that make the calls for the events at `moment` (only `only`'s, when given): each argument worked
+ * out, then sdk.call.
+ */
+function effectCallsAt(comp: Composition, moment: string, only: string = ''): string[] {
+  let calls: string[] = []
+  let answering = entryAnswerEvent(comp)
+  for (let n = 0; n < comp.events.length; n++) {
+    let e = comp.events[n]
+    if (comp.moments.get(e.id) !== moment || (only.length > 0 && e.id !== only)) { continue }
+    let fx = effectOf(comp.effects.get(e.id) ?? '')
+    if (fx === undefined) { continue }
+    let args: string[] = []
+    for (let a of fx.fixed) { args.push(quote(a)) }
+    let given = comp.args.get(e.id) ?? new Map<string, string>()
+    for (let prm of fx.params) {
+      let source = given.get(prm.name) ?? ''
+      // Locals take an underscore, which no id from the sketch has.
+      let local = 'call_' + prm.name + n.toString()
+      if (prm.kind === 'text') {
+        args.push(quote(prm.key))
+        args.push(sourceExpr(comp, source))
+      } else if (prm.kind === 'clock') {
+        calls.push('  let ' + local + ': number = math.round(' + sourceExpr(comp, source) + ');')
+        args.push('"hour"')
+        args.push('ui.numberToString(math.floor(' + local + ' / 60))')
+        args.push('"minute"')
+        args.push('ui.numberToString(' + local + ' % 60)')
+      } else if (prm.kind === 'toggle') {
+        args.push(quote(prm.key))
+        if (source === 'fixed.daily' || source === 'fixed.once') {
+          args.push(source === 'fixed.daily' ? '"daily"' : '"once"')
+        } else {
+          calls.push('  let ' + local + ': string = "once";')
+          calls.push('  if (' + sourceExpr(comp, source) + ') { ' + local + ' = "daily"; }')
+          args.push(local)
+        }
+      } else if (prm.kind === 'number') {
+        args.push(quote(prm.key))
+        args.push(source === 'fixed.blank' ? '""' : 'ui.numberToString(' + sourceExpr(comp, source) + ')')
+      } else if (source === 'fixed.zero') {
+        args.push(quote(prm.key))
+        args.push('"0"')
+      } else if (source !== 'fixed.none') {
+        let per = sourceMeasure(comp.sketch, source) === 'seconds' ? ' / 60' : ''
+        args.push(quote(prm.key))
+        args.push('ui.numberToString(math.round(' + sourceExpr(comp, source) + per + '))')
+      }
+    }
+    let handler = e.id === answering ? 'onEntryAnswer' : 'onEffect'
+    if (fx.id === 'calendar_add' && e.id !== answering && keepsCalendarIds(comp)) { handler = 'onCalendarAdded' }
+    let mode = fx.mode.length > 0 ? ', ' + quote(fx.mode) : ''
+    if (fx.id === 'calendar_clear') {
+      // Only the events this program added, by the IDs their answers gave; with none there is nothing to ask.
+      let ids = keepsCalendarIds(comp) ? 'state.calendarIds' : '""'
+      calls.push('  if (' + ids + ' !== "") { sdk.call(' + quote(fx.target) + ', ["ids", ' + ids + '], "onCalendarCleared"); }')
+      continue
+    }
+    calls.push('  sdk.call(' + quote(fx.target) + ', [' + args.join(', ') + '], ' + quote(handler) + mode + ');')
+  }
+  return calls
+}
+
+function amountText(measure: string, unit: string, expr: string): string {
+  if (measure === 'money') { return quote(unit) + ' + ui.formatNumber(' + expr + ', 2)' }
+  if (measure === 'percent') { return 'ui.formatNumber(' + expr + ', 1) + "%"' }
+  if (isTime(measure)) { return durationText(measure, expr) }
+  if (measure === 'clock') { return 'ui.clockToString(math.round((' + expr + ') - math.floor((' + expr + ') / 1440) * 1440))' }
+  return 'ui.formatNumber(' + expr + ', ' + (measure === 'count' ? '0' : '1') + ')'
 }
 
 /** `{a: state.a, b: value, ...}` with the named fields replaced. */
@@ -583,9 +2065,9 @@ function rebuild(fields: Field[], replaced: Map<string, string>): string {
 /** Lines that bring every numeric input into a local of its own name, read from state. */
 function inputLocals(comp: Composition): string[] {
   let lines: string[] = []
-  for (let input of comp.sketch.inputs) {
+  for (let input of comp.inputs) {
     let widget = comp.widgets.get(input.id) ?? ''
-    if (input.kind === 'toggle') { continue }
+    if (!isNumeric(input.kind)) { continue }
     if (input.kind === 'choice') {
       let values: string[] = []
       for (let o of input.options) { values.push(numberLiteral(o.value)) }
@@ -597,33 +2079,73 @@ function inputLocals(comp: Composition): string[] {
       lines.push('  let ' + input.id + ': number = state.' + input.id + ';')
     }
   }
+  for (let c of comp.sketch.constants) { lines.push('  let ' + c.id + ': number = ' + numberLiteral(c.value) + ';') }
   return lines
 }
 
+/** How a formula's time converts to the value's unit: seconds left on a countdown shown as minutes, say. */
+function timeScale(sketch: Sketch, index: number, b: Binding, format: string): string {
+  if (!isTime(format)) { return '' }
+  let operands = operandList(sketch, index)
+  let a = operands.find((o: Operand): boolean => o.id === b.a)
+  if (a === undefined) { return '' }
+  let other = operands.find((o: Operand): boolean => o.id === b.b)
+  let m = resultMeasure(b.formula, a, other !== undefined ? other : null)
+  if (m === 'seconds' && format === 'minutes') { return ' / 60' }
+  if (m === 'minutes' && format === 'seconds') { return ' * 60' }
+  return ''
+}
+
 function formulaExpr(b: Binding): string {
+  let e = bareExpr(b)
+  return b.scale.length > 0 ? '(' + e + ')' + b.scale : e
+}
+
+function bareExpr(b: Binding): string {
+  if (b.formula === 'written') { return b.expr }
   if (b.formula === 'copy') { return b.a }
   if (b.formula === 'add') { return b.a + ' + ' + b.b }
   if (b.formula === 'subtract') { return b.a + ' - ' + b.b }
   if (b.formula === 'multiply') { return b.a + ' * ' + b.b }
   if (b.formula === 'divide') { return 'share(' + b.a + ', ' + b.b + ')' }
+  if (b.formula === 'divide_up') { return 'math.ceil(share(' + b.a + ', ' + b.b + '))' }
   if (b.formula === 'percent_of') { return b.a + ' * ' + b.b + ' / 100' }
   if (b.formula === 'add_percent') { return b.a + ' * (1 + ' + b.b + ' / 100)' }
+  if (b.formula === 'subtract_percent') { return b.a + ' * (1 - ' + b.b + ' / 100)' }
+  if (b.formula === 'round_up') { return 'math.ceil(' + b.a + ')' }
+  if (b.formula === 'ratio_percent') { return 'share(' + b.a + ', ' + b.b + ') * 100' }
   return '0'
 }
 
+/** A time as m:ss (or h:mm:ss), from seconds or minutes. */
+function durationText(measure: string, expr: string): string {
+  return 'ui.durationToString(math.ceil(' + expr + (measure === 'minutes' ? ' * 60' : '') + '))'
+}
+
 function statFor(v: SketchValue, expr: string): string {
-  if (v.format === 'seconds') {
-    return 'ui.Stat("default", ' + quote(v.label) + ', ui.durationToString(math.ceil(' + expr + ')), "", "clock")'
+  if (isTime(v.format) || v.format === 'clock') {
+    return 'ui.Stat("default", ' + quote(v.label) + ', ' + amountText(v.format, v.unit, expr) + ', "", "clock")'
   }
   let prefix = v.format === 'money' ? v.unit : ''
-  let suffix = v.format === 'percent' ? '%' : (v.format === 'seconds' ? ' s' : (v.format !== 'money' && v.unit.length > 0 ? ' ' + v.unit : ''))
-  let decimals = v.format === 'money' ? 2 : (v.format === 'count' || v.format === 'seconds' ? 0 : 1)
-  let value = v.format === 'seconds' ? 'math.ceil(' + expr + ')' : expr
-  return 'ui.NumberStat("default", ' + quote(v.label) + ', ' + value + ', ' + quote(prefix) + ', ' + quote(suffix) + ', 1, "", "chart", ' + decimals.toString() + ')'
+  let suffix = v.format === 'percent' ? '%' : (v.format !== 'money' && v.unit.length > 0 ? ' ' + v.unit : '')
+  let decimals = v.format === 'money' ? 2 : (v.format === 'count' ? 0 : 1)
+  return 'ui.NumberStat("default", ' + quote(v.label) + ', ' + expr + ', ' + quote(prefix) + ', ' + quote(suffix) + ', 1, "", "chart", ' + decimals.toString() + ')'
+}
+
+/** One row of the figures' table: the label, and the number at the right edge as a stat would show it. */
+function figureRow(v: SketchValue, expr: string): string {
+  if (isTime(v.format) || v.format === 'clock') {
+    return 'ui.ListItem("default", ' + quote(v.label) + ', "", ' + amountText(v.format, v.unit, expr) + ', "", 0, false, "")'
+  }
+  let prefix = v.format === 'money' ? v.unit : ''
+  let suffix = v.format === 'percent' ? '%' : (v.format !== 'money' && v.unit.length > 0 ? ' ' + v.unit : '')
+  let decimals = v.format === 'money' ? 2 : (v.format === 'count' ? 0 : 1)
+  return 'ui.NumberListItem("default", ' + quote(v.label) + ', "", ' + expr + ', ' + quote(prefix) + ', ' + quote(suffix) +
+    ', 1, "", 0, false, "", ' + decimals.toString() + ')'
 }
 
 function heroText(v: SketchValue, expr: string): string {
-  if (v.format === 'seconds') { return 'ui.durationToString(math.ceil(' + expr + '))' }
+  if (isTime(v.format) || v.format === 'clock') { return amountText(v.format, v.unit, expr) }
   if (v.format === 'money') { return quote(v.unit) + ' + ui.formatNumber(' + expr + ', 2)' }
   if (v.format === 'percent') { return 'ui.formatNumber(' + expr + ', 1) + "%"' }
   return 'ui.formatNumber(' + expr + ', ' + (v.format === 'count' ? '0' : '1') + ')'
@@ -633,9 +2155,19 @@ function heroText(v: SketchValue, expr: string): string {
 export function assembleProgram(comp: Composition): string {
   if (comp.unbound.length > 0) { return '' }
   let sketch = comp.sketch
+  let list = sketch.list
   let fields = stateFields(comp)
   let lines: string[] = []
 
+  if (list !== null) {
+    lines.push('@jsonable')
+    lines.push('class Entry {')
+    for (let f of list.fields) { lines.push('  ' + f.id + ': ' + entryType(f) + ';') }
+    lines.push('  minute: number;')
+    if (entryAnswerEvent(comp).length > 0) { lines.push('  status: string;') }
+    lines.push('}')
+    lines.push('')
+  }
   lines.push('@jsonable')
   lines.push('class AppState {')
   for (let f of fields) { lines.push('  ' + f.name + ': ' + f.type + ';') }
@@ -644,19 +2176,21 @@ export function assembleProgram(comp: Composition): string {
   let inits: string[] = []
   for (let f of fields) { inits.push(f.name + ': ' + f.init) }
   lines.push('function init(): AppState {')
+  if (list !== null) { lines.push('  let emptyEntries: Entry[] = [];') }
   lines.push('  return {' + inits.join(', ') + '};')
   lines.push('}')
 
   // One setter per input. A new countdown length restarts the countdown.
-  for (let input of sketch.inputs) {
+  for (let input of comp.inputs) {
     let widget = comp.widgets.get(input.id) ?? ''
     let replaced: Map<string, string> = new Map<string, string>()
     let type = 'number'
     if (input.kind === 'toggle') { replaced.set(input.id, 'value'); type = 'boolean' }
+    else if (input.kind === 'text') { replaced.set(input.id, 'value'); type = 'string' }
     else if (input.kind === 'choice') { replaced.set(input.id + 'Index', 'value') }
     else if (widget === 'typed_number') { replaced.set(input.id + 'Text', 'value'); type = 'string' }
     else { replaced.set(input.id, 'value') }
-    if (sketch.hasCountdown && comp.countdownFrom === input.id) {
+    if (sketch.hasCountdown && dependsOn(comp, comp.countdownFrom).indexOf(input.id) >= 0) {
       replaced.set('elapsedMs', '0'); replaced.set('running', 'false'); replaced.set('finished', 'false')
     }
     lines.push('')
@@ -665,32 +2199,123 @@ export function assembleProgram(comp: Composition): string {
     lines.push('}')
   }
 
-  if (sketch.hasCountdown) {
-    lines.push('')
-    lines.push('function countdownSeconds(state: AppState): number {')
-    for (let l of inputLocals(comp)) { lines.push(l) }
-    lines.push('  return ' + comp.countdownFrom + ';')
-    lines.push('}')
-
-    let effectCalls: string[] = []
-    for (let e of sketch.events) {
-      let fx = EFFECTS.find((x: Effect): boolean => x.id === comp.effects.get(e.id))
-      if (fx !== undefined) { effectCalls.push('  ' + fx.call) }
+  if (list !== null) {
+    // The new entry's fields, adding it (a copy of the old array plus one), and removing one by position.
+    for (let f of list.fields) {
+      let replaced: Map<string, string> = new Map<string, string>()
+      replaced.set(draftOf(f), 'value')
+      lines.push('')
+      lines.push('function set_' + draftOf(f) + '(state: AppState, value: ' + draftType(f) + '): AppState {')
+      lines.push('  return ' + rebuild(fields, replaced) + ';')
+      lines.push('}')
     }
-    let done: Map<string, string> = new Map<string, string>()
-    done.set('elapsedMs', 'total'); done.set('running', 'false'); done.set('finished', 'true')
-    if (effectCalls.length > 0) { done.set('effectStatus', '"pending"') }
+    let answering = entryAnswerEvent(comp)
+    let added: Map<string, string> = new Map<string, string>()
+    added.set('entries', 'out')
+    // Typed fields empty for the next entry; a time and an on/off keep what was set.
+    for (let f of list.fields) { if (draftType(f) === 'string') { added.set(draftOf(f), '""') } }
+    let calls = effectCallsAt(comp, 'entry_added')
+    if (comp.events.some((e: SketchEvent): boolean => comp.moments.get(e.id) === 'entry_added' && e.id !== answering)) {
+      added.set('effectStatus', '"pending"')
+    }
+    lines.push('')
+    lines.push('function addEntry(state: AppState, ignored: number): AppState {')
+    // An entry needs its words, or else its number; a list with neither adds one per tap.
+    let required = firstField(list, 'text') ?? firstField(list, 'number')
+    if (required !== null) { lines.push('  if (strings.trim(state.' + draftOf(required) + ') === "") { return state; }') }
+    if (callsNeedLocals(comp, 'entry_added')) { for (let l of inputLocals(comp)) { lines.push(l) } }
+    let members: string[] = []
+    for (let f of list.fields) { members.push(f.id + ': ' + draftValue(f)) }
+    members.push('minute: time.hourOfDay() * 60 + time.minuteOfHour()')
+    if (answering.length > 0) { members.push('status: "pending"') }
+    lines.push('  let entry: Entry = {' + members.join(', ') + '};')
+    lines.push('  let out: Entry[] = [];')
+    lines.push('  for (let e: Entry of state.entries) { out.push(e); }')
+    lines.push('  out.push(entry);')
+    for (let c of calls) { lines.push(c) }
+    lines.push('  return ' + rebuild(fields, added) + ';')
+    lines.push('}')
+    if (answering.length > 0) {
+      // Answers come back in the order the calls went out: each goes to the oldest entry still waiting.
+      let copied: string[] = []
+      for (let f of list.fields) { copied.push(f.id + ': e.' + f.id) }
+      copied.push('minute: e.minute')
+      copied.push('status: value')
+      let answered: Map<string, string> = new Map<string, string>()
+      answered.set('entries', 'out')
+      let capture = keepsCalendarIds(comp) && comp.effects.get(answering) === 'calendar_add'
+      if (capture) { answered.set('calendarIds', 'ids') }
+      lines.push('')
+      lines.push('function onEntryAnswer(state: AppState, value: string): AppState {')
+      if (capture) { for (let l of idCapture()) { lines.push(l) } }
+      lines.push('  let out: Entry[] = [];')
+      lines.push('  let marked: boolean = false;')
+      lines.push('  for (let e: Entry of state.entries) {')
+      lines.push('    if (marked === false && e.status === "pending") {')
+      lines.push('      let answered: Entry = {' + copied.join(', ') + '};')
+      lines.push('      out.push(answered);')
+      lines.push('      marked = true;')
+      lines.push('    } else {')
+      lines.push('      out.push(e);')
+      lines.push('    }')
+      lines.push('  }')
+      lines.push('  return ' + rebuild(fields, answered) + ';')
+      lines.push('}')
+    }
+    let removed: Map<string, string> = new Map<string, string>()
+    removed.set('entries', 'out')
+    lines.push('')
+    lines.push('function removeEntry(state: AppState, value: number): AppState {')
+    lines.push('  let out: Entry[] = [];')
+    lines.push('  let i: number = 0;')
+    lines.push('  while (i < state.entries.length()) {')
+    lines.push('    if (i !== value) { out.push(state.entries[i]); }')
+    lines.push('    i = i + 1;')
+    lines.push('  }')
+    lines.push('  return ' + rebuild(fields, removed) + ';')
+    lines.push('}')
+  }
+
+  if (hasClock(sketch)) {
     let ticking: Map<string, string> = new Map<string, string>()
     ticking.set('elapsedMs', 'next')
-    lines.push('')
-    lines.push('function onTick(state: AppState, elapsedMs: number): AppState {')
-    lines.push('  if (!state.running) { return state; }')
-    lines.push('  let total: number = countdownSeconds(state) * 1000;')
-    lines.push('  let next: number = state.elapsedMs + elapsedMs;')
-    lines.push('  if (next < total) { return ' + rebuild(fields, ticking) + '; }')
-    for (let c of effectCalls) { lines.push(c) }
-    lines.push('  return ' + rebuild(fields, done) + ';')
-    lines.push('}')
+    if (sketch.hasCountdown) {
+      lines.push('')
+      lines.push('function countdownSeconds(state: AppState): number {')
+      for (let l of inputLocals(comp)) { lines.push(l) }
+      // A length worked out from values brings those values along, in sketch order.
+      let needed = dependsOn(comp, comp.countdownFrom)
+      for (let v of sketch.values) {
+        let b = comp.bindings.get(v.id)
+        if (needed.indexOf(v.id) >= 0 && b !== undefined) { lines.push('  let ' + v.id + ': number = ' + formulaExpr(b) + ';') }
+      }
+      let perUnit = comp.countdownUnit === 'minutes' ? ' * 60' : ''
+      lines.push('  return ' + (comp.countdownFrom.length > 0 ? comp.countdownFrom + perUnit : '0') + ';')
+      lines.push('}')
+
+      let effectCalls = effectCallsAt(comp, 'countdown_end')
+      let done: Map<string, string> = new Map<string, string>()
+      done.set('elapsedMs', 'total'); done.set('running', 'false'); done.set('finished', 'true')
+      if (effectCalls.length > 0) { done.set('effectStatus', '"pending"') }
+      if (callsNeedLocals(comp, 'countdown_end')) { effectCalls = inputLocals(comp).concat(effectCalls) }
+      lines.push('')
+      lines.push('function onTick(state: AppState, elapsedMs: number): AppState {')
+      lines.push('  if (!state.running) { return state; }')
+      lines.push('  let total: number = countdownSeconds(state) * 1000;')
+      lines.push('  let next: number = state.elapsedMs + elapsedMs;')
+      lines.push('  if (next < total) { return ' + rebuild(fields, ticking) + '; }')
+      for (let c of effectCalls) { lines.push(c) }
+      lines.push('  return ' + rebuild(fields, done) + ';')
+      lines.push('}')
+    } else {
+      // A stopwatch has no end: it only accumulates.
+      lines.push('')
+      lines.push('function onTick(state: AppState, elapsedMs: number): AppState {')
+      lines.push('  if (!state.running) { return state; }')
+      lines.push('  let next: number = state.elapsedMs + elapsedMs;')
+      lines.push('  return ' + rebuild(fields, ticking) + ';')
+      lines.push('}')
+    }
 
     let start: Map<string, string> = new Map<string, string>()
     start.set('running', 'true'); start.set('finished', 'false')
@@ -715,7 +2340,55 @@ export function assembleProgram(comp: Composition): string {
     lines.push('}')
   }
 
-  if (sketch.events.length > 0) {
+  // A tapped button's own handler: do_<event> on the screen, row_<event> for the entry its button is on.
+  for (let e of comp.events) {
+    let moment = comp.moments.get(e.id) ?? ''
+    if (!tapMoment(moment)) { continue }
+    let fx = effectOf(comp.effects.get(e.id) ?? '')!
+    let tapped: Map<string, string> = new Map<string, string>()
+    tapped.set('effectStatus', '"pending"')
+    lines.push('')
+    lines.push('function ' + tapHandler(e.id, moment) + '(state: AppState, ' + (moment === 'row_button' ? 'index' : 'ignored') + ': number): AppState {')
+    if (moment === 'row_button') {
+      lines.push('  if (index < 0 || index >= state.entries.length()) { return state; }')
+      lines.push('  let entry: Entry = state.entries[index];')
+    }
+    if (fx.id === 'calendar_clear') {
+      let nothing: Map<string, string> = new Map<string, string>()
+      nothing.set('effectStatus', '"No calendar events added yet"')
+      lines.push('  if (' + (keepsCalendarIds(comp) ? 'state.calendarIds' : '""') + ' === "") { return ' + rebuild(fields, nothing) + '; }')
+    }
+    if (callsNeedLocals(comp, moment)) { for (let l of inputLocals(comp)) { lines.push(l) } }
+    for (let c of effectCallsAt(comp, moment, e.id)) { lines.push(c) }
+    lines.push('  return ' + rebuild(fields, tapped) + ';')
+    lines.push('}')
+  }
+  if (keepsCalendarIds(comp)) {
+    // Every event this program adds is remembered by the ID its answer gave, so that it can delete exactly those.
+    let added: Map<string, string> = new Map<string, string>()
+    added.set('effectStatus', 'value')
+    added.set('calendarIds', 'ids')
+    lines.push('')
+    lines.push('function onCalendarAdded(state: AppState, value: string): AppState {')
+    for (let l of idCapture()) { lines.push(l) }
+    lines.push('  return ' + rebuild(fields, added) + ';')
+    lines.push('}')
+  }
+  if (comp.events.some((e: SketchEvent): boolean => comp.effects.get(e.id) === 'calendar_clear')) {
+    let cleared: Map<string, string> = new Map<string, string>()
+    cleared.set('effectStatus', 'value')
+    if (keepsCalendarIds(comp)) { cleared.set('calendarIds', 'left') }
+    lines.push('')
+    lines.push('function onCalendarCleared(state: AppState, value: string): AppState {')
+    if (keepsCalendarIds(comp)) {
+      lines.push('  let left: string = state.calendarIds;')
+      lines.push('  if (value === "ok") { left = ""; }')
+    }
+    lines.push('  return ' + rebuild(fields, cleared) + ';')
+    lines.push('}')
+  }
+
+  if (hasBanner(comp)) {
     let status: Map<string, string> = new Map<string, string>()
     status.set('effectStatus', 'value')
     lines.push('')
@@ -729,22 +2402,40 @@ export function assembleProgram(comp: Composition): string {
   lines.push('  if (b === 0) { return 0; }')
   lines.push('  return a / b;')
   lines.push('}')
+  // A written formula's comparison, as 1 or 0; only a program that has one carries it.
+  let compares = false
+  comp.bindings.forEach((b: Binding) => { if (b.expr.indexOf('whether(') >= 0) { compares = true } })
+  if (compares) {
+    lines.push('')
+    lines.push('function whether(holds: boolean): number {')
+    lines.push('  if (holds) { return 1; }')
+    lines.push('  return 0;')
+    lines.push('}')
+  }
 
   // The view: every input as a local, every value in sketch order, then the screen.
   lines.push('')
   lines.push('function view(state: AppState): ui.View {')
   for (let l of inputLocals(comp)) { lines.push(l) }
   if (sketch.hasCountdown) {
-    lines.push('  let duration: number = ' + comp.countdownFrom + ';')
+    lines.push('  let duration: number = countdownSeconds(state);')
     lines.push('  let elapsed: number = math.min(state.elapsedMs / 1000, duration);')
     lines.push('  let remaining: number = duration - elapsed;')
+  } else if (sketch.hasStopwatch) {
+    lines.push('  let elapsed: number = state.elapsedMs / 1000;')
+  }
+  if (list !== null) {
+    lines.push('  let entryCount: number = state.entries.length();')
+    lines.push('  let entryTotal: number = 0;')
+    let totalField = firstField(list, 'number')
+    if (totalField !== null) { lines.push('  for (let e: Entry of state.entries) { entryTotal = entryTotal + e.' + totalField.id + '; }') }
   }
   for (let v of sketch.values) {
     let b = comp.bindings.get(v.id)!
     lines.push('  let ' + v.id + ': number = ' + formulaExpr(b) + ';')
   }
 
-  if (sketch.events.length > 0) {
+  if (hasBanner(comp)) {
     lines.push('  let effectNote: string = "Phone: " + state.effectStatus;')
     lines.push('  if (state.effectStatus === "pending") { effectNote = "Asking the phone..."; }')
   }
@@ -752,21 +2443,67 @@ export function assembleProgram(comp: Composition): string {
   let heroes: string[] = []
   let bars: string[] = []
   let stats: string[] = []
+  let leading: string[] = []
   for (let v of sketch.values) {
     let b = comp.bindings.get(v.id)!
-    if (b.show === 'hero') { heroes.push(v.id) }
+    if (b.show === 'hero' && comp.widget) { leading.push(statFor(v, v.id)) }
+    else if (b.show === 'hero') { heroes.push(v.id) }
     else if (b.show === 'progress') { bars.push('ui.Progress("accent", ' + quote(v.label) + ', math.round(math.min(math.max(' + v.id + ', 0), 1) * 1000), 1000)') }
+    else if (comp.provisional && b.formula.length === 0) { stats.push('ui.Stat("default", ' + quote(v.label) + ', "—", "", "chart")') }
     else { stats.push(statFor(v, v.id)) }
   }
+  stats = leading.concat(stats)
+  // The fixed numbers the figures are worked out from -- a tip split's bill -- as rows of the figures' table when
+  // one was asked for, and as figures of their own on a screen with nothing to set.
+  let displayOnly = comp.inputs.length === 0 && list === null && !hasClock(sketch)
+  let givens: SketchValue[] = []
+  if (comp.figures || displayOnly) {
+    let read: string[] = []
+    comp.bindings.forEach((b: Binding) => {
+      read.push(b.a)
+      read.push(b.b)
+      for (let name of b.reads) { read.push(name) }
+    })
+    let currency = ''
+    for (let v of sketch.values) { if (v.format === 'money' && currency.length === 0) { currency = v.unit } }
+    for (let c of sketch.constants) {
+      if (read.indexOf(c.id) < 0) { continue }
+      let g = new SketchValue()
+      g.id = c.id
+      g.label = c.label
+      g.format = c.measure === 'number' ? 'plain' : c.measure
+      g.unit = c.measure === 'money' ? currency : ''
+      givens.push(g)
+    }
+  }
+  let figureRows: string[] = []
+  if (comp.figures) {
+    for (let g of givens) { figureRows.push(figureRow(g, g.id)) }
+    for (let v of sketch.values) {
+      let b = comp.bindings.get(v.id)!
+      if (b.show === 'progress' || heroes.indexOf(v.id) >= 0) { continue }
+      figureRows.push(figureRow(v, v.id))
+    }
+    stats = []
+  } else if (displayOnly) {
+    let fixed: string[] = []
+    for (let g of givens) { fixed.push(statFor(g, g.id)) }
+    stats = fixed.concat(stats)
+  }
+  let figuresNode = figureRows.length > 0 ? 'ui.ListGroup("default", "", [' + figureRows.join(', ') + '])' : ''
 
   let controls: string[] = []
-  for (let input of sketch.inputs) {
+  for (let input of comp.inputs) {
     let widget = comp.widgets.get(input.id) ?? ''
     let handler = quote('set_' + input.id)
     if (widget === 'select') {
       let labels: string[] = []
       for (let o of input.options) { labels.push(quote(o.label)) }
       controls.push('ui.Select("default", ' + quote(input.label) + ', [' + labels.join(', ') + '], state.' + input.id + 'Index, ' + handler + ')')
+    } else if (widget === 'text_field') {
+      controls.push('ui.TextField("default", ' + quote(input.label) + ', state.' + input.id + ', ' + handler + ')')
+    } else if (widget === 'time_field') {
+      controls.push('ui.TimeField("default", ' + quote(input.label) + ', state.' + input.id + ', ' + handler + ')')
     } else if (widget === 'switch') {
       controls.push('ui.Toggle("default", ' + quote(input.label) + ', state.' + input.id + ', ' + handler + ')')
     } else if (widget === 'typed_number') {
@@ -780,25 +2517,122 @@ export function assembleProgram(comp: Composition): string {
   }
 
   let children: string[] = []
-  if (sketch.hasCountdown) { children.push('ui.Ticker("default", "countdown", 200, state.running, "onTick")') }
-  children.push('ui.Header("default", ' + quote(sketch.title) + ', ' + quote(sketch.eyebrow) + ', ' + quote(sketch.subtitle) + ', "' + (sketch.hasCountdown ? 'clock' : 'chart') + '")')
-  let heroChildren: string[] = bars.slice()
-  if (sketch.hasCountdown) {
-    heroChildren.push('ui.ActionBar("spread", [ui.Button("primary", "Start", "onStart", 0, !state.running), ' +
-      'ui.Button("secondary", "Stop", "onStop", 0, state.running), ui.Button("secondary", "Reset", "onReset", 0, true)])')
+  if (hasClock(sketch)) { children.push('ui.Ticker("default", "clock", 200, state.running, "onTick")') }
+  let icon = hasClock(sketch) ? 'clock' : (list !== null ? 'list' : 'chart')
+  if (!comp.widget) {
+    children.push('ui.Header("default", ' + quote(sketch.title) + ', ' + quote(sketch.eyebrow) + ', ' + quote(sketch.subtitle) + ', "' + icon + '")')
   }
-  if (heroes.length > 0) {
+  let clockButtons = 'ui.ActionBar("spread", [ui.Button("primary", "Start", "onStart", 0, !state.running), ' +
+    'ui.Button("secondary", "Stop", "onStop", 0, state.running), ui.Button("secondary", "Reset", "onReset", 0, true)])'
+  let heroChildren: string[] = bars.slice()
+  if (hasClock(sketch)) { heroChildren.push(clockButtons) }
+  // The clock brings its own time, so a sketch that lists no value for it still shows one.
+  let clockLabel = sketch.hasCountdown ? sketch.countdown : sketch.stopwatch
+  // Time left rounds up (it reads 0:00 only at the end), time passed rounds down.
+  let clockShown = 'ui.durationToString(' + (sketch.hasCountdown ? 'math.ceil(remaining)' : 'math.floor(elapsed)') + ')'
+  // The widget's two sections: what it shows, then what the person sets and adds.
+  let shows: string[] = bars.slice()
+  let sets: string[] = controls.slice()
+  if (comp.widget) {
+    if (hasClock(sketch) && leading.length === 0) { shows.push('ui.Stat("default", ' + quote(clockLabel) + ', ' + clockShown + ', "", "clock")') }
+    if (stats.length > 0) { shows.push('ui.MetricGroup("default", ' + Math.min(stats.length, 2).toString() + ', [' + stats.join(', ') + '])') }
+    if (figuresNode.length > 0) { shows.push(figuresNode) }
+    if (hasClock(sketch)) { shows.push(clockButtons) }
+  } else if (heroes.length > 0) {
     let v = sketch.values.find((x: SketchValue): boolean => x.id === heroes[0])!
     children.push('ui.Section("hero", "", "", [ui.Hero("accent", ' + quote(v.label) + ', ' + heroText(v, v.id) + ', "", [' + heroChildren.join(', ') + '])])')
+  } else if (hasClock(sketch)) {
+    children.push('ui.Section("hero", "", "", [ui.Hero("accent", ' + quote(clockLabel) + ', ' + clockShown + ', "", [' + heroChildren.join(', ') + '])])')
   } else if (heroChildren.length > 0) {
     children.push('ui.Section("content", "", "", [' + heroChildren.join(', ') + '])')
   }
-  if (controls.length > 0) { children.push('ui.Section("content", "", "", [' + controls.join(', ') + '])') }
-  if (stats.length > 0) {
+  if (controls.length > 0 && !comp.widget) { children.push('ui.Section("content", "", "", [' + controls.join(', ') + '])') }
+  if (figuresNode.length > 0 && !comp.widget) { children.push('ui.Section("summary", "", "", [' + figuresNode + '])') }
+  if (stats.length > 0 && !comp.widget) {
     children.push('ui.Section("summary", "", "", [ui.MetricGroup("default", ' + Math.min(stats.length, 3).toString() + ', [' + stats.join(', ') + '])])')
   }
-  if (sketch.events.length > 0) {
-    children.push('ui.When(state.effectStatus !== "", ui.InsetBanner("default", "Done", effectNote, "", "", "info"))')
+  if (list !== null) {
+    let entryFields: string[] = []
+    for (let f of list.fields) {
+      let at = 'state.' + draftOf(f) + ', ' + quote('set_' + draftOf(f))
+      if (f.kind === 'text') { entryFields.push('ui.TextField("default", ' + quote(f.label) + ', ' + at + ')') }
+      else if (f.kind === 'number') { entryFields.push('ui.TextField("default", ' + quote(f.label) + ', ' + at + ', "number")') }
+      else if (f.kind === 'time') { entryFields.push('ui.TimeField("default", ' + quote(f.label) + ', ' + at + ')') }
+      else { entryFields.push('ui.Toggle("default", ' + quote(f.label) + ', ' + at + ')') }
+    }
+    entryFields.push('ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, true)])')
+    if (comp.widget) { sets = sets.concat(entryFields) }
+    else { children.push('ui.Section("content", "", "", [' + entryFields.join(', ') + '])') }
+    // Newest first, at most 20 rows (a container holds 20 children), 4 in a chat bubble. A tap on a row removes it --
+    // unless the row has buttons of its own (row_button events): then it is followed by a bar with them and Remove,
+    // two children a row, so at most 10 rows.
+    let rowButtons: string[] = []
+    for (let e of comp.events) {
+      if (comp.moments.get(e.id) !== 'row_button') { continue }
+      rowButtons.push('ui.Button("secondary", ' + quote(effectOf(comp.effects.get(e.id) ?? '')!.button) + ', ' + quote(tapHandler(e.id, 'row_button')) + ', i, true)')
+    }
+    // The title is the words (else the number); the number (else the time) sits at the right edge; the
+    // rest, the time it was added and what the phone answered go underneath.
+    let textField = firstField(list, 'text')
+    let numberField = firstField(list, 'number')
+    let titleField = textField ?? numberField
+    let trailingField = textField !== null && numberField !== null ? numberField : firstField(list, 'time')
+    let shown = (f: ListField): string => f.kind === 'text' ? 'e.' + f.id :
+      (f.kind === 'time' ? 'ui.clockToString(e.' + f.id + ')' : amountText(f.measure, f.unit, 'e.' + f.id))
+    let title = titleField !== null ? shown(titleField) : '"#" + ui.numberToString(i + 1)'
+    let trailing = trailingField !== null ? shown(trailingField) : '""'
+    let pieces: string[] = []
+    let flags: ListField[] = []
+    for (let f of list.fields) {
+      if (f === titleField || f === trailingField) { continue }
+      if (f.kind === 'toggle') { flags.push(f) } else { pieces.push(shown(f)) }
+    }
+    pieces.push('"Added " + ui.clockToString(e.minute)')
+    lines.push('  let rows: ui.View[] = [];')
+    lines.push('  let i: number = entryCount - 1;')
+    lines.push('  while (i >= 0 && i > entryCount - ' + (comp.widget ? '5' : (rowButtons.length > 0 ? '11' : '21')) + ') {')
+    lines.push('    let e: Entry = state.entries[i];')
+    lines.push('    let sub: string = ' + pieces.join(' + " · " + ') + ';')
+    for (let f of flags) { lines.push('    if (e.' + f.id + ') { sub = ' + quote(f.label + ' · ') + ' + sub; }') }
+    let answering = entryAnswerEvent(comp)
+    if (answering.length > 0) {
+      let done = effectOf(comp.effects.get(answering) ?? '')!.done
+      lines.push('    let note: string = "";')
+      lines.push('    if (e.status === "pending") { note = "Asking the phone..."; }')
+      lines.push('    if (strings.startsWith(e.status, "error") || strings.startsWith(e.status, "declined")) { note = "Phone: " + e.status; }')
+      lines.push('    if (note === "" && e.status !== "") { note = ' + quote(done) + '; }')
+      lines.push('    sub = note + " · " + sub;')
+    }
+    if (rowButtons.length > 0) {
+      lines.push('    rows.push(ui.ListItem("default", ' + title + ', sub, ' + trailing + ', "", 0, false, ""));')
+      lines.push('    rows.push(ui.ActionBar("end", [' + rowButtons.join(', ') + ', ui.Button("secondary", "Remove", "removeEntry", i, true)]));')
+    } else {
+      lines.push('    rows.push(ui.ListItem("default", ' + title + ', sub + " · tap to remove", ' + trailing + ', "removeEntry", i, true, ""));')
+    }
+    lines.push('    i = i - 1;')
+    lines.push('  }')
+    let listNodes = 'ui.SectionHeader("default", ' + quote(list.label) + ', "Newest first", ui.numberToString(entryCount)), ' +
+      'ui.When(entryCount === 0, ui.EmptyState("default", "Nothing added yet", ' +
+      quote(entryFields.length > 1 ? 'Fill in the fields above and tap Add.' : 'Tap Add to add one.') + ', "", "", "list")), ' +
+      'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))'
+    if (comp.widget) { sets.push(listNodes) }
+    else { children.push('ui.Section("content", "", "", [' + listNodes + '])') }
+  }
+  // The buttons of the events a tap on the screen starts.
+  let screenButtons: string[] = []
+  for (let e of comp.events) {
+    if (comp.moments.get(e.id) !== 'button') { continue }
+    screenButtons.push('ui.Button("secondary", ' + quote(effectOf(comp.effects.get(e.id) ?? '')!.button) + ', ' + quote(tapHandler(e.id, 'button')) + ', 0, true)')
+  }
+  let buttonBar = screenButtons.length > 0 ? 'ui.ActionBar("end", [' + screenButtons.join(', ') + '])' : ''
+  if (buttonBar.length > 0 && comp.widget) { sets.push(buttonBar) }
+  else if (buttonBar.length > 0) { children.push('ui.Section("content", "", "", [' + buttonBar + '])') }
+  let banner = 'ui.When(state.effectStatus !== "", ui.InsetBanner("default", "Done", effectNote, "", "", "info"))'
+  if (hasBanner(comp) && comp.widget) { sets.push(banner) }
+  else if (hasBanner(comp)) { children.push(banner) }
+  if (comp.widget) {
+    if (shows.length > 0) { children.push('ui.Section("summary", "", "", [' + shows.join(', ') + '])') }
+    if (sets.length > 0) { children.push('ui.Section("content", "", "", [' + sets.join(', ') + '])') }
   }
   lines.push('  return ui.AppTheme(' + quote(comp.theme) + ', "", [')
   lines.push('    ' + children.join(',\n    '))
@@ -807,6 +2641,113 @@ export function assembleProgram(comp: Composition): string {
   return lines.join('\n')
 }
 
+
+// ---- Pictures before the program is ready ----
+
+/** The widget each kind gets when nobody has chosen yet. */
+function defaultWidget(kind: string): string {
+  if (kind === 'amount') { return 'typed_number' }
+  if (kind === 'percent') { return 'slider' }
+  if (kind === 'count') { return 'stepper' }
+  if (kind === 'choice') { return 'select' }
+  if (kind === 'text') { return 'text_field' }
+  if (kind === 'time') { return 'time_field' }
+  return 'switch'
+}
+
+/**
+ * A program drawn from the sketch alone, for the screen to show while Jev (or a whole generation) is
+ * still working: the inputs as default widgets, every value as a dash, a progress bar at zero. Shown
+ * with taps off; never served. Empty when the sketch has nothing to draw yet.
+ */
+export function provisionalProgram(sketch: Sketch, widget: boolean = false): string {
+  if (sketch.title.length === 0 && sketch.inputs.length === 0 && sketch.values.length === 0) { return '' }
+  let comp = new Composition(sketch)
+  comp.provisional = true
+  comp.widget = widget
+  comp.theme = 'clean'
+  comp.inputs = sketch.inputs
+  for (let input of sketch.inputs) { comp.widgets.set(input.id, defaultWidget(input.kind)) }
+  for (let v of sketch.values) {
+    let b = new Binding()
+    b.show = v.format === 'fraction' ? 'progress' : 'stat'
+    comp.bindings.set(v.id, b)
+  }
+  if (sketch.hasCountdown) {
+    let sources: string[] = []
+    lengthSources(sketch).forEach((_d: string, key: string) => { sources.push(key) })
+    comp.countdownFrom = sources.length > 0 ? sources[0] : ''
+    comp.countdownUnit = measureOf(sketch, comp.countdownFrom)
+  }
+  return assembleProgram(comp)
+}
+
+/**
+ * The longest prefix of a streamed JSON object that ends after a complete value, closed with the
+ * brackets still open at that point, so a half-written sketch parses. Cut points are right after a
+ * closing bracket and right before a comma, outside strings; '' before the first one.
+ */
+export function closePartialJson(text: string): string {
+  let start = text.indexOf('{')
+  if (start < 0) { return '' }
+  let stack: string[] = []
+  let inString = false
+  let escaped = false
+  let cut = -1
+  let closersAtCut = ''
+  for (let i = start; i < text.length; i++) {
+    let c = text[i]
+    if (inString) {
+      if (escaped) { escaped = false } else if (c === '\\') { escaped = true } else if (c === '"') { inString = false }
+      continue
+    }
+    if (c === '"') { inString = true }
+    else if (c === '{') { stack.push('}') }
+    else if (c === '[') { stack.push(']') }
+    else if (c === '}' || c === ']') {
+      stack.pop()
+      if (stack.length === 0) { return text.substring(start, i + 1) }
+      cut = i + 1
+      closersAtCut = stack.slice().reverse().join('')
+    } else if (c === ',') {
+      cut = i
+      closersAtCut = stack.slice().reverse().join('')
+    }
+  }
+  if (cut < 0) { return '' }
+  return text.substring(start, cut) + closersAtCut
+}
+
+/** What a partial sketch would draw, to redraw only when it changes. */
+export function sketchSignature(sketch: Sketch): string {
+  let ids: string[] = [sketch.title, sketch.eyebrow, sketch.subtitle]
+  for (let i of sketch.inputs) { ids.push(i.id + ':' + i.options.length.toString()) }
+  for (let v of sketch.values) { ids.push(v.id) }
+  ids.push(sketch.hasCountdown ? 'countdown' : (sketch.hasStopwatch ? 'stopwatch' : ''))
+  ids.push(sketch.list !== null ? 'list:' + sketch.list.fields.map((f: ListField): string => f.id + '/' + f.kind).join(',') : '')
+  return ids.join('|')
+}
+
+/**
+ * The sketch as a plan for a generation that the composer could not serve: the same inputs and values,
+ * so the finished program keeps the structure the preview showed while it was being written.
+ */
+export function sketchPlan(sketch: Sketch): string {
+  let lines: string[] = ['A sketch of this app, made before writing it, which the screen already shows as a preview:']
+  for (let i of sketch.inputs) {
+    let options = i.options.length > 0 ? ', options ' + i.options.map((o: SketchOption): string => o.label).join(' / ') : ''
+    lines.push('- input "' + i.label + '" (' + i.kind + (!isNumeric(i.kind) || i.kind === 'choice' ? '' : ', ' + i.min.toString() + ' to ' + i.max.toString()) + options + ')')
+  }
+  for (let c of sketch.constants) { lines.push('- fixed: ' + c.label + ' = ' + numberLiteral(c.value)) }
+  if (sketch.hasCountdown) { lines.push('- a countdown: ' + sketch.countdown) }
+  if (sketch.hasStopwatch) { lines.push('- a stopwatch: ' + sketch.stopwatch) }
+  if (sketch.list !== null) { lines.push('- ' + describeList(sketch.list)) }
+  for (let v of sketch.values) { lines.push('- shows "' + v.label + '": ' + v.means) }
+  for (let e of sketch.events) { lines.push('- ' + e.when + ': ' + e.what) }
+  for (let item of sketch.other) { lines.push('- also: ' + item) }
+  lines.push('Keep these inputs, values and their labels where they fit the request, and add whatever else it needs. The request decides.')
+  return lines.join('\n')
+}
 
 // ---- The whole route, as the Generate screen runs it ----
 
@@ -819,6 +2760,10 @@ export class ComposeResult {
   jevMs: number = 0
   sketch: string = ''
   answers: string[] = []
+  /** The parsed sketch, null when there was none; the page keeps it as a plan for a fallback generation. */
+  parsed: Sketch | null = null
+  /** What the sketch added and the screen leaves out, for the person to see. */
+  dropped: string[] = []
 }
 
 async function askJev(body: string, apiKey: string): Promise<string> {
@@ -845,24 +2790,40 @@ async function askJev(body: string, apiKey: string): Promise<string> {
 }
 
 /** Sketch, Jev, assembly. Never throws: anything that goes wrong comes back as an empty source and a note. */
-export async function composeFromPrompt(prompt: string, apiKey: string): Promise<ComposeResult> {
+export async function composeFromPrompt(prompt: string, apiKey: string,
+    onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false): Promise<ComposeResult> {
   let result = new ComposeResult()
   let started = Date.now()
-  let text = await deepseek.extractSketch(SKETCH_PROMPT, prompt)
+  let shown = ''
+  let text = await deepseek.extractSketch(SKETCH_PROMPT, prompt, (soFar: string): void => {
+    let closed = closePartialJson(soFar)
+    if (closed.length === 0) { return }
+    let partial = parseSketch(closed)
+    if (partial === null) { return }
+    let signature = sketchSignature(partial)
+    if (signature === shown) { return }
+    shown = signature
+    onSketch(partial)
+  })
   result.sketchMs = Date.now() - started
   if (text === null) { result.note = 'no sketch'; return result }
   result.sketch = text
   let sketch = parseSketch(text)
   if (sketch === null) { result.note = 'sketch did not parse'; return result }
+  result.parsed = sketch
+  if (sketchSignature(sketch) !== shown) { onSketch(sketch) }
   started = Date.now()
-  let body = await askJev(buildComposeRequest(prompt, sketch), apiKey)
+  let body = await askJev(buildComposeRequest(prompt, sketch, widget), apiKey)
   result.jevMs = Date.now() - started
   if (body.length === 0) { result.note = 'Jev did not answer'; return result }
-  let comp = readComposition(body, sketch)
+  let comp = readComposition(body, sketch, widget)
   result.answers = comp.answers
   if (comp.unbound.length > 0) { result.note = 'unbound: ' + comp.unbound.join('; '); return result }
   result.source = assembleProgram(comp)
+  result.dropped = comp.dropped
   result.note = 'composed: ' + sketch.inputs.length.toString() + ' inputs, ' + sketch.values.length.toString() + ' values' +
-    (sketch.hasCountdown ? ', countdown' : '') + (sketch.events.length > 0 ? ', ' + sketch.events.length.toString() + ' effects' : '')
+    (sketch.hasCountdown ? ', countdown' : '') + (sketch.hasStopwatch ? ', stopwatch' : '') + (sketch.list !== null ? ', list' : '') +
+    (comp.events.length > 0 ? ', ' + comp.events.length.toString() + ' effects' : '') +
+    (comp.dropped.length > 0 ? '; left out: ' + comp.dropped.join('; ') : '')
   return result
 }

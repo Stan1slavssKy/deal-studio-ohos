@@ -137,7 +137,6 @@ import settings from '@ohos.settings'
 import systemCapability from '@ohos.systemCapability'
 import systemDateTime from '@ohos.systemDateTime'
 import systemParameterEnhance from '@ohos.systemParameterEnhance'
-import systemTimer from '@ohos.systemTimer'
 import taskpool from '@ohos.taskpool'
 import call from '@ohos.telephony.call'
 import data from '@ohos.telephony.data'
@@ -1895,22 +1894,10 @@ const ADAPTERS: Map<string, SdkAdapter> = new Map<string, SdkAdapter>([
     systemParameterEnhance.setSync(key, value)
     return 'ok'
   }],
-  ['BasicServicesKit.systemTimer.destroyTimer', async (params: Map<string, string>): Promise<string> => {
-    let timer = paramInt(params, 'timer', 0)
-    await systemTimer.destroyTimer(timer)
-    return 'ok'
-  }],
-  ['BasicServicesKit.systemTimer.startTimer', async (params: Map<string, string>): Promise<string> => {
-    let timer = paramInt(params, 'timer', 0)
-    let triggerTime = paramInt(params, 'triggerTime', 0)
-    await systemTimer.startTimer(timer, triggerTime)
-    return 'ok'
-  }],
-  ['BasicServicesKit.systemTimer.stopTimer', async (params: Map<string, string>): Promise<string> => {
-    let timer = paramInt(params, 'timer', 0)
-    await systemTimer.stopTimer(timer)
-    return 'ok'
-  }],
+  // No systemTimer rows: startTimer, stopTimer and destroyTimer take a timer id that only createTimer hands
+  // out, together with what to do when it fires -- a callback no program can pass, so createTimer has no row
+  // either. With rows, find_sdk_function offered them for "egg timer" and a widget started timer "1", which
+  // does nothing. A timer belongs in the program (ui.Ticker).
   ['BasicServicesKit.usbManager.hasRight', async (params: Map<string, string>): Promise<string> => {
     let deviceName = paramString(params, 'deviceName', '')
     let result = usbManager.hasRight(deviceName)

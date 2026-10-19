@@ -452,3 +452,16 @@ export function describeIntentsForPrompt(domains: string[] = []): string {
   }
   return lines.join('\n')
 }
+
+/**
+ * Apps that answer a call from this app and then do nothing, so offering them only makes widgets that fail
+ * quietly. com.huawei.hmos.clock answers 0 to CreateTimer and creates no timer, and does not open from here
+ * either; a timer belongs in the program itself (ui.Ticker). Kept out of find_intent_function, and refused at
+ * run time with an error rather than reported as done.
+ */
+const UNREACHABLE_BUNDLES: string[] = ['com.huawei.hmos.clock']
+
+/** Whether `target` (bundle, or bundle/module/ability[/IntentName]) is one of those apps. */
+export function unreachableTarget(target: string): boolean {
+  return UNREACHABLE_BUNDLES.indexOf(target.split('/')[0].trim()) >= 0
+}

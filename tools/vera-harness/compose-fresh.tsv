@@ -1,0 +1,97 @@
+# Written independently from the category descriptions only, without looking at the system or its code; must not be tuned against.
+# The test split is read only for reporting. Columns: label, prompt, category, expect, split, check.
+unit-1	how many miles is a run if I type in the distance in kilometres	unit-conversion	compose	dev	10 km -> 6.21 miles
+unit-2	pounds to kilograms converter	unit-conversion	compose	test	150 lb -> 68.04 kg
+unit-3	Convert inches to centimetres. I'd like a stepper for the inches please	unit-conversion	compose	dev	10 in -> 25.4 cm
+unit-4	litres to US gallons, 1 litre is 0.264 gallons	unit-conversion	compose	test	10 L -> 2.64 gal
+unit-5	ounces to grams for baking, an ounce is 28.35 g	unit-conversion	compose	dev	4 oz -> 113.4 g
+unit-6	I keep getting confused between feet and metres. Something where I enter feet and see metres	unit-conversion	compose	test	6 ft -> 1.83 m
+unit-7	stone to kilos please, I weigh myself in stone and 1 stone = 6.35 kg	unit-conversion	compose	dev	12 stone -> 76.2 kg
+unit-8	speed converter from mph into km/h, one mph is 1.609 km/h	unit-conversion	compose	test	60 mph -> 96.54 km/h
+money-1	sales tax calculator, 8.25% tax, I enter the price	money	compose	dev	price 40 -> tax 3.30, total 43.30
+money-2	Split a restaurant bill in euros between friends, with a tip percent I can change and a number of people	money	compose	test	bill 120, tip 10%, 4 people -> 33 each
+money-3	what do I pay after a 25% discount on something that costs £80	money	compose	dev	price 80, discount 25% -> pay 60
+money-4	GST at 18% on an invoice in rupees, show GST and total	money	compose	test	₹5000 -> GST 900, total 5900
+money-5	tip helper with a slider for the tip percent, bill in dollars	money	compose	dev	bill 60, tip 20% -> tip 12, total 72
+money-6	price in pounds includes 20% VAT, show me the VAT part and the price without it	money	compose	test	120 -> without VAT 100, VAT 20
+money-7	yen price plus 10% consumption tax	money	compose	dev	¥1500 -> tax 150, total 1650
+money-8	dinner was 2400 rupees and six of us are sharing, what is each share	money	compose	test	2400 / 6 -> 400 each
+health-1	BMI calculator, kg and metres	health	compose	dev	70 kg, 1.75 m -> BMI 22.9
+health-2	daily water target at 35 ml per kg of body weight	health	compose	test	70 kg -> 2450 ml
+health-3	I want to turn grams of protein, carbs and fat into calories (4, 4 and 9 per gram)	health	compose	dev	30 g protein, 50 g carbs, 10 g fat -> 410 kcal
+health-4	calorie budget left today, my goal is 2000 and I enter what I ate	health	compose	test	eaten 1350 -> 650 left
+health-5	BMI in pounds and inches	health	compose	dev	160 lb, 64 in -> BMI 27.46
+health-6	protein goal for lifting: 1.6 g per kg of bodyweight	health	compose	test	80 kg -> 128 g
+health-7	How many 250 ml glasses of water make up my daily goal? I'll type the goal in ml.	health	compose	dev	goal 2000 ml -> 8 glasses
+health-8	macro helper: total calories, percent from carbs, give grams of carbs at 4 kcal per gram	health	compose	test	2200 kcal, 50% -> 275 g carbs
+cooking-1	scale a recipe: it serves 4 and uses 300 g flour, I want to cook for 6	cooking	compose	dev	300 g for 4 servings, want 6 -> 450 g
+cooking-2	egg timer with a dropdown, soft 6 minutes, medium 8, hard 10	cooking	compose	test	choosing hard -> countdown starts at 10:00
+cooking-3	pasta timer 11 min	cooking	compose	dev	countdown starts at 11:00
+cooking-4	recipe multiplier, base amount is 250 g sugar, I choose how many times	cooking	compose	test	multiplier 3 -> 750 g
+cooking-5	roast chicken time calculator at 45 minutes per kg	cooking	compose	dev	1.8 kg -> 81 minutes
+cooking-6	tea timer, pick green (2 min), black (4 min) or herbal (6 min)	cooking	compose	test	black -> countdown starts at 4:00
+cooking-7	cups to millilitres for recipes, a cup is 240 ml	cooking	compose	dev	2.5 cups -> 600 ml
+cooking-8	bread dough: I give flour weight and hydration percent, tell me how much water	cooking	compose	test	flour 500 g, 70% -> 350 g water
+fitness-1	plank hold timer, 60 seconds	fitness	compose	dev	countdown starts at 1:00
+fitness-2	interval timer where I can pick the work length from 20 s, 30 s or 45 s	fitness	compose	test	choose 45 s -> countdown starts at 0:45
+fitness-3	running pace in minutes per km from my time and distance	fitness	compose	dev	50 min, 10 km -> 5 min per km
+fitness-4	simple stopwatch for sprint training	fitness	compose	test	one stopwatch with start, stop, reset
+fitness-5	rest timer between sets, stepper in seconds, start with 90	fitness	compose	dev	default 90 s -> countdown starts at 1:30
+fitness-6	weekly running goal of 30 km, I enter what I've done and see the percent	fitness	compose	test	18 of 30 km -> 60%
+fitness-7	steps today vs a 10000 goal, with a progress bar	fitness	compose	dev	6500 steps -> 65%
+fitness-8	average speed in km/h from distance in km and time in minutes	fitness	compose	test	21.1 km in 105 min -> 12.06 km/h
+home-1	floor area of a room from length and width in metres	home-diy	compose	dev	5 m by 4 m -> 20 m2
+home-2	paint calculator: wall area, a litre covers 10 m2, I want two coats	home-diy	compose	test	40 m2, 2 coats -> 8 litres
+home-3	how many 1 sq ft tiles do I need for a floor, plus 10% spare, rounded up	home-diy	compose	dev	12 sq ft -> 14 tiles
+home-4	laminate flooring boxes needed, each box covers 2.2 m2	home-diy	compose	test	30 m2 -> 14 boxes
+home-5	wallpaper rolls, each roll covers 5.3 m2, enter the wall area	home-diy	compose	dev	28 m2 -> 6 rolls
+home-6	concrete for a slab, length width and thickness in metres	home-diy	compose	test	4 x 3 x 0.1 m -> 1.2 m3
+home-7	fence length divided into sections, section width in metres	home-diy	compose	dev	24 m with 2 m sections -> 12 sections
+home-8	area of a square patio from one side length	home-diy	compose	test	side 3.5 m -> 12.25 m2
+logs-1	expense log where I add a note and an amount, show total and number of entries	logs	compose	dev	add coffee 3.50 and lunch 12 -> 2 entries, total 15.50
+logs-2	tally of glasses of water, each press adds one glass	logs	compose	test	add 3 entries -> count 3
+logs-3	reading log: book name and pages, sum of pages	logs	compose	dev	Dune 412 and Emma 320 -> 2 entries, 732 pages
+logs-4	workout log with exercise name and minutes	logs	compose	test	run 30 and yoga 45 -> 2 entries, 75 minutes
+logs-5	coffee counter that beeps when I add a cup	logs	compose	dev	adding an entry makes a beep
+logs-6	body weight log in kg, list of entries	logs	compose	test	82.5 and 82.1 -> 2 entries, sum 164.6
+logs-7	grocery spending in pounds, item name plus price, can delete mistakes	logs	compose	dev	milk 1.20 and bread 2.50 -> total 3.70, delete milk -> total 2.50
+logs-8	car trip mileage log, km per trip	logs	compose	test	18 and 25 -> 2 trips, 43 km
+goals-1	savings goal of 5000, I enter how much I've saved so far and see percent and what's left	goals	compose	dev	saved 1250 -> 25%, left 3750
+goals-2	reading challenge: 24 books this year, how far along am I	goals	compose	test	9 read -> 37.5%
+goals-3	I can put away £200 a month, how many months to reach my target	goals	compose	dev	target 2400 -> 12 months
+goals-4	book progress bar, 320 pages, I enter the page I'm on	goals	compose	test	page 80 -> 25%
+goals-5	save 15% of my monthly pay in rupees	goals	compose	dev	₹60000 -> 9000
+goals-6	paying off a debt, total owed 8000, enter what's paid so far, show percent paid	goals	compose	test	paid 3000 -> 37.5%
+goals-7	fundraiser target €10,000, show how much is still needed as a big number	goals	compose	dev	raised 7200 -> remaining 2800, 72%
+goals-8	study hours goal of 100, hours done so far, hours left	goals	compose	test	done 35 -> 65 left
+terse-1	a timer	terse	compose	dev	one countdown timer with start, stop, reset
+terse-2	tip calc	terse	compose	test	bill 50, tip 20% -> tip 10
+terse-3	km to miles	terse	compose	dev	10 km -> 6.21 miles
+terse-4	bmi	terse	compose	test	70 kg, 1.75 m -> BMI 22.9
+terse-5	stopwatch	terse	compose	dev	one stopwatch with start, stop, reset
+terse-6	discount %	terse	compose	test	200, 15% off -> pay 170
+outside-1	show me the weather forecast for my city this week	outside-data	refuse	dev	needs live weather data
+outside-2	convert my dollars to euros at today's exchange rate	outside-data	refuse	test	needs live exchange rates
+outside-3	a screen listing restaurants near me with their ratings	outside-data	refuse	dev	needs internet places data
+outside-4	live bitcoin price and how much my coins are worth	outside-data	refuse	test	needs live prices
+outside-5	latest football scores for my team	outside-data	refuse	dev	needs online sports data
+phone-1	set an alarm for my medication every day	phone-action	refuse	dev	cannot set alarms
+phone-2	let me save the people I meet as new contacts	phone-action	refuse	test	cannot use contacts
+phone-3	take a photo of my receipt and keep it with the amount	phone-action	refuse	dev	cannot use the camera
+phone-4	share my current location with my friends when I press a button	phone-action	refuse	test	cannot use location
+phone-5	text my partner when my timer finishes	phone-action	refuse	dev	cannot send messages
+beyond-1	dice roller for board games	beyond-logic	refuse	dev	needs randomness
+beyond-2	a quiz that asks me capital cities and scores my answers	beyond-logic	refuse	test	cannot run quizzes
+beyond-3	let me search through my saved notes by keyword	beyond-logic	refuse	dev	cannot search
+beyond-4	app with a home page and a settings page for my budget	beyond-logic	refuse	test	only one screen
+beyond-5	tic tac toe against the phone	beyond-logic	refuse	dev	cannot run games
+math-1	compound interest on my savings over 5 years at 4%	hard-math	refuse	dev	needs powers (compound growth)
+math-2	monthly mortgage payment for a 30 year loan	hard-math	refuse	test	needs loan payment formula with exponents
+math-3	how many days until my birthday	hard-math	refuse	dev	needs dates
+math-4	when do I need to wake up if I go to bed at 11:30pm and want 8 hours of sleep	hard-math	refuse	test	needs times of day
+math-5	calculate 2 to the power of any number I enter, and cube roots too	hard-math	refuse	dev	needs exponents and roots
+near-1	kitchen timer that also adds an event to my calendar	near-miss	refuse	dev	cannot add calendar events
+near-2	to do list where each item has a checkbox I can tick	near-miss	refuse	test	list entries cannot have checkboxes
+near-3	tip calculator that also shows the nearest restaurants	near-miss	refuse	dev	cannot find places
+near-4	recipe scaler that sets an alarm when it's time to start cooking	near-miss	refuse	test	cannot set alarms
+near-5	water tracker that syncs with my phone's health app and also has a shuffle of motivational quotes	near-miss	refuse	dev	cannot use other apps or randomness

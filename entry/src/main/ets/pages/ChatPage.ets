@@ -680,6 +680,7 @@ struct ChatPage {
   private startWidget(reply: ChatMessage, parsed: ParsedReply, references: WidgetReference[],
       context: WidgetBuildContext): void {
     context.brief = parsed.appDescription
+    context.request = parsed.appRequest
     if (parsed.mode === 'refine' || parsed.update) {
       let target: WidgetReference | undefined = parsed.update ? references[references.length - 1] :
         references.find((ref: WidgetReference): boolean => ref.messageId === parsed.targetMessageId)

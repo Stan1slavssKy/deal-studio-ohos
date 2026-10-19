@@ -13,7 +13,7 @@ import { requestBenchmark } from '../vera/VeraSearchBenchmark'
 import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
-import { setComposeEnabled } from '../vera/VeraCompose'
+import { setComposeEnabled, setComposePlanEnabled } from '../vera/VeraCompose'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 
@@ -284,10 +284,17 @@ export default class EntryAbility extends UIAbility {
     if (want.parameters === null || want.parameters === undefined) { return }
     let params = want.parameters as Record<string, Object>
     let flag = params['veraCompose']
-    if (flag === null || flag === undefined) { return }
-    let text = String(flag).trim()
-    setComposeEnabled(!(text === '0' || text === 'false' || text === 'off'))
-    hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE ' + text + ' from launch parameter')
+    if (flag !== null && flag !== undefined) {
+      let text = String(flag).trim()
+      setComposeEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE ' + text + ' from launch parameter')
+    }
+    let plan = params['veraComposePlan']
+    if (plan !== null && plan !== undefined) {
+      let text = String(plan).trim()
+      setComposePlanEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE plan ' + text + ' from launch parameter')
+    }
   }
 
   private extractProjectId(want: Want): void {

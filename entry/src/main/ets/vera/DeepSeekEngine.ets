@@ -687,7 +687,8 @@ export class DeepSeekEngine {
    * The sketch for VeraCompose.ets: the request as JSON data, no code. Thinking off and a small
    * budget, like extractUiNeeds; null on any failure, and the caller generates from scratch.
    */
-  async extractSketch(systemPrompt: string, userPrompt: string): Promise<string | null> {
+  async extractSketch(systemPrompt: string, userPrompt: string,
+      onText: (soFar: string) => void = (_t: string): void => {}): Promise<string | null> {
     if (!settings.hasApiKey()) { return null }
     let messages: Record<string, Object>[] = []
     messages.push(plainMessage('system', systemPrompt))
@@ -698,7 +699,11 @@ export class DeepSeekEngine {
     this.generating = true
     let startedAt = Date.now()
     try {
-      let turn = await this.streamOnce(messages, 0, 1500, (_token: string): void => {}, TOOLS_OFF, 'sketch', 1)
+      let soFar = ''
+      let turn = await this.streamOnce(messages, 0, 1500, (token: string): void => {
+        soFar += token
+        onText(soFar)
+      }, TOOLS_OFF, 'sketch', 1)
       console.info('VERA-COMPOSE sketch ms=' + (Date.now() - startedAt).toString())
       return turn.content
     } catch (e) {
