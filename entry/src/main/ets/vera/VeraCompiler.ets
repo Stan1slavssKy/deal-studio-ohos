@@ -593,10 +593,26 @@ class Lexer {
 
 // ===== Parser =====
 
+/** Syntax errors reported from one compile; past this the rest is mostly noise. */
+const MAX_SYNTAX_ERRORS: number = 20
+const STATEMENT_STARTS: string[] = ['let', 'if', 'while', 'for', 'return', 'try', 'break', 'continue']
+const DECLARATION_STARTS: string[] = ['import', 'annotation', 'class', 'function']
+
+/**
+ * Parses with recovery: a syntax error is recorded, the parser skips to the
+ * next statement or declaration, and goes on, so one compile reports every
+ * syntax error rather than the first. With repairs written as edits that
+ * matters: egg-2 had two ternaries and needed two repair rounds, because the
+ * second was only reported once the first was fixed. Errors that follow from
+ * one already recorded are dropped until a statement parses cleanly again.
+ */
 class Parser {
   private tokens: Token[]
   private pos: number = 0
   private sourceName: string
+  private diagnostics: Diagnostic[] = []
+  /** An error was recorded and no statement has parsed cleanly since. */
+  private recovering: boolean = false
 
   constructor(source: string, sourceName: string) {
     this.sourceName = sourceName
@@ -607,19 +623,70 @@ class Parser {
     let start = this.current().span
     let imports: ImportDeclaration[] = []
     let declarations: Declaration[] = []
-    while (!this.atEnd()) {
-      if (this.check('import')) { imports.push(this.parseImport()); continue }
-      if (this.check('annotation')) {
-        let ann = this.advance()
-        declarations.push(this.parseClass(ann.text))
-        continue
+    while (!this.atEnd() && this.diagnostics.length < MAX_SYNTAX_ERRORS) {
+      let before = this.pos
+      try {
+        if (this.check('import')) { imports.push(this.parseImport()); continue }
+        if (this.check('annotation')) {
+          let ann = this.advance()
+          declarations.push(this.parseClass(ann.text))
+          continue
+        }
+        if (this.check('class')) { declarations.push(this.parseClass(null)); continue }
+        if (this.check('async')) { declarations.push(this.parseFunction()); continue }
+        if (this.check('function')) { declarations.push(this.parseFunction()); continue }
+        this.error('expected import, class, or function declaration')
+      } catch (e) {
+        if (!(e instanceof CompileError)) throw e as Error
+        this.record(e)
+        // Skip to the next declaration, always moving at least one token.
+        if (this.pos === before) this.advance()
+        while (!this.atEnd() && !this.atDeclarationStart()) this.advance()
       }
-      if (this.check('class')) { declarations.push(this.parseClass(null)); continue }
-      if (this.check('async')) { declarations.push(this.parseFunction()); continue }
-      if (this.check('function')) { declarations.push(this.parseFunction()); continue }
-      this.error('expected import, class, or function declaration')
     }
+    if (this.diagnostics.length > 0) throw new CompileError(this.diagnostics)
     return new Application(this.span(start), imports, declarations)
+  }
+
+  private record(e: CompileError): void {
+    if (!this.recovering) {
+      for (let d of e.diagnostics) {
+        // The same token reached again on the way out of a nested recovery.
+        let last = this.diagnostics.length > 0 ? this.diagnostics[this.diagnostics.length - 1] : null
+        if (last !== null && last.span.start.offset === d.span.start.offset) continue
+        this.diagnostics.push(d)
+      }
+    }
+    this.recovering = true
+  }
+
+  private atDeclarationStart(): boolean {
+    let kind = this.current().kind
+    if (DECLARATION_STARTS.indexOf(kind) >= 0) return true
+    return kind === 'async' && this.pos + 1 < this.tokens.length && this.tokens[this.pos + 1].kind === 'function'
+  }
+
+  /**
+   * After an error inside a block: skip to where the next statement can start.
+   * That is a ';' or the block's own '}' (at the depth the statement began), a
+   * statement keyword at the start of a line, or a top-level declaration.
+   * Brackets the error left open are allowed to close on the way.
+   */
+  private synchronize(): void {
+    let depth = 0
+    let line = this.current().span.start.line
+    while (!this.atEnd()) {
+      let t = this.current()
+      if (depth <= 0) {
+        if (t.kind === ';') { this.advance(); return }
+        if (t.kind === '}') return
+        if (this.atDeclarationStart()) return
+        if (t.span.start.line > line && STATEMENT_STARTS.indexOf(t.kind) >= 0) return
+      }
+      if (t.kind === '(' || t.kind === '[' || t.kind === '{') depth++
+      else if (t.kind === ')' || t.kind === ']' || t.kind === '}') depth--
+      this.advance()
+    }
   }
 
   private parseImport(): ImportDeclaration {
@@ -755,7 +822,24 @@ class Parser {
     this.expect('{')
     let stmts: Statement[] = []
     while (!this.check('}') && !this.atEnd()) {
-      stmts.push(this.parseStatement())
+      if (this.atDeclarationStart()) {
+        // A '}' went missing: end the block here and let the declaration parse.
+        this.record(new CompileError([new Diagnostic('E1001', 'expected }, found ' + this.current().kind, this.current().span)]))
+        return new BlockStatement(this.span(start), stmts)
+      }
+      if (this.diagnostics.length >= MAX_SYNTAX_ERRORS) break
+      let before = this.pos
+      try {
+        stmts.push(this.parseStatement())
+        this.recovering = false
+      } catch (e) {
+        if (!(e instanceof CompileError)) throw e as Error
+        this.record(e)
+        this.synchronize()
+        if (this.pos === before && !this.check('}')) this.advance()
+        // At a statement boundary again: the next error is a new one.
+        this.recovering = false
+      }
     }
     this.expect('}')
     return new BlockStatement(this.span(start), stmts)
@@ -920,7 +1004,7 @@ class Parser {
         let args: Expression[] = []
         if (!this.check(')')) {
           while (true) {
-            args.push(this.parseExpression())
+            args.push(this.parseListElement(')'))
             if (!this.check(',')) break
             this.advance()
           }
@@ -982,7 +1066,7 @@ class Parser {
       if (this.check(')') || this.isLambdaStart()) {
         return this.parseLambda(start)
       }
-      let expr = this.parseExpression()
+      let expr = this.parseListElement(')')
       this.expect(')')
       return expr
     }
@@ -991,7 +1075,7 @@ class Parser {
       let elements: Expression[] = []
       if (!this.check(']')) {
         while (true) {
-          elements.push(this.parseExpression())
+          elements.push(this.parseListElement(']'))
           if (!this.check(',')) break
           this.advance()
         }
@@ -1007,7 +1091,7 @@ class Parser {
           let pStart = this.current().span
           let pName = this.expect('name').text
           this.expect(':')
-          let pValue = this.parseExpression()
+          let pValue = this.parseListElement('}')
           props.push(new Property(this.span(pStart), pName, pValue))
           if (!this.check(',')) break
           this.advance()
@@ -1018,6 +1102,40 @@ class Parser {
     }
     this.error('expected expression')
     return new NullExpression(this.span(start))
+  }
+
+  /**
+   * One argument, array element, property value or parenthesised expression. A view is one long expression -- a whole
+   * screen of nested calls in a single return -- so recovering only between
+   * statements would hide every later error in it. On an error inside the
+   * element, or anything but ',' or `close` after it, the error is recorded and
+   * the parser skips to the next ',' or to `close` at this depth.
+   */
+  private parseListElement(close: string): Expression {
+    let start = this.current().span
+    try {
+      let element = this.parseExpression()
+      if (!this.check(',') && !this.check(close)) this.error('expected ' + close + ', found ' + this.current().kind)
+      this.recovering = false
+      return element
+    } catch (e) {
+      if (!(e instanceof CompileError)) throw e as Error
+      this.record(e)
+      let depth = 0
+      while (!this.atEnd()) {
+        let kind = this.current().kind
+        if (depth === 0 && (kind === ',' || kind === close)) break
+        // A statement or declaration boundary: the list is not coming back.
+        if (depth <= 0 && (kind === ';' || this.atDeclarationStart())) break
+        if (kind === '(' || kind === '[' || kind === '{') depth++
+        else if (kind === ')' || kind === ']' || kind === '}') {
+          if (depth === 0) break
+          depth--
+        }
+        this.advance()
+      }
+      return new NullExpression(this.span(start))
+    }
   }
 
   private isLambdaStart(): boolean {

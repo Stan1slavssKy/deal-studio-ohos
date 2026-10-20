@@ -1,0 +1,1202 @@
+{
+ "date": "2026-10-15",
+ "source": "tools/device-jev-sweep.py on device 5SM0125725000064, VERA-SECTIONS lines",
+ "gold": [
+  {
+   "id": "shanghai-layover",
+   "label": "none",
+   "ms": 464,
+   "picked": "vetoed needs_integration=0.94 needs_live_ticking=0.44 needs_real_data=0.82"
+  },
+  {
+   "id": "budget-tracker",
+   "label": "none",
+   "ms": 304,
+   "picked": "vetoed needs_search_or_form=0.80 needs_multiple_counters=0.78"
+  },
+  {
+   "id": "recipe-search",
+   "label": "none",
+   "ms": 961,
+   "picked": "vetoed needs_search_or_form=0.86"
+  },
+  {
+   "id": "crm",
+   "label": "none",
+   "ms": 303,
+   "picked": "vetoed needs_search_or_form=0.91"
+  },
+  {
+   "id": "two-player-scoreboard",
+   "label": "none",
+   "ms": 877,
+   "picked": "vetoed needs_multiple_counters=0.97"
+  },
+  {
+   "id": "weather-app",
+   "label": "none",
+   "ms": 297,
+   "picked": "vetoed needs_integration=0.58 needs_real_data=0.89"
+  },
+  {
+   "id": "music-player",
+   "label": "none",
+   "ms": 370,
+   "picked": "vetoed needs_integration=0.55"
+  },
+  {
+   "id": "timer-stopwatch",
+   "label": "none",
+   "ms": 1466,
+   "picked": "vetoed needs_integration=0.32"
+  },
+  {
+   "id": "inventory-search",
+   "label": "none",
+   "ms": 317,
+   "picked": "vetoed needs_search_or_form=0.94"
+  },
+  {
+   "id": "library-search",
+   "label": "none",
+   "ms": 308,
+   "picked": "vetoed needs_search_or_form=0.89"
+  },
+  {
+   "id": "tic-tac-toe",
+   "label": "none",
+   "ms": 350,
+   "picked": "none (section1=none section2=none)"
+  },
+  {
+   "id": "chat-app",
+   "label": "none",
+   "ms": 293,
+   "picked": "vetoed needs_integration=0.63"
+  },
+  {
+   "id": "camera-app",
+   "label": "none",
+   "ms": 316,
+   "picked": "vetoed needs_integration=0.97"
+  },
+  {
+   "id": "calculator",
+   "label": "none",
+   "ms": 332,
+   "picked": "none (section1=none section2=none)"
+  },
+  {
+   "id": "note-taking",
+   "label": "none",
+   "ms": 317,
+   "picked": "vetoed needs_search_or_form=0.61"
+  },
+  {
+   "id": "map-restaurants",
+   "label": "none",
+   "ms": 1227,
+   "picked": "vetoed needs_integration=0.90 needs_search_or_form=0.74 needs_real_data=0.58"
+  },
+  {
+   "id": "video-call",
+   "label": "none",
+   "ms": 436,
+   "picked": "vetoed needs_integration=0.92"
+  },
+  {
+   "id": "drawing-app",
+   "label": "none",
+   "ms": 628,
+   "picked": "vetoed needs_integration=0.40"
+  },
+  {
+   "id": "quiz-app",
+   "label": "none",
+   "ms": 319,
+   "picked": "none (section1=none section2=none)"
+  },
+  {
+   "id": "packing-checklist",
+   "label": "list_detail",
+   "ms": 338,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "shopping-list",
+   "label": "list_detail",
+   "ms": 336,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "reading-list",
+   "label": "list_detail",
+   "ms": 336,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "chores-list",
+   "label": "list_detail",
+   "ms": 1038,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "task-list",
+   "label": "list_detail",
+   "ms": 371,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "workout-checklist",
+   "label": "list_detail",
+   "ms": 310,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "morning-routine",
+   "label": "list_detail",
+   "ms": 330,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "packing-items",
+   "label": "list_detail",
+   "ms": 321,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "movie-list",
+   "label": "list_detail",
+   "ms": 469,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "grocery-list",
+   "label": "list_detail",
+   "ms": 355,
+   "picked": "section1=none section2=checklist"
+  },
+  {
+   "id": "plant-watering",
+   "label": "list_detail",
+   "ms": 514,
+   "picked": "section1=checklist section2=checklist"
+  },
+  {
+   "id": "counter-total",
+   "label": "dashboard",
+   "ms": 347,
+   "picked": "section1=metrics section2=none"
+  },
+  {
+   "id": "count-vs-target",
+   "label": "dashboard",
+   "ms": 391,
+   "picked": "section1=progress_goal section2=progress_goal"
+  },
+  {
+   "id": "fitness-steps",
+   "label": "dashboard",
+   "ms": 512,
+   "picked": "none (section1=none section2=none)"
+  },
+  {
+   "id": "summary-counter",
+   "label": "dashboard",
+   "ms": 325,
+   "picked": "section1=metrics section2=none"
+  },
+  {
+   "id": "score-vs-target",
+   "label": "dashboard",
+   "ms": 908,
+   "picked": "section1=progress_goal section2=progress_goal"
+  },
+  {
+   "id": "water-intake",
+   "label": "dashboard",
+   "ms": 287,
+   "picked": "section1=progress_goal section2=progress_goal"
+  },
+  {
+   "id": "workout-reps",
+   "label": "dashboard",
+   "ms": 586,
+   "picked": "none (section1=none section2=none)"
+  },
+  {
+   "id": "three-numbers",
+   "label": "dashboard",
+   "ms": 330,
+   "picked": "section1=metrics section2=none"
+  },
+  {
+   "id": "game-score-reset",
+   "label": "dashboard",
+   "ms": 354,
+   "picked": "section1=metrics section2=none"
+  }
+ ],
+ "stretch": [
+  {
+   "id": "habit-tracker",
+   "label": "list_detail",
+   "ms": 328,
+   "picked": "vetoed needs_search_or_form=0.62"
+  },
+  {
+   "id": "contacts-callback",
+   "label": "none",
+   "ms": 363,
+   "picked": "vetoed needs_integration=0.37 needs_real_data=0.75"
+  },
+  {
+   "id": "medication-reminder",
+   "label": "none",
+   "ms": 321,
+   "picked": "vetoed needs_live_ticking=0.58"
+  },
+  {
+   "id": "nutrition-tracker",
+   "label": "none",
+   "ms": 313,
+   "picked": "vetoed needs_search_or_form=0.80"
+  },
+  {
+   "id": "sleep-tracker",
+   "label": "none",
+   "ms": 1274,
+   "picked": "none (section1=none section2=none)"
+  },
+  {
+   "id": "project-tracker",
+   "label": "none",
+   "ms": 321,
+   "picked": "vetoed needs_search_or_form=0.91"
+  },
+  {
+   "id": "travel-itinerary",
+   "label": "none",
+   "ms": 330,
+   "picked": "vetoed needs_integration=0.34 needs_search_or_form=0.83"
+  },
+  {
+   "id": "warehouse-inventory",
+   "label": "none",
+   "ms": 1059,
+   "picked": "vetoed needs_search_or_form=0.65 needs_multiple_counters=0.74"
+  },
+  {
+   "id": "vague-app",
+   "label": "none",
+   "ms": 308,
+   "picked": "none (section1=none section2=none)"
+  },
+  {
+   "id": "organize-day",
+   "label": "list_detail",
+   "ms": 345,
+   "picked": "none (section1=none section2=none)"
+  }
+ ],
+ "after_soft_vetoes": {
+  "gold": [
+   {
+    "id": "shanghai-layover",
+    "label": "none",
+    "ms": 338,
+    "picked": "vetoed needs_integration=0.95 needs_real_data=0.80"
+   },
+   {
+    "id": "budget-tracker",
+    "label": "none",
+    "ms": 327,
+    "picked": "section1=metrics section2=trend_chart logic=needs_search_or_form=0.81,needs_multiple_counters=0.76,needs_logic=0.79"
+   },
+   {
+    "id": "recipe-search",
+    "label": "none",
+    "ms": 1515,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "crm",
+    "label": "none",
+    "ms": 317,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "two-player-scoreboard",
+    "label": "none",
+    "ms": 302,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "weather-app",
+    "label": "none",
+    "ms": 315,
+    "picked": "section1=key_facts section2=none(duplicate key_facts) needs_real_data=0.88 logic=needs_integration=0.59"
+   },
+   {
+    "id": "music-player",
+    "label": "none",
+    "ms": 686,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "timer-stopwatch",
+    "label": "none",
+    "ms": 308,
+    "picked": "section1=timer section2=none(duplicate timer)"
+   },
+   {
+    "id": "inventory-search",
+    "label": "none",
+    "ms": 293,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "library-search",
+    "label": "none",
+    "ms": 271,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "tic-tac-toe",
+    "label": "none",
+    "ms": 320,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "chat-app",
+    "label": "none",
+    "ms": 499,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "camera-app",
+    "label": "none",
+    "ms": 320,
+    "picked": "vetoed needs_integration=0.97"
+   },
+   {
+    "id": "calculator",
+    "label": "none",
+    "ms": 445,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "note-taking",
+    "label": "none",
+    "ms": 1071,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "map-restaurants",
+    "label": "none",
+    "ms": 424,
+    "picked": "vetoed needs_integration=0.90 needs_real_data=0.60"
+   },
+   {
+    "id": "video-call",
+    "label": "none",
+    "ms": 396,
+    "picked": "vetoed needs_integration=0.93"
+   },
+   {
+    "id": "drawing-app",
+    "label": "none",
+    "ms": 311,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "quiz-app",
+    "label": "none",
+    "ms": 318,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "packing-checklist",
+    "label": "list_detail",
+    "ms": 579,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "shopping-list",
+    "label": "list_detail",
+    "ms": 878,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "reading-list",
+    "label": "list_detail",
+    "ms": 437,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "chores-list",
+    "label": "list_detail",
+    "ms": 454,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "task-list",
+    "label": "list_detail",
+    "ms": 358,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "workout-checklist",
+    "label": "list_detail",
+    "ms": 306,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "morning-routine",
+    "label": "list_detail",
+    "ms": 474,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "packing-items",
+    "label": "list_detail",
+    "ms": 643,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "movie-list",
+    "label": "list_detail",
+    "ms": 325,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "grocery-list",
+    "label": "list_detail",
+    "ms": 317,
+    "picked": "section1=none section2=checklist"
+   },
+   {
+    "id": "plant-watering",
+    "label": "list_detail",
+    "ms": 534,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "counter-total",
+    "label": "dashboard",
+    "ms": 914,
+    "picked": "section1=metrics section2=none logic=needs_logic=0.55"
+   },
+   {
+    "id": "count-vs-target",
+    "label": "dashboard",
+    "ms": 957,
+    "picked": "section1=progress_goal section2=none(duplicate progress_goal) logic=needs_logic=0.74"
+   },
+   {
+    "id": "fitness-steps",
+    "label": "dashboard",
+    "ms": 350,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "summary-counter",
+    "label": "dashboard",
+    "ms": 307,
+    "picked": "section1=metrics section2=none"
+   },
+   {
+    "id": "score-vs-target",
+    "label": "dashboard",
+    "ms": 304,
+    "picked": "section1=progress_goal section2=none(duplicate progress_goal) logic=needs_logic=0.92"
+   },
+   {
+    "id": "water-intake",
+    "label": "dashboard",
+    "ms": 344,
+    "picked": "section1=progress_goal section2=none(duplicate progress_goal) logic=needs_logic=0.73"
+   },
+   {
+    "id": "workout-reps",
+    "label": "dashboard",
+    "ms": 386,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "three-numbers",
+    "label": "dashboard",
+    "ms": 380,
+    "picked": "section1=metrics section2=none"
+   },
+   {
+    "id": "game-score-reset",
+    "label": "dashboard",
+    "ms": 314,
+    "picked": "section1=metrics section2=none"
+   }
+  ],
+  "stretch": [
+   {
+    "id": "habit-tracker",
+    "label": "list_detail",
+    "ms": 343,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "contacts-callback",
+    "label": "none",
+    "ms": 312,
+    "picked": "section1=checklist section2=none(duplicate checklist) needs_real_data=0.76 logic=needs_integration=0.42"
+   },
+   {
+    "id": "medication-reminder",
+    "label": "none",
+    "ms": 274,
+    "picked": "section1=checklist section2=none(duplicate checklist) logic=needs_live_ticking=0.61"
+   },
+   {
+    "id": "nutrition-tracker",
+    "label": "none",
+    "ms": 750,
+    "picked": "section1=progress_goal section2=none logic=needs_search_or_form=0.82,needs_logic=0.83"
+   },
+   {
+    "id": "sleep-tracker",
+    "label": "none",
+    "ms": 312,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "project-tracker",
+    "label": "none",
+    "ms": 335,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "travel-itinerary",
+    "label": "none",
+    "ms": 279,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "warehouse-inventory",
+    "label": "none",
+    "ms": 328,
+    "picked": "section1=checklist section2=none(duplicate checklist) logic=needs_search_or_form=0.64,needs_multiple_counters=0.74"
+   },
+   {
+    "id": "vague-app",
+    "label": "none",
+    "ms": 307,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "organize-day",
+    "label": "list_detail",
+    "ms": 309,
+    "picked": "none (section1=none section2=none)"
+   }
+  ]
+ },
+ "after_threshold_tuning": {
+  "gold": [
+   {
+    "id": "shanghai-layover",
+    "label": "none",
+    "ms": 306,
+    "picked": "vetoed needs_integration=0.94 needs_real_data=0.84"
+   },
+   {
+    "id": "budget-tracker",
+    "label": "none",
+    "ms": 404,
+    "picked": "section1=metrics section2=trend_chart logic=needs_search_or_form=0.79,needs_multiple_counters=0.77,needs_logic=0.81"
+   },
+   {
+    "id": "recipe-search",
+    "label": "none",
+    "ms": 286,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "crm",
+    "label": "none",
+    "ms": 275,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "two-player-scoreboard",
+    "label": "none",
+    "ms": 313,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "weather-app",
+    "label": "none",
+    "ms": 323,
+    "picked": "section1=key_facts section2=none needs_real_data=0.88 logic=needs_integration=0.59"
+   },
+   {
+    "id": "music-player",
+    "label": "none",
+    "ms": 270,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "timer-stopwatch",
+    "label": "none",
+    "ms": 312,
+    "picked": "section1=timer section2=none(duplicate timer)"
+   },
+   {
+    "id": "inventory-search",
+    "label": "none",
+    "ms": 312,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "library-search",
+    "label": "none",
+    "ms": 325,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "tic-tac-toe",
+    "label": "none",
+    "ms": 617,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "chat-app",
+    "label": "none",
+    "ms": 312,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "camera-app",
+    "label": "none",
+    "ms": 305,
+    "picked": "vetoed needs_integration=0.97"
+   },
+   {
+    "id": "calculator",
+    "label": "none",
+    "ms": 301,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "note-taking",
+    "label": "none",
+    "ms": 334,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "map-restaurants",
+    "label": "none",
+    "ms": 858,
+    "picked": "vetoed needs_integration=0.90 needs_real_data=0.62"
+   },
+   {
+    "id": "video-call",
+    "label": "none",
+    "ms": 318,
+    "picked": "vetoed needs_integration=0.93"
+   },
+   {
+    "id": "drawing-app",
+    "label": "none",
+    "ms": 315,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "quiz-app",
+    "label": "none",
+    "ms": 854,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "packing-checklist",
+    "label": "list_detail",
+    "ms": 1746,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "shopping-list",
+    "label": "list_detail",
+    "ms": 458,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "reading-list",
+    "label": "list_detail",
+    "ms": 434,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "chores-list",
+    "label": "list_detail",
+    "ms": 317,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "task-list",
+    "label": "list_detail",
+    "ms": 383,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "workout-checklist",
+    "label": "list_detail",
+    "ms": 492,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "morning-routine",
+    "label": "list_detail",
+    "ms": 314,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "packing-items",
+    "label": "list_detail",
+    "ms": 961,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "movie-list",
+    "label": "list_detail",
+    "ms": 320,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "grocery-list",
+    "label": "list_detail",
+    "ms": 498,
+    "picked": "section1=none section2=checklist"
+   },
+   {
+    "id": "plant-watering",
+    "label": "list_detail",
+    "ms": 389,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "counter-total",
+    "label": "dashboard",
+    "ms": 361,
+    "picked": "section1=metrics section2=none"
+   },
+   {
+    "id": "count-vs-target",
+    "label": "dashboard",
+    "ms": 311,
+    "picked": "section1=progress_goal section2=none(duplicate progress_goal)"
+   },
+   {
+    "id": "fitness-steps",
+    "label": "dashboard",
+    "ms": 419,
+    "picked": "section1=none section2=progress_goal"
+   },
+   {
+    "id": "summary-counter",
+    "label": "dashboard",
+    "ms": 438,
+    "picked": "section1=metrics section2=none"
+   },
+   {
+    "id": "score-vs-target",
+    "label": "dashboard",
+    "ms": 309,
+    "picked": "section1=progress_goal section2=none(duplicate progress_goal) logic=needs_logic=0.92"
+   },
+   {
+    "id": "water-intake",
+    "label": "dashboard",
+    "ms": 362,
+    "picked": "section1=progress_goal section2=none"
+   },
+   {
+    "id": "workout-reps",
+    "label": "dashboard",
+    "ms": 623,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "three-numbers",
+    "label": "dashboard",
+    "ms": 297,
+    "picked": "section1=metrics section2=none"
+   },
+   {
+    "id": "game-score-reset",
+    "label": "dashboard",
+    "ms": 341,
+    "picked": "section1=metrics section2=none"
+   }
+  ],
+  "stretch": [
+   {
+    "id": "habit-tracker",
+    "label": "list_detail",
+    "ms": 285,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "contacts-callback",
+    "label": "none",
+    "ms": 335,
+    "picked": "section1=checklist section2=none(duplicate checklist) needs_real_data=0.75 logic=needs_integration=0.42"
+   },
+   {
+    "id": "medication-reminder",
+    "label": "none",
+    "ms": 344,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "nutrition-tracker",
+    "label": "none",
+    "ms": 394,
+    "picked": "section1=progress_goal section2=none(duplicate progress_goal) logic=needs_search_or_form=0.81,needs_logic=0.85"
+   },
+   {
+    "id": "sleep-tracker",
+    "label": "none",
+    "ms": 284,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "project-tracker",
+    "label": "none",
+    "ms": 1092,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "travel-itinerary",
+    "label": "none",
+    "ms": 413,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "warehouse-inventory",
+    "label": "none",
+    "ms": 682,
+    "picked": "section1=checklist section2=none(duplicate checklist) logic=needs_multiple_counters=0.72"
+   },
+   {
+    "id": "vague-app",
+    "label": "none",
+    "ms": 344,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "organize-day",
+    "label": "list_detail",
+    "ms": 615,
+    "picked": "none (section1=none section2=none)"
+   }
+  ]
+ },
+ "after_new_fragments": {
+  "gold": [
+   {
+    "id": "shanghai-layover",
+    "label": "none",
+    "ms": 573,
+    "picked": "vetoed needs_integration=0.94 needs_real_data=0.81"
+   },
+   {
+    "id": "budget-tracker",
+    "label": "none",
+    "ms": 478,
+    "picked": "section1=metrics section2=trend_chart logic=needs_search_or_form=0.79,needs_multiple_counters=0.75,needs_logic=0.81"
+   },
+   {
+    "id": "recipe-search",
+    "label": "none",
+    "ms": 466,
+    "picked": "section1=search_list section2=none"
+   },
+   {
+    "id": "crm",
+    "label": "none",
+    "ms": 307,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "two-player-scoreboard",
+    "label": "none",
+    "ms": 360,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "weather-app",
+    "label": "none",
+    "ms": 402,
+    "picked": "section1=key_facts section2=none needs_real_data=0.87 logic=needs_integration=0.57"
+   },
+   {
+    "id": "music-player",
+    "label": "none",
+    "ms": 301,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "timer-stopwatch",
+    "label": "none",
+    "ms": 1035,
+    "picked": "section1=timer section2=none(duplicate timer)"
+   },
+   {
+    "id": "inventory-search",
+    "label": "none",
+    "ms": 385,
+    "picked": "section1=search_list section2=none"
+   },
+   {
+    "id": "library-search",
+    "label": "none",
+    "ms": 342,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "tic-tac-toe",
+    "label": "none",
+    "ms": 515,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "chat-app",
+    "label": "none",
+    "ms": 319,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "camera-app",
+    "label": "none",
+    "ms": 327,
+    "picked": "vetoed needs_integration=0.97"
+   },
+   {
+    "id": "calculator",
+    "label": "none",
+    "ms": 299,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "note-taking",
+    "label": "none",
+    "ms": 359,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "map-restaurants",
+    "label": "none",
+    "ms": 332,
+    "picked": "vetoed needs_integration=0.90 needs_real_data=0.60"
+   },
+   {
+    "id": "video-call",
+    "label": "none",
+    "ms": 375,
+    "picked": "vetoed needs_integration=0.92"
+   },
+   {
+    "id": "drawing-app",
+    "label": "none",
+    "ms": 990,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "quiz-app",
+    "label": "none",
+    "ms": 386,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "packing-checklist",
+    "label": "list_detail",
+    "ms": 389,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "shopping-list",
+    "label": "list_detail",
+    "ms": 792,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "reading-list",
+    "label": "list_detail",
+    "ms": 1236,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "chores-list",
+    "label": "list_detail",
+    "ms": 396,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "task-list",
+    "label": "list_detail",
+    "ms": 360,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "workout-checklist",
+    "label": "list_detail",
+    "ms": 975,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "morning-routine",
+    "label": "list_detail",
+    "ms": 352,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "packing-items",
+    "label": "list_detail",
+    "ms": 349,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "movie-list",
+    "label": "list_detail",
+    "ms": 308,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "grocery-list",
+    "label": "list_detail",
+    "ms": 308,
+    "picked": "section1=none section2=checklist"
+   },
+   {
+    "id": "plant-watering",
+    "label": "list_detail",
+    "ms": 623,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "counter-total",
+    "label": "dashboard",
+    "ms": 283,
+    "picked": "section1=metrics section2=none"
+   },
+   {
+    "id": "count-vs-target",
+    "label": "dashboard",
+    "ms": 339,
+    "picked": "section1=progress_goal section2=none(duplicate progress_goal)"
+   },
+   {
+    "id": "fitness-steps",
+    "label": "dashboard",
+    "ms": 372,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "summary-counter",
+    "label": "dashboard",
+    "ms": 322,
+    "picked": "section1=metrics section2=none"
+   },
+   {
+    "id": "score-vs-target",
+    "label": "dashboard",
+    "ms": 431,
+    "picked": "section1=progress_goal section2=none(duplicate progress_goal) logic=needs_logic=0.91"
+   },
+   {
+    "id": "water-intake",
+    "label": "dashboard",
+    "ms": 401,
+    "picked": "section1=progress_goal section2=none"
+   },
+   {
+    "id": "workout-reps",
+    "label": "dashboard",
+    "ms": 339,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "three-numbers",
+    "label": "dashboard",
+    "ms": 332,
+    "picked": "section1=metrics section2=none"
+   },
+   {
+    "id": "game-score-reset",
+    "label": "dashboard",
+    "ms": 364,
+    "picked": "section1=metrics section2=none"
+   }
+  ],
+  "stretch": [
+   {
+    "id": "habit-tracker",
+    "label": "list_detail",
+    "ms": 1126,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "contacts-callback",
+    "label": "none",
+    "ms": 757,
+    "picked": "section1=checklist section2=none(duplicate checklist) needs_real_data=0.78 logic=needs_integration=0.39"
+   },
+   {
+    "id": "medication-reminder",
+    "label": "none",
+    "ms": 723,
+    "picked": "section1=checklist section2=none(duplicate checklist)"
+   },
+   {
+    "id": "nutrition-tracker",
+    "label": "none",
+    "ms": 417,
+    "picked": "section1=progress_goal section2=none logic=needs_search_or_form=0.81,needs_logic=0.86"
+   },
+   {
+    "id": "sleep-tracker",
+    "label": "none",
+    "ms": 322,
+    "picked": "section1=progress_goal section2=none"
+   },
+   {
+    "id": "project-tracker",
+    "label": "none",
+    "ms": 377,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "travel-itinerary",
+    "label": "none",
+    "ms": 324,
+    "picked": "section1=timeline section2=none(duplicate timeline) logic=needs_integration=0.33,needs_search_or_form=0.83"
+   },
+   {
+    "id": "warehouse-inventory",
+    "label": "none",
+    "ms": 379,
+    "picked": "section1=none section2=data_table"
+   },
+   {
+    "id": "vague-app",
+    "label": "none",
+    "ms": 326,
+    "picked": "none (section1=none section2=none)"
+   },
+   {
+    "id": "organize-day",
+    "label": "list_detail",
+    "ms": 484,
+    "picked": "section1=timeline section2=none(duplicate timeline)"
+   }
+  ]
+ }
+}

@@ -1,0 +1,204 @@
+[
+ {
+  "id": "shanghai-layover",
+  "label": "none",
+  "prompt": "Shanghai 11-hour layover stop manager, display-and-action widget. A header line: 'PVG 09:00 arrival • 11 hours • back at airport by 18:00 (20:00 international departure)'. A list of 9 stops, each row showing: stop name, time window, duration, and coordinates, plus three controls: (1) a 'Navigate' button that calls sdk.call(\"com.huawei.hmos.maps.app/entry/EntryAbility/StartNavigate\", [], handler, \"foreground\") with srcLocation = the last stop marked reached (default 'Pudong International Airport, Shanghai' if none marked), dstLoaction = that stop's coordinates and name, dstLoactionType = 'walking' for in-city stops, and entityId = the stop's numeric index as a string; (2) an 'Add to calendar' button that calls CalendarKit.Calendar.addEvent with title = stop name, startTime/endTime as epoch milliseconds strings for the stop's window, location = 'stop name, latitude, longitude', timeZone = 'Asia/Shanghai', remindBefore = 15, description = 'Shanghai layover stop', and stores the returned decimal event ID in the app's added-event list; (3) a 'Reached' toggle that records the stop as reached and updates the navigation origin for later stops. Bottom action row: a 'Wipe added events' button that calls CalendarKit.Calendar.deleteEvents with ids = the stored list of event IDs this app created and clears that list; an 'Open calendar' button that opens the phone's calendar app; and a progress line 'Stops reached: N of 9'.",
+  "note": "worst confirmed false-accept: matched list_detail at 0.95 confidence"
+ },
+ {
+  "id": "budget-tracker",
+  "label": "none",
+  "prompt": "A budget tracker with categories and spending charts"
+ },
+ {
+  "id": "recipe-search",
+  "label": "none",
+  "prompt": "A recipe app where I can search recipes and save favorites"
+ },
+ {
+  "id": "crm",
+  "label": "none",
+  "prompt": "A CRM to track customer contacts and deal stages"
+ },
+ {
+  "id": "two-player-scoreboard",
+  "label": "none",
+  "prompt": "A simple scoreboard for a card game with two players"
+ },
+ {
+  "id": "weather-app",
+  "label": "none",
+  "prompt": "A weather app showing the forecast for my city"
+ },
+ {
+  "id": "music-player",
+  "label": "none",
+  "prompt": "A music player with playlists"
+ },
+ {
+  "id": "timer-stopwatch",
+  "label": "none",
+  "prompt": "A timer and stopwatch app"
+ },
+ {
+  "id": "inventory-search",
+  "label": "none",
+  "prompt": "An inventory management app with search and filtering"
+ },
+ {
+  "id": "library-search",
+  "label": "none",
+  "prompt": "A library app to search books and check availability"
+ },
+ {
+  "id": "tic-tac-toe",
+  "label": "none",
+  "prompt": "a tic tac toe game you can play against a friend"
+ },
+ {
+  "id": "chat-app",
+  "label": "none",
+  "prompt": "A chat app where I can message my friends"
+ },
+ {
+  "id": "camera-app",
+  "label": "none",
+  "prompt": "A camera app that lets me take and edit photos"
+ },
+ {
+  "id": "calculator",
+  "label": "none",
+  "prompt": "A calculator with all the basic arithmetic operations"
+ },
+ {
+  "id": "note-taking",
+  "label": "none",
+  "prompt": "A note-taking app with rich text formatting"
+ },
+ {
+  "id": "map-restaurants",
+  "label": "none",
+  "prompt": "A map app to find nearby restaurants"
+ },
+ {
+  "id": "video-call",
+  "label": "none",
+  "prompt": "A video call app"
+ },
+ {
+  "id": "drawing-app",
+  "label": "none",
+  "prompt": "A drawing or sketch app"
+ },
+ {
+  "id": "quiz-app",
+  "label": "none",
+  "prompt": "A quiz app with multiple choice questions and a score at the end"
+ },
+ {
+  "id": "packing-checklist",
+  "label": "list_detail",
+  "prompt": "I want a simple checklist for packing for a trip"
+ },
+ {
+  "id": "shopping-list",
+  "label": "list_detail",
+  "prompt": "A shopping list where I can check off items as I buy them"
+ },
+ {
+  "id": "reading-list",
+  "label": "list_detail",
+  "prompt": "A reading list of books I want to get through, marked as read or not"
+ },
+ {
+  "id": "chores-list",
+  "label": "list_detail",
+  "prompt": "A list of daily chores I can tick off one by one"
+ },
+ {
+  "id": "task-list",
+  "label": "list_detail",
+  "prompt": "Show me a list of tasks and let me mark each one done"
+ },
+ {
+  "id": "workout-checklist",
+  "label": "list_detail",
+  "prompt": "A list of workout exercises I can check off as I complete them"
+ },
+ {
+  "id": "morning-routine",
+  "label": "list_detail",
+  "prompt": "A to-do list for my morning routine"
+ },
+ {
+  "id": "packing-items",
+  "label": "list_detail",
+  "prompt": "A packing list with items I can mark as packed"
+ },
+ {
+  "id": "movie-list",
+  "label": "list_detail",
+  "prompt": "A list of movies I want to watch, checked off once watched"
+ },
+ {
+  "id": "grocery-list",
+  "label": "list_detail",
+  "prompt": "Grocery list app"
+ },
+ {
+  "id": "plant-watering",
+  "label": "list_detail",
+  "prompt": "A plant watering tracker, a list of plants I can mark as watered"
+ },
+ {
+  "id": "counter-total",
+  "label": "dashboard",
+  "prompt": "a small dashboard with a counter and a total"
+ },
+ {
+  "id": "count-vs-target",
+  "label": "dashboard",
+  "prompt": "A simple screen that tracks a running count against a target with a reset button"
+ },
+ {
+  "id": "fitness-steps",
+  "label": "dashboard",
+  "prompt": "A fitness dashboard showing steps taken, goal, and remaining steps"
+ },
+ {
+  "id": "summary-counter",
+  "label": "dashboard",
+  "prompt": "A dashboard with a few summary numbers and buttons to adjust a counter"
+ },
+ {
+  "id": "score-vs-target",
+  "label": "dashboard",
+  "prompt": "Show me my score so far compared to a target score, with a way to add points and reset"
+ },
+ {
+  "id": "water-intake",
+  "label": "dashboard",
+  "prompt": "A dashboard showing my daily water intake versus a goal"
+ },
+ {
+  "id": "workout-reps",
+  "label": "dashboard",
+  "prompt": "A simple counter app for counting reps during a workout"
+ },
+ {
+  "id": "three-numbers",
+  "label": "dashboard",
+  "prompt": "A screen with three key numbers and a button to increment one of them"
+ },
+ {
+  "id": "game-score-reset",
+  "label": "dashboard",
+  "prompt": "A dashboard with stats and a reset button for a game score"
+ },
+ {
+  "id": "shared-costs-friends",
+  "label": "none",
+  "prompt": "Shared costs between four friends, Anna, Ben, Carol and Dan: any of them sometimes pays for everyone. Let me pick who paid, enter the amount in dollars and cents and add it with a short note, and keep the list of all payments. Everything is split equally among the four. Show the total spent, each person's equal share, how much each one has paid so far, and each person's balance (positive means the others owe them, negative means they owe). Show who should pay whom to settle everything with the fewest transfers, and a bar chart of what each friend has paid. Give me a button to remove the last payment and one to start over.",
+  "note": "needs a list, a form, a bar chart and real money arithmetic; the template path should hand it to the model rather than drop it"
+ }
+]

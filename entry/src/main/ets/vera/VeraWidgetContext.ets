@@ -19,6 +19,8 @@ export class WidgetBuildContext {
   brief: string = ''
   /** The marker's plain request, what the widget is for; the composer sketches from it. '' when the marker gave none. */
   request: string = ''
+  /** The chat already tried to compose this widget (composeChatWidget), so the builder does not again. */
+  composeTried: boolean = false
   recentConversation: WidgetConversationTurn[] = []
   verifiedSearchResults: string[] = []
   source: string = ''

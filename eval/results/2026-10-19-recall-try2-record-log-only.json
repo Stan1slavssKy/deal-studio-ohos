@@ -1,0 +1,93 @@
+[
+ {
+  "id": "hf-02-terse",
+  "label": "coverage",
+  "ms": 2145,
+  "picked": "section1=record_log section2=none section3=series_chart section4=none(duplicate series_chart) section5=none(duplicate series_chart) section6=none(duplicate series_chart) logic=needs_integration=0.32",
+  "raw": "s1=record_log@0.69 s2=series_chart@0.46 s3=series_chart@0.59 s4=series_chart@0.59 s5=series_chart@0.57 s6=series_chart@0.52 +filter_box@0.09 +master_list@0.25 +detail_view@0.10 +record_log@0.52 +number_strip@0.20 +breakdown_table@0.10 +series_chart@0.58 +checklist@0.12 layout=log_report@0.38"
+ },
+ {
+  "id": "hf-02-descriptive",
+  "label": "coverage",
+  "ms": 2282,
+  "picked": "section1=record_log section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=record_log@0.82 s2=record_log@0.46 s3=bar_chart@0.31 s4=series_chart@0.27 s5=bar_chart@0.25 s6=bar_chart@0.28 +filter_box@0.06 +master_list@0.25 +detail_view@0.12 +record_log@0.54 +number_strip@0.42 +breakdown_table@0.21 +series_chart@0.69 +checklist@0.13 layout=log_report@0.64"
+ },
+ {
+  "id": "hf-02-computation",
+  "label": "coverage",
+  "ms": 810,
+  "picked": "section1=record_log section2=none section3=none section4=none section5=none section6=none layout=log_report",
+  "raw": "s1=record_log@0.59 s2=number_strip@0.26 s3=number_strip@0.40 s4=number_strip@0.34 s5=number_strip@0.33 s6=number_strip@0.31 +master_list@0.07 +record_log@0.21 +number_strip@0.29 +series_chart@0.06 layout=log_report@0.81"
+ },
+ {
+  "id": "pf-01-terse",
+  "label": "coverage",
+  "ms": 1053,
+  "picked": "section1=record_log section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=record_log@0.77 s2=bar_chart@0.32 s3=bar_chart@0.45 s4=bar_chart@0.47 s5=bar_chart@0.48 s6=bar_chart@0.45 +filter_box@0.11 +master_list@0.35 +detail_view@0.09 +record_log@0.61 +number_strip@0.28 +breakdown_table@0.24 +series_chart@0.75 +checklist@0.21 layout=log_report@0.69"
+ },
+ {
+  "id": "pf-01-descriptive",
+  "label": "coverage",
+  "ms": null,
+  "picked": "NO ANSWER",
+  "raw": ""
+ },
+ {
+  "id": "pf-03-terse",
+  "label": "coverage",
+  "ms": null,
+  "picked": "NO ANSWER",
+  "raw": ""
+ },
+ {
+  "id": "pt-01-computation",
+  "label": "coverage",
+  "ms": 1990,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist",
+  "raw": "s1=list_summary@0.45 s2=list_summary@0.41 s3=list_summary@0.44 s4=list_summary@0.38 s5=list_summary@0.40 s6=list_summary@0.36 +master_list@0.10 +detail_view@0.06 +number_strip@0.16 +breakdown_table@0.06 +series_chart@0.07 +progress_line@0.10 +list_summary@0.65 +checklist@0.26 layout=progress_list@0.99"
+ },
+ {
+  "id": "hc-01-terse",
+  "label": "coverage",
+  "ms": 819,
+  "picked": "section1=checklist section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=checklist@0.52 s2=none@0.48 s3=none@0.61 s4=none@0.70 s5=none@0.71 s6=none@0.75 +filter_box@0.10 +master_list@0.19 +record_log@0.17 +number_strip@0.08 +breakdown_table@0.07 +series_chart@0.07 +itinerary@0.10 +progress_line@0.17 +list_summary@0.18 +checklist@0.48 layout=none@0.66"
+ },
+ {
+  "id": "hc-03-computation",
+  "label": "coverage",
+  "ms": 8219,
+  "picked": "section1=record_log section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=record_log@0.52 s2=record_log@0.21 s3=number_strip@0.23 s4=detail_view@0.21 s5=detail_view@0.21 s6=detail_view@0.23 +filter_box@0.09 +master_list@0.70 +detail_view@0.60 +record_log@0.60 +number_strip@0.38 +breakdown_table@0.06 +list_summary@0.06 +checklist@0.37 layout=master_detail@0.44"
+ },
+ {
+  "id": "el-03-descriptive",
+  "label": "coverage",
+  "ms": 779,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+  "raw": "s1=data_table@0.48 s2=data_table@0.23 s3=key_facts@0.31 s4=key_facts@0.28 s5=key_facts@0.24 s6=none@0.28 +master_list@0.13 +detail_view@0.07 +number_strip@0.18 +breakdown_table@0.07 +checklist@0.09 layout=log_report@0.80"
+ },
+ {
+  "id": "el-04-descriptive",
+  "label": "coverage",
+  "ms": null,
+  "picked": "NO ANSWER",
+  "raw": ""
+ },
+ {
+  "id": "el-04-computation",
+  "label": "coverage",
+  "ms": 1074,
+  "picked": "section1=record_log section2=none section3=bar_chart section4=none section5=none section6=none",
+  "raw": "s1=record_log@0.60 s2=bar_chart@0.39 s3=bar_chart@0.50 s4=bar_chart@0.46 s5=bar_chart@0.32 s6=bar_chart@0.32 +filter_box@0.06 +master_list@0.10 +detail_view@0.07 +record_log@0.29 +number_strip@0.32 +breakdown_table@0.14 +series_chart@0.36 +progress_line@0.06 +checklist@0.10 layout=log_report@0.78"
+ },
+ {
+  "id": "ts-03-terse",
+  "label": "coverage",
+  "ms": 3454,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=timeline@0.47 s2=none@0.44 s3=none@0.50 s4=none@0.52 s5=none@0.60 s6=none@0.62 +filter_box@0.06 +master_list@0.10 +detail_view@0.06 +record_log@0.16 +number_strip@0.06 +itinerary@0.16 +list_summary@0.06 +checklist@0.12 layout=none@0.64"
+ }
+]
