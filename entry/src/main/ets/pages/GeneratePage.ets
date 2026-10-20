@@ -27,8 +27,11 @@ import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
 import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
 import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
-import { composeFromPrompt, composeEnabled, composePlanEnabled, ComposeResult, Sketch, provisionalProgram, sketchPlan } from '../vera/VeraCompose'
-import { buildFromTemplates, TemplateBuild, BUILD_CANCELLED, BUILD_SCRATCH, BUILD_COMPLETE } from '../vera/VeraTemplatePipeline'
+import { composeEnabled, ComposeResult } from '../vera/VeraCompose'
+import { TemplateBuild, BUILD_COMPLETE, BUILD_TEMPLATE } from '../vera/VeraTemplatePipeline'
+import { AgentRequest, AgentResult } from '../vera/agent/VeraAgent'
+import { appAgentHost } from '../vera/agent/AgentAppHost'
+import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE, OUTCOME_COMPLETE, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { RouteInfo, routeLabel, routeShort, jevLabel, checkLabel, checkShort, routeWhy, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED, CHECK_NONE } from '../vera/VeraRoute'
 import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
@@ -222,7 +225,7 @@ struct GeneratePage {
   @State compileErrors: string = ''
   /**
    * Experiment only (experiment/jev-template-select branch): what
-   * tryTemplateSelect decided for the most recent attempt, regardless of
+   * the blocks (noteBlocks) decided for the most recent attempt, regardless of
    * outcome -- mirrors ChatMessage.templatePick (ChatPage.ets), which this
    * page lacked until it became clear hilog's ring buffer and the transient
    * `status` line (overwritten by the next phase) left no way to check
@@ -568,85 +571,92 @@ struct GeneratePage {
     // itself, mid-generation, the first time either is worth calling.
     // JevSelector.ets is unchanged and still callable; nothing here calls it.
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
-    // A new screen in DeepSeek mode is first composed (VeraCompose.ets); what the composer cannot serve goes to the
-    // blocks (VeraTemplatePipeline.ets), and what neither serves is generated -- with the sketch as its plan.
+    // A new screen goes through the route (agent/VeraBuildRoute.ets): the agent and the blocks in the route's
+    // order, and generation only for what neither serves -- with the agent's plan when it made one.
     // Not on top of a saved program: with previousSource set this is a change to it (the model edits it).
-    if (this.mode === MODE_DEEPSEEK && this.previousSource.length === 0 && composeEnabled() && settings.hasSelectorKey()) {
-      this.tryCompose(this.prompt.trim())
-      return
+    let route = new RouteRequest()
+    route.mode = this.mode
+    if (this.previousSource.length === 0 && settings.hasSelectorKey()) {
+      if (this.mode === MODE_DEEPSEEK && composeEnabled()) {
+        route.agent = new AgentRequest()
+        route.agent.prompt = this.prompt.trim()
+      }
+      if (templateSelectEnabled()) { route.blocksPrompt = this.prompt.trim() }
     }
-    if (templateSelectEnabled() && settings.hasSelectorKey() && this.previousSource.length === 0) {
-      this.tryTemplateSelect(this.prompt.trim())
+    if (route.agent !== null || route.blocksPrompt.length > 0) {
+      this.tryRoute(this.prompt.trim(), route)
       return
     }
     this.startAttemptOne(this.prompt.trim())
   }
 
-  private async tryCompose(userPrompt: string): Promise<void> {
-    this.status = 'Composing...'
-    let firstPreviewMs = 0
-    let previews = 0
-    let result: ComposeResult = await composeFromPrompt(userPrompt, settings.getSelectorKey(), (partial: Sketch): void => {
-      if (this.cancelRequested) { return }
-      let source = provisionalProgram(partial)
-      if (source.length === 0) { return }
-      try {
-        this.previewVbc2 = compileVeraSource(source).vbc2
-        this.previewNote = 'Sketching the screen...'
-        previews++
-        if (firstPreviewMs === 0) { firstPreviewMs = Date.now() - this.genStartTime }
-      } catch (_e) {
-        // A partial sketch that does not compile is skipped; the next one replaces it.
-      }
-    })
-    if (this.cancelRequested) { return }
-    let vbc2 = ''
-    let errors = ''
-    if (result.source.length > 0) {
-      try {
-        vbc2 = compileVeraSource(result.source).vbc2
-      } catch (e) {
-        errors = e instanceof CompileError ? (e as CompileError).message : (e as Error).message
-      }
-      traceCompile('compose', 0, result.source, errors)
-    }
-    let fields: Record<string, Object> = {}
-    fields['served'] = vbc2.length > 0
-    fields['note'] = errors.length > 0 ? result.note + '; compile failed: ' + errors : result.note
-    fields['sketchMs'] = result.sketchMs
-    fields['firstPreviewMs'] = firstPreviewMs
-    fields['previews'] = previews
-    fields['jevMs'] = result.jevMs
-    fields['ms'] = Date.now() - this.genStartTime
-    fields['sketch'] = result.sketch
-    fields['answers'] = result.answers
-    fields['source'] = result.source
-    trace('compose', fields)
-    console.info('VERA-COMPOSE ' + (vbc2.length > 0 ? 'served' : 'fell through') + ' ' + (fields['note'] as string))
-    if (vbc2.length === 0) {
-      // The preview stays up while the program is generated; with the sketch as its plan, the finished
-      // program keeps the inputs and values the preview showed.
-      let plan = result.parsed !== null && composePlanEnabled() ? sketchPlan(result.parsed!) : ''
-      if (templateSelectEnabled() && settings.hasSelectorKey()) {
-        this.tryTemplateSelect(userPrompt, plan)
-        return
-      }
-      if (this.previewVbc2.length > 0) { this.previewNote = 'Preview from the sketch \u2014 writing the app...' }
-      this.startAttemptOne(userPrompt, 'Generating', plan)
+  private async tryRoute(userPrompt: string, route: RouteRequest): Promise<void> {
+    let run = this.runId
+    let host = appAgentHost((s: string): void => { if (run === this.runId) { this.status = s } }, (vbc2: string): void => {
+      if (run !== this.runId || this.cancelRequested) { return }
+      this.previewVbc2 = vbc2
+      this.previewNote = 'Sketching the screen...'
+    }, (): boolean => run !== this.runId || this.cancelRequested)
+    let outcome: RouteOutcome = await buildScreen(route, host)
+    if (run !== this.runId || outcome.kind === OUTCOME_CANCELLED) { return }
+    if (outcome.agent !== null) { this.traceAgent(outcome.agent!) }
+    if (outcome.blocks !== null) { this.noteBlocks(outcome.blocks!) }
+    if (outcome.kind === OUTCOME_AGENT) {
+      this.showAgent(outcome.agent!)
       return
     }
+    if (outcome.kind === OUTCOME_TEMPLATE) {
+      this.showTemplate(outcome.blocks!)
+      return
+    }
+    if (outcome.kind === OUTCOME_COMPLETE) {
+      let build: TemplateBuild = outcome.blocks!
+      this.completionBase = build.source
+      this.completionBaseVbc2 = build.vbc2
+      this.completionComposition = build.composition
+      this.status = build.status
+      this.startAttemptOne(userPrompt, 'Completing template')
+      return
+    }
+    // The preview stays up while the program is generated; with the plan, the finished program keeps the
+    // inputs and values the preview showed.
+    if (outcome.blocks !== null && outcome.blocks!.status.length > 0) { this.status = outcome.blocks!.status }
+    if (this.previewVbc2.length > 0) { this.previewNote = 'Preview from the sketch — writing the app...' }
+    this.startAttemptOne(userPrompt, 'Generating', outcome.plan)
+  }
+
+  private traceAgent(result: AgentResult): void {
+    let composed: ComposeResult = result.composed
+    if (composed.source.length > 0) { traceCompile('compose', 0, composed.source, result.errors) }
+    let fields: Record<string, Object> = {}
+    fields['served'] = result.vbc2.length > 0
+    fields['note'] = result.note
+    fields['sketchMs'] = composed.sketchMs
+    fields['firstPreviewMs'] = result.firstPreviewMs
+    fields['previews'] = result.previews
+    fields['jevMs'] = composed.jevMs
+    fields['ms'] = result.ms
+    fields['sketch'] = composed.sketch
+    fields['answers'] = composed.answers
+    fields['source'] = composed.source
+    trace('compose', fields)
+    console.info('VERA-COMPOSE ' + (result.vbc2.length > 0 ? 'served' : 'fell through') + ' ' + result.note)
+  }
+
+  private showAgent(result: AgentResult): void {
+    let composed: ComposeResult = result.composed
     this.generatedSource = result.source
     this.compiledSource = result.source
-    this.compiledVbc2 = vbc2
+    this.compiledVbc2 = result.vbc2
     this.compiled = true
     this.compileErrors = ''
     this.composerOpen = false
     this.tab = TAB_PREVIEW
     this.generating = false
     this.totalMs = Date.now() - this.genStartTime
-    this.status = 'Composed in ' + (this.totalMs / 1000).toFixed(1) + ' s (sketch ' + (result.sketchMs / 1000).toFixed(1) +
-      ' s, Jev ' + (result.jevMs / 1000).toFixed(1) + ' s), no generation' +
-      (result.dropped.length > 0 ? '. Left out: ' + result.dropped.join('; ') : '')
+    this.status = 'Composed in ' + (this.totalMs / 1000).toFixed(1) + ' s (sketch ' + (composed.sketchMs / 1000).toFixed(1) +
+      ' s, Jev ' + (composed.jevMs / 1000).toFixed(1) + ' s), no generation' +
+      (composed.dropped.length > 0 ? '. Left out: ' + composed.dropped.join('; ') : '')
     let endFields: Record<string, Object> = {}
     endFields['ok'] = true
     endFields['attempt'] = 0
@@ -655,18 +665,8 @@ struct GeneratePage {
     trace('gen-end', endFields)
   }
 
-  /**
-   * The Jev template path (VeraTemplatePipeline.ets). A composed screen that compiles, runs and is
-   * judged to cover the request is the result; one that is the right base but not enough is handed
-   * to the model to finish (completionBase), with the bare template as the fallback; anything else
-   * falls through to generation from scratch.
-   */
-  private async tryTemplateSelect(userPrompt: string, plan: string = ''): Promise<void> {
-    let run = this.runId
-    let build: TemplateBuild = await buildFromTemplates(userPrompt, this.mode,
-      (s: string): void => { if (run === this.runId) { this.status = s } },
-      (): boolean => run !== this.runId || this.cancelRequested)
-    if (run !== this.runId) { return }
+  /** What the blocks (VeraTemplatePipeline.ets) answered, for the route rows and the Metrics tab, whichever way the request went. */
+  private noteBlocks(build: TemplateBuild): void {
     this.fastJevMs = build.jevMs
     this.fastPathRan = true
     this.fastSearchMs = build.searchMs
@@ -675,22 +675,12 @@ struct GeneratePage {
     this.routeKnown = true
     this.routeVerifyMs = build.verifyMs
     this.sideCalls = deepseek.getSideCalls()
-    if (build.action === BUILD_CANCELLED) { return }
     this.lastTemplatePick = build.note
-    if (build.action === BUILD_SCRATCH) {
-      if (build.status.length > 0) { this.status = build.status }
-      this.startAttemptOne(userPrompt, 'Generating', plan)
-      return
-    }
-    this.templateKinds = build.kinds
-    if (build.action === BUILD_COMPLETE) {
-      this.completionBase = build.source
-      this.completionBaseVbc2 = build.vbc2
-      this.completionComposition = build.composition
-      this.status = build.status
-      this.startAttemptOne(userPrompt, 'Completing template')
-      return
-    }
+    if (build.action === BUILD_COMPLETE || build.action === BUILD_TEMPLATE) { this.templateKinds = build.kinds }
+  }
+
+  /** A screen composed from blocks that compiles, runs and is judged to cover the request: the result as it is. */
+  private showTemplate(build: TemplateBuild): void {
     this.generatedSource = build.source
     this.compiledVbc2 = build.vbc2
     this.compiledSource = build.source

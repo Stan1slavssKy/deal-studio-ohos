@@ -14,6 +14,7 @@ import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
 import { setComposeEnabled, setComposePlanEnabled } from '../vera/VeraCompose'
+import { setRouteOrder, routeOrder } from '../vera/agent/VeraBuildRoute'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
@@ -297,6 +298,11 @@ export default class EntryAbility extends UIAbility {
       let text = String(plan).trim()
       setComposePlanEnabled(!(text === '0' || text === 'false' || text === 'off'))
       hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE plan ' + text + ' from launch parameter')
+    }
+    let order = params['veraOrder']
+    if (order !== null && order !== undefined) {
+      setRouteOrder(String(order).trim())
+      hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE order ' + routeOrder() + ' from launch parameter')
     }
   }
 

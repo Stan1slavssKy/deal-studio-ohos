@@ -10,12 +10,14 @@ import { ensureCapabilities } from '../vera/VeraCapabilities'
 import { modelSupportNote } from '../vera/VeraEmbeddings'
 import { WidgetBuildContext, WidgetReference, recentWidgetConversation } from '../vera/VeraWidgetContext'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
-import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp, composeChatWidget } from '../vera/VeraChat'
+import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp, chatAgentRequest, recordChatAgent } from '../vera/VeraChat'
 import { AttemptStat, ReplyStats, costOf, formatUsd, formatMs, speedOf } from '../vera/VeraChatStats'
 import { chats, StoredChat, StoredMessage } from '../vera/ChatStore'
 import { store } from '../vera/ProjectStore'
 import { compileVeraSource } from '../vera/VeraCompiler'
-import { buildFromTemplates, TemplateBuild, BUILD_SCRATCH, BUILD_COMPLETE, BUILD_CANCELLED } from '../vera/VeraTemplatePipeline'
+import { TemplateBuild, BUILD_COMPLETE, BUILD_TEMPLATE } from '../vera/VeraTemplatePipeline'
+import { appAgentHost } from '../vera/agent/AgentAppHost'
+import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 
 const APP_NONE: string = 'none'
@@ -65,7 +67,7 @@ class ChatMessage {
   searchMs: number = 0
   widgetMs: number = 0
   attempts: AttemptStat[] = []
-  /** Experiment only (experiment/jev-template-select branch): see tryTemplateSelectForChat. */
+  /** Experiment only (experiment/jev-template-select branch): see noteBlocks. */
   templatePick: string = ''
 }
 
@@ -343,7 +345,7 @@ struct MessageBubble {
       }
       // Experiment only (experiment/jev-template-select branch): survives
       // hilog's ring buffer getting overwritten by a busy widget's own
-      // logging -- see ChatMessage.templatePick and tryTemplateSelectForChat.
+      // logging -- see ChatMessage.templatePick and noteBlocks.
       if (this.showStats && this.msg.templatePick.length > 0) {
         Text('Jev: ' + this.msg.templatePick)
           .fontSize(11)
@@ -734,18 +736,32 @@ struct ChatPage {
       try {
         await this.loadResources()
         logStep('load-resources', startedAt)
-        // The composed widget first (VeraCompose.ets, from the marker's request: seconds, no reasoning), then the
-        // blocks, then generation.
+        // The route (agent/VeraBuildRoute.ets): the agent, from the marker's request, and the blocks, from the
+        // description, in the route's order; then generation. The blocks are never attempted on a refine
+        // (context.source non-empty): a revision asked for a change to an existing widget, not a generic replacement.
         this.chatFallback = null
-        let composed: MiniApp | null = await composeChatWidget(context, (s: string): void => {
+        let route = new RouteRequest()
+        route.agent = chatAgentRequest(context)
+        if (templateSelectEnabled() && settings.hasSelectorKey()) {
+          if (context.source.length > 0) {
+            msg.templatePick = 'skipped (refine)'
+          } else {
+            route.blocksPrompt = context.brief.length > 0 ? context.brief : context.currentRequest
+          }
+        }
+        context.composeTried = true
+        let outcome: RouteOutcome = await buildScreen(route, appAgentHost((s: string): void => {
           if (msg.buildStatus !== s) { msg.buildStatus = s }
         }, (vbc2: string): void => {
           if (msg.appState !== APP_BUILDING) { return }
           if (!sawPreview) { sawPreview = true; logMark('widget-preview') }
           msg.previewVbc2 = vbc2
           this.scrollDown(true)
-        })
-        if (composed !== null && msg.appState !== APP_FAILED) {
+        }))
+        let composed = new MiniApp()
+        if (outcome.agent !== null) { recordChatAgent(outcome.agent!, context, composed) }
+        if (outcome.blocks !== null) { this.noteBlocks(msg, context, outcome.blocks!, route.blocksPrompt) }
+        if (outcome.kind === OUTCOME_AGENT && msg.appState !== APP_FAILED) {
           msg.attempts = composed.stats
           msg.vbc2 = composed.vbc2
           msg.source = composed.source
@@ -760,21 +776,20 @@ struct ChatPage {
           this.persist()
           return
         }
-        // The Jev template path (on by default, see VeraTemplateSelectFlag.ets). Never attempted on a
-        // refine (context.source non-empty): a revision asked for a change to an existing widget, not
-        // a generic replacement.
-        if (templateSelectEnabled() && settings.hasSelectorKey() && context.source.length > 0) {
-          msg.templatePick = 'skipped (refine)'
-        }
-        if (templateSelectEnabled() && settings.hasSelectorKey() && context.source.length === 0) {
-          let handled = await this.tryTemplateSelectForChat(msg, context)
-          if (handled === 'done') {
-            msg.widgetMs = Date.now() - startedAt
-            this.status = ''
-            this.scrollDown(true)
-            this.persist()
-            return
-          }
+        if (outcome.kind === OUTCOME_TEMPLATE) {
+          let build: TemplateBuild = outcome.blocks!
+          msg.vbc2 = build.vbc2
+          msg.source = build.source
+          msg.originalRequest = context.originalRequest
+          msg.parentMessageId = context.parentMessageId
+          msg.appState = APP_READY
+          logMark('widget-ready')
+          msg.attempts = []
+          msg.widgetMs = Date.now() - startedAt
+          this.status = ''
+          this.scrollDown(true)
+          this.persist()
+          return
         }
         let app: MiniApp = await buildMiniApp(this.skillPrompt, context, (s: string): void => {
           if (msg.buildStatus !== s) { msg.buildStatus = s }
@@ -821,20 +836,11 @@ struct ChatPage {
   }
 
   /**
-   * The Jev template path for a widget request (VeraTemplatePipeline.ets). Answers 'done' when a
-   * composed screen that compiles, runs and covers the request became the widget (msg is already
-   * filled in), 'complete' when the composition is the right base but the model has to finish it
-   * (context.source now holds it, and chatFallback keeps it for when the model cannot), and 'none'
-   * when the widget has to be built from scratch, with msg and context untouched.
+   * What the blocks (VeraTemplatePipeline.ets) answered for a widget, in msg.templatePick. A composition that
+   * is the right base but not enough becomes the program the model finishes (context.source), and chatFallback
+   * keeps it for when the model cannot.
    */
-  private async tryTemplateSelectForChat(msg: ChatMessage, context: WidgetBuildContext): Promise<string> {
-    let prompt = context.brief.length > 0 ? context.brief : context.currentRequest
-    let build: TemplateBuild = await buildFromTemplates(prompt, 'deepseek', (s: string): void => { this.status = s },
-      (): boolean => false)
-    if (build.action === BUILD_SCRATCH || build.action === BUILD_CANCELLED) {
-      msg.templatePick = build.note + ' (generated normally)'
-      return 'none'
-    }
+  private noteBlocks(msg: ChatMessage, context: WidgetBuildContext, build: TemplateBuild, prompt: string): void {
     if (build.action === BUILD_COMPLETE) {
       msg.templatePick = build.note + ' (completing)'
       context.source = build.source
@@ -842,17 +848,12 @@ struct ChatPage {
         'theme, and edit it so that everything the request asks for works.'
       this.chatFallback = build
       this.status = build.status
-      return 'complete'
+    } else if (build.action === BUILD_TEMPLATE) {
+      msg.templatePick = 'composed: ' + build.note
+      this.status = build.status
+    } else {
+      msg.templatePick = build.note + ' (generated normally)'
     }
-    msg.templatePick = 'composed: ' + build.note
-    msg.vbc2 = build.vbc2
-    msg.source = build.source
-    msg.originalRequest = context.originalRequest
-    msg.parentMessageId = context.parentMessageId
-    msg.appState = APP_READY
-    msg.attempts = []
-    this.status = build.status
-    return 'done'
   }
 
   build() {

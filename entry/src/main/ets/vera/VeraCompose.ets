@@ -2766,7 +2766,7 @@ export class ComposeResult {
   dropped: string[] = []
 }
 
-async function askJev(body: string, apiKey: string): Promise<string> {
+export async function askJev(body: string, apiKey: string): Promise<string> {
   let client = http.createHttp()
   try {
     let headers: Record<string, string> = {}
@@ -2789,13 +2789,26 @@ async function askJev(body: string, apiKey: string): Promise<string> {
   }
 }
 
-/** Sketch, Jev, assembly. Never throws: anything that goes wrong comes back as an empty source and a note. */
+/** Asks for the sketch: (system prompt, request, reply so far) -> the whole reply, or null when there was none. */
+export type SketchAsk = (system: string, user: string, onText: (soFar: string) => void) => Promise<string | null>
+/** Asks Jev: request body -> response body, '' when there was none. */
+export type JevAsk = (body: string) => Promise<string>
+
+/** Sketch, Jev, assembly, with the app's own DeepSeek engine and Jev client. Never throws. */
 export async function composeFromPrompt(prompt: string, apiKey: string,
+    onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false): Promise<ComposeResult> {
+  return composeWith(prompt,
+    (system: string, user: string, onText: (soFar: string) => void): Promise<string | null> => deepseek.extractSketch(system, user, onText),
+    (body: string): Promise<string> => askJev(body, apiKey), onSketch, widget)
+}
+
+/** Sketch, Jev, assembly, asking through the calls given. Never throws: anything that goes wrong comes back as an empty source and a note. */
+export async function composeWith(prompt: string, askSketch: SketchAsk, askChoices: JevAsk,
     onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false): Promise<ComposeResult> {
   let result = new ComposeResult()
   let started = Date.now()
   let shown = ''
-  let text = await deepseek.extractSketch(SKETCH_PROMPT, prompt, (soFar: string): void => {
+  let text = await askSketch(SKETCH_PROMPT, prompt, (soFar: string): void => {
     let closed = closePartialJson(soFar)
     if (closed.length === 0) { return }
     let partial = parseSketch(closed)
@@ -2813,7 +2826,7 @@ export async function composeFromPrompt(prompt: string, apiKey: string,
   result.parsed = sketch
   if (sketchSignature(sketch) !== shown) { onSketch(sketch) }
   started = Date.now()
-  let body = await askJev(buildComposeRequest(prompt, sketch, widget), apiKey)
+  let body = await askChoices(buildComposeRequest(prompt, sketch, widget))
   result.jevMs = Date.now() - started
   if (body.length === 0) { result.note = 'Jev did not answer'; return result }
   let comp = readComposition(body, sketch, widget)

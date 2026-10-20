@@ -18,7 +18,9 @@ import { GenerateRequest } from './LlamaEngine'
 import { compileVeraSource, CompileError } from './VeraCompiler'
 import { applyRepair, repairPrompt, RepairOutcome } from './VeraRepair'
 import { smokeRun } from './VeraSmoke'
-import { composeFromPrompt, composeEnabled, provisionalProgram, ComposeResult, Sketch } from './VeraCompose'
+import { composeEnabled, ComposeResult } from './VeraCompose'
+import { AgentRequest, AgentResult, runAgent } from './agent/VeraAgent'
+import { appAgentHost } from './agent/AgentAppHost'
 import { deepseek, extractVeraSource, DEEPSEEK_GENERATION_MAX_TOKENS, toolSchemas, discoveryToolResult, traceTool, GenerateProgress } from './DeepSeekEngine'
 import { WidgetPreviewTracker } from './VeraWidgetPreview'
 import { TurnTiming, logTurn, logStep, trace, traceTurn, traceCompile } from './VeraTiming'
@@ -619,91 +621,71 @@ function progressStatus(doing: string, p: GenerateProgress): string {
 }
 
 /**
- * The widget from a sketch and Jev's choices (VeraCompose.ets) in place of generated code: seconds, no
- * reasoning. True when `result` holds it; false, with the attempt in its stats, when the widget is to be
- * generated instead.
+ * What the agent (agent/VeraAgent.ets) builds a chat widget from: the marker's plain request, as the Generate
+ * screen builds from the person's own words -- the brief's labels, buttons and phone calls each became an item
+ * to check, and one refusal took the widget down -- else the description, else the message. 'request',
+ * 'description' or 'message'; '' when the agent is not to be tried: a revision, a widget built on search
+ * results, compose off or no Jev key.
  */
-async function composeWidget(brief: string, from: string, result: MiniApp, onStatus: (status: string) => void,
-    onPreview: (vbc2: string) => void): Promise<boolean> {
-  onStatus('Sketching the widget...')
-  let started = Date.now()
+export function chatAgentSource(context: WidgetBuildContext): string {
+  if (context.source.length > 0 || context.verifiedSearchResults.length > 0 || !composeEnabled() || !settings.hasSelectorKey()) { return '' }
+  if (context.request.trim().length > 0) { return 'request' }
+  if (context.brief.trim().length > 0) { return 'description' }
+  return context.currentRequest.trim().length > 0 ? 'message' : ''
+}
+
+/** The agent's request for a chat widget, null when the agent is not to be tried (chatAgentSource). */
+export function chatAgentRequest(context: WidgetBuildContext): AgentRequest | null {
+  let from = chatAgentSource(context)
+  if (from.length === 0) { return null }
+  let request = new AgentRequest()
+  request.prompt = from === 'request' ? context.request.trim() : (from === 'description' ? context.brief.trim() : context.currentRequest.trim())
+  request.widget = true
+  return request
+}
+
+/**
+ * Records what the agent made of a chat widget -- the trace, the attempt in `result`'s stats -- and puts the
+ * widget into `result` when it was served. True when it was.
+ */
+export function recordChatAgent(agent: AgentResult, context: WidgetBuildContext, result: MiniApp): boolean {
+  let composed: ComposeResult = agent.composed
   let stat = new AttemptStat()
   stat.attempt = 0
-  let composed: ComposeResult = await composeFromPrompt(brief, settings.getSelectorKey(), (partial: Sketch): void => {
-    let source = provisionalProgram(partial, true)
-    if (source.length === 0) { return }
-    try {
-      onPreview(compileVeraSource(source).vbc2)
-      if (stat.previewMs === 0) { stat.previewMs = Date.now() - started }
-    } catch (_e) {
-      // A partial sketch that does not compile is skipped; the next one replaces it.
-    }
-  }, true)
+  stat.previewMs = agent.firstPreviewMs
   stat.genMs = composed.sketchMs + composed.jevMs
-  let errors = ''
-  let vbc2 = ''
-  if (composed.source.length > 0) {
-    let compileStart = Date.now()
-    try {
-      let compiled = compileVeraSource(composed.source)
-      errors = smokeRun(compiled)
-      if (errors.length === 0) { vbc2 = compiled.vbc2 }
-    } catch (e) {
-      errors = e instanceof CompileError ? e.message : (e as Error).message
-    }
-    stat.compileMs = Date.now() - compileStart
-    traceCompile('compose-widget', 0, composed.source, errors)
-  }
+  stat.compileMs = agent.checkMs
+  if (composed.source.length > 0) { traceCompile('compose-widget', 0, composed.source, agent.errors) }
   let fields: Record<string, Object> = {}
   fields['src'] = 'widget'
-  fields['served'] = vbc2.length > 0
-  fields['note'] = errors.length > 0 ? composed.note + '; ' + errors : composed.note
+  fields['served'] = agent.vbc2.length > 0
+  fields['note'] = agent.note
   fields['sketchMs'] = composed.sketchMs
   fields['jevMs'] = composed.jevMs
-  fields['ms'] = Date.now() - started
-  fields['brief'] = brief
-  fields['from'] = from
+  fields['ms'] = agent.ms
+  fields['brief'] = context.brief
+  fields['from'] = chatAgentSource(context)
   fields['sketch'] = composed.sketch
   fields['answers'] = composed.answers
   fields['source'] = composed.source
   trace('compose', fields)
-  console.info('VERA-COMPOSE widget ' + (vbc2.length > 0 ? 'served' : 'fell through') + ' ' + (fields['note'] as string))
-  stat.success = vbc2.length > 0
-  stat.verdict = vbc2.length > 0 ? 'composed' : 'not composed'
+  console.info('VERA-COMPOSE widget ' + (agent.vbc2.length > 0 ? 'served' : 'fell through') + ' ' + agent.note)
+  stat.success = agent.vbc2.length > 0
+  stat.verdict = agent.vbc2.length > 0 ? 'composed' : 'not composed'
   result.stats.push(stat)
-  if (vbc2.length === 0) { return false }
-  result.vbc2 = vbc2
-  result.source = composed.source
+  if (agent.vbc2.length === 0) { return false }
+  result.vbc2 = agent.vbc2
+  result.source = agent.source
   result.error = ''
   return true
 }
 
-/** Whether a widget for `context` may be composed: a new one, not built on search results, with compose on and a Jev key. */
-function composable(context: WidgetBuildContext): boolean {
-  return context.source.length === 0 && context.verifiedSearchResults.length === 0 && composeEnabled() && settings.hasSelectorKey()
-}
-
 async function composeInto(context: WidgetBuildContext, result: MiniApp, onStatus: (status: string) => void,
     onPreview: (vbc2: string) => void): Promise<boolean> {
-  if (!composable(context)) { return false }
-  // The marker's plain request, as the Generate screen composes from the person's own words: the brief's
-  // labels, buttons and phone calls each became an item to check, and one refusal took the widget down.
-  let from = context.request.trim().length > 0 ? 'request' : (context.brief.trim().length > 0 ? 'description' : 'message')
-  let asked = from === 'request' ? context.request.trim() : (from === 'description' ? context.brief.trim() : context.currentRequest.trim())
-  return asked.length > 0 && await composeWidget(asked, from, result, onStatus, onPreview)
-}
-
-/**
- * The composed widget, tried first by the chat (before the blocks of VeraTemplatePipeline.ets and before
- * generation): the MiniApp when it composed, else null with `context.composeTried` set so buildMiniApp does not
- * try again.
- */
-export async function composeChatWidget(context: WidgetBuildContext, onStatus: (status: string) => void,
-    onPreview: (vbc2: string) => void): Promise<MiniApp | null> {
-  let result = new MiniApp()
-  let composed = await composeInto(context, result, onStatus, onPreview)
-  context.composeTried = true
-  return composed ? result : null
+  let request = chatAgentRequest(context)
+  if (request === null) { return false }
+  let agent = await runAgent(request, appAgentHost(onStatus, onPreview))
+  return recordChatAgent(agent, context, result)
 }
 
 /**
@@ -726,7 +708,7 @@ export async function buildMiniApp(systemPrompt: string, description: string | W
   }
   // A new widget is first composed, as a new screen is on the Generate screen; a revision, a widget built
   // on search results, or one the composer cannot serve, is generated as before. Skipped when the chat already
-  // tried it (composeChatWidget) before the blocks.
+  // tried it (the route, agent/VeraBuildRoute.ets) before the blocks.
   if (typeof description !== 'string' && !description.composeTried &&
       await composeInto(description, result, onStatus, onPreview)) { return result }
   let failedSource = ''
