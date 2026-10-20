@@ -143,6 +143,52 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(r.attempts, 3)
   }
 
+  // Questions: Jev keeps only those a default cannot stand in for; the person's answer, when it differs from the
+  // default the plan was drawn for, has the plan drawn again with it; no answer is the default.
+  {
+    const {blockingRequest, blockingOf, askBlocking} = loadVera('agent/AgentQuestions')
+    const c = loadVera('VeraCompose')
+    const sketch = c.parseSketch(JSON.stringify({title: 'Converter', inputs: [], values: [], questions: [
+      {id: 'units', ask: 'Which units?', options: ['km to miles', 'kg to pounds'], default: 0},
+      {id: 'look', ask: 'Which colour?', options: ['blue', 'green'], default: 1},
+      {id: 'bad', ask: 'One option only?', options: ['only']}]}))
+    assert.equal(sketch.questions.length, 2)
+    assert.equal(sketch.questions[1].fallback, 1)
+    const body = JSON.parse(blockingRequest('a converter', sketch.questions))
+    assert.deepEqual(Object.keys(body.questions), ['blocking.0', 'blocking.1'])
+    const jev = (a, b) => async () => JSON.stringify({answers: {'blocking.0': {probabilities: {ask: a, skip: 1 - a}}, 'blocking.1': {probabilities: {ask: b, skip: 1 - b}}}})
+    assert.deepEqual(blockingOf(await jev(0.9, 0.1)(), sketch.questions).map(q => q.id), ['units'])
+    assert.deepEqual(blockingOf('', sketch.questions), [])
+    const shown = []
+    let log = []
+    let settled = await askBlocking('a converter', sketch.questions, jev(0.9, 0.1), async q => { shown.push(q); return 1 }, log)
+    assert.equal(shown.length, 1)
+    assert.equal(shown[0].fallback, 0)
+    assert.match(settled, /Which units\? kg to pounds/)
+    assert.equal(log[0].changed, true)
+    log = []
+    assert.equal(await askBlocking('a converter', sketch.questions, jev(0.9, 0.1), async () => null, log), '')
+    assert.match(log[0].answer, /km to miles \(default\)/)
+    // Through the agent: an answer that differs draws the plan again, with the answer in the request.
+    const {host} = replayHost('tip')
+    const plans = []
+    const askPlan = host.askPlan
+    host.askPlan = async (system, user, onText) => {
+      plans.push(user)
+      if (plans.length === 1) return JSON.stringify(Object.assign(JSON.parse(fixture('tip', 'sketch.json')), {questions: [{id: 'q', ask: 'Split it?', options: ['yes', 'no'], default: 0}]}))
+      return askPlan(system, user, onText)
+    }
+    const askJev = host.askJev
+    host.askJev = async b => JSON.parse(b).questions['blocking.0'] ? jev(0.9, 0)() : askJev(b)
+    host.ask = async () => 1
+    const r = await runAgent(request('tip calculator'), host)
+    assert.equal(plans.length, 2)
+    assert.match(plans[1], /The person was asked, and answered:\n- Split it\? no/)
+    assert.equal(r.composed.replanned, true)
+    assert.ok(r.vbc2.length > 0, r.note)
+    assert.equal(r.asked.length, 1)
+  }
+
   // The route, agent first (the default): a served agent ends it and the blocks never run.
   const routeRequest = (prompt, blocks) => Object.assign(new route.RouteRequest(), {agent: request(prompt), blocksPrompt: blocks ? prompt : ''})
   assert.equal(route.routeOrder(), route.ORDER_AGENT_FIRST)

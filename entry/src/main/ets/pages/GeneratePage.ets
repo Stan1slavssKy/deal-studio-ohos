@@ -31,6 +31,8 @@ import { composeEnabled, ComposeResult } from '../vera/VeraCompose'
 import { TemplateBuild, BUILD_COMPLETE, BUILD_TEMPLATE } from '../vera/VeraTemplatePipeline'
 import { AgentRequest, AgentResult } from '../vera/agent/VeraAgent'
 import { appAgentHost } from '../vera/agent/AgentAppHost'
+import { AgentQuestion } from '../vera/agent/AgentQuestions'
+import { QuestionCard } from '../components/QuestionCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE, OUTCOME_COMPLETE, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { RouteInfo, routeLabel, routeShort, jevLabel, checkLabel, checkShort, routeWhy, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED, CHECK_NONE } from '../vera/VeraRoute'
@@ -250,6 +252,12 @@ struct GeneratePage {
    */
   @State previewVbc2: string = ''
   @State previewNote: string = ''
+  /** A blocking question from the agent (agent/AgentQuestions.ets), shown above the preview until it is answered. */
+  @State questionText: string = ''
+  @State questionOptions: string[] = []
+  @State questionFallback: number = 0
+  /** Answers the open question: an index, or null for its default. */
+  private answerQuestion: ((index: number | null) => void) | null = null
   @State compiledSource: string = ''
   @State refinePrompt: string = ''
   @State program: RunTotals = new RunTotals()
@@ -542,6 +550,7 @@ struct GeneratePage {
     this.compiledSource = ''
     this.previewVbc2 = ''
     this.previewNote = ''
+    this.settleQuestion(null)
     this.cancelRequested = false
     this.failedSource = ''
     this.lastTemplatePick = ''
@@ -597,6 +606,7 @@ struct GeneratePage {
       this.previewVbc2 = vbc2
       this.previewNote = 'Sketching the screen...'
     }, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate)
+    host.ask = (question: AgentQuestion): Promise<number | null> => this.askPerson(question)
     let outcome: RouteOutcome = await buildScreen(route, host)
     if (run !== this.runId || outcome.kind === OUTCOME_CANCELLED) { return }
     if (outcome.agent !== null) { this.traceAgent(outcome.agent!) }
@@ -1428,7 +1438,28 @@ struct GeneratePage {
     this.startAttemptOne(ask, 'Refining')
   }
 
+  /** The open question goes with its default: stopping or starting again must not leave the agent waiting. */
+  private settleQuestion(index: number | null): void {
+    let answer = this.answerQuestion
+    this.answerQuestion = null
+    this.questionText = ''
+    this.questionOptions = []
+    if (answer !== null) { answer(index) }
+  }
+
+  /** Puts the agent's question on the screen; the promise settles with the person's tap. */
+  private askPerson(question: AgentQuestion): Promise<number | null> {
+    this.settleQuestion(null)
+    return new Promise<number | null>((resolve: (index: number | null) => void) => {
+      this.questionText = question.text
+      this.questionOptions = question.options
+      this.questionFallback = question.fallback
+      this.answerQuestion = resolve
+    })
+  }
+
   private stopGeneration(): void {
+    this.settleQuestion(null)
     this.cancelRequested = true
     this.runId++
     if (this.mode === MODE_LOCAL) { engine.stop() }
@@ -1864,6 +1895,11 @@ struct GeneratePage {
 
         if (this.tab === TAB_PREVIEW) {
           Column() {
+            if (this.questionText.length > 0) {
+              QuestionCard({ question: this.questionText, options: this.questionOptions, fallback: this.questionFallback,
+                onPick: (index: number): void => { this.settleQuestion(index) } })
+                .margin({ bottom: 8 })
+            }
             if (this.hasResult()) {
               VeraPreview({ vbc2: this.compiledVbc2 })
             } else if (this.generating && this.previewVbc2.length > 0) {

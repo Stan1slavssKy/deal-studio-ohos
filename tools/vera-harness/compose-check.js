@@ -599,4 +599,19 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   assert.deepEqual(comp.inputs.map(i => i.id), ['dice'])
   assert.equal(comp.sketch.values.length, 0)
 }
+// An input nothing else reads, on a screen with a need left to the custom section, stays for that section (the dice
+// to roll), and the section is told which state field it is in.
+{
+  const sketch = c.parseSketch(JSON.stringify({title: 'Dice', inputs: [{id: 'dice', label: 'Dice', kind: 'count', min: 1, max: 6, value: 2}],
+    other: ['roll the dice and show each face']}))
+  const answers = JSON.stringify({answers: {'covers.0': pick('none'), 'asked.other.0': pick('asked'), 'asked.dice': pick('asked'),
+    'widget.dice': pick('stepper')}})
+  assert.ok(c.readComposition(answers, sketch).unbound.some(u => /Dice/.test(u)))
+  c.setCustomSectionsEnabled(true)
+  const comp = c.readComposition(answers, sketch)
+  c.setCustomSectionsEnabled(false)
+  assert.deepEqual(comp.unbound, [])
+  assert.deepEqual(comp.custom, ['roll the dice and show each face'])
+  assert.deepEqual(c.customInputs(comp), ['"Dice": state.dice'])
+}
 console.log('compose-check: ok')

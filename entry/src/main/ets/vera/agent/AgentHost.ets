@@ -7,6 +7,7 @@
 import { SketchAsk, JevAsk } from '../VeraCompose'
 import { blockDefaults } from '../VeraTemplateContent'
 import { CodeAsk } from './AgentCustom'
+import { AgentQuestion } from './AgentQuestions'
 
 /** Sections of the catalogue the plan asked for, to have their content (and their holes) filled for this request. */
 export class BlockRequest {
@@ -57,6 +58,8 @@ export class AgentHost {
   askCode: CodeAsk | null = null
   /** The language as generation is shown it (the skill prompt with the UI catalogue), for the custom section. */
   language: string = ''
+  /** Asks the person a blocking question: the answer's index, or null for the default (the default host never asks). */
+  ask: (question: AgentQuestion) => Promise<number | null> = async (_question: AgentQuestion): Promise<number | null> => null
   /** True once the person has asked to stop. */
   cancelled: () => boolean = (): boolean => false
 }

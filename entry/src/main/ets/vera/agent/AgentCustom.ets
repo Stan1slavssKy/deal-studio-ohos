@@ -37,6 +37,8 @@ export class CustomRequest {
   needs: string[] = []
   /** The person's request. */
   prompt: string = ''
+  /** Inputs on the screen nothing else reads, with the state field each is in: there for the section to use. */
+  inputs: string[] = []
   /** The program for a given section ('' for none): the rest of the screen with that section after it. */
   compose: (section: FragmentSpec | null) => string = (_section: FragmentSpec | null): string => ''
   /** Jev, to read a section that compiles and runs against the needs; null serves it unread. */
@@ -155,6 +157,8 @@ export async function writeSection(request: CustomRequest, language: string, ask
   let started = Date.now()
   let system = language + CONTRACT
   let asked = 'Request: ' + request.prompt + '\n\nThe section must do:\n- ' + request.needs.join('\n- ') +
+    (request.inputs.length > 0 ? '\n\nThe person sets these on the screen and nothing else uses them yet; the section uses them:\n- ' +
+      request.inputs.join('\n- ') : '') +
     '\n\nThe program so far, which the section joins (do not repeat it):\n' + request.compose(null)
   let user = asked
   for (let attempt = 0; attempt <= REPAIRS; attempt++) {

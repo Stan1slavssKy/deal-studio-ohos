@@ -17,6 +17,8 @@ import { store } from '../vera/ProjectStore'
 import { compileVeraSource } from '../vera/VeraCompiler'
 import { TemplateBuild, BUILD_COMPLETE, BUILD_TEMPLATE } from '../vera/VeraTemplatePipeline'
 import { appAgentHost } from '../vera/agent/AgentAppHost'
+import { AgentQuestion } from '../vera/agent/AgentQuestions'
+import { QuestionCard } from '../components/QuestionCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 
@@ -47,6 +49,12 @@ class ChatMessage {
   previewVbc2: string = ''
   /** While building: what the builder is doing, shown in the bubble. Never saved. */
   buildStatus: string = ''
+  /** While building: a blocking question from the agent (agent/AgentQuestions.ets), its answers and the suggested one. Never saved. */
+  question: string = ''
+  questionOptions: string[] = []
+  questionFallback: number = 0
+  /** Answers the open question: an index, or null for its default. Never saved. */
+  answerQuestion: ((index: number | null) => void) | null = null
   /** Added under the streamed text by this page, so the next streamed piece does not wipe it. */
   beforeNote: string = ''
   source: string = ''
@@ -288,7 +296,18 @@ struct MessageBubble {
           .padding(12)
           .backgroundColor('#FFFFFF')
           .borderRadius(14)
-      } else if (this.msg.appState === APP_BUILDING && this.msg.previewVbc2.length === 0) {
+      }
+      if (this.msg.appState === APP_BUILDING && this.msg.question.length > 0) {
+        QuestionCard({ question: this.msg.question, options: this.msg.questionOptions, fallback: this.msg.questionFallback,
+          onPick: (index: number): void => {
+            let answer = this.msg.answerQuestion
+            this.msg.answerQuestion = null
+            this.msg.question = ''
+            if (answer !== null) { answer(index) }
+          } })
+          .constraintSize({ maxWidth: '92%' })
+      }
+      if (this.msg.appState === APP_BUILDING && this.msg.previewVbc2.length === 0) {
         Row({ space: 8 }) {
           LoadingProgress().width(18).height(18)
           Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Building a widget...')
@@ -750,14 +769,26 @@ struct ChatPage {
           }
         }
         context.composeTried = true
-        let outcome: RouteOutcome = await buildScreen(route, appAgentHost((s: string): void => {
+        let host = appAgentHost((s: string): void => {
           if (msg.buildStatus !== s) { msg.buildStatus = s }
         }, (vbc2: string): void => {
           if (msg.appState !== APP_BUILDING) { return }
           if (!sawPreview) { sawPreview = true; logMark('widget-preview') }
           msg.previewVbc2 = vbc2
           this.scrollDown(true)
-        }, (): boolean => false, this.skillPrompt))
+        }, (): boolean => false, this.skillPrompt)
+        // A blocking question goes in the bubble of the widget it is for; an invalidated widget takes the default.
+        host.ask = (question: AgentQuestion): Promise<number | null> => new Promise<number | null>((resolve: (index: number | null) => void) => {
+          if (msg.appState !== APP_BUILDING) { resolve(null); return }
+          msg.questionOptions = question.options
+          msg.questionFallback = question.fallback
+          msg.answerQuestion = resolve
+          msg.question = question.text
+          this.scrollDown(true)
+        })
+        let outcome: RouteOutcome = await buildScreen(route, host)
+        msg.question = ''
+        msg.answerQuestion = null
         let composed = new MiniApp()
         if (outcome.agent !== null) { recordChatAgent(outcome.agent!, context, composed) }
         if (outcome.blocks !== null) { this.noteBlocks(msg, context, outcome.blocks!, route.blocksPrompt) }

@@ -11,8 +11,9 @@
 
 import { AgentHost, BlockRequest, BlockFill } from './AgentHost'
 import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
+import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
 import { FragmentSpec } from '../VeraTemplates'
-import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, partCount, ComposeResult, Composition, Sketch } from '../VeraCompose'
+import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, partCount, customInputs, ComposeResult, Composition, Sketch } from '../VeraCompose'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { smokeRun } from '../VeraSmoke'
 
@@ -41,6 +42,8 @@ export class AgentResult {
   blockFill: BlockFill | null = null
   /** What writing the custom section did, when the composition needed one. */
   custom: CustomResult | null = null
+  /** The questions put to the person, with their answers. */
+  asked: Asked[] = []
   firstPreviewMs: number = 0
   previews: number = 0
   checkMs: number = 0
@@ -62,7 +65,15 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
     } catch (_e) {
       // A partial plan that does not compile is skipped; the next one replaces it.
     }
-  }, request.widget)
+  }, request.widget, async (sketch: Sketch): Promise<string> => {
+    if (host.cancelled()) { return '' }
+    let settled = await askBlocking(request.prompt, sketch.questions, host.askJev, (q: AgentQuestion): Promise<number | null> => {
+      host.status('Waiting for your answer...')
+      return host.ask(q)
+    }, result.asked)
+    if (settled.length > 0) { host.status('Planning again with your answer...') }
+    return settled
+  })
   result.composed = composed
   result.note = composed.note
   result.plan = composed.parsed !== null && composePlanEnabled() ? sketchPlan(composed.parsed!) : ''
@@ -98,6 +109,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
         let asked = new CustomRequest()
         asked.needs = comp.custom
         asked.prompt = request.prompt
+        asked.inputs = customInputs(comp)
         asked.compose = (section: FragmentSpec | null): string => assembleProgram(comp, values, section)
         asked.verify = host.askJev
         let written = await writeSection(asked, host.language, host.askCode!)

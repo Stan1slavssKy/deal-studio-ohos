@@ -78,7 +78,9 @@ const SKETCH_BASE: string =
   ' "events": [{"id": camelCase, "when": the moment, "what": what the phone does, "asked": true if the request asks for it, false if you add it}],\n' +
   ' "ready": [one string per need of the request that one of the ready-made sections below handles whole, saying in plain words\n' +
   '   everything it involves: what it lists or shows, what the person does with it, what the phone does],\n' +
-  ' "other": [what else the request asks for, in a few words each]}\n' +
+  ' "other": [what else the request asks for, in a few words each],\n' +
+  ' "questions": [at most 2, usually none: {"id": camelCase, "ask": a short question for the person, "options": 2 to 4 short answers,\n' +
+  '   "default": the index of the answer this sketch assumes}]}\n' +
   'What each part already brings: an input, its control (a count has - and + buttons); a countdown, start, stop and reset buttons and the time left; ' +
   'a stopwatch, start, stop and reset buttons and the time passed; a list, a form with its fields, an add button, the entries ' +
   'with their fields and the time each was added, a way to remove one, and how many entries there are and what their first ' +
@@ -104,7 +106,10 @@ const SKETCH_BASE: string =
   'such as when it starts, is a time input or a time field, even when the request does not name it. other lists everything the request asks for that the parts above ' +
   'and ready do not bring, and never repeats what they bring; it is empty only when nothing is left out. Leaving a requested feature out of the sketch is wrong. ' +
   'Keep to what the request asks for: no inputs, values or events it does not need. ' +
-  'Use the numbers the request gives; where it gives none, pick sensible ones.'
+  'Use the numbers the request gives; where it gives none, pick sensible ones. ' +
+  'questions are only for what the request leaves out and no sensible choice can stand in for, because the answer changes ' +
+  'what the app is (which two units a converter is between, which kind of thing a tracker keeps); never for a number, a ' +
+  'label, a look or anything a default does well. The sketch is drawn for each question\'s default answer.'
 
 /**
  * Kinds of the catalogue the plan may ask for: the sections whose substance is content written for the request, which
@@ -133,6 +138,14 @@ function readyParagraph(): string {
 }
 
 export const SKETCH_PROMPT: string = SKETCH_BASE + '\n' + readyParagraph()
+
+/** Something the plan cannot settle without the person: the answers, and the one the plan was drawn for. */
+export class SketchQuestion {
+  id: string = ''
+  ask: string = ''
+  options: string[] = []
+  fallback: number = 0
+}
 
 export class SketchOption {
   label: string = ''
@@ -224,6 +237,8 @@ export class Sketch {
   events: SketchEvent[] = []
   /** Needs a ready-made section of the catalogue handles whole, in words; Jev chooses the section for each. */
   ready: string[] = []
+  /** What the plan would ask the person, each drawn for its default answer. */
+  questions: SketchQuestion[] = []
   /** What the request asks for beyond the fields above; anything here makes the request unbound. */
   other: string[] = []
 }
@@ -445,6 +460,23 @@ export function parseSketch(text: string): Sketch | null {
   if (Array.isArray(other)) {
     for (let item of other as Object[]) {
       if (typeof item === 'string' && (item as string).trim().length > 0) { sketch.other.push((item as string).trim()) }
+    }
+  }
+  let questions = o['questions']
+  if (Array.isArray(questions)) {
+    for (let raw of questions as Object[]) {
+      if (raw === null || typeof raw !== 'object') { continue }
+      let r = raw as Record<string, Object>
+      let q = new SketchQuestion()
+      q.id = str(r, 'id', 'q' + sketch.questions.length.toString())
+      q.ask = str(r, 'ask', '').trim()
+      let options = r['options']
+      if (Array.isArray(options)) {
+        for (let item of options as Object[]) { if (typeof item === 'string' && (item as string).trim().length > 0) { q.options.push((item as string).trim()) } }
+      }
+      let d = r['default']
+      q.fallback = typeof d === 'number' ? Math.max(0, Math.min(q.options.length - 1, Math.round(d as number))) : 0
+      if (q.ask.length > 0 && q.options.length >= 2 && q.options.length <= 4 && sketch.questions.length < 2) { sketch.questions.push(q) }
     }
   }
   let ready = o['ready']
@@ -1775,6 +1807,11 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     else if (sectionInputs.indexOf(input.id) >= 0 || answerOf(answers, 'within.input.' + input.id, served, comp.answers, COVERED_ABOVE).length > 0) {
       comp.dropped.push('input "' + input.label + '": a section does it')
     }
+    // What the custom section does may well read it (the dice to roll): it stays, and the section is told it is there.
+    else if (comp.custom.length > 0) {
+      comp.inputs.push(input)
+      comp.customReads.push(input.id)
+    }
     else { comp.unbound.push('input "' + input.label + '": nothing reads it') }
   }
   // Inputs that nothing reads make a form that does nothing: the sketch has lost what they were for.
@@ -2866,6 +2903,20 @@ function inQuotes(s: string): string {
   return quoted.substring(1, quoted.length - 1)
 }
 
+/** The inputs left for the custom section, as it finds them in the state: "Dice" is state.dice, a typed number its text. */
+export function customInputs(comp: Composition): string[] {
+  let out: string[] = []
+  for (let input of comp.inputs) {
+    if (comp.customReads.indexOf(input.id) < 0) { continue }
+    let widget = comp.widgets.get(input.id) ?? ''
+    let field = input.kind === 'choice' ? input.id + 'Index (the index of the chosen option: ' +
+      input.options.map((o: SketchOption): string => o.label).join(', ') + ')' :
+      (widget === 'typed_number' ? input.id + 'Text (the number as typed; strings.toNumber reads it)' : input.id)
+    out.push('"' + input.label + '": state.' + field)
+  }
+  return out
+}
+
 /** The catalogue's sections the composition has, in screen order, after its own parts. */
 export function compositionBlocks(comp: Composition): FragmentSpec[] {
   let out: FragmentSpec[] = []
@@ -3033,6 +3084,8 @@ export class ComposeResult {
   parsed: Sketch | null = null
   /** What the sketch added and the screen leaves out, for the person to see. */
   dropped: string[] = []
+  /** The plan was drawn again with what the person answered. */
+  replanned: boolean = false
   /**
    * The composition, when it has sections of the catalogue: they need their content filled before the program is
    * assembled (assembleProgram with their values), so `source` is still empty. Null otherwise.
@@ -3077,12 +3130,15 @@ export async function composeFromPrompt(prompt: string, apiKey: string,
 }
 
 /** Sketch, Jev, assembly, asking through the calls given. Never throws: anything that goes wrong comes back as an empty source and a note. */
-export async function composeWith(prompt: string, askSketch: SketchAsk, askChoices: JevAsk,
-    onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false): Promise<ComposeResult> {
-  let result = new ComposeResult()
-  let started = Date.now()
+class Planned {
+  text: string | null = null
+}
+
+/** One plan, streamed: each new shape of it goes to onSketch as it arrives, and the whole one at the end. */
+async function planOnce(askSketch: SketchAsk, prompt: string, onSketch: (partial: Sketch) => void): Promise<Planned> {
+  let out = new Planned()
   let shown = ''
-  let text = await askSketch(SKETCH_PROMPT, prompt, (soFar: string): void => {
+  out.text = await askSketch(SKETCH_PROMPT, prompt, (soFar: string): void => {
     let closed = closePartialJson(soFar)
     if (closed.length === 0) { return }
     let partial = parseSketch(closed)
@@ -3092,13 +3148,46 @@ export async function composeWith(prompt: string, askSketch: SketchAsk, askChoic
     shown = signature
     onSketch(partial)
   })
+  if (out.text !== null) {
+    let whole = parseSketch(out.text!)
+    if (whole !== null && sketchSignature(whole) !== shown) { onSketch(whole) }
+  }
+  return out
+}
+
+/**
+ * Runs between the plan and Jev's choices with the plan: text that settles what the plan left open (the person's answers),
+ * for the plan to be drawn again with, or '' to go on with the plan as it is.
+ */
+export type PlanReview = (sketch: Sketch) => Promise<string>
+
+export async function composeWith(prompt: string, askSketch: SketchAsk, askChoices: JevAsk,
+    onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false,
+    review: PlanReview | null = null): Promise<ComposeResult> {
+  let result = new ComposeResult()
+  let started = Date.now()
+  let planned = await planOnce(askSketch, prompt, onSketch)
   result.sketchMs = Date.now() - started
+  let text = planned.text
   if (text === null) { result.note = 'no sketch'; return result }
-  result.sketch = text
   let sketch = parseSketch(text)
   if (sketch === null) { result.note = 'sketch did not parse'; return result }
+  // What the plan left open, settled (the person's answers): the plan is drawn again with it, and Jev reads it too.
+  let settled = review !== null && sketch.questions.length > 0 ? await review(sketch) : ''
+  if (settled.length > 0) {
+    prompt = prompt + '\n\n' + settled
+    let again = Date.now()
+    planned = await planOnce(askSketch, prompt, onSketch)
+    result.sketchMs += Date.now() - again
+    result.replanned = true
+    let redrawn = planned.text !== null ? parseSketch(planned.text!) : null
+    if (redrawn === null) { result.note = 'the plan drawn again did not parse'; return result }
+    text = planned.text
+    sketch = redrawn
+    sketch.questions = []
+  }
+  result.sketch = text!
   result.parsed = sketch
-  if (sketchSignature(sketch) !== shown) { onSketch(sketch) }
   started = Date.now()
   let body = await askChoices(buildComposeRequest(prompt, sketch, widget))
   result.jevMs = Date.now() - started
