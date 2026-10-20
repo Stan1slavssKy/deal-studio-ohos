@@ -188,7 +188,7 @@ run('Parser recovery: every syntax error in one compile, without cascades',()=>{
   function page(){
     const src=read('entry/src/main/ets/pages/GeneratePage.ets');
     const prefix=src.slice(0,src.indexOf('@Entry')).replace(/^import .*$/gm,'');
-    const code=prefix+'\nclass Controller { '+['callModel','runAttempt','doRefine','traceEnd','doGenerate','tryRoute','traceAgent','showAgent','noteBlocks','showTemplate','startAttemptOne','tryStructuralEdit','fallBackToTemplate','refineWithModel','stopGeneration','originLabel'].map(n=>method(src,n)).join('\n')+' } module.exports=Controller;';
+    const code=prefix+'\nclass Controller { '+['callModel','runAttempt','doRefine','traceEnd','doGenerate','tryRoute','traceAgent','showAgent','noteBlocks','showTemplate','settleQuestion','askPerson','startAttemptOne','tryStructuralEdit','fallBackToTemplate','refineWithModel','stopGeneration','originLabel'].map(n=>method(src,n)).join('\n')+' } module.exports=Controller;';
     const compiled=ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020},reportDiagnostics:true});
     assert.equal((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).length,0,'Extracted generation controller syntax');
     const globals={ensureCapabilities:async()=>{},logStep:()=>{},logMark:()=>{},trace:(name,fields)=>{traces.push({name,fields});},
@@ -202,7 +202,7 @@ run('Parser recovery: every syntax error in one compile, without cascades',()=>{
       engine:{stop(){},generate(request){return {text:example,inputTokens:1,outputTokens:1,request}}}};
     const mod={exports:{}};new Function('module',...Object.keys(globals),compiled.outputText)(mod,...Object.values(globals));
     const c=new mod.exports();
-    Object.assign(c,{mode:'deepseek',attempt:1,systemPrompt:skill,uiSelected:[],grammar:'',previousSource:'',failedSource:'',
+    Object.assign(c,{questionText:'',questionOptions:[],questionFallback:0,answerQuestion:null,mode:'deepseek',attempt:1,systemPrompt:skill,uiSelected:[],grammar:'',previousSource:'',failedSource:'',
       attempts:[],compiledVbc2:'',cancelRequested:false,completionBase:'',completionBaseVbc2:'',completionComposition:'',compositionJson:'',templateKinds:[],modelWrote:false,runId:0,prompt:'',refinePrompt:'',repairByEdit:true,genStartTime:Date.now(),generatedSource:'',generating:true});
     c.addToProgram=()=>{};c.currentRun=()=>null;c.startRun=()=>{};
     c.startAttemptOne=ask=>{c.pending=c.runAttempt(ask,'');};
