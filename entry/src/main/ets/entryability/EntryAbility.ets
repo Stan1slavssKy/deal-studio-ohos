@@ -13,7 +13,7 @@ import { requestBenchmark } from '../vera/VeraSearchBenchmark'
 import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
-import { setComposeEnabled, setComposePlanEnabled } from '../vera/VeraCompose'
+import { setComposeEnabled, setComposePlanEnabled, setCustomSectionsEnabled } from '../vera/VeraCompose'
 import { setRouteOrder, routeOrder } from '../vera/agent/VeraBuildRoute'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
@@ -298,6 +298,12 @@ export default class EntryAbility extends UIAbility {
       let text = String(plan).trim()
       setComposePlanEnabled(!(text === '0' || text === 'false' || text === 'off'))
       hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE plan ' + text + ' from launch parameter')
+    }
+    let custom = params['veraCustom']
+    if (custom !== null && custom !== undefined) {
+      let text = String(custom).trim()
+      setCustomSectionsEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE custom sections ' + text + ' from launch parameter')
     }
     let order = params['veraOrder']
     if (order !== null && order !== undefined) {

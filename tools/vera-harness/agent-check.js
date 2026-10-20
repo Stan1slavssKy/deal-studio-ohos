@@ -87,6 +87,62 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.match(r.note, /no search is available/)
   }
 
+  // The custom section: what nothing else does, written as one block into the program the rest makes, checked like
+  // any block, the failing lines quoted back for a repair; a phone call it makes up, or an answer it cannot give, is
+  // never served.
+  {
+    const {CustomRequest, writeSection, parseSection} = loadVera('agent/AgentCustom')
+    const c = loadVera('VeraCompose')
+    const comp = c.readComposition(fixture('tip', 'jev-answer.json'), c.parseSketch(fixture('tip', 'sketch.json')))
+    const section = (functions, view) => '<classes>\n</classes>\n<fields>\nc_count: number = 0\n</fields>\n<functions>\n' + functions +
+      '\n</functions>\n<view>\n' + view + '\n</view>'
+    const good = section('function c_bump(state: AppState, value: number): AppState {\n  return {c_count: state.c_count + 1__PASSTHROUGH__};\n}',
+      'sections.push(ui.Section("content", "", "", [ui.Button("primary", "Count " + ui.numberToString(state.c_count), "c_bump", 0, true)]));')
+    const broken = good.replace('state.c_count + 1', 'state.c_cuont + 1')
+    const asks = []
+    const run = async replies => {
+      const request = Object.assign(new CustomRequest(), {needs: ['a counter'], prompt: 'tip calculator with a counter',
+        compose: s => c.assembleProgram(comp, [], s)})
+      asks.length = 0
+      return writeSection(request, 'LANGUAGE', async (system, user) => { asks.push({system, user}); return replies.shift() })
+    }
+    assert.equal(parseSection('no tags'), null)
+    assert.equal(parseSection(good).stateFields[0].name, 'c_count')
+    let r = await run([good])
+    assert.ok(r.section !== null && r.attempts === 1, r.failed)
+    assert.match(asks[0].system, /^LANGUAGE/)
+    assert.match(asks[0].user, /The program so far/)
+    assert.match(c.assembleProgram(comp, [], r.section), /return \{c_count: state\.c_count \+ 1, /)
+    r = await run([broken, good])
+    assert.ok(r.section !== null && r.attempts === 2, r.failed)
+    assert.match(asks[1].user, /It failed:[\s\S]*c_cuont/)
+    r = await run([good.replace('return {', 'sdk.call("x/y", [], "c_bump");\n  return {'), good])
+    assert.equal(r.attempts, 2)
+    assert.match(asks[1].user, /sdk\.call/)
+    // Compiles and runs, but Jev does not read it as doing the need: refused, not repaired.
+    {
+      const {verifyRequest, undone} = loadVera('agent/AgentCustom')
+      const request = Object.assign(new CustomRequest(), {needs: ['a counter', 'a photo'], prompt: 'p', compose: s => c.assembleProgram(comp, [], s)})
+      const body = JSON.parse(verifyRequest(request, good))
+      assert.deepEqual(Object.keys(body.questions), ['does.0', 'does.1'])
+      assert.match(body.state, /c_bump/)
+      const said = (a, b) => JSON.stringify({answers: {'does.0': {probabilities: {yes: a, no: 1 - a}}, 'does.1': {probabilities: {yes: b, no: 1 - b}}}})
+      assert.deepEqual(undone(request, said(0.9, 0.2)), ['a photo'])
+      assert.deepEqual(undone(request, ''), [])
+      request.verify = async () => said(0.9, 0.2)
+      const refused = await writeSection(request, 'L', async () => good)
+      assert.equal(refused.section, null)
+      assert.match(refused.failed, /does not do: a photo/)
+      assert.equal(refused.attempts, 1)
+    }
+    r = await run(['<cannot>it needs the camera</cannot>'])
+    assert.equal(r.section, null)
+    assert.match(r.failed, /cannot: it needs the camera/)
+    r = await run([broken, broken, broken])
+    assert.equal(r.section, null)
+    assert.equal(r.attempts, 3)
+  }
+
   // The route, agent first (the default): a served agent ends it and the blocks never run.
   const routeRequest = (prompt, blocks) => Object.assign(new route.RouteRequest(), {agent: request(prompt), blocksPrompt: blocks ? prompt : ''})
   assert.equal(route.routeOrder(), route.ORDER_AGENT_FIRST)

@@ -681,10 +681,10 @@ export function recordChatAgent(agent: AgentResult, context: WidgetBuildContext,
 }
 
 async function composeInto(context: WidgetBuildContext, result: MiniApp, onStatus: (status: string) => void,
-    onPreview: (vbc2: string) => void): Promise<boolean> {
+    onPreview: (vbc2: string) => void, language: string): Promise<boolean> {
   let request = chatAgentRequest(context)
   if (request === null) { return false }
-  let agent = await runAgent(request, appAgentHost(onStatus, onPreview))
+  let agent = await runAgent(request, appAgentHost(onStatus, onPreview, (): boolean => false, language))
   return recordChatAgent(agent, context, result)
 }
 
@@ -710,7 +710,7 @@ export async function buildMiniApp(systemPrompt: string, description: string | W
   // on search results, or one the composer cannot serve, is generated as before. Skipped when the chat already
   // tried it (the route, agent/VeraBuildRoute.ets) before the blocks.
   if (typeof description !== 'string' && !description.composeTried &&
-      await composeInto(description, result, onStatus, onPreview)) { return result }
+      await composeInto(description, result, onStatus, onPreview, systemPrompt)) { return result }
   let failedSource = ''
   let feedback = ''
   let repairByEdit = true

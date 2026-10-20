@@ -7,13 +7,20 @@ import { deepseek, discoveryToolResult } from '../DeepSeekEngine'
 import { settings } from '../SettingsStore'
 import { webSearch } from '../VeraWebSearch'
 
+/** Room for one section with its handlers and view; a whole program is given far more. */
+const CUSTOM_TOKENS: number = 3000
+
+/** `language` is the skill prompt the page generates with (UI catalogue spliced in), for a custom section; '' for none. */
 export function appAgentHost(status: (text: string) => void, preview: (vbc2: string) => void,
-    cancelled: () => boolean = (): boolean => false): AgentHost {
+    cancelled: () => boolean = (): boolean => false, language: string = ''): AgentHost {
   let host = new AgentHost()
   host.askPlan = (system: string, user: string, onText: (soFar: string) => void): Promise<string | null> =>
     deepseek.extractSketch(system, user, onText)
   host.askJev = (body: string): Promise<string> => askJev(body, settings.getSelectorKey())
   host.fillBlocks = (request: BlockRequest): Promise<BlockFill> => fillBlocksWith(request, appBlockCalls())
+  host.language = language
+  host.askCode = (system: string, user: string): Promise<string | null> =>
+    deepseek.extractTemplateContent(system, user, CUSTOM_TOKENS, 'A section of its own')
   host.status = status
   host.preview = preview
   host.cancelled = cancelled

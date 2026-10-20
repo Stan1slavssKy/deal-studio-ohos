@@ -6,6 +6,7 @@
 
 import { SketchAsk, JevAsk } from '../VeraCompose'
 import { blockDefaults } from '../VeraTemplateContent'
+import { CodeAsk } from './AgentCustom'
 
 /** Sections of the catalogue the plan asked for, to have their content (and their holes) filled for this request. */
 export class BlockRequest {
@@ -52,6 +53,10 @@ export class AgentHost {
   preview: (vbc2: string) => void = (_vbc2: string): void => {}
   /** The content, real data and holes of the sections the plan asked for. */
   fillBlocks: (request: BlockRequest) => Promise<BlockFill> = defaultBlockFill
+  /** The model that writes a custom section, null when there is none to ask: then a need nothing does refuses the screen. */
+  askCode: CodeAsk | null = null
+  /** The language as generation is shown it (the skill prompt with the UI catalogue), for the custom section. */
+  language: string = ''
   /** True once the person has asked to stop. */
   cancelled: () => boolean = (): boolean => false
 }

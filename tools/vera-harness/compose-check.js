@@ -8,6 +8,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const {loadVera} = require('./source-loader')
 const c = loadVera('VeraCompose')
+// The composer's own binding and refusals, as they are without custom sections; the block that hands needs to one says so.
+c.setCustomSectionsEnabled(false)
 const {compileVeraSource} = loadVera('VeraCompiler')
 const {VirtualMachine, deserializeVbc2, decodeRuntimeValue} = loadVera('VeraInterpreter')
 const {UiHostEnvironment, decodeVeraUi} = loadVera('VeraUi')
@@ -410,11 +412,18 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   const base = {'written.progress': pick('right'), 'show.progress': pick('stat'),
     'widget.steps': pick('typed_number'), 'covers.0': pick('bar.progress'), 'covers.1': pick('widget.steps.slider'), 'covers.2': pick('none')}
   const read = extra => c.readComposition(JSON.stringify({answers: {...base, ...extra}}), sketch)
+  c.setCustomSectionsEnabled(true)
   const added = read({'asked.other.2': pick('added')})
   assert.deepEqual(added.unbound, [])
   assert.equal(added.bindings.get('progress').show, 'progress')
   assert.equal(added.widgets.get('steps'), 'slider')
   assert.ok(added.dropped.some(d => /weekly history/.test(d)))
+  // One nothing does is left to a custom section the model writes (agent/AgentCustom.ets); with those off, it refuses.
+  const hesitant = read({'asked.other.2': {type: 'choice', choice: 'added', confidence: 0.6}})
+  assert.deepEqual(hesitant.unbound, [])
+  assert.ok(hesitant.custom.some(u => /weekly history/.test(u)), 'a hesitant "added" goes to a custom section')
+  assert.ok(read({'asked.other.2': pick('asked')}).custom.some(u => /weekly history/.test(u)))
+  c.setCustomSectionsEnabled(false)
   assert.ok(read({'asked.other.2': {type: 'choice', choice: 'added', confidence: 0.6}}).unbound.some(u => /weekly history/.test(u)), 'a hesitant "added" refuses')
   assert.ok(read({'asked.other.2': pick('asked')}).unbound.some(u => /weekly history/.test(u)))
 }
@@ -572,4 +581,22 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   assert.match(flight.screen(), /01:00/)
 }
 
+
+// With custom sections on, a figure nothing can work out that the request wants goes to the custom section, and the
+// inputs its formula reads stay on the screen for it; with them off, it refuses as before.
+{
+  const sketch = c.parseSketch(JSON.stringify({title: 'Dice', inputs: [{id: 'dice', label: 'Dice', kind: 'count', min: 1, max: 6, value: 2}],
+    values: [{id: 'total', label: 'Total', means: 'the sum of the dice rolled', format: 'count', formula: 'dice * 3.5',
+      example: {given: {dice: 2}, result: 7}}]}))
+  const answers = JSON.stringify({answers: {'written.total': {type: 'choice', choice: 'wrong', confidence: 0.9},
+    'asked.value.total': {type: 'choice', choice: 'asked', confidence: 0.9}}})
+  assert.ok(c.readComposition(answers, sketch).unbound.some(u => /Total/.test(u)))
+  c.setCustomSectionsEnabled(true)
+  const comp = c.readComposition(answers, sketch)
+  c.setCustomSectionsEnabled(false)
+  assert.deepEqual(comp.unbound, [])
+  assert.deepEqual(comp.custom, ['the figure "Total": the sum of the dice rolled'])
+  assert.deepEqual(comp.inputs.map(i => i.id), ['dice'])
+  assert.equal(comp.sketch.values.length, 0)
+}
 console.log('compose-check: ok')

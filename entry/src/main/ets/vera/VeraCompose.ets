@@ -37,6 +37,14 @@ let enabled: boolean = true
 export function setComposeEnabled(on: boolean): void { enabled = on }
 export function composeEnabled(): boolean { return enabled }
 
+/**
+ * Whether a need nothing in the vocabulary or the catalogue does is left to a custom section the model writes
+ * (agent/AgentCustom.ets) rather than refusing the screen; `--ps veraCustom 0` turns that off.
+ */
+let customEnabled: boolean = true
+export function setCustomSectionsEnabled(on: boolean): void { customEnabled = on }
+export function customSectionsEnabled(): boolean { return customEnabled }
+
 /** Whether a request the composer cannot serve is generated with its sketch as a plan; `--ps veraComposePlan 0` turns that off. */
 let planEnabled: boolean = true
 export function setComposePlanEnabled(on: boolean): void { planEnabled = on }
@@ -1493,6 +1501,10 @@ export class Composition {
   blocks: string[] = []
   /** Whether their content has to come from a search: real places, prices or facts rather than placeholders. */
   realData: boolean = false
+  /** Needs neither the parts nor a section do, for a custom section the model writes (agent/AgentCustom.ets). */
+  custom: string[] = []
+  /** Inputs a figure left to the custom section reads: they stay on the screen though no part reads them. */
+  customReads: string[] = []
   constructor(sketch: Sketch) { this.sketch = sketch }
 }
 
@@ -1567,7 +1579,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       comp.blocks.push(kind)
       served.push('ready.' + i.toString())
     } else {
-      comp.unbound.push('no section for: ' + sketch.ready[i])
+      if (customEnabled) { comp.custom.push(sketch.ready[i]) } else { comp.unbound.push('no section for: ' + sketch.ready[i]) }
     }
   }
   if (comp.blocks.length > 0) { comp.realData = answerOf(answers, 'real_data', ['true'], comp.answers, REAL_DATA_ABOVE) === 'true' }
@@ -1718,7 +1730,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     } else if (comp.widget && answerOf(answers, 'detail.' + i.toString(), ['detail'], comp.answers, OTHER_ADDED_ABOVE) === 'detail') {
       comp.dropped.push('"' + sketch.other[i] + '": a detail of how the widget looks or is worked')
     } else {
-      comp.unbound.push('not in the vocabulary: ' + sketch.other[i])
+      if (customEnabled) { comp.custom.push(sketch.other[i]) } else { comp.unbound.push('not in the vocabulary: ' + sketch.other[i]) }
     }
   }
   // A field of the list that the request did not ask for and nothing reads -- not an argument, not the title
@@ -1757,7 +1769,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     given.forEach((source: string) => { if (source.startsWith('input.')) { read.push(source.substring(6)) } })
   })
   for (let input of sketch.inputs) {
-    if (read.indexOf(input.id) >= 0) { comp.inputs.push(input); continue }
+    if (read.indexOf(input.id) >= 0 || comp.customReads.indexOf(input.id) >= 0) { comp.inputs.push(input); continue }
     let extra = isNumeric(input.kind) && answerOf(answers, 'asked.' + input.id, ['added'], comp.answers, ADDED_ABOVE) === 'added'
     if (extra) { comp.dropped.push('input "' + input.label + '": not asked for, and nothing reads it') }
     else if (sectionInputs.indexOf(input.id) >= 0 || answerOf(answers, 'within.input.' + input.id, served, comp.answers, COVERED_ABOVE).length > 0) {
@@ -1767,7 +1779,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   }
   // Inputs that nothing reads make a form that does nothing: the sketch has lost what they were for.
   if (sketch.values.length === 0 && !sketch.hasCountdown && !sketch.hasStopwatch && sketch.list === null && comp.events.length === 0 &&
-      comp.blocks.length === 0) {
+      comp.blocks.length === 0 && comp.custom.length === 0) {
     comp.unbound.push('nothing uses the inputs')
   }
   return comp
@@ -1790,6 +1802,7 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   let leaving: string[] = []
   // A value a section of the catalogue shows is that section's, and leaves as one not asked for does.
   let sections: string[] = []
+  let written: string[] = []
   failed.forEach((_why: string, id: string) => {
     if (answerOf(answers, 'asked.value.' + id, ['added'], comp.answers, ADDED_ABOVE) === 'added') { leaving.push(id) }
     else if (answerOf(answers, 'within.value.' + id, served, comp.answers, COVERED_ABOVE).length > 0) { leaving.push(id); sections.push(id) }
@@ -1813,8 +1826,21 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     changed = kept.length < leaving.length
     leaving = kept
   }
+  // A figure nothing can work out, that the request wants, is left to the custom section: the model writes its working
+  // and Jev reads it against what the figure means (agent/AgentCustom.ets). Its inputs stay on the screen for it.
+  if (customEnabled) {
+    failed.forEach((_why: string, id: string) => {
+      if (leaving.indexOf(id) >= 0) { return }
+      let v = sketch.values.find((x: SketchValue): boolean => x.id === id)!
+      comp.custom.push('the figure "' + v.label + '": ' + v.means)
+      for (let input of sketch.inputs) { if (new RegExp('\\b' + input.id + '\\b').test(v.formula)) { comp.customReads.push(input.id) } }
+      leaving.push(id)
+      written.push(id)
+    })
+  }
   failed.forEach((why: string, id: string) => {
     let label = labelOf(sketch, id)
+    if (written.indexOf(id) >= 0) { return }
     if (leaving.indexOf(id) < 0) { comp.unbound.push('"' + label + '": ' + why) }
     else if (sections.indexOf(id) >= 0) { comp.dropped.push('value "' + label + '": a section shows it') }
     else { comp.dropped.push('value "' + label + '": not asked for, and ' + why) }
@@ -1825,7 +1851,7 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   out.values = sketch.values.filter((v: SketchValue): boolean => leaving.indexOf(v.id) < 0)
   comp.sketch = out
   if (out.values.length === 0 && !out.hasCountdown && !out.hasStopwatch && out.list === null && comp.events.length === 0 &&
-      comp.blocks.length === 0) {
+      comp.blocks.length === 0 && comp.custom.length === 0) {
     comp.unbound.push('nothing left to show once the values not asked for are left out')
   }
 }
@@ -2851,11 +2877,11 @@ export function compositionBlocks(comp: Composition): FragmentSpec[] {
 }
 
 /**
- * The program, or '' when the composition has anything unbound: its parts, then its sections of the catalogue, through
- * the blocks' composer. `blockValues` holds each section's slot, content and hole values, in comp.blocks order;
+ * The program, or '' when the composition has anything unbound: its parts, then its sections of the catalogue, then
+ * `custom` (the section the model wrote for comp.custom), through the blocks' composer. `blockValues` holds each section's slot, content and hole values, in comp.blocks order;
  * a section without them gets the catalogue's defaults (blockDefaults).
  */
-export function assembleProgram(comp: Composition, blockValues: Map<string, string>[] = []): string {
+export function assembleProgram(comp: Composition, blockValues: Map<string, string>[] = [], custom: FragmentSpec | null = null): string {
   if (comp.unbound.length > 0) { return '' }
   let sketch = comp.sketch
   let globals: Map<string, string> = new Map<string, string>()
@@ -2871,7 +2897,13 @@ export function assembleProgram(comp: Composition, blockValues: Map<string, stri
   for (let i = 0; i < parts.length; i++) { values.push(new Map<string, string>()) }
   let blocks = compositionBlocks(comp)
   for (let i = 0; i < blocks.length; i++) { values.push(i < blockValues.length ? blockValues[i] : blockDefaults(blocks[i].kind)) }
-  return composeFragments((parts as (FragmentSpec | null)[]).concat(blocks), globals, values)
+  let specs: (FragmentSpec | null)[] = (parts as (FragmentSpec | null)[]).concat(blocks)
+  // The custom section the model wrote, last: what nothing else on the screen does.
+  if (custom !== null) {
+    specs.push(custom)
+    values.push(new Map<string, string>())
+  }
+  return composeFragments(specs, globals, values)
 }
 
 /** How many blocks of its own a composition puts before its sections: the slot number of its first section, less one. */
@@ -3075,11 +3107,12 @@ export async function composeWith(prompt: string, askSketch: SketchAsk, askChoic
   result.answers = comp.answers
   if (comp.unbound.length > 0) { result.note = 'unbound: ' + comp.unbound.join('; '); return result }
   result.dropped = comp.dropped
-  if (comp.blocks.length > 0) { result.composition = comp } else { result.source = assembleProgram(comp) }
+  if (comp.blocks.length > 0 || comp.custom.length > 0) { result.composition = comp } else { result.source = assembleProgram(comp) }
   result.note = 'composed: ' + sketch.inputs.length.toString() + ' inputs, ' + sketch.values.length.toString() + ' values' +
     (sketch.hasCountdown ? ', countdown' : '') + (sketch.hasStopwatch ? ', stopwatch' : '') + (sketch.list !== null ? ', list' : '') +
     (comp.events.length > 0 ? ', ' + comp.events.length.toString() + ' effects' : '') +
     (comp.blocks.length > 0 ? ', sections ' + comp.blocks.join('+') + (comp.realData ? ' (real data)' : '') : '') +
+    (comp.custom.length > 0 ? ', custom: ' + comp.custom.join('; ') : '') +
     (comp.dropped.length > 0 ? '; left out: ' + comp.dropped.join('; ') : '')
   return result
 }

@@ -757,7 +757,7 @@ struct ChatPage {
           if (!sawPreview) { sawPreview = true; logMark('widget-preview') }
           msg.previewVbc2 = vbc2
           this.scrollDown(true)
-        }))
+        }, (): boolean => false, this.skillPrompt))
         let composed = new MiniApp()
         if (outcome.agent !== null) { recordChatAgent(outcome.agent!, context, composed) }
         if (outcome.blocks !== null) { this.noteBlocks(msg, context, outcome.blocks!, route.blocksPrompt) }

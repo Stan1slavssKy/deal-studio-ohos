@@ -35,6 +35,16 @@ const runs = source => { const compiled = compileVeraSource(source); assert.equa
   const source = composeFragments([a, b], new Map([['__HEADER_STYLE__', 'none']]), [new Map(), new Map()])
   assert.match(source, /return \{count: state\.count \+ 1, flag: true, label: state\.label\};/)
   assert.match(source, /return \{flag: !state\.flag, count: state\.count, label: state\.label\};/)
+  // A comma written before the token is the passthrough's own, not a second one.
+  const c2 = spec('c2', [['note', 'string', '""']], 'function clear(state: AppState, v: number): AppState {\n  return {note: "", __PASSTHROUGH__};\n}')
+  const withComma = composeFragments([a, b, c2], new Map([['__HEADER_STYLE__', 'none']]), [new Map(), new Map(), new Map()])
+  assert.match(withComma, /return \{note: "", count: state\.count, label: state\.label, flag: state\.flag\};/)
+  runs(withComma)
+  // A literal that sets nothing keeps the whole state.
+  const c3 = spec('c3', [['seen', 'boolean', 'false']], 'function keep(state: AppState, v: number): AppState {\n  return {__PASSTHROUGH__};\n}')
+  const keeps = composeFragments([b, c3], new Map([['__HEADER_STYLE__', 'none']]), [new Map(), new Map()])
+  assert.match(keeps, /return \{flag: state\.flag, seen: state\.seen\};/)
+  runs(keeps)
   assert.doesNotMatch(source, /ui\.Header/)
   runs(source)
 }

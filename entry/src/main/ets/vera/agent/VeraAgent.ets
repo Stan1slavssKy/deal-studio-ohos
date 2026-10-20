@@ -4,11 +4,14 @@
  * compiled, then run once with every handler tapped (VeraSmoke.ets) -- before anything is shown.
  *
  * The plan is VeraCompose.ets's sketch; Jev's choices bind each of its parts, and pick a section of the catalogue
- * (VeraTemplates.ets) for each need the plan says one handles whole, whose content and holes the host fills.
- * Callers see only runAgent and AgentResult, so those can change behind it. Never throws.
+ * (VeraTemplates.ets) for each need the plan says one handles whole, whose content and holes the host fills. What
+ * neither does is one custom section the model writes (AgentCustom.ets). Callers see only runAgent and AgentResult,
+ * so those can change behind it. Never throws.
  */
 
 import { AgentHost, BlockRequest, BlockFill } from './AgentHost'
+import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
+import { FragmentSpec } from '../VeraTemplates'
 import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, partCount, ComposeResult, Composition, Sketch } from '../VeraCompose'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { smokeRun } from '../VeraSmoke'
@@ -36,6 +39,8 @@ export class AgentResult {
   blocks: string[] = []
   /** What filling them did, when there were any. */
   blockFill: BlockFill | null = null
+  /** What writing the custom section did, when the composition needed one. */
+  custom: CustomResult | null = null
   firstPreviewMs: number = 0
   previews: number = 0
   checkMs: number = 0
@@ -65,18 +70,44 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
   // their holes, before the program is assembled.
   if (composed.composition !== null && !host.cancelled()) {
     let comp: Composition = composed.composition!
-    host.status(comp.realData ? 'Looking up real data...' : 'Filling in the sections...')
-    let blocks = new BlockRequest()
-    blocks.kinds = comp.blocks
-    blocks.prompt = request.prompt
-    blocks.realData = comp.realData
-    blocks.offset = partCount(comp)
-    blocks.compose = (values: Map<string, string>[]): string => assembleProgram(comp, values)
-    let fill = await host.fillBlocks(blocks)
-    result.blocks = comp.blocks
-    result.blockFill = fill
-    result.note += '; ' + (fill.failed.length > 0 ? fill.failed : fill.note)
-    if (fill.failed.length === 0) { composed.source = assembleProgram(comp, fill.values) }
+    let values: Map<string, string>[] = []
+    let ready = true
+    if (comp.blocks.length > 0) {
+      host.status(comp.realData ? 'Looking up real data...' : 'Filling in the sections...')
+      let blocks = new BlockRequest()
+      blocks.kinds = comp.blocks
+      blocks.prompt = request.prompt
+      blocks.realData = comp.realData
+      blocks.offset = partCount(comp)
+      blocks.compose = (filled: Map<string, string>[]): string => assembleProgram(comp, filled)
+      let fill = await host.fillBlocks(blocks)
+      result.blocks = comp.blocks
+      result.blockFill = fill
+      result.note += '; ' + (fill.failed.length > 0 ? fill.failed : fill.note)
+      ready = fill.failed.length === 0
+      values = fill.values
+    }
+    // What nothing else does: one section the model writes into the program the rest makes.
+    let custom: FragmentSpec | null = null
+    if (ready && comp.custom.length > 0 && !host.cancelled()) {
+      if (host.askCode === null || host.language.length === 0) {
+        result.note += '; no model to write a custom section'
+        ready = false
+      } else {
+        host.status('Writing the rest...')
+        let asked = new CustomRequest()
+        asked.needs = comp.custom
+        asked.prompt = request.prompt
+        asked.compose = (section: FragmentSpec | null): string => assembleProgram(comp, values, section)
+        asked.verify = host.askJev
+        let written = await writeSection(asked, host.language, host.askCode!)
+        result.custom = written
+        custom = written.section
+        ready = custom !== null
+        result.note += '; ' + (custom !== null ? 'custom section in ' + written.attempts.toString() + ' attempt(s)' : written.failed)
+      }
+    }
+    if (ready) { composed.source = assembleProgram(comp, values, custom) }
   }
   if (composed.source.length > 0) {
     let checkStart = Date.now()

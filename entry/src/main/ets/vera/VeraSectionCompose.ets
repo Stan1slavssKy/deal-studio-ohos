@@ -722,7 +722,15 @@ function fillPassthrough(text: string, fields: string[]): string {
       let set = opens.length > 0 ? keysSet(text, opens[opens.length - 1], i) : []
       let rest = ''
       for (let name of fields) { if (set.indexOf(name) < 0) { rest = rest + ', ' + name + ': state.' + name } }
-      out = out + text.substring(copied, i) + rest
+      // A comma already written before the token ({a: 1, __PASSTHROUGH__}) is the one the passthrough brings.
+      let upTo = i
+      while (upTo > copied && text.charAt(upTo - 1) === ' ') { upTo-- }
+      if (upTo > copied && text.charAt(upTo - 1) === ',') { upTo-- } else { upTo = i }
+      // A literal that sets nothing ({__PASSTHROUGH__}: the state as it is) takes the fields without a leading comma.
+      let before = upTo
+      while (before > 0 && text.charAt(before - 1) === ' ') { before-- }
+      if (before > 0 && text.charAt(before - 1) === '{' && rest.length > 0) { rest = rest.substring(2) }
+      out = out + text.substring(copied, upTo) + rest
       i += PASSTHROUGH.length
       copied = i
       continue

@@ -14,6 +14,10 @@ const {loadVera} = require('./source-loader')
 const {AgentHost} = loadVera('agent/AgentHost')
 const {BlockCalls, fillBlocksWith} = loadVera('agent/AgentBlocks')
 const {AgentRequest, runAgent} = loadVera('agent/VeraAgent')
+const {describeCatalogForPrompt} = loadVera('VeraUiCatalog')
+// The language as the Generate screen shows it to the model, for a custom section.
+const language = fs.readFileSync(path.join(__dirname, '../../entry/src/main/resources/rawfile/vera-skill.txt'), 'utf8')
+  .replace('{{UI_CATALOG}}', describeCatalogForPrompt()).replace('{{UI_TOOL_NOTE}}\n', '')
 
 const args = process.argv.slice(2)
 const option = (flag, fallback) => { const i = args.indexOf(flag); if (i < 0) return fallback; const v = args[i + 1]; args.splice(i, 2); return v }
@@ -65,6 +69,8 @@ function host(log) {
   calls.content = (system, user, budget) => deepseek(system, user, budget, false)
   calls.hole = (system, user) => deepseek(system, user, 500, false)
   h.fillBlocks = request => fillBlocksWith(request, calls)
+  h.language = language
+  h.askCode = async (system, user) => { const reply = await deepseek(system, user, 3000, false); (log.code = log.code || []).push(reply); return reply }
   return h
 }
 
@@ -79,14 +85,16 @@ async function one([label, prompt]) {
   const c = r.composed
   if (c.sketch) fs.writeFileSync(path.join(dir, 'sketch.json'), c.sketch)
   if (log.jevAnswer) fs.writeFileSync(path.join(dir, 'jev-answer.json'), log.jevAnswer)
+  if (log.code) fs.writeFileSync(path.join(dir, 'custom-replies.txt'), log.code.join('\n\n======== next attempt ========\n\n'))
   fs.writeFileSync(path.join(dir, 'program.vera'), c.source || '')
   const fill = r.blockFill
   const result = {label, prompt, widget, served: r.vbc2.length > 0, note: r.note, errors: r.errors, blocks: r.blocks,
     sketchMs: c.sketchMs, jevMs: c.jevMs, searchMs: fill ? fill.searchMs : -1, contentMs: fill ? fill.contentMs : 0,
-    holesMs: fill ? fill.holesMs : 0, ms: Date.now() - started, answers: c.answers}
+    holesMs: fill ? fill.holesMs : 0, custom: r.custom ? {attempts: r.custom.attempts, ms: r.custom.ms, failed: r.custom.failed} : null,
+    ms: Date.now() - started, answers: c.answers}
   fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 1))
   console.log(label.padEnd(24), (result.served ? 'SERVED' : 'refused').padEnd(8), (result.ms / 1000).toFixed(1).padStart(5) + 's',
-    (r.blocks.length ? '[' + r.blocks.join('+') + '] ' : '') + r.note.slice(0, 150))
+    (r.blocks.length ? '[' + r.blocks.join('+') + '] ' : '') + (r.custom ? '{custom ' + r.custom.attempts + '} ' : '') + r.note.slice(0, 150))
 }
 
 ;(async () => {

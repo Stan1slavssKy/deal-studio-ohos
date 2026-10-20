@@ -596,7 +596,7 @@ struct GeneratePage {
       if (run !== this.runId || this.cancelRequested) { return }
       this.previewVbc2 = vbc2
       this.previewNote = 'Sketching the screen...'
-    }, (): boolean => run !== this.runId || this.cancelRequested)
+    }, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate)
     let outcome: RouteOutcome = await buildScreen(route, host)
     if (run !== this.runId || outcome.kind === OUTCOME_CANCELLED) { return }
     if (outcome.agent !== null) { this.traceAgent(outcome.agent!) }
