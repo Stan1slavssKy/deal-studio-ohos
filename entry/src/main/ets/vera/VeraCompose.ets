@@ -26,8 +26,9 @@
 
 import http from '@ohos.net.http'
 import { deepseek } from './DeepSeekEngine'
-import { FragmentSpec, StateFieldSpec } from './VeraTemplates'
+import { FragmentSpec, StateFieldSpec, VetoSpec, fragments, vetoes } from './VeraTemplates'
 import { composeFragments } from './VeraSectionCompose'
+import { blockDefaults } from './VeraTemplateContent'
 
 const JEV_ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
 
@@ -46,7 +47,7 @@ export function composePlanEnabled(): boolean { return planEnabled }
  * examples of features drawn from test requests made the sketch report those features where nobody
  * asked for them (an egg timer grew an alarm sound and "start, pause and reset" as a missing feature).
  */
-export const SKETCH_PROMPT: string =
+const SKETCH_BASE: string =
   'You turn a request for a small phone app into a JSON sketch of its data. Write no code. Answer with one JSON object:\n' +
   '{"title": short app title, "eyebrow": 1-3 word label in capitals, "subtitle": one short line,\n' +
   ' "inputs": [{"id": camelCase, "label": shown label, "kind": "amount" | "percent" | "count" | "choice" | "toggle" | "text" | "time",\n' +
@@ -67,6 +68,8 @@ export const SKETCH_PROMPT: string =
   '   "example": {"given": {each input id or part number the formula needs, directly or through the values before it: a sample number},\n' +
   '   "result": the number the formula gives for them}}],\n' +
   ' "events": [{"id": camelCase, "when": the moment, "what": what the phone does, "asked": true if the request asks for it, false if you add it}],\n' +
+  ' "ready": [one string per need of the request that one of the ready-made sections below handles whole, saying in plain words\n' +
+  '   everything it involves: what it lists or shows, what the person does with it, what the phone does],\n' +
   ' "other": [what else the request asks for, in a few words each]}\n' +
   'What each part already brings: an input, its control (a count has - and + buttons); a countdown, start, stop and reset buttons and the time left; ' +
   'a stopwatch, start, stop and reset buttons and the time passed; a list, a form with its fields, an add button, the entries ' +
@@ -91,9 +94,37 @@ export const SKETCH_PROMPT: string =
   'such as how many minutes before a reminder goes off, is an input, a field or a constant (a reminder whose lead time ' +
   'the request does not name is a constant of 0 minutes, so it goes off at the start), and every time of day it needs, ' +
   'such as when it starts, is a time input or a time field, even when the request does not name it. other lists everything the request asks for that the parts above ' +
-  'do not bring, and never repeats what they bring; it is empty only when nothing is left out. Leaving a requested feature out of the sketch is wrong. ' +
+  'and ready do not bring, and never repeats what they bring; it is empty only when nothing is left out. Leaving a requested feature out of the sketch is wrong. ' +
   'Keep to what the request asks for: no inputs, values or events it does not need. ' +
   'Use the numbers the request gives; where it gives none, pick sensible ones.'
+
+/**
+ * Kinds of the catalogue the plan may ask for: the sections whose substance is content written for the request, which
+ * the parts above cannot build. Left out are the blocks that do what a part already does (a timer, a log of entries,
+ * reminders, a note, a slider, summary numbers, one calendar event, buttons), so a plan does not move a part's job
+ * into a section and lose the figures worked out from it; the blocks only useful next to another (a filter box, a
+ * detail view, the readers of a log); and the intent panel, whose rows are a call of their own.
+ */
+export const READY_KINDS: string[] = ['checklist', 'key_facts', 'trend_chart', 'spotlight', 'search_list', 'data_table', 'timeline',
+  'bar_chart', 'itinerary']
+
+/**
+ * The ready-made sections, as the plan sees them: what each brings, from the catalogue's own words (VeraTemplates.ets),
+ * never which app it suits. The parts start empty or from the numbers given; a section starts with content written for
+ * the request, which is what tells them apart.
+ */
+function readyParagraph(): string {
+  let lines: string[] = ['Ready-made sections, each a whole part of the screen that starts with content written for the request ' +
+    '(items, places, steps, facts or figures anyone could look up or suggest), where the parts above start empty or from the ' +
+    'numbers given. The person\'s own records -- their notes, entries, contacts or messages -- are never such content: they start empty, in the parts above.']
+  for (let f of fragments()) { if (READY_KINDS.indexOf(f.kind) >= 0) { lines.push('- ' + f.criteria) } }
+  lines.push('A need one of these sections handles whole goes in ready, one need per section. Everything that section brings -- ' +
+    'its items, their buttons, what the phone does from them, its counts -- belongs to that need alone: it is never also an input, ' +
+    'a list, a value, an event or an item of other. A need the parts above bring is built from them. ready is empty when no section is needed.')
+  return lines.join('\n')
+}
+
+export const SKETCH_PROMPT: string = SKETCH_BASE + '\n' + readyParagraph()
 
 export class SketchOption {
   label: string = ''
@@ -183,6 +214,8 @@ export class Sketch {
   hasStopwatch: boolean = false
   list: SketchList | null = null
   events: SketchEvent[] = []
+  /** Needs a ready-made section of the catalogue handles whole, in words; Jev chooses the section for each. */
+  ready: string[] = []
   /** What the request asks for beyond the fields above; anything here makes the request unbound. */
   other: string[] = []
 }
@@ -404,6 +437,22 @@ export function parseSketch(text: string): Sketch | null {
   if (Array.isArray(other)) {
     for (let item of other as Object[]) {
       if (typeof item === 'string' && (item as string).trim().length > 0) { sketch.other.push((item as string).trim()) }
+    }
+  }
+  let ready = o['ready']
+  if (Array.isArray(ready)) {
+    for (let item of ready as Object[]) {
+      // A need written as an object ({"need": ..., "what": ...}) is its words joined.
+      let words = ''
+      if (typeof item === 'string') {
+        words = item as string
+      } else if (item !== null && typeof item === 'object') {
+        let parts: string[] = []
+        let fields = item as Record<string, Object>
+        Object.keys(fields).forEach((k: string) => { if (typeof fields[k] === 'string') { parts.push(fields[k] as string) } })
+        words = parts.join('. ')
+      }
+      if (words.trim().length > 0) { sketch.ready.push(words.trim()) }
     }
   }
   let events = o['events']
@@ -1197,6 +1246,7 @@ export function describeSketch(sketch: Sketch): string {
   if (sketch.list !== null) { lines.push('- ' + describeList(sketch.list)) }
   for (let v of sketch.values) { lines.push('- shows "' + v.label + '": ' + v.means) }
   for (let e of sketch.events) { lines.push('- when ' + e.when + ': ' + e.what) }
+  for (let need of sketch.ready) { lines.push('- a ready-made section for: ' + need) }
   return lines.join('\n')
 }
 
@@ -1346,6 +1396,40 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
     // looks or is worked is left out rather than refused, as long as what it works out or does is all there.
     if (widget) { questions['detail.' + i.toString()] = detailQuestion(sketch.other[i]) }
   }
+  // Which ready-made section handles each need the plan gave one, by the catalogue's own words for each.
+  if (sketch.ready.length > 0) {
+    let sections: Map<string, string> = new Map<string, string>()
+    for (let f of fragments()) { if (READY_KINDS.indexOf(f.kind) >= 0) { sections.set(f.kind, f.criteria) } }
+    sections.set('none', 'none of these: it needs something none of these sections does')
+    // A section's content is written for the request; the person's own records cannot be, however a plan words them.
+    let whose: Map<string, string> = new Map<string, string>()
+    whose.set('own', 'the person\'s own records: notes, entries, contacts, messages or files they keep, which nobody else could write')
+    whose.set('written', 'facts, places, steps, figures or suggestions that anyone could look up or write for the request')
+    for (let i = 0; i < sketch.ready.length; i++) {
+      questions['ready.' + i.toString()] = choice('The request needs "' + sketch.ready[i] + '". Which of these sections does exactly that?', sections)
+      questions['whose.' + i.toString()] = choice('What does "' + sketch.ready[i] + '" show?', whose)
+    }
+    // The catalogue's own question: whether the sections' content has to come from a search.
+    let real = vetoes().find((v: VetoSpec): boolean => v.key === 'needs_real_data')!
+    questions['real_data'] = choice(real.instructions, real.criteria)
+    // A plan names a section's own buttons and lists again as events and items of other: what a section does is left
+    // to it, by Jev's reading rather than the plan's.
+    let needs: Map<string, string> = new Map<string, string>()
+    for (let i = 0; i < sketch.ready.length; i++) { needs.set('ready.' + i.toString(), 'part of the ready-made section for: ' + sketch.ready[i]) }
+    needs.set('none', 'no: something of its own, apart from all of these')
+    for (let e of sketch.events) {
+      questions['within.event.' + e.id] = choice('Is "' + e.when + ': ' + e.what + '" part of one of these?', needs)
+    }
+    for (let input of sketch.inputs) {
+      questions['within.input.' + input.id] = choice('Is setting "' + input.label + '" part of one of these?', needs)
+    }
+    for (let v of sketch.values) {
+      questions['within.value.' + v.id] = choice('Is showing "' + v.label + '" (' + v.means + ') part of one of these?', needs)
+    }
+    for (let i = 0; i < sketch.other.length; i++) {
+      questions['within.other.' + i.toString()] = choice('Is "' + sketch.other[i] + '" part of one of these?', needs)
+    }
+  }
   // The same for an event no effect does: "show 'Egg is ready' at zero" was sketched as one.
   if (widget) {
     for (let e of sketch.events) { questions['detail.event.' + e.id] = detailQuestion(e.when + ': ' + e.what) }
@@ -1405,6 +1489,10 @@ export class Composition {
   widget: boolean = false
   /** The figures drawn as rows of a list, the fixed numbers they come from first: an item of "other" asked for a table. */
   figures: boolean = false
+  /** The catalogue's sections Jev chose for the plan's ready needs, in plan order, after the composition's own parts. */
+  blocks: string[] = []
+  /** Whether their content has to come from a search: real places, prices or facts rather than placeholders. */
+  realData: boolean = false
   constructor(sketch: Sketch) { this.sketch = sketch }
 }
 
@@ -1426,6 +1514,7 @@ function withList(sketch: Sketch, list: SketchList | null): Sketch {
   out.hasStopwatch = sketch.hasStopwatch
   out.list = list
   out.events = sketch.events
+  out.ready = sketch.ready
   out.other = sketch.other
   return out
 }
@@ -1468,6 +1557,20 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   }
   let theme = answerOf(answers, 'theme', ['clean', 'soft', 'expressive', 'technical', 'playful'], comp.answers)
   comp.theme = theme.length > 0 ? theme : 'clean'
+  // A ready need is the section Jev names for it, confidently; one it names none for is refused, as an item of other is.
+  let served: string[] = []
+  for (let i = 0; i < sketch.ready.length; i++) {
+    let kind = answerOf(answers, 'ready.' + i.toString(), READY_KINDS, comp.answers, READY_ABOVE)
+    if (answerOf(answers, 'whose.' + i.toString(), ['own'], comp.answers, OWN_RECORDS_ABOVE) === 'own') {
+      comp.unbound.push('the person\'s own records, which no section can make up: ' + sketch.ready[i])
+    } else if (kind.length > 0) {
+      comp.blocks.push(kind)
+      served.push('ready.' + i.toString())
+    } else {
+      comp.unbound.push('no section for: ' + sketch.ready[i])
+    }
+  }
+  if (comp.blocks.length > 0) { comp.realData = answerOf(answers, 'real_data', ['true'], comp.answers, REAL_DATA_ABOVE) === 'true' }
 
   for (let input of sketch.inputs) {
     let allowed: string[] = []
@@ -1539,7 +1642,23 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   for (let fx of EFFECTS) { effectIds.push(fx.id) }
   let momentIds: string[] = []
   momentsOf(sketch).forEach((_d: string, key: string) => { momentIds.push(key) })
+  // Inputs only an event left to a section reads: what they were for goes with it (a reminder's lead time).
+  let sectionInputs: string[] = []
   for (let e of sketch.events) {
+    let within = answerOf(answers, 'within.event.' + e.id, served, comp.answers, COVERED_ABOVE)
+    if (within.length > 0) {
+      comp.dropped.push('event "' + e.what + '": the section for "' + sketch.ready[Number(within.substring(6))] + '" does it')
+      let fx = effectOf(answerOf(answers, 'effect.' + e.id, effectIds, []))
+      if (fx !== undefined) {
+        for (let prm of fx.params) {
+          let keys: string[] = []
+          paramSources(sketch, prm).forEach((_d: string, key: string) => { keys.push(key) })
+          let source = answerOf(answers, 'arg.' + e.id + '.' + fx.id + '.' + prm.name, keys, [], ARG_ABOVE)
+          if (source.startsWith('input.')) { sectionInputs.push(source.substring(6)) }
+        }
+      }
+      continue
+    }
     let picked = answerOf(answers, 'effect.' + e.id, effectIds, comp.answers)
     let moment = momentIds.length > 0 ? answerOf(answers, 'moment.' + e.id, momentIds, comp.answers) : ''
     let missing = picked.length === 0 ? 'no effect' : (moment.length === 0 ? 'nothing on the screen marks that moment' : '')
@@ -1582,6 +1701,8 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   let partIds: string[] = []
   partsOf(sketch).forEach((_d: string, key: string) => { partIds.push(key) })
   for (let i = 0; i < sketch.other.length; i++) {
+    let within = answerOf(answers, 'within.other.' + i.toString(), served, comp.answers, COVERED_ABOVE)
+    if (within.length > 0) { continue }
     let covered = answerOf(answers, 'covers.' + i.toString(), partIds, comp.answers)
     let a = answers['covers.' + i.toString()] as Record<string, Object>
     let confidence = a !== null && a !== undefined && typeof a['confidence'] === 'number' ? a['confidence'] as number : 0
@@ -1622,7 +1743,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       comp.sketch = withList(sketch, trimmed)
     }
   }
-  dropValues(comp, answers, failed)
+  dropValues(comp, answers, failed, served)
   // An input nothing reads does nothing. A number the request did not ask for is the sketch's extra and is
   // left out, and the note says so; one it asked for, a switch or words mean the request wants something
   // the parts do not do with it.
@@ -1639,10 +1760,14 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     if (read.indexOf(input.id) >= 0) { comp.inputs.push(input); continue }
     let extra = isNumeric(input.kind) && answerOf(answers, 'asked.' + input.id, ['added'], comp.answers, ADDED_ABOVE) === 'added'
     if (extra) { comp.dropped.push('input "' + input.label + '": not asked for, and nothing reads it') }
+    else if (sectionInputs.indexOf(input.id) >= 0 || answerOf(answers, 'within.input.' + input.id, served, comp.answers, COVERED_ABOVE).length > 0) {
+      comp.dropped.push('input "' + input.label + '": a section does it')
+    }
     else { comp.unbound.push('input "' + input.label + '": nothing reads it') }
   }
   // Inputs that nothing reads make a form that does nothing: the sketch has lost what they were for.
-  if (sketch.values.length === 0 && !sketch.hasCountdown && !sketch.hasStopwatch && sketch.list === null && comp.events.length === 0) {
+  if (sketch.values.length === 0 && !sketch.hasCountdown && !sketch.hasStopwatch && sketch.list === null && comp.events.length === 0 &&
+      comp.blocks.length === 0) {
     comp.unbound.push('nothing uses the inputs')
   }
   return comp
@@ -1653,7 +1778,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
  * other value, not the countdown's length, not an item of "other" they were said to cover -- are left out,
  * as an input is; the rest refuse the screen. A value read only by others left out goes with them.
  */
-function dropValues(comp: Composition, answers: Record<string, Object>, failed: Map<string, string>): void {
+function dropValues(comp: Composition, answers: Record<string, Object>, failed: Map<string, string>, served: string[]): void {
   let sketch = comp.sketch
   // A value worked out from one that cannot be is no better off: its example passed on a number given to it.
   for (let v of sketch.values) {
@@ -1663,8 +1788,11 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     if (from !== undefined) { failed.set(v.id, 'reads "' + labelOf(sketch, from) + '", which nothing works out') }
   }
   let leaving: string[] = []
+  // A value a section of the catalogue shows is that section's, and leaves as one not asked for does.
+  let sections: string[] = []
   failed.forEach((_why: string, id: string) => {
     if (answerOf(answers, 'asked.value.' + id, ['added'], comp.answers, ADDED_ABOVE) === 'added') { leaving.push(id) }
+    else if (answerOf(answers, 'within.value.' + id, served, comp.answers, COVERED_ABOVE).length > 0) { leaving.push(id); sections.push(id) }
   })
   let covering: string[] = []
   for (let i = 0; i < sketch.other.length; i++) {
@@ -1688,6 +1816,7 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   failed.forEach((why: string, id: string) => {
     let label = labelOf(sketch, id)
     if (leaving.indexOf(id) < 0) { comp.unbound.push('"' + label + '": ' + why) }
+    else if (sections.indexOf(id) >= 0) { comp.dropped.push('value "' + label + '": a section shows it') }
     else { comp.dropped.push('value "' + label + '": not asked for, and ' + why) }
   })
   if (leaving.length === 0) { return }
@@ -1695,7 +1824,8 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   let out = withList(sketch, sketch.list)
   out.values = sketch.values.filter((v: SketchValue): boolean => leaving.indexOf(v.id) < 0)
   comp.sketch = out
-  if (out.values.length === 0 && !out.hasCountdown && !out.hasStopwatch && out.list === null && comp.events.length === 0) {
+  if (out.values.length === 0 && !out.hasCountdown && !out.hasStopwatch && out.list === null && comp.events.length === 0 &&
+      comp.blocks.length === 0) {
     comp.unbound.push('nothing left to show once the values not asked for are left out')
   }
 }
@@ -1843,6 +1973,13 @@ const ADDED_ABOVE: number = 0.5
  * ("restaurants near me"), and leaving it out serves a screen without it. Set before any run, not tuned.
  */
 const OTHER_ADDED_ABOVE: number = 0.7
+
+/** A section is a whole part of the screen, so it takes the bar a block takes in the blocks' own pick (SECTION_PICK_ABOVE). Not tuned. */
+const READY_ABOVE: number = 0.5
+/** The bar the catalogue gives its own needs_real_data question (VeraTemplates.vetoes). */
+const REAL_DATA_ABOVE: number = 0.35
+/** Made-up records in place of the person's own mislead; any lean toward "own" refuses the section. Not tuned. */
+const OWN_RECORDS_ABOVE: number = 0.2
 
 // ---- Assembling the program ----
 
@@ -2703,8 +2840,22 @@ function inQuotes(s: string): string {
   return quoted.substring(1, quoted.length - 1)
 }
 
-/** The program, or '' when the composition has anything unbound: its parts through the blocks' composer. */
-export function assembleProgram(comp: Composition): string {
+/** The catalogue's sections the composition has, in screen order, after its own parts. */
+export function compositionBlocks(comp: Composition): FragmentSpec[] {
+  let out: FragmentSpec[] = []
+  for (let kind of comp.blocks) {
+    let spec = fragments().find((f: FragmentSpec): boolean => f.kind === kind)
+    if (spec !== undefined) { out.push(spec) }
+  }
+  return out
+}
+
+/**
+ * The program, or '' when the composition has anything unbound: its parts, then its sections of the catalogue, through
+ * the blocks' composer. `blockValues` holds each section's slot, content and hole values, in comp.blocks order;
+ * a section without them gets the catalogue's defaults (blockDefaults).
+ */
+export function assembleProgram(comp: Composition, blockValues: Map<string, string>[] = []): string {
   if (comp.unbound.length > 0) { return '' }
   let sketch = comp.sketch
   let globals: Map<string, string> = new Map<string, string>()
@@ -2718,8 +2869,13 @@ export function assembleProgram(comp: Composition): string {
   let parts = compositionParts(comp)
   let values: Map<string, string>[] = []
   for (let i = 0; i < parts.length; i++) { values.push(new Map<string, string>()) }
-  return composeFragments(parts, globals, values)
+  let blocks = compositionBlocks(comp)
+  for (let i = 0; i < blocks.length; i++) { values.push(i < blockValues.length ? blockValues[i] : blockDefaults(blocks[i].kind)) }
+  return composeFragments((parts as (FragmentSpec | null)[]).concat(blocks), globals, values)
 }
+
+/** How many blocks of its own a composition puts before its sections: the slot number of its first section, less one. */
+export function partCount(comp: Composition): number { return compositionParts(comp).length }
 
 
 // ---- Pictures before the program is ready ----
@@ -2824,6 +2980,7 @@ export function sketchPlan(sketch: Sketch): string {
   if (sketch.list !== null) { lines.push('- ' + describeList(sketch.list)) }
   for (let v of sketch.values) { lines.push('- shows "' + v.label + '": ' + v.means) }
   for (let e of sketch.events) { lines.push('- ' + e.when + ': ' + e.what) }
+  for (let need of sketch.ready) { lines.push('- a ready-made section: ' + need) }
   for (let item of sketch.other) { lines.push('- also: ' + item) }
   lines.push('Keep these inputs, values and their labels where they fit the request, and add whatever else it needs. The request decides.')
   return lines.join('\n')
@@ -2844,6 +3001,11 @@ export class ComposeResult {
   parsed: Sketch | null = null
   /** What the sketch added and the screen leaves out, for the person to see. */
   dropped: string[] = []
+  /**
+   * The composition, when it has sections of the catalogue: they need their content filled before the program is
+   * assembled (assembleProgram with their values), so `source` is still empty. Null otherwise.
+   */
+  composition: Composition | null = null
 }
 
 export async function askJev(body: string, apiKey: string): Promise<string> {
@@ -2912,11 +3074,12 @@ export async function composeWith(prompt: string, askSketch: SketchAsk, askChoic
   let comp = readComposition(body, sketch, widget)
   result.answers = comp.answers
   if (comp.unbound.length > 0) { result.note = 'unbound: ' + comp.unbound.join('; '); return result }
-  result.source = assembleProgram(comp)
   result.dropped = comp.dropped
+  if (comp.blocks.length > 0) { result.composition = comp } else { result.source = assembleProgram(comp) }
   result.note = 'composed: ' + sketch.inputs.length.toString() + ' inputs, ' + sketch.values.length.toString() + ' values' +
     (sketch.hasCountdown ? ', countdown' : '') + (sketch.hasStopwatch ? ', stopwatch' : '') + (sketch.list !== null ? ', list' : '') +
     (comp.events.length > 0 ? ', ' + comp.events.length.toString() + ' effects' : '') +
+    (comp.blocks.length > 0 ? ', sections ' + comp.blocks.join('+') + (comp.realData ? ' (real data)' : '') : '') +
     (comp.dropped.length > 0 ? '; left out: ' + comp.dropped.join('; ') : '')
   return result
 }

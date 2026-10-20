@@ -21,7 +21,7 @@
  * 'deepseek'.
  */
 
-import { ContentFieldSpec, ListFieldSpec, contentFieldsFor, fragments } from './VeraTemplates'
+import { ContentFieldSpec, ListFieldSpec, FragmentSpec, contentFieldsFor, fragments } from './VeraTemplates'
 import { GenerateRequest, engine } from './LlamaEngine'
 import { deepseek } from './DeepSeekEngine'
 
@@ -239,8 +239,9 @@ export function sanitizeVeraInt(raw: string, fallback: string): string {
   let digits = whole.replace(/[^0-9-]/g, '')
   let negative = digits.startsWith('-')
   digits = digits.split('-').join('')
-  if (digits.length === 0) { return fallback }
-  if (digits.length > 6) { digits = digits.substring(0, 6) }
+  // Up to 15 digits is a whole number held exactly; a longer one is not cut short -- a chart of real data would show a
+  // different number than it was given -- but left for the fallback.
+  if (digits.length === 0 || digits.length > 15) { return fallback }
   return (negative ? '-' : '') + digits
 }
 
@@ -360,7 +361,23 @@ function listFieldsForKind(kind: string): ListFieldSpec[] {
  * Same contract as fillTemplateContent: never throws, every field that fails or is missing keeps
  * its literal fallback, and `note` always explains what happened.
  */
-export async function fillSectionsContent(chosenKinds: string[], userPrompt: string, mode: string, searchText: string = ''): Promise<SectionContentFillResult> {
+/** Asks the content model: (system prompt, request, token budget) -> its reply, or null when there was none. */
+export type ContentAsk = (system: string, user: string, budget: number) => Promise<string | null>
+
+/** A block's values when nobody fills them: the first allowed value of each slot, the fallback of each field and list. */
+export function blockDefaults(kind: string): Map<string, string> {
+  let values: Map<string, string> = new Map<string, string>()
+  let spec = fragments().find((f: FragmentSpec): boolean => f.kind === kind)
+  if (spec === undefined) { return values }
+  for (let slot of spec.slots) { values.set(slot.token, slot.values[0]) }
+  for (let field of spec.contentFields) { values.set(field.token, field.fallback) }
+  for (let list of spec.listFields) { values.set(list.token, expandListRows(undefined, list).text) }
+  return values
+}
+
+/** `ask`, when given, is the content model to ask instead of the app's DeepSeek engine (the host harness passes its own). */
+export async function fillSectionsContent(chosenKinds: string[], userPrompt: string, mode: string, searchText: string = '',
+    ask: ContentAsk | null = null): Promise<SectionContentFillResult> {
   let flat: FlatContentField[] = []
   flat.push(new FlatContentField(-1, '__TITLE__', 'title', 'Demo Screen', 'Short title for the whole screen (2-4 words)', 24))
   flat.push(new FlatContentField(-1, '__EYEBROW__', 'eyebrow', '', 'A short line above the title, only when the request itself gives one (a date, a place, a kind of day); otherwise an empty string', 24))
@@ -398,7 +415,7 @@ export async function fillSectionsContent(chosenKinds: string[], userPrompt: str
   let budget = 220 + 160 * lists.length
   let raw: string | null = mode === 'local'
     ? fillContentLocal(prompt, userPrompt, budget)
-    : await deepseek.extractTemplateContent(prompt, userPrompt, budget)
+    : (ask !== null ? await ask(prompt, userPrompt, budget) : await deepseek.extractTemplateContent(prompt, userPrompt, budget))
 
   let parsed: Record<string, Object> = {}
   let ok = false

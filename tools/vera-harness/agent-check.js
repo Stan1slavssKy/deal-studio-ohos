@@ -63,6 +63,30 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.match(r.plan, /^A sketch of this app/)
   }
 
+  // A need the plan says a ready-made section handles: Jev's section joins the composition's own parts, its content
+  // filled by the host (here the catalogue's defaults), and the program is served. Sections alone make a screen too.
+  for (const [label, kind, own] of [['sections-tipping', 'key_facts', true], ['sections-beach', 'checklist', false]]) {
+    const {host} = replayHost(label)
+    let asked = null
+    host.fillBlocks = async request => { asked = request; return loadVera('agent/AgentHost').defaultBlockFill(request) }
+    const r = await runAgent(request(label), host)
+    assert.ok(r.vbc2.length > 0, label + ': ' + r.note)
+    assert.deepEqual(r.blocks, [kind])
+    assert.deepEqual(asked.kinds, [kind])
+    assert.ok(asked.offset > 0)
+    assert.ok(asked.compose(r.blockFill.values).includes('function view('))
+    assert.match(r.note, new RegExp('sections ' + kind))
+    assert.equal(/composed: 0 inputs/.test(r.note), !own, label)
+  }
+  // Real data with no search: the host refuses the sections, and nothing is served.
+  {
+    const {host} = replayHost('sections-tipping')
+    host.fillBlocks = async () => Object.assign(new (loadVera('agent/AgentHost').BlockFill)(), {failed: 'sections need real data and no search is available'})
+    const r = await runAgent(request('tipping'), host)
+    assert.equal(r.vbc2, '')
+    assert.match(r.note, /no search is available/)
+  }
+
   // The route, agent first (the default): a served agent ends it and the blocks never run.
   const routeRequest = (prompt, blocks) => Object.assign(new route.RouteRequest(), {agent: request(prompt), blocksPrompt: blocks ? prompt : ''})
   assert.equal(route.routeOrder(), route.ORDER_AGENT_FIRST)

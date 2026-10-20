@@ -1226,13 +1226,13 @@ function trendChartFragment(): FragmentSpec {
     [
       new ContentFieldSpec('__CHART_LABEL_IDX__', 'chart_label', 'Value', 'Short label for what the chart plots (2-4 words, e.g. "Average height (cm)")', 24),
       new ContentFieldSpec('__Y1_IDX__', 'point1_label', 'Point 1', 'Short label for data point 1 (e.g. a year, "1950")', 12),
-      new ContentFieldSpec('__V1_IDX__', 'point1_value', '0', 'Numeric value for data point 1, digits only, no units or commas', 6, true),
+      new ContentFieldSpec('__V1_IDX__', 'point1_value', '0', 'Numeric value for data point 1, digits only, no units or commas', 15, true),
       new ContentFieldSpec('__Y2_IDX__', 'point2_label', 'Point 2', 'Short label for data point 2', 12),
-      new ContentFieldSpec('__V2_IDX__', 'point2_value', '0', 'Numeric value for data point 2, digits only, no units or commas', 6, true),
+      new ContentFieldSpec('__V2_IDX__', 'point2_value', '0', 'Numeric value for data point 2, digits only, no units or commas', 15, true),
       new ContentFieldSpec('__Y3_IDX__', 'point3_label', 'Point 3', 'Short label for data point 3', 12),
-      new ContentFieldSpec('__V3_IDX__', 'point3_value', '0', 'Numeric value for data point 3, digits only, no units or commas', 6, true),
+      new ContentFieldSpec('__V3_IDX__', 'point3_value', '0', 'Numeric value for data point 3, digits only, no units or commas', 15, true),
       new ContentFieldSpec('__Y4_IDX__', 'point4_label', 'Point 4', 'Short label for data point 4', 12),
-      new ContentFieldSpec('__V4_IDX__', 'point4_value', '0', 'Numeric value for data point 4, digits only, no units or commas', 6, true)
+      new ContentFieldSpec('__V4_IDX__', 'point4_value', '0', 'Numeric value for data point 4, digits only, no units or commas', 15, true)
     ]
   )
 }
@@ -2402,7 +2402,7 @@ function barChartFragment(): FragmentSpec {
     [],
     [new ListFieldSpec('__BARS_IDX__', 'bars',
       'The categories to compare, as many as the request needs (3 to 8), each with one whole number',
-      ['name of the category (1-2 words)', 'its value as a whole number, no units'], [14, 6],
+      ['name of the category (1-2 words)', 'its value as a whole number, no units, in full (8500000, not 8.5M)'], [14, 15],
       'names.push("{0}"); vals.push({1});', '\n    ', 3, 8,
       [['A', '3'], ['B', '5'], ['C', '2']], [1])]
   )
