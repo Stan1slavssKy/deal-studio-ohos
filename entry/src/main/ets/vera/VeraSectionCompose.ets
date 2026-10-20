@@ -646,15 +646,90 @@ export function readSectionPick(body: string, confirmed: string[] = []): Section
  * so substitution cannot be limited to just the view block. Module-level, not nested inside
  * composeProgram -- ArkTS does not support nested functions (arkts-no-nested-funcs).
  */
-function resolveInstanceText(text: string, idx: string, values: Map<string, string> | undefined): string {
-  let resolved = text.split('IDX').join(idx)
+function resolveInstanceText(text: string, idx: string, values: Map<string, string> | undefined, indexed: boolean = true): string {
+  let resolved = indexed ? text.split('IDX').join(idx) : text
   if (values !== undefined) {
     values.forEach((value: string, token: string) => {
-      let resolvedToken = token.split('IDX').join(idx)
+      let resolvedToken = indexed ? token.split('IDX').join(idx) : token
       resolved = resolved.split(resolvedToken).join(value)
     })
   }
   return resolved
+}
+
+const PASSTHROUGH: string = '__PASSTHROUGH__'
+
+function isIdentChar(c: string): boolean {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_'
+}
+
+/** The keys an object literal sets between its opening brace at `open` and `end`, at its own level only. */
+function keysSet(text: string, open: number, end: number): string[] {
+  let keys: string[] = []
+  let depth = 0
+  let expectKey = true
+  let i = open + 1
+  while (i < end) {
+    let c = text.charAt(i)
+    if (c === '"') {
+      i++
+      while (i < end && text.charAt(i) !== '"') { i += text.charAt(i) === '\\' ? 2 : 1 }
+      expectKey = false
+    } else if (c === '{' || c === '(' || c === '[') {
+      depth++
+      expectKey = false
+    } else if (c === '}' || c === ')' || c === ']') {
+      depth--
+    } else if (c === ',' && depth === 0) {
+      expectKey = true
+    } else if (expectKey && depth === 0 && isIdentChar(c)) {
+      let start = i
+      while (i < end && isIdentChar(text.charAt(i))) { i++ }
+      let name = text.substring(start, i)
+      while (i < end && text.charAt(i) === ' ') { i++ }
+      if (i < end && text.charAt(i) === ':') { keys.push(name) }
+      expectKey = false
+      continue
+    }
+    i++
+  }
+  return keys
+}
+
+/**
+ * Every __PASSTHROUGH__ in `text` replaced by `, name: state.name` for each AppState field its object literal does not
+ * already set. A block names its own fields and passes the rest through; a part that also sets another part's
+ * field (an input that restarts the countdown) names that one too, and it is not passed through twice.
+ */
+function fillPassthrough(text: string, fields: string[]): string {
+  let out = ''
+  let opens: number[] = []
+  let i = 0
+  let copied = 0
+  while (i < text.length) {
+    let c = text.charAt(i)
+    if (c === '"') {
+      i++
+      while (i < text.length && text.charAt(i) !== '"') { i += text.charAt(i) === '\\' ? 2 : 1 }
+    } else if (c === '/' && text.charAt(i + 1) === '/') {
+      while (i < text.length && text.charAt(i) !== '\n') { i++ }
+      continue
+    } else if (c === '{') {
+      opens.push(i)
+    } else if (c === '}') {
+      opens.pop()
+    } else if (c === '_' && text.startsWith(PASSTHROUGH, i)) {
+      let set = opens.length > 0 ? keysSet(text, opens[opens.length - 1], i) : []
+      let rest = ''
+      for (let name of fields) { if (set.indexOf(name) < 0) { rest = rest + ', ' + name + ': state.' + name } }
+      out = out + text.substring(copied, i) + rest
+      i += PASSTHROUGH.length
+      copied = i
+      continue
+    }
+    i++
+  }
+  return out + text.substring(copied)
 }
 
 /**
@@ -685,18 +760,29 @@ function withHoleDefaults(spec: FragmentSpec, idx: string, values: Map<string, s
  * reads ports (or 'none') gets an empty map. Exported for the host checks.
  */
 export function bindPorts(chosenKinds: string[]): Map<string, string>[] {
+  return bindSpecPorts(specsOf(chosenKinds))
+}
+
+/** The block of each chosen kind, null for 'none' or a kind there is no block of. */
+function specsOf(chosenKinds: string[]): (FragmentSpec | null)[] {
   let allSpecs = fragments()
+  let specAt: (FragmentSpec | null)[] = []
+  for (let kind of chosenKinds) { specAt.push(findFragment(allSpecs, kind)) }
+  return specAt
+}
+
+function bindSpecPorts(specAt: (FragmentSpec | null)[]): Map<string, string>[] {
   let out: Map<string, string>[] = []
-  for (let i = 0; i < chosenKinds.length; i++) {
+  for (let i = 0; i < specAt.length; i++) {
     let bound: Map<string, string> = new Map<string, string>()
-    let spec = findFragment(allSpecs, chosenKinds[i])
+    let spec = specAt[i]
     if (spec !== null) {
       for (let port of spec.ports) {
         if (port.dir !== 'reads') { continue }
         let expr = port.fallback
-        for (let j = 0; j < chosenKinds.length; j++) {
+        for (let j = 0; j < specAt.length; j++) {
           if (j === i) { continue }
-          let other = findFragment(allSpecs, chosenKinds[j])
+          let other = specAt[j]
           if (other === null) { continue }
           let found = ''
           for (let candidate of other.ports) {
@@ -723,10 +809,17 @@ function applyPorts(text: string, bound: Map<string, string>): string {
 }
 
 export function composeProgram(chosenKinds: string[], globalValues: Map<string, string>, instanceValues: Map<string, string>[]): string {
-  let allSpecs = fragments()
-  /** specAt[i] is null for a 'none'/unknown slot i; every other array below is indexed the same way, by original slot position. */
-  let specAt: (FragmentSpec | null)[] = []
-  for (let kind of chosenKinds) { specAt.push(findFragment(allSpecs, kind)) }
+  return composeFragments(specsOf(chosenKinds), globalValues, instanceValues)
+}
+
+/**
+ * The program from the blocks given in screen order -- the catalogue's (fragments()) or ones made for one request
+ * (VeraCompose.ets's parts). specAt[i] is null for an empty slot; every other array below is indexed the same way,
+ * by original slot position. Globals: __THEME__, __TITLE__, __EYEBROW__, __SUPPORTING__ (text as it goes between
+ * quotes), __HEADER_STYLE__ ('none' for no header), __HEADER_ICON__ ('check' when not given), __BANNER_SECTION__.
+ */
+export function composeFragments(specAt: (FragmentSpec | null)[], globalValues: Map<string, string>,
+    instanceValues: Map<string, string>[]): string {
 
   let supportClasses: string[] = []
   let extraImports: string[] = []
@@ -748,7 +841,7 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     let names: string[] = []
     if (spec !== null) {
       for (let field of spec.stateFields) {
-        let name = field.name.split('IDX').join(idx)
+        let name = spec.indexed ? field.name.split('IDX').join(idx) : field.name
         names.push(name)
         classFieldLines.push('  ' + name + ': ' + field.type + ';')
       }
@@ -756,7 +849,7 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     allFieldNames.push(names)
   }
 
-  let portBindings = bindPorts(chosenKinds)
+  let portBindings = bindSpecPorts(specAt)
   let slotValues: Map<string, string>[] = []
   for (let i = 0; i < specAt.length; i++) {
     let spec = specAt[i]
@@ -768,23 +861,19 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     let spec = specAt[i]
     if (spec === null) { continue }
     let idx = (i + 1).toString()
-    if (spec.initStatements.length > 0) { initStatementLines.push(applyPorts(resolveInstanceText(spec.initStatements, idx, slotValues[i]), portBindings[i])) }
-    if (spec.initEntries.length > 0) { initEntryParts.push(spec.initEntries.split('IDX').join(idx)) }
+    if (spec.initStatements.length > 0) { initStatementLines.push(applyPorts(resolveInstanceText(spec.initStatements, idx, slotValues[i], spec.indexed), portBindings[i])) }
+    if (spec.initEntries.length > 0) { initEntryParts.push(spec.indexed ? spec.initEntries.split('IDX').join(idx) : spec.initEntries) }
   }
 
+  let everyField: string[] = []
+  for (let names of allFieldNames) { for (let name of names) { everyField.push(name) } }
   let functionBlocks: string[] = []
   for (let i = 0; i < specAt.length; i++) {
     let spec = specAt[i]
     if (spec === null) { continue }
     let idx = (i + 1).toString()
-    let passthrough = ''
-    for (let j = 0; j < specAt.length; j++) {
-      if (j === i) { continue }
-      for (let name of allFieldNames[j]) { passthrough = passthrough + ', ' + name + ': state.' + name }
-    }
-    let fn = applyPorts(resolveInstanceText(spec.functions, idx, slotValues[i]), portBindings[i])
-    fn = fn.split('__PASSTHROUGH__').join(passthrough)
-    functionBlocks.push(fn)
+    let fn = applyPorts(resolveInstanceText(spec.functions, idx, slotValues[i], spec.indexed), portBindings[i])
+    functionBlocks.push(fillPassthrough(fn, everyField))
   }
 
   let viewBlocks: string[] = []
@@ -792,7 +881,7 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     let spec = specAt[i]
     if (spec === null) { continue }
     let idx = (i + 1).toString()
-    let block = applyPorts(resolveInstanceText(spec.viewBlock, idx, slotValues[i]), portBindings[i])
+    let block = applyPorts(resolveInstanceText(spec.viewBlock, idx, slotValues[i], spec.indexed), portBindings[i])
     viewBlocks.push(block)
   }
 
@@ -826,8 +915,12 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
   if (eyebrow === undefined) { eyebrow = '' }
   let supporting = globalValues.get('__SUPPORTING__')
   if (supporting === undefined) { supporting = '' }
-  lines.push('  sections.push(ui.Header("' + headerStyle + '", "' + title + '", "' + eyebrow + '", "' + supporting + '", "check"));')
-  for (let vb of viewBlocks) { lines.push('  ' + vb.split('\n').join('\n  ')) }
+  let icon = globalValues.get('__HEADER_ICON__')
+  if (icon === undefined) { icon = 'check' }
+  if (headerStyle !== 'none') {
+    lines.push('  sections.push(ui.Header("' + headerStyle + '", "' + title + '", "' + eyebrow + '", "' + supporting + '", "' + icon + '"));')
+  }
+  for (let vb of viewBlocks) { if (vb.length > 0) { lines.push('  ' + vb.split('\n').join('\n  ')) } }
   if (bannerShow) { lines.push('  sections.push(' + bannerSectionView() + ');') }
   lines.push('  return ui.AppTheme("' + theme + '", "", sections);')
   lines.push('}')

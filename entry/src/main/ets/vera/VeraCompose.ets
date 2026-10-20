@@ -26,6 +26,8 @@
 
 import http from '@ohos.net.http'
 import { deepseek } from './DeepSeekEngine'
+import { FragmentSpec, StateFieldSpec } from './VeraTemplates'
+import { composeFragments } from './VeraSectionCompose'
 
 const JEV_ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
 
@@ -1863,7 +1865,7 @@ class Field {
   }
 }
 
-function stateFields(comp: Composition): Field[] {
+function inputFields(comp: Composition): Field[] {
   let fields: Field[] = []
   for (let input of comp.inputs) {
     let widget = comp.widgets.get(input.id) ?? ''
@@ -1880,16 +1882,21 @@ function stateFields(comp: Composition): Field[] {
       fields.push(new Field(input.id, 'number', numberLiteral(input.value)))
     }
   }
-  if (hasClock(comp.sketch)) {
-    fields.push(new Field('elapsedMs', 'number', '0'))
-    fields.push(new Field('running', 'boolean', 'false'))
-    fields.push(new Field('finished', 'boolean', 'false'))
-  }
-  let list = comp.sketch.list
-  if (list !== null) {
-    fields.push(new Field('entries', 'Entry[]', 'emptyEntries'))
-    for (let f of list.fields) { fields.push(new Field(draftOf(f), draftType(f), draftInit(f))) }
-  }
+  return fields
+}
+
+function clockFields(): Field[] {
+  return [new Field('elapsedMs', 'number', '0'), new Field('running', 'boolean', 'false'), new Field('finished', 'boolean', 'false')]
+}
+
+function entryFields(list: SketchList): Field[] {
+  let fields: Field[] = [new Field('entries', 'LogEntry[]', 'emptyEntries')]
+  for (let f of list.fields) { fields.push(new Field(draftOf(f), draftType(f), draftInit(f))) }
+  return fields
+}
+
+function effectFields(comp: Composition): Field[] {
+  let fields: Field[] = []
   if (hasBanner(comp)) { fields.push(new Field('effectStatus', 'string', '""')) }
   if (keepsCalendarIds(comp)) { fields.push(new Field('calendarIds', 'string', '""')) }
   return fields
@@ -2055,11 +2062,16 @@ function amountText(measure: string, unit: string, expr: string): string {
   return 'ui.formatNumber(' + expr + ', ' + (measure === 'count' ? '0' : '1') + ')'
 }
 
-/** `{a: state.a, b: value, ...}` with the named fields replaced. */
-function rebuild(fields: Field[], replaced: Map<string, string>): string {
+/**
+ * `{b: value, ...}` setting the named fields the program has; the composer passes every other field through
+ * (__PASSTHROUGH__ in VeraSectionCompose.ets).
+ */
+function changed(fields: Field[], replaced: Map<string, string>): string {
   let parts: string[] = []
-  for (let f of fields) { parts.push(f.name + ': ' + (replaced.get(f.name) ?? 'state.' + f.name)) }
-  return '{' + parts.join(', ') + '}'
+  replaced.forEach((value: string, name: string) => {
+    if (fields.some((f: Field): boolean => f.name === name)) { parts.push(name + ': ' + value) }
+  })
+  return '{' + parts.join(', ') + '__PASSTHROUGH__}'
 }
 
 /** Lines that bring every numeric input into a local of its own name, read from state. */
@@ -2151,311 +2163,55 @@ function heroText(v: SketchValue, expr: string): string {
   return 'ui.formatNumber(' + expr + ', ' + (v.format === 'count' ? '0' : '1') + ')'
 }
 
-/** The program, or '' when the composition has anything unbound. */
-export function assembleProgram(comp: Composition): string {
-  if (comp.unbound.length > 0) { return '' }
-  let sketch = comp.sketch
-  let list = sketch.list
-  let fields = stateFields(comp)
-  let lines: string[] = []
-
-  if (list !== null) {
-    lines.push('@jsonable')
-    lines.push('class Entry {')
-    for (let f of list.fields) { lines.push('  ' + f.id + ': ' + entryType(f) + ';') }
-    lines.push('  minute: number;')
-    if (entryAnswerEvent(comp).length > 0) { lines.push('  status: string;') }
-    lines.push('}')
-    lines.push('')
-  }
-  lines.push('@jsonable')
-  lines.push('class AppState {')
-  for (let f of fields) { lines.push('  ' + f.name + ': ' + f.type + ';') }
-  lines.push('}')
-  lines.push('')
+/** A block made for this request, for the blocks' composer (composeFragments): its names are its own, never renamed. */
+function part(kind: string, fields: Field[], functions: string[], view: string[], supportClass: string = '', initStatements: string = ''): FragmentSpec {
+  let state: StateFieldSpec[] = []
   let inits: string[] = []
-  for (let f of fields) { inits.push(f.name + ': ' + f.init) }
-  lines.push('function init(): AppState {')
-  if (list !== null) { lines.push('  let emptyEntries: Entry[] = [];') }
-  lines.push('  return {' + inits.join(', ') + '};')
-  lines.push('}')
+  for (let f of fields) {
+    state.push(new StateFieldSpec(f.name, f.type))
+    inits.push(f.name + ': ' + f.init)
+  }
+  let spec = new FragmentSpec(kind, '', supportClass, state, initStatements, inits.join(', '), functions.join('\n\n'), view.join('\n'), [], [])
+  spec.indexed = false
+  return spec
+}
 
-  // One setter per input. A new countdown length restarts the countdown.
-  for (let input of comp.inputs) {
-    let widget = comp.widgets.get(input.id) ?? ''
-    let replaced: Map<string, string> = new Map<string, string>()
-    let type = 'number'
-    if (input.kind === 'toggle') { replaced.set(input.id, 'value'); type = 'boolean' }
-    else if (input.kind === 'text') { replaced.set(input.id, 'value'); type = 'string' }
-    else if (input.kind === 'choice') { replaced.set(input.id + 'Index', 'value') }
-    else if (widget === 'typed_number') { replaced.set(input.id + 'Text', 'value'); type = 'string' }
-    else { replaced.set(input.id, 'value') }
-    if (sketch.hasCountdown && dependsOn(comp, comp.countdownFrom).indexOf(input.id) >= 0) {
-      replaced.set('elapsedMs', '0'); replaced.set('running', 'false'); replaced.set('finished', 'false')
-    }
-    lines.push('')
-    lines.push('function set_' + input.id + '(state: AppState, value: ' + type + '): AppState {')
-    lines.push('  return ' + rebuild(fields, replaced) + ';')
-    lines.push('}')
-  }
+/** The text of a function: its lines joined. */
+function fn(lines: string[]): string { return lines.join('\n') }
 
-  if (list !== null) {
-    // The new entry's fields, adding it (a copy of the old array plus one), and removing one by position.
-    for (let f of list.fields) {
-      let replaced: Map<string, string> = new Map<string, string>()
-      replaced.set(draftOf(f), 'value')
-      lines.push('')
-      lines.push('function set_' + draftOf(f) + '(state: AppState, value: ' + draftType(f) + '): AppState {')
-      lines.push('  return ' + rebuild(fields, replaced) + ';')
-      lines.push('}')
-    }
-    let answering = entryAnswerEvent(comp)
-    let added: Map<string, string> = new Map<string, string>()
-    added.set('entries', 'out')
-    // Typed fields empty for the next entry; a time and an on/off keep what was set.
-    for (let f of list.fields) { if (draftType(f) === 'string') { added.set(draftOf(f), '""') } }
-    let calls = effectCallsAt(comp, 'entry_added')
-    if (comp.events.some((e: SketchEvent): boolean => comp.moments.get(e.id) === 'entry_added' && e.id !== answering)) {
-      added.set('effectStatus', '"pending"')
-    }
-    lines.push('')
-    lines.push('function addEntry(state: AppState, ignored: number): AppState {')
-    // An entry needs its words, or else its number; a list with neither adds one per tap.
-    let required = firstField(list, 'text') ?? firstField(list, 'number')
-    if (required !== null) { lines.push('  if (strings.trim(state.' + draftOf(required) + ') === "") { return state; }') }
-    if (callsNeedLocals(comp, 'entry_added')) { for (let l of inputLocals(comp)) { lines.push(l) } }
-    let members: string[] = []
-    for (let f of list.fields) { members.push(f.id + ': ' + draftValue(f)) }
-    members.push('minute: time.hourOfDay() * 60 + time.minuteOfHour()')
-    if (answering.length > 0) { members.push('status: "pending"') }
-    lines.push('  let entry: Entry = {' + members.join(', ') + '};')
-    lines.push('  let out: Entry[] = [];')
-    lines.push('  for (let e: Entry of state.entries) { out.push(e); }')
-    lines.push('  out.push(entry);')
-    for (let c of calls) { lines.push(c) }
-    lines.push('  return ' + rebuild(fields, added) + ';')
-    lines.push('}')
-    if (answering.length > 0) {
-      // Answers come back in the order the calls went out: each goes to the oldest entry still waiting.
-      let copied: string[] = []
-      for (let f of list.fields) { copied.push(f.id + ': e.' + f.id) }
-      copied.push('minute: e.minute')
-      copied.push('status: value')
-      let answered: Map<string, string> = new Map<string, string>()
-      answered.set('entries', 'out')
-      let capture = keepsCalendarIds(comp) && comp.effects.get(answering) === 'calendar_add'
-      if (capture) { answered.set('calendarIds', 'ids') }
-      lines.push('')
-      lines.push('function onEntryAnswer(state: AppState, value: string): AppState {')
-      if (capture) { for (let l of idCapture()) { lines.push(l) } }
-      lines.push('  let out: Entry[] = [];')
-      lines.push('  let marked: boolean = false;')
-      lines.push('  for (let e: Entry of state.entries) {')
-      lines.push('    if (marked === false && e.status === "pending") {')
-      lines.push('      let answered: Entry = {' + copied.join(', ') + '};')
-      lines.push('      out.push(answered);')
-      lines.push('      marked = true;')
-      lines.push('    } else {')
-      lines.push('      out.push(e);')
-      lines.push('    }')
-      lines.push('  }')
-      lines.push('  return ' + rebuild(fields, answered) + ';')
-      lines.push('}')
-    }
-    let removed: Map<string, string> = new Map<string, string>()
-    removed.set('entries', 'out')
-    lines.push('')
-    lines.push('function removeEntry(state: AppState, value: number): AppState {')
-    lines.push('  let out: Entry[] = [];')
-    lines.push('  let i: number = 0;')
-    lines.push('  while (i < state.entries.length()) {')
-    lines.push('    if (i !== value) { out.push(state.entries[i]); }')
-    lines.push('    i = i + 1;')
-    lines.push('  }')
-    lines.push('  return ' + rebuild(fields, removed) + ';')
-    lines.push('}')
-  }
+/** What the figures come to on the screen, worked out once for the hero, the summary and a widget's first section. */
+class Figures {
+  /** Values shown as the hero, by id (a screen shows the first). */
+  heroes: string[] = []
+  /** Progress bars. */
+  bars: string[] = []
+  /** Stats for the metric group: a widget's hero values first. */
+  stats: string[] = []
+  /** The figures as one table, '' when they are not one. */
+  table: string = ''
+  /** The clock's time, for a hero or a widget's stat. */
+  clockLabel: string = ''
+  clockShown: string = ''
+  clockButtons: string = ''
+}
 
-  if (hasClock(sketch)) {
-    let ticking: Map<string, string> = new Map<string, string>()
-    ticking.set('elapsedMs', 'next')
-    if (sketch.hasCountdown) {
-      lines.push('')
-      lines.push('function countdownSeconds(state: AppState): number {')
-      for (let l of inputLocals(comp)) { lines.push(l) }
-      // A length worked out from values brings those values along, in sketch order.
-      let needed = dependsOn(comp, comp.countdownFrom)
-      for (let v of sketch.values) {
-        let b = comp.bindings.get(v.id)
-        if (needed.indexOf(v.id) >= 0 && b !== undefined) { lines.push('  let ' + v.id + ': number = ' + formulaExpr(b) + ';') }
-      }
-      let perUnit = comp.countdownUnit === 'minutes' ? ' * 60' : ''
-      lines.push('  return ' + (comp.countdownFrom.length > 0 ? comp.countdownFrom + perUnit : '0') + ';')
-      lines.push('}')
-
-      let effectCalls = effectCallsAt(comp, 'countdown_end')
-      let done: Map<string, string> = new Map<string, string>()
-      done.set('elapsedMs', 'total'); done.set('running', 'false'); done.set('finished', 'true')
-      if (effectCalls.length > 0) { done.set('effectStatus', '"pending"') }
-      if (callsNeedLocals(comp, 'countdown_end')) { effectCalls = inputLocals(comp).concat(effectCalls) }
-      lines.push('')
-      lines.push('function onTick(state: AppState, elapsedMs: number): AppState {')
-      lines.push('  if (!state.running) { return state; }')
-      lines.push('  let total: number = countdownSeconds(state) * 1000;')
-      lines.push('  let next: number = state.elapsedMs + elapsedMs;')
-      lines.push('  if (next < total) { return ' + rebuild(fields, ticking) + '; }')
-      for (let c of effectCalls) { lines.push(c) }
-      lines.push('  return ' + rebuild(fields, done) + ';')
-      lines.push('}')
-    } else {
-      // A stopwatch has no end: it only accumulates.
-      lines.push('')
-      lines.push('function onTick(state: AppState, elapsedMs: number): AppState {')
-      lines.push('  if (!state.running) { return state; }')
-      lines.push('  let next: number = state.elapsedMs + elapsedMs;')
-      lines.push('  return ' + rebuild(fields, ticking) + ';')
-      lines.push('}')
-    }
-
-    let start: Map<string, string> = new Map<string, string>()
-    start.set('running', 'true'); start.set('finished', 'false')
-    start.set('elapsedMs', 'startAt')
-    let stop: Map<string, string> = new Map<string, string>()
-    stop.set('running', 'false')
-    let reset: Map<string, string> = new Map<string, string>()
-    reset.set('running', 'false'); reset.set('finished', 'false'); reset.set('elapsedMs', '0')
-    lines.push('')
-    lines.push('function onStart(state: AppState, ignored: number): AppState {')
-    lines.push('  let startAt: number = state.elapsedMs;')
-    lines.push('  if (state.finished) { startAt = 0; }')
-    lines.push('  return ' + rebuild(fields, start) + ';')
-    lines.push('}')
-    lines.push('')
-    lines.push('function onStop(state: AppState, ignored: number): AppState {')
-    lines.push('  return ' + rebuild(fields, stop) + ';')
-    lines.push('}')
-    lines.push('')
-    lines.push('function onReset(state: AppState, ignored: number): AppState {')
-    lines.push('  return ' + rebuild(fields, reset) + ';')
-    lines.push('}')
-  }
-
-  // A tapped button's own handler: do_<event> on the screen, row_<event> for the entry its button is on.
-  for (let e of comp.events) {
-    let moment = comp.moments.get(e.id) ?? ''
-    if (!tapMoment(moment)) { continue }
-    let fx = effectOf(comp.effects.get(e.id) ?? '')!
-    let tapped: Map<string, string> = new Map<string, string>()
-    tapped.set('effectStatus', '"pending"')
-    lines.push('')
-    lines.push('function ' + tapHandler(e.id, moment) + '(state: AppState, ' + (moment === 'row_button' ? 'index' : 'ignored') + ': number): AppState {')
-    if (moment === 'row_button') {
-      lines.push('  if (index < 0 || index >= state.entries.length()) { return state; }')
-      lines.push('  let entry: Entry = state.entries[index];')
-    }
-    if (fx.id === 'calendar_clear') {
-      let nothing: Map<string, string> = new Map<string, string>()
-      nothing.set('effectStatus', '"No calendar events added yet"')
-      lines.push('  if (' + (keepsCalendarIds(comp) ? 'state.calendarIds' : '""') + ' === "") { return ' + rebuild(fields, nothing) + '; }')
-    }
-    if (callsNeedLocals(comp, moment)) { for (let l of inputLocals(comp)) { lines.push(l) } }
-    for (let c of effectCallsAt(comp, moment, e.id)) { lines.push(c) }
-    lines.push('  return ' + rebuild(fields, tapped) + ';')
-    lines.push('}')
-  }
-  if (keepsCalendarIds(comp)) {
-    // Every event this program adds is remembered by the ID its answer gave, so that it can delete exactly those.
-    let added: Map<string, string> = new Map<string, string>()
-    added.set('effectStatus', 'value')
-    added.set('calendarIds', 'ids')
-    lines.push('')
-    lines.push('function onCalendarAdded(state: AppState, value: string): AppState {')
-    for (let l of idCapture()) { lines.push(l) }
-    lines.push('  return ' + rebuild(fields, added) + ';')
-    lines.push('}')
-  }
-  if (comp.events.some((e: SketchEvent): boolean => comp.effects.get(e.id) === 'calendar_clear')) {
-    let cleared: Map<string, string> = new Map<string, string>()
-    cleared.set('effectStatus', 'value')
-    if (keepsCalendarIds(comp)) { cleared.set('calendarIds', 'left') }
-    lines.push('')
-    lines.push('function onCalendarCleared(state: AppState, value: string): AppState {')
-    if (keepsCalendarIds(comp)) {
-      lines.push('  let left: string = state.calendarIds;')
-      lines.push('  if (value === "ok") { left = ""; }')
-    }
-    lines.push('  return ' + rebuild(fields, cleared) + ';')
-    lines.push('}')
-  }
-
-  if (hasBanner(comp)) {
-    let status: Map<string, string> = new Map<string, string>()
-    status.set('effectStatus', 'value')
-    lines.push('')
-    lines.push('function onEffect(state: AppState, value: string): AppState {')
-    lines.push('  return ' + rebuild(fields, status) + ';')
-    lines.push('}')
-  }
-
-  lines.push('')
-  lines.push('function share(a: number, b: number): number {')
-  lines.push('  if (b === 0) { return 0; }')
-  lines.push('  return a / b;')
-  lines.push('}')
-  // A written formula's comparison, as 1 or 0; only a program that has one carries it.
-  let compares = false
-  comp.bindings.forEach((b: Binding) => { if (b.expr.indexOf('whether(') >= 0) { compares = true } })
-  if (compares) {
-    lines.push('')
-    lines.push('function whether(holds: boolean): number {')
-    lines.push('  if (holds) { return 1; }')
-    lines.push('  return 0;')
-    lines.push('}')
-  }
-
-  // The view: every input as a local, every value in sketch order, then the screen.
-  lines.push('')
-  lines.push('function view(state: AppState): ui.View {')
-  for (let l of inputLocals(comp)) { lines.push(l) }
-  if (sketch.hasCountdown) {
-    lines.push('  let duration: number = countdownSeconds(state);')
-    lines.push('  let elapsed: number = math.min(state.elapsedMs / 1000, duration);')
-    lines.push('  let remaining: number = duration - elapsed;')
-  } else if (sketch.hasStopwatch) {
-    lines.push('  let elapsed: number = state.elapsedMs / 1000;')
-  }
-  if (list !== null) {
-    lines.push('  let entryCount: number = state.entries.length();')
-    lines.push('  let entryTotal: number = 0;')
-    let totalField = firstField(list, 'number')
-    if (totalField !== null) { lines.push('  for (let e: Entry of state.entries) { entryTotal = entryTotal + e.' + totalField.id + '; }') }
-  }
-  for (let v of sketch.values) {
-    let b = comp.bindings.get(v.id)!
-    lines.push('  let ' + v.id + ': number = ' + formulaExpr(b) + ';')
-  }
-
-  if (hasBanner(comp)) {
-    lines.push('  let effectNote: string = "Phone: " + state.effectStatus;')
-    lines.push('  if (state.effectStatus === "pending") { effectNote = "Asking the phone..."; }')
-  }
-
-  let heroes: string[] = []
-  let bars: string[] = []
+function figuresOf(comp: Composition): Figures {
+  let sketch = comp.sketch
+  let out = new Figures()
   let stats: string[] = []
   let leading: string[] = []
   for (let v of sketch.values) {
     let b = comp.bindings.get(v.id)!
     if (b.show === 'hero' && comp.widget) { leading.push(statFor(v, v.id)) }
-    else if (b.show === 'hero') { heroes.push(v.id) }
-    else if (b.show === 'progress') { bars.push('ui.Progress("accent", ' + quote(v.label) + ', math.round(math.min(math.max(' + v.id + ', 0), 1) * 1000), 1000)') }
+    else if (b.show === 'hero') { out.heroes.push(v.id) }
+    else if (b.show === 'progress') { out.bars.push('ui.Progress("accent", ' + quote(v.label) + ', math.round(math.min(math.max(' + v.id + ', 0), 1) * 1000), 1000)') }
     else if (comp.provisional && b.formula.length === 0) { stats.push('ui.Stat("default", ' + quote(v.label) + ', "—", "", "chart")') }
     else { stats.push(statFor(v, v.id)) }
   }
   stats = leading.concat(stats)
   // The fixed numbers the figures are worked out from -- a tip split's bill -- as rows of the figures' table when
   // one was asked for, and as figures of their own on a screen with nothing to set.
-  let displayOnly = comp.inputs.length === 0 && list === null && !hasClock(sketch)
+  let displayOnly = comp.inputs.length === 0 && sketch.list === null && !hasClock(sketch)
   let givens: SketchValue[] = []
   if (comp.figures || displayOnly) {
     let read: string[] = []
@@ -2481,7 +2237,7 @@ export function assembleProgram(comp: Composition): string {
     for (let g of givens) { figureRows.push(figureRow(g, g.id)) }
     for (let v of sketch.values) {
       let b = comp.bindings.get(v.id)!
-      if (b.show === 'progress' || heroes.indexOf(v.id) >= 0) { continue }
+      if (b.show === 'progress' || out.heroes.indexOf(v.id) >= 0) { continue }
       figureRows.push(figureRow(v, v.id))
     }
     stats = []
@@ -2490,11 +2246,163 @@ export function assembleProgram(comp: Composition): string {
     for (let g of givens) { fixed.push(statFor(g, g.id)) }
     stats = fixed.concat(stats)
   }
-  let figuresNode = figureRows.length > 0 ? 'ui.ListGroup("default", "", [' + figureRows.join(', ') + '])' : ''
+  out.stats = stats
+  out.table = figureRows.length > 0 ? 'ui.ListGroup("default", "", [' + figureRows.join(', ') + '])' : ''
+  // The clock brings its own time, so a sketch that lists no value for it still shows one.
+  out.clockLabel = sketch.hasCountdown ? sketch.countdown : sketch.stopwatch
+  // Time left rounds up (it reads 0:00 only at the end), time passed rounds down.
+  out.clockShown = 'ui.durationToString(' + (sketch.hasCountdown ? 'math.ceil(remaining)' : 'math.floor(elapsed)') + ')'
+  out.clockButtons = 'ui.ActionBar("spread", [ui.Button("primary", "Start", "onStart", 0, !state.running), ' +
+    'ui.Button("secondary", "Stop", "onStop", 0, state.running), ui.Button("secondary", "Reset", "onReset", 0, true)])'
+  return out
+}
 
+/** The countdown or stopwatch: its state, its ticks, start, stop and reset, and the Ticker that drives it. */
+function clockPart(comp: Composition, fields: Field[]): FragmentSpec {
+  let sketch = comp.sketch
+  let functions: string[] = []
+  let ticking: Map<string, string> = new Map<string, string>()
+  ticking.set('elapsedMs', 'next')
+  if (sketch.hasCountdown) {
+    let seconds: string[] = ['function countdownSeconds(state: AppState): number {']
+    for (let l of inputLocals(comp)) { seconds.push(l) }
+    // A length worked out from values brings those values along, in sketch order.
+    let needed = dependsOn(comp, comp.countdownFrom)
+    for (let v of sketch.values) {
+      let b = comp.bindings.get(v.id)
+      if (needed.indexOf(v.id) >= 0 && b !== undefined) { seconds.push('  let ' + v.id + ': number = ' + formulaExpr(b) + ';') }
+    }
+    let perUnit = comp.countdownUnit === 'minutes' ? ' * 60' : ''
+    seconds.push('  return ' + (comp.countdownFrom.length > 0 ? comp.countdownFrom + perUnit : '0') + ';')
+    seconds.push('}')
+    functions.push(fn(seconds))
+
+    let effectCalls = effectCallsAt(comp, 'countdown_end')
+    let done: Map<string, string> = new Map<string, string>()
+    done.set('elapsedMs', 'total'); done.set('running', 'false'); done.set('finished', 'true')
+    if (effectCalls.length > 0) { done.set('effectStatus', '"pending"') }
+    if (callsNeedLocals(comp, 'countdown_end')) { effectCalls = inputLocals(comp).concat(effectCalls) }
+    let tick: string[] = ['function onTick(state: AppState, elapsedMs: number): AppState {',
+      '  if (!state.running) { return state; }',
+      '  let total: number = countdownSeconds(state) * 1000;',
+      '  let next: number = state.elapsedMs + elapsedMs;',
+      '  if (next < total) { return ' + changed(fields, ticking) + '; }']
+    for (let c of effectCalls) { tick.push(c) }
+    tick.push('  return ' + changed(fields, done) + ';')
+    tick.push('}')
+    functions.push(fn(tick))
+  } else {
+    // A stopwatch has no end: it only accumulates.
+    functions.push(fn(['function onTick(state: AppState, elapsedMs: number): AppState {',
+      '  if (!state.running) { return state; }',
+      '  let next: number = state.elapsedMs + elapsedMs;',
+      '  return ' + changed(fields, ticking) + ';',
+      '}']))
+  }
+  let start: Map<string, string> = new Map<string, string>()
+  start.set('running', 'true'); start.set('finished', 'false')
+  start.set('elapsedMs', 'startAt')
+  let stop: Map<string, string> = new Map<string, string>()
+  stop.set('running', 'false')
+  let reset: Map<string, string> = new Map<string, string>()
+  reset.set('running', 'false'); reset.set('finished', 'false'); reset.set('elapsedMs', '0')
+  functions.push(fn(['function onStart(state: AppState, ignored: number): AppState {',
+    '  let startAt: number = state.elapsedMs;',
+    '  if (state.finished) { startAt = 0; }',
+    '  return ' + changed(fields, start) + ';',
+    '}']))
+  functions.push(fn(['function onStop(state: AppState, ignored: number): AppState {', '  return ' + changed(fields, stop) + ';', '}']))
+  functions.push(fn(['function onReset(state: AppState, ignored: number): AppState {', '  return ' + changed(fields, reset) + ';', '}']))
+  return part('clock', clockFields(), functions, ['sections.push(ui.Ticker("default", "clock", 200, state.running, "onTick"));'])
+}
+
+/**
+ * The numbers every other part draws from, as locals at the top of the view: each input, the clock's time, the
+ * list's count and total, and every value in sketch order. Its view is not a block of its own, so they stay in scope.
+ */
+function figuresPart(comp: Composition): FragmentSpec {
+  let sketch = comp.sketch
+  let list = sketch.list
+  let functions: string[] = [fn(['function share(a: number, b: number): number {', '  if (b === 0) { return 0; }', '  return a / b;', '}'])]
+  // A written formula's comparison, as 1 or 0; only a program that has one carries it.
+  let compares = false
+  comp.bindings.forEach((b: Binding) => { if (b.expr.indexOf('whether(') >= 0) { compares = true } })
+  if (compares) { functions.push(fn(['function whether(holds: boolean): number {', '  if (holds) { return 1; }', '  return 0;', '}'])) }
+  let view: string[] = inputLocals(comp)
+  if (sketch.hasCountdown) {
+    view.push('  let duration: number = countdownSeconds(state);')
+    view.push('  let elapsed: number = math.min(state.elapsedMs / 1000, duration);')
+    view.push('  let remaining: number = duration - elapsed;')
+  } else if (sketch.hasStopwatch) {
+    view.push('  let elapsed: number = state.elapsedMs / 1000;')
+  }
+  if (list !== null) {
+    view.push('  let entryCount: number = state.entries.length();')
+    view.push('  let entryTotal: number = 0;')
+    let totalField = firstField(list, 'number')
+    if (totalField !== null) { view.push('  for (let e: LogEntry of state.entries) { entryTotal = entryTotal + e.' + totalField.id + '; }') }
+  }
+  for (let v of sketch.values) {
+    let b = comp.bindings.get(v.id)!
+    view.push('  let ' + v.id + ': number = ' + formulaExpr(b) + ';')
+  }
+  if (hasBanner(comp)) {
+    view.push('  let effectNote: string = "Phone: " + state.effectStatus;')
+    view.push('  if (state.effectStatus === "pending") { effectNote = "Asking the phone..."; }')
+  }
+  // A chat widget's two sections, filled by the parts after this one: what it shows, then what the person sets and adds.
+  if (comp.widget) {
+    view.push('  let shows: ui.View[] = [];')
+    view.push('  let sets: ui.View[] = [];')
+  }
+  return part('figures', [], functions, view)
+}
+
+/** The hero: the first hero value or the clock, with the progress bars and the clock's buttons; a widget's first section instead. */
+function heroPart(comp: Composition, figs: Figures): FragmentSpec {
+  let sketch = comp.sketch
+  let view: string[] = []
+  let heroChildren: string[] = figs.bars.slice()
+  if (hasClock(sketch)) { heroChildren.push(figs.clockButtons) }
+  if (comp.widget) {
+    for (let b of figs.bars) { view.push('shows.push(' + b + ');') }
+    if (hasClock(sketch) && sketch.values.every((v: SketchValue): boolean => comp.bindings.get(v.id)!.show !== 'hero')) {
+      view.push('shows.push(ui.Stat("default", ' + quote(figs.clockLabel) + ', ' + figs.clockShown + ', "", "clock"));')
+    }
+    if (figs.stats.length > 0) { view.push('shows.push(ui.MetricGroup("default", ' + Math.min(figs.stats.length, 2).toString() + ', [' + figs.stats.join(', ') + ']));') }
+    if (figs.table.length > 0) { view.push('shows.push(' + figs.table + ');') }
+    if (hasClock(sketch)) { view.push('shows.push(' + figs.clockButtons + ');') }
+  } else if (figs.heroes.length > 0) {
+    let v = sketch.values.find((x: SketchValue): boolean => x.id === figs.heroes[0])!
+    view.push('sections.push(ui.Section("hero", "", "", [ui.Hero("accent", ' + quote(v.label) + ', ' + heroText(v, v.id) + ', "", [' + heroChildren.join(', ') + '])]));')
+  } else if (hasClock(sketch)) {
+    view.push('sections.push(ui.Section("hero", "", "", [ui.Hero("accent", ' + quote(figs.clockLabel) + ', ' + figs.clockShown + ', "", [' + heroChildren.join(', ') + '])]));')
+  } else if (heroChildren.length > 0) {
+    view.push('sections.push(ui.Section("content", "", "", [' + heroChildren.join(', ') + ']));')
+  }
+  return part('hero', [], [], view)
+}
+
+/** What the person sets once for the whole screen: one control and one setter per input. A new countdown length restarts the countdown. */
+function inputsPart(comp: Composition, fields: Field[]): FragmentSpec {
+  let sketch = comp.sketch
+  let functions: string[] = []
   let controls: string[] = []
   for (let input of comp.inputs) {
     let widget = comp.widgets.get(input.id) ?? ''
+    let replaced: Map<string, string> = new Map<string, string>()
+    let type = 'number'
+    if (input.kind === 'toggle') { replaced.set(input.id, 'value'); type = 'boolean' }
+    else if (input.kind === 'text') { replaced.set(input.id, 'value'); type = 'string' }
+    else if (input.kind === 'choice') { replaced.set(input.id + 'Index', 'value') }
+    else if (widget === 'typed_number') { replaced.set(input.id + 'Text', 'value'); type = 'string' }
+    else { replaced.set(input.id, 'value') }
+    if (sketch.hasCountdown && dependsOn(comp, comp.countdownFrom).indexOf(input.id) >= 0) {
+      replaced.set('elapsedMs', '0'); replaced.set('running', 'false'); replaced.set('finished', 'false')
+    }
+    functions.push(fn(['function set_' + input.id + '(state: AppState, value: ' + type + '): AppState {',
+      '  return ' + changed(fields, replaced) + ';', '}']))
+
     let handler = quote('set_' + input.id)
     if (widget === 'select') {
       let labels: string[] = []
@@ -2515,108 +2423,228 @@ export function assembleProgram(comp: Composition): string {
       controls.push('ui.NumberField("default", ' + quote(input.label) + ', state.' + input.id + ', ' + numberLiteral(input.min) + ', ' + numberLiteral(input.max) + ', ' + handler + ')')
     }
   }
-
-  let children: string[] = []
-  if (hasClock(sketch)) { children.push('ui.Ticker("default", "clock", 200, state.running, "onTick")') }
-  let icon = hasClock(sketch) ? 'clock' : (list !== null ? 'list' : 'chart')
-  if (!comp.widget) {
-    children.push('ui.Header("default", ' + quote(sketch.title) + ', ' + quote(sketch.eyebrow) + ', ' + quote(sketch.subtitle) + ', "' + icon + '")')
-  }
-  let clockButtons = 'ui.ActionBar("spread", [ui.Button("primary", "Start", "onStart", 0, !state.running), ' +
-    'ui.Button("secondary", "Stop", "onStop", 0, state.running), ui.Button("secondary", "Reset", "onReset", 0, true)])'
-  let heroChildren: string[] = bars.slice()
-  if (hasClock(sketch)) { heroChildren.push(clockButtons) }
-  // The clock brings its own time, so a sketch that lists no value for it still shows one.
-  let clockLabel = sketch.hasCountdown ? sketch.countdown : sketch.stopwatch
-  // Time left rounds up (it reads 0:00 only at the end), time passed rounds down.
-  let clockShown = 'ui.durationToString(' + (sketch.hasCountdown ? 'math.ceil(remaining)' : 'math.floor(elapsed)') + ')'
-  // The widget's two sections: what it shows, then what the person sets and adds.
-  let shows: string[] = bars.slice()
-  let sets: string[] = controls.slice()
+  let view: string[] = []
   if (comp.widget) {
-    if (hasClock(sketch) && leading.length === 0) { shows.push('ui.Stat("default", ' + quote(clockLabel) + ', ' + clockShown + ', "", "clock")') }
-    if (stats.length > 0) { shows.push('ui.MetricGroup("default", ' + Math.min(stats.length, 2).toString() + ', [' + stats.join(', ') + '])') }
-    if (figuresNode.length > 0) { shows.push(figuresNode) }
-    if (hasClock(sketch)) { shows.push(clockButtons) }
-  } else if (heroes.length > 0) {
-    let v = sketch.values.find((x: SketchValue): boolean => x.id === heroes[0])!
-    children.push('ui.Section("hero", "", "", [ui.Hero("accent", ' + quote(v.label) + ', ' + heroText(v, v.id) + ', "", [' + heroChildren.join(', ') + '])])')
-  } else if (hasClock(sketch)) {
-    children.push('ui.Section("hero", "", "", [ui.Hero("accent", ' + quote(clockLabel) + ', ' + clockShown + ', "", [' + heroChildren.join(', ') + '])])')
-  } else if (heroChildren.length > 0) {
-    children.push('ui.Section("content", "", "", [' + heroChildren.join(', ') + '])')
+    for (let c of controls) { view.push('sets.push(' + c + ');') }
+  } else if (controls.length > 0) {
+    view.push('sections.push(ui.Section("content", "", "", [' + controls.join(', ') + ']));')
   }
-  if (controls.length > 0 && !comp.widget) { children.push('ui.Section("content", "", "", [' + controls.join(', ') + '])') }
-  if (figuresNode.length > 0 && !comp.widget) { children.push('ui.Section("summary", "", "", [' + figuresNode + '])') }
-  if (stats.length > 0 && !comp.widget) {
-    children.push('ui.Section("summary", "", "", [ui.MetricGroup("default", ' + Math.min(stats.length, 3).toString() + ', [' + stats.join(', ') + '])])')
+  return part('inputs', inputFields(comp), functions, view)
+}
+
+/** A screen's figures under its controls: the table, then the metric group. A widget shows them in its first section. */
+function summaryPart(comp: Composition, figs: Figures): FragmentSpec {
+  let view: string[] = []
+  if (!comp.widget) {
+    if (figs.table.length > 0) { view.push('sections.push(ui.Section("summary", "", "", [' + figs.table + ']));') }
+    if (figs.stats.length > 0) {
+      view.push('sections.push(ui.Section("summary", "", "", [ui.MetricGroup("default", ' + Math.min(figs.stats.length, 3).toString() + ', [' + figs.stats.join(', ') + '])]));')
+    }
   }
-  if (list !== null) {
-    let entryFields: string[] = []
-    for (let f of list.fields) {
-      let at = 'state.' + draftOf(f) + ', ' + quote('set_' + draftOf(f))
-      if (f.kind === 'text') { entryFields.push('ui.TextField("default", ' + quote(f.label) + ', ' + at + ')') }
-      else if (f.kind === 'number') { entryFields.push('ui.TextField("default", ' + quote(f.label) + ', ' + at + ', "number")') }
-      else if (f.kind === 'time') { entryFields.push('ui.TimeField("default", ' + quote(f.label) + ', ' + at + ')') }
-      else { entryFields.push('ui.Toggle("default", ' + quote(f.label) + ', ' + at + ')') }
+  return part('summary', [], [], view)
+}
+
+/** The list the person keeps adding to: the form, adding and removing an entry, the answer of the phone for each, and the entries. */
+function listPart(comp: Composition, list: SketchList, fields: Field[]): FragmentSpec {
+  let entryClass: string[] = ['@jsonable', 'class LogEntry {']
+  for (let f of list.fields) { entryClass.push('  ' + f.id + ': ' + entryType(f) + ';') }
+  entryClass.push('  minute: number;')
+  let answering = entryAnswerEvent(comp)
+  if (answering.length > 0) { entryClass.push('  status: string;') }
+  entryClass.push('}')
+
+  let functions: string[] = []
+  // The new entry's fields, adding it (a copy of the old array plus one), and removing one by position.
+  for (let f of list.fields) {
+    let replaced: Map<string, string> = new Map<string, string>()
+    replaced.set(draftOf(f), 'value')
+    functions.push(fn(['function set_' + draftOf(f) + '(state: AppState, value: ' + draftType(f) + '): AppState {',
+      '  return ' + changed(fields, replaced) + ';', '}']))
+  }
+  let added: Map<string, string> = new Map<string, string>()
+  added.set('entries', 'out')
+  // Typed fields empty for the next entry; a time and an on/off keep what was set.
+  for (let f of list.fields) { if (draftType(f) === 'string') { added.set(draftOf(f), '""') } }
+  let calls = effectCallsAt(comp, 'entry_added')
+  if (comp.events.some((e: SketchEvent): boolean => comp.moments.get(e.id) === 'entry_added' && e.id !== answering)) {
+    added.set('effectStatus', '"pending"')
+  }
+  let add: string[] = ['function addEntry(state: AppState, ignored: number): AppState {']
+  // An entry needs its words, or else its number; a list with neither adds one per tap.
+  let required = firstField(list, 'text') ?? firstField(list, 'number')
+  if (required !== null) { add.push('  if (strings.trim(state.' + draftOf(required) + ') === "") { return state; }') }
+  if (callsNeedLocals(comp, 'entry_added')) { for (let l of inputLocals(comp)) { add.push(l) } }
+  let members: string[] = []
+  for (let f of list.fields) { members.push(f.id + ': ' + draftValue(f)) }
+  members.push('minute: time.hourOfDay() * 60 + time.minuteOfHour()')
+  if (answering.length > 0) { members.push('status: "pending"') }
+  add.push('  let entry: LogEntry = {' + members.join(', ') + '};')
+  add.push('  let out: LogEntry[] = [];')
+  add.push('  for (let e: LogEntry of state.entries) { out.push(e); }')
+  add.push('  out.push(entry);')
+  for (let c of calls) { add.push(c) }
+  add.push('  return ' + changed(fields, added) + ';')
+  add.push('}')
+  functions.push(fn(add))
+  if (answering.length > 0) {
+    // Answers come back in the order the calls went out: each goes to the oldest entry still waiting.
+    let copied: string[] = []
+    for (let f of list.fields) { copied.push(f.id + ': e.' + f.id) }
+    copied.push('minute: e.minute')
+    copied.push('status: value')
+    let answered: Map<string, string> = new Map<string, string>()
+    answered.set('entries', 'out')
+    let capture = keepsCalendarIds(comp) && comp.effects.get(answering) === 'calendar_add'
+    if (capture) { answered.set('calendarIds', 'ids') }
+    let answer: string[] = ['function onEntryAnswer(state: AppState, value: string): AppState {']
+    if (capture) { for (let l of idCapture()) { answer.push(l) } }
+    answer.push('  let out: LogEntry[] = [];')
+    answer.push('  let marked: boolean = false;')
+    answer.push('  for (let e: LogEntry of state.entries) {')
+    answer.push('    if (marked === false && e.status === "pending") {')
+    answer.push('      let answered: LogEntry = {' + copied.join(', ') + '};')
+    answer.push('      out.push(answered);')
+    answer.push('      marked = true;')
+    answer.push('    } else {')
+    answer.push('      out.push(e);')
+    answer.push('    }')
+    answer.push('  }')
+    answer.push('  return ' + changed(fields, answered) + ';')
+    answer.push('}')
+    functions.push(fn(answer))
+  }
+  let removed: Map<string, string> = new Map<string, string>()
+  removed.set('entries', 'out')
+  functions.push(fn(['function removeEntry(state: AppState, value: number): AppState {',
+    '  let out: LogEntry[] = [];',
+    '  let i: number = 0;',
+    '  while (i < state.entries.length()) {',
+    '    if (i !== value) { out.push(state.entries[i]); }',
+    '    i = i + 1;',
+    '  }',
+    '  return ' + changed(fields, removed) + ';',
+    '}']))
+
+  let form: string[] = []
+  for (let f of list.fields) {
+    let at = 'state.' + draftOf(f) + ', ' + quote('set_' + draftOf(f))
+    if (f.kind === 'text') { form.push('ui.TextField("default", ' + quote(f.label) + ', ' + at + ')') }
+    else if (f.kind === 'number') { form.push('ui.TextField("default", ' + quote(f.label) + ', ' + at + ', "number")') }
+    else if (f.kind === 'time') { form.push('ui.TimeField("default", ' + quote(f.label) + ', ' + at + ')') }
+    else { form.push('ui.Toggle("default", ' + quote(f.label) + ', ' + at + ')') }
+  }
+  form.push('ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, true)])')
+  // Newest first, at most 20 rows (a container holds 20 children), 4 in a chat bubble. A tap on a row removes it --
+  // unless the row has buttons of its own (row_button events): then it is followed by a bar with them and Remove,
+  // two children a row, so at most 10 rows.
+  let rowButtons: string[] = []
+  for (let e of comp.events) {
+    if (comp.moments.get(e.id) !== 'row_button') { continue }
+    rowButtons.push('ui.Button("secondary", ' + quote(effectOf(comp.effects.get(e.id) ?? '')!.button) + ', ' + quote(tapHandler(e.id, 'row_button')) + ', i, true)')
+  }
+  // The title is the words (else the number); the number (else the time) sits at the right edge; the
+  // rest, the time it was added and what the phone answered go underneath.
+  let textField = firstField(list, 'text')
+  let numberField = firstField(list, 'number')
+  let titleField = textField ?? numberField
+  let trailingField = textField !== null && numberField !== null ? numberField : firstField(list, 'time')
+  let shown = (f: ListField): string => f.kind === 'text' ? 'e.' + f.id :
+    (f.kind === 'time' ? 'ui.clockToString(e.' + f.id + ')' : amountText(f.measure, f.unit, 'e.' + f.id))
+  let title = titleField !== null ? shown(titleField) : '"#" + ui.numberToString(i + 1)'
+  let trailing = trailingField !== null ? shown(trailingField) : '""'
+  let pieces: string[] = []
+  let flags: ListField[] = []
+  for (let f of list.fields) {
+    if (f === titleField || f === trailingField) { continue }
+    if (f.kind === 'toggle') { flags.push(f) } else { pieces.push(shown(f)) }
+  }
+  pieces.push('"Added " + ui.clockToString(e.minute)')
+  let view: string[] = ['let rows: ui.View[] = [];',
+    'let i: number = entryCount - 1;',
+    'while (i >= 0 && i > entryCount - ' + (comp.widget ? '5' : (rowButtons.length > 0 ? '11' : '21')) + ') {',
+    '  let e: LogEntry = state.entries[i];',
+    '  let sub: string = ' + pieces.join(' + " · " + ') + ';']
+  for (let f of flags) { view.push('  if (e.' + f.id + ') { sub = ' + quote(f.label + ' · ') + ' + sub; }') }
+  if (answering.length > 0) {
+    let done = effectOf(comp.effects.get(answering) ?? '')!.done
+    view.push('  let note: string = "";')
+    view.push('  if (e.status === "pending") { note = "Asking the phone..."; }')
+    view.push('  if (strings.startsWith(e.status, "error") || strings.startsWith(e.status, "declined")) { note = "Phone: " + e.status; }')
+    view.push('  if (note === "" && e.status !== "") { note = ' + quote(done) + '; }')
+    view.push('  sub = note + " · " + sub;')
+  }
+  if (rowButtons.length > 0) {
+    view.push('  rows.push(ui.ListItem("default", ' + title + ', sub, ' + trailing + ', "", 0, false, ""));')
+    view.push('  rows.push(ui.ActionBar("end", [' + rowButtons.join(', ') + ', ui.Button("secondary", "Remove", "removeEntry", i, true)]));')
+  } else {
+    view.push('  rows.push(ui.ListItem("default", ' + title + ', sub + " · tap to remove", ' + trailing + ', "removeEntry", i, true, ""));')
+  }
+  view.push('  i = i - 1;')
+  view.push('}')
+  let listNodes: string[] = ['ui.SectionHeader("default", ' + quote(list.label) + ', "Newest first", ui.numberToString(entryCount))',
+    'ui.When(entryCount === 0, ui.EmptyState("default", "Nothing added yet", ' +
+    quote(form.length > 1 ? 'Fill in the fields above and tap Add.' : 'Tap Add to add one.') + ', "", "", "list"))',
+    'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))']
+  if (comp.widget) {
+    for (let node of form.concat(listNodes)) { view.push('sets.push(' + node + ');') }
+  } else {
+    view.push('sections.push(ui.Section("content", "", "", [' + form.join(', ') + ']));')
+    view.push('sections.push(ui.Section("content", "", "", [' + listNodes.join(', ') + ']));')
+  }
+  return part('list', entryFields(list), functions, view, fn(entryClass), '  let emptyEntries: LogEntry[] = [];')
+}
+
+/** What the phone is asked to do outside this screen: the buttons that ask it, their answers, and the banner with the last one. */
+function effectsPart(comp: Composition, fields: Field[]): FragmentSpec {
+  let functions: string[] = []
+  // A tapped button's own handler: do_<event> on the screen, row_<event> for the entry its button is on.
+  for (let e of comp.events) {
+    let moment = comp.moments.get(e.id) ?? ''
+    if (!tapMoment(moment)) { continue }
+    let fx = effectOf(comp.effects.get(e.id) ?? '')!
+    let tapped: Map<string, string> = new Map<string, string>()
+    tapped.set('effectStatus', '"pending"')
+    let tap: string[] = ['function ' + tapHandler(e.id, moment) + '(state: AppState, ' + (moment === 'row_button' ? 'index' : 'ignored') + ': number): AppState {']
+    if (moment === 'row_button') {
+      tap.push('  if (index < 0 || index >= state.entries.length()) { return state; }')
+      tap.push('  let entry: LogEntry = state.entries[index];')
     }
-    entryFields.push('ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, true)])')
-    if (comp.widget) { sets = sets.concat(entryFields) }
-    else { children.push('ui.Section("content", "", "", [' + entryFields.join(', ') + '])') }
-    // Newest first, at most 20 rows (a container holds 20 children), 4 in a chat bubble. A tap on a row removes it --
-    // unless the row has buttons of its own (row_button events): then it is followed by a bar with them and Remove,
-    // two children a row, so at most 10 rows.
-    let rowButtons: string[] = []
-    for (let e of comp.events) {
-      if (comp.moments.get(e.id) !== 'row_button') { continue }
-      rowButtons.push('ui.Button("secondary", ' + quote(effectOf(comp.effects.get(e.id) ?? '')!.button) + ', ' + quote(tapHandler(e.id, 'row_button')) + ', i, true)')
+    if (fx.id === 'calendar_clear') {
+      let nothing: Map<string, string> = new Map<string, string>()
+      nothing.set('effectStatus', '"No calendar events added yet"')
+      tap.push('  if (' + (keepsCalendarIds(comp) ? 'state.calendarIds' : '""') + ' === "") { return ' + changed(fields, nothing) + '; }')
     }
-    // The title is the words (else the number); the number (else the time) sits at the right edge; the
-    // rest, the time it was added and what the phone answered go underneath.
-    let textField = firstField(list, 'text')
-    let numberField = firstField(list, 'number')
-    let titleField = textField ?? numberField
-    let trailingField = textField !== null && numberField !== null ? numberField : firstField(list, 'time')
-    let shown = (f: ListField): string => f.kind === 'text' ? 'e.' + f.id :
-      (f.kind === 'time' ? 'ui.clockToString(e.' + f.id + ')' : amountText(f.measure, f.unit, 'e.' + f.id))
-    let title = titleField !== null ? shown(titleField) : '"#" + ui.numberToString(i + 1)'
-    let trailing = trailingField !== null ? shown(trailingField) : '""'
-    let pieces: string[] = []
-    let flags: ListField[] = []
-    for (let f of list.fields) {
-      if (f === titleField || f === trailingField) { continue }
-      if (f.kind === 'toggle') { flags.push(f) } else { pieces.push(shown(f)) }
+    if (callsNeedLocals(comp, moment)) { for (let l of inputLocals(comp)) { tap.push(l) } }
+    for (let c of effectCallsAt(comp, moment, e.id)) { tap.push(c) }
+    tap.push('  return ' + changed(fields, tapped) + ';')
+    tap.push('}')
+    functions.push(fn(tap))
+  }
+  if (keepsCalendarIds(comp)) {
+    // Every event this program adds is remembered by the ID its answer gave, so that it can delete exactly those.
+    let added: Map<string, string> = new Map<string, string>()
+    added.set('effectStatus', 'value')
+    added.set('calendarIds', 'ids')
+    functions.push(fn(['function onCalendarAdded(state: AppState, value: string): AppState {'].concat(idCapture(),
+      ['  return ' + changed(fields, added) + ';', '}'])))
+  }
+  if (comp.events.some((e: SketchEvent): boolean => comp.effects.get(e.id) === 'calendar_clear')) {
+    let cleared: Map<string, string> = new Map<string, string>()
+    cleared.set('effectStatus', 'value')
+    if (keepsCalendarIds(comp)) { cleared.set('calendarIds', 'left') }
+    let clear: string[] = ['function onCalendarCleared(state: AppState, value: string): AppState {']
+    if (keepsCalendarIds(comp)) {
+      clear.push('  let left: string = state.calendarIds;')
+      clear.push('  if (value === "ok") { left = ""; }')
     }
-    pieces.push('"Added " + ui.clockToString(e.minute)')
-    lines.push('  let rows: ui.View[] = [];')
-    lines.push('  let i: number = entryCount - 1;')
-    lines.push('  while (i >= 0 && i > entryCount - ' + (comp.widget ? '5' : (rowButtons.length > 0 ? '11' : '21')) + ') {')
-    lines.push('    let e: Entry = state.entries[i];')
-    lines.push('    let sub: string = ' + pieces.join(' + " · " + ') + ';')
-    for (let f of flags) { lines.push('    if (e.' + f.id + ') { sub = ' + quote(f.label + ' · ') + ' + sub; }') }
-    let answering = entryAnswerEvent(comp)
-    if (answering.length > 0) {
-      let done = effectOf(comp.effects.get(answering) ?? '')!.done
-      lines.push('    let note: string = "";')
-      lines.push('    if (e.status === "pending") { note = "Asking the phone..."; }')
-      lines.push('    if (strings.startsWith(e.status, "error") || strings.startsWith(e.status, "declined")) { note = "Phone: " + e.status; }')
-      lines.push('    if (note === "" && e.status !== "") { note = ' + quote(done) + '; }')
-      lines.push('    sub = note + " · " + sub;')
-    }
-    if (rowButtons.length > 0) {
-      lines.push('    rows.push(ui.ListItem("default", ' + title + ', sub, ' + trailing + ', "", 0, false, ""));')
-      lines.push('    rows.push(ui.ActionBar("end", [' + rowButtons.join(', ') + ', ui.Button("secondary", "Remove", "removeEntry", i, true)]));')
-    } else {
-      lines.push('    rows.push(ui.ListItem("default", ' + title + ', sub + " · tap to remove", ' + trailing + ', "removeEntry", i, true, ""));')
-    }
-    lines.push('    i = i - 1;')
-    lines.push('  }')
-    let listNodes = 'ui.SectionHeader("default", ' + quote(list.label) + ', "Newest first", ui.numberToString(entryCount)), ' +
-      'ui.When(entryCount === 0, ui.EmptyState("default", "Nothing added yet", ' +
-      quote(entryFields.length > 1 ? 'Fill in the fields above and tap Add.' : 'Tap Add to add one.') + ', "", "", "list")), ' +
-      'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))'
-    if (comp.widget) { sets.push(listNodes) }
-    else { children.push('ui.Section("content", "", "", [' + listNodes + '])') }
+    clear.push('  return ' + changed(fields, cleared) + ';')
+    clear.push('}')
+    functions.push(fn(clear))
+  }
+  if (hasBanner(comp)) {
+    let status: Map<string, string> = new Map<string, string>()
+    status.set('effectStatus', 'value')
+    functions.push(fn(['function onEffect(state: AppState, value: string): AppState {', '  return ' + changed(fields, status) + ';', '}']))
   }
   // The buttons of the events a tap on the screen starts.
   let screenButtons: string[] = []
@@ -2624,21 +2652,73 @@ export function assembleProgram(comp: Composition): string {
     if (comp.moments.get(e.id) !== 'button') { continue }
     screenButtons.push('ui.Button("secondary", ' + quote(effectOf(comp.effects.get(e.id) ?? '')!.button) + ', ' + quote(tapHandler(e.id, 'button')) + ', 0, true)')
   }
-  let buttonBar = screenButtons.length > 0 ? 'ui.ActionBar("end", [' + screenButtons.join(', ') + '])' : ''
-  if (buttonBar.length > 0 && comp.widget) { sets.push(buttonBar) }
-  else if (buttonBar.length > 0) { children.push('ui.Section("content", "", "", [' + buttonBar + '])') }
-  let banner = 'ui.When(state.effectStatus !== "", ui.InsetBanner("default", "Done", effectNote, "", "", "info"))'
-  if (hasBanner(comp) && comp.widget) { sets.push(banner) }
-  else if (hasBanner(comp)) { children.push(banner) }
-  if (comp.widget) {
-    if (shows.length > 0) { children.push('ui.Section("summary", "", "", [' + shows.join(', ') + '])') }
-    if (sets.length > 0) { children.push('ui.Section("content", "", "", [' + sets.join(', ') + '])') }
+  let view: string[] = []
+  let into = comp.widget ? 'sets.push(' : 'sections.push('
+  if (screenButtons.length > 0) {
+    let bar = 'ui.ActionBar("end", [' + screenButtons.join(', ') + '])'
+    view.push(comp.widget ? 'sets.push(' + bar + ');' : 'sections.push(ui.Section("content", "", "", [' + bar + ']));')
   }
-  lines.push('  return ui.AppTheme(' + quote(comp.theme) + ', "", [')
-  lines.push('    ' + children.join(',\n    '))
-  lines.push('  ]);')
-  lines.push('}')
-  return lines.join('\n')
+  if (hasBanner(comp)) { view.push(into + 'ui.When(state.effectStatus !== "", ui.InsetBanner("default", "Done", effectNote, "", "", "info")));') }
+  return part('effects', effectFields(comp), functions, view)
+}
+
+/** A chat widget's two sections, from what the parts before put in them. */
+function widgetPart(): FragmentSpec {
+  return part('widget', [], [], ['if (shows.length() > 0) { sections.push(ui.Section("summary", "", "", shows)); }',
+    'if (sets.length() > 0) { sections.push(ui.Section("content", "", "", sets)); }'])
+}
+
+/** The composition as blocks for the blocks' composer: each part's state and handlers, then one block with the whole view. */
+export function compositionParts(comp: Composition): FragmentSpec[] {
+  let sketch = comp.sketch
+  let fields: Field[] = inputFields(comp)
+  if (hasClock(sketch)) { fields = fields.concat(clockFields()) }
+  if (sketch.list !== null) { fields = fields.concat(entryFields(sketch.list)) }
+  fields = fields.concat(effectFields(comp))
+  let figs = figuresOf(comp)
+  let parts: FragmentSpec[] = []
+  if (hasClock(sketch)) { parts.push(clockPart(comp, fields)) }
+  parts.push(figuresPart(comp))
+  parts.push(heroPart(comp, figs))
+  parts.push(inputsPart(comp, fields))
+  parts.push(summaryPart(comp, figs))
+  if (sketch.list !== null) { parts.push(listPart(comp, sketch.list, fields)) }
+  parts.push(effectsPart(comp, fields))
+  if (comp.widget) { parts.push(widgetPart()) }
+  // One view block for the whole composition, as a catalogue block has one: the figures every part draws from stay
+  // inside it, out of the way of any other block on the same screen.
+  let view: string[] = ['{']
+  for (let p of parts) {
+    for (let line of p.viewBlock.split('\n')) { if (line.length > 0) { view.push('  ' + line) } }
+    p.viewBlock = ''
+  }
+  view.push('}')
+  parts.push(part('screen', [], [], view))
+  return parts
+}
+
+/** Text as it goes between the quotes of a string literal. */
+function inQuotes(s: string): string {
+  let quoted = quote(s)
+  return quoted.substring(1, quoted.length - 1)
+}
+
+/** The program, or '' when the composition has anything unbound: its parts through the blocks' composer. */
+export function assembleProgram(comp: Composition): string {
+  if (comp.unbound.length > 0) { return '' }
+  let sketch = comp.sketch
+  let globals: Map<string, string> = new Map<string, string>()
+  globals.set('__THEME__', comp.theme)
+  // A chat widget has no header: the conversation already says what it is.
+  globals.set('__HEADER_STYLE__', comp.widget ? 'none' : 'default')
+  globals.set('__TITLE__', inQuotes(sketch.title))
+  globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
+  globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
+  globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : 'chart'))
+  let parts = compositionParts(comp)
+  let values: Map<string, string>[] = []
+  for (let i = 0; i < parts.length; i++) { values.push(new Map<string, string>()) }
+  return composeFragments(parts, globals, values)
 }
 
 

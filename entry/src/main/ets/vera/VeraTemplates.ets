@@ -525,6 +525,11 @@ export class FragmentSpec {
    * wanted them.
    */
   coversIf: string[]
+  /**
+   * False for a block made for one request (VeraCompose.ets's parts): its names are already unique and its text
+   * holds the person's words, so "IDX" in it is not renamed.
+   */
+  indexed: boolean = true
   constructor(kind: string, criteria: string, supportClass: string, stateFields: StateFieldSpec[],
       initStatements: string, initEntries: string, functions: string, viewBlock: string,
       slots: SlotSpec[], contentFields: ContentFieldSpec[], imports: string[] = [], listFields: ListFieldSpec[] = [],
