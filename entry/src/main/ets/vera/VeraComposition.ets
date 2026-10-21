@@ -16,7 +16,8 @@
 import http from '@ohos.net.http'
 import hilog from '@ohos.hilog'
 import { fragments, FragmentSpec } from './VeraTemplates'
-import { composeProgram, markedHole, readChoiceValue } from './VeraSectionCompose'
+import { specsOf, markedHole, readChoiceValue } from './VeraSectionCompose'
+import { planFromBlocks, assemblePlan } from './ScreenPlan'
 import { fillSectionsContent } from './VeraTemplateContent'
 import { arrangeInLayout, LAYOUT_STACK } from './VeraLayouts'
 import { compileVeraSource } from './VeraCompiler'
@@ -83,7 +84,7 @@ function findSpec(kind: string): FragmentSpec | null {
   return null
 }
 
-/** The program for a composition, through the same composeProgram the Jev path uses. */
+/** The program for a composition, through its plan (ScreenPlan.ets), as the Jev path assembles it. */
 export function composeFrom(c: Composition): string {
   let kinds = c.kinds()
   let instanceValues: Map<string, string>[] = []
@@ -99,7 +100,7 @@ export function composeFrom(c: Composition): string {
     }
     instanceValues.push(merged)
   }
-  return composeProgram(kinds, c.globals, instanceValues)
+  return assemblePlan(planFromBlocks(c.prompt, c.layout, specsOf(kinds), c.globals, instanceValues))
 }
 
 function mapToObject(m: Map<string, string>): Record<string, Object> {

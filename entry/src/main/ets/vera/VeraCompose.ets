@@ -29,6 +29,8 @@ import { deepseek } from './DeepSeekEngine'
 import { FragmentSpec, StateFieldSpec, VetoSpec, fragments, vetoes } from './VeraTemplates'
 import { composeFragments } from './VeraSectionCompose'
 import { blockDefaults } from './VeraTemplateContent'
+import { ScreenPlan, PlanSlot, PlanComponent, StateItem, assemblePlan, FILL_PART, FILL_BLOCK, FILL_EFFECT, FILL_HOLE, FILL_OPEN,
+  PLAN_FROM_SKETCH } from './ScreenPlan'
 
 const JEV_ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
 
@@ -1531,6 +1533,8 @@ export class Composition {
   figures: boolean = false
   /** The catalogue's sections Jev chose for the plan's ready needs, in plan order, after the composition's own parts. */
   blocks: string[] = []
+  /** For each of the sketch's ready needs, the section Jev chose for it, '' for none. */
+  readyKinds: string[] = []
   /** Whether their content has to come from a search: real places, prices or facts rather than placeholders. */
   realData: boolean = false
   /** Needs neither the parts nor a section do, for a custom section the model writes (agent/AgentCustom.ets). */
@@ -1605,7 +1609,9 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   let served: string[] = []
   for (let i = 0; i < sketch.ready.length; i++) {
     let kind = answerOf(answers, 'ready.' + i.toString(), READY_KINDS, comp.answers, READY_ABOVE)
-    if (answerOf(answers, 'whose.' + i.toString(), ['own'], comp.answers, OWN_RECORDS_ABOVE) === 'own') {
+    let own = answerOf(answers, 'whose.' + i.toString(), ['own'], comp.answers, OWN_RECORDS_ABOVE) === 'own'
+    comp.readyKinds.push(own ? '' : kind)
+    if (own) {
       comp.unbound.push('the person\'s own records, which no section can make up: ' + sketch.ready[i])
     } else if (kind.length > 0) {
       comp.blocks.push(kind)
@@ -2927,34 +2933,123 @@ export function compositionBlocks(comp: Composition): FragmentSpec[] {
   return out
 }
 
+/** The VERA type an input's value is: a number for every kind but a switch and typed words. */
+function inputType(input: SketchInput): string {
+  return input.kind === 'toggle' ? 'boolean' : (input.kind === 'text' ? 'string' : 'number')
+}
+
+function unique(names: string[]): string[] {
+  let out: string[] = []
+  for (let n of names) { if (n.length > 0 && out.indexOf(n) < 0) { out.push(n) } }
+  return out
+}
+
 /**
- * The program, or '' when the composition has anything unbound: its parts, then its sections of the catalogue, then
- * `custom` (the section the model wrote for comp.custom), through the blocks' composer. `blockValues` holds each section's slot, content and hole values, in comp.blocks order;
- * a section without them gets the catalogue's defaults (blockDefaults).
+ * The composition as a plan (ScreenPlan.ets): the sketch's state, one slot for each thing the screen does, filled by
+ * the composer's parts, the catalogue's sections Jev chose (`blockValues` holds each one's slot, content and hole
+ * values, in comp.blocks order; a section without them gets the catalogue's defaults) and `custom`, the section the
+ * model wrote for comp.custom. What Jev chose nothing for is an open slot: a need with no custom section yet, and
+ * everything unbound.
+ */
+export function screenPlan(comp: Composition, blockValues: Map<string, string>[] = [], custom: FragmentSpec | null = null): ScreenPlan {
+  let sketch = comp.sketch
+  let plan = new ScreenPlan()
+  plan.origin = PLAN_FROM_SKETCH
+  plan.widget = comp.widget
+  plan.globals.set('__THEME__', comp.theme)
+  // A chat widget has no header: the conversation already says what it is.
+  plan.globals.set('__HEADER_STYLE__', comp.widget ? 'none' : 'default')
+  plan.globals.set('__TITLE__', inQuotes(sketch.title))
+  plan.globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
+  plan.globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
+  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : 'chart'))
+
+  for (let input of comp.inputs) { plan.state.push(new StateItem(input.id, 'input', inputType(input), input.label)) }
+  for (let k of sketch.constants) { plan.state.push(new StateItem(k.id, 'constant', 'number', k.label)) }
+  for (let v of sketch.values) { if (comp.bindings.has(v.id)) { plan.state.push(new StateItem(v.id, 'value', 'number', v.label)) } }
+  if (hasClock(sketch)) { plan.state.push(new StateItem('clock', 'clock', 'number', sketch.hasCountdown ? sketch.countdown : sketch.stopwatch)) }
+  if (sketch.list !== null) { plan.state.push(new StateItem('entries', 'list', 'LogEntry[]', sketch.list.label)) }
+
+  // The composer's parts, then the catalogue's sections, then the custom section: the order they are on the screen in.
+  let parts = compositionParts(comp)
+  for (let p of parts) { plan.components.push(new PlanComponent(FILL_PART, p, new Map<string, string>())) }
+  let blocks = compositionBlocks(comp)
+  for (let i = 0; i < blocks.length; i++) {
+    plan.components.push(new PlanComponent(FILL_BLOCK, blocks[i], i < blockValues.length ? blockValues[i] : blockDefaults(blocks[i].kind)))
+  }
+  if (custom !== null) { plan.components.push(new PlanComponent(FILL_HOLE, custom, new Map<string, string>())) }
+  let partAt = (kind: string): number => {
+    let at = parts.findIndex((p: FragmentSpec): boolean => p.kind === kind)
+    return at >= 0 ? at : parts.length - 1
+  }
+  let add = (slot: PlanSlot, fill: string, by: number, detail: string = ''): void => {
+    plan.fillWith(slot, fill, by, detail)
+    plan.slots.push(slot)
+  }
+
+  for (let input of comp.inputs) {
+    let slot = new PlanSlot('input.' + input.id, 'the person sets ' + input.label)
+    slot.writes = [input.id]
+    add(slot, FILL_PART, partAt('inputs'))
+  }
+  for (let v of sketch.values) {
+    let b = comp.bindings.get(v.id)
+    if (b === undefined) { continue }
+    let slot = new PlanSlot('value.' + v.id, v.label + (v.means.length > 0 ? ': ' + v.means : ''))
+    slot.reads = unique([b.a, b.b].concat(b.reads))
+    slot.writes = [v.id]
+    add(slot, FILL_PART, partAt('figures'))
+  }
+  if (hasClock(sketch)) {
+    let slot = new PlanSlot('clock', sketch.hasCountdown ? 'counts down ' + sketch.countdown : 'counts up ' + sketch.stopwatch)
+    slot.reads = unique([comp.countdownFrom])
+    slot.writes = ['clock']
+    add(slot, FILL_PART, partAt('clock'))
+  }
+  if (sketch.list !== null) {
+    let slot = new PlanSlot('list', 'the person adds ' + sketch.list.label)
+    slot.writes = ['entries']
+    add(slot, FILL_PART, partAt('list'))
+  }
+  for (let e of comp.events) {
+    let slot = new PlanSlot('event.' + e.id, e.what)
+    slot.when = comp.moments.get(e.id) ?? ''
+    slot.asked = e.asked
+    let reads: string[] = []
+    let args = comp.args.get(e.id)
+    // An argument is read from the state (an input, a fixed number, an entry of the list) or is a fixed choice, which reads nothing.
+    if (args !== undefined) {
+      args.forEach((source: string) => {
+        let name = source.substring(source.indexOf('.') + 1)
+        if (source.startsWith('entry.')) { reads.push('entries.' + name) } else if (!source.startsWith('fixed.')) { reads.push(name) }
+      })
+    }
+    slot.reads = unique(reads)
+    add(slot, FILL_EFFECT, partAt('effects'), comp.effects.get(e.id) ?? '')
+  }
+  let block = parts.length
+  for (let i = 0; i < comp.readyKinds.length; i++) {
+    if (comp.readyKinds[i].length === 0) { continue }
+    let slot = new PlanSlot('ready.' + i.toString(), sketch.ready[i])
+    slot.accepts = READY_KINDS.slice()
+    add(slot, FILL_BLOCK, block++)
+  }
+  for (let i = 0; i < comp.custom.length; i++) {
+    let slot = new PlanSlot('custom.' + i.toString(), comp.custom[i])
+    slot.reads = comp.customReads.slice()
+    if (custom !== null) { add(slot, FILL_HOLE, plan.components.length - 1) } else { add(slot, FILL_OPEN, -1, 'to be written') }
+  }
+  for (let i = 0; i < comp.unbound.length; i++) { add(new PlanSlot('unbound.' + i.toString(), comp.unbound[i]), FILL_OPEN, -1, 'nothing does it') }
+  return plan
+}
+
+/**
+ * The program, or '' when the composition has anything unbound: its plan (screenPlan above) assembled, with what is
+ * not written yet left out -- the program so far, which a custom section is written against.
  */
 export function assembleProgram(comp: Composition, blockValues: Map<string, string>[] = [], custom: FragmentSpec | null = null): string {
   if (comp.unbound.length > 0) { return '' }
-  let sketch = comp.sketch
-  let globals: Map<string, string> = new Map<string, string>()
-  globals.set('__THEME__', comp.theme)
-  // A chat widget has no header: the conversation already says what it is.
-  globals.set('__HEADER_STYLE__', comp.widget ? 'none' : 'default')
-  globals.set('__TITLE__', inQuotes(sketch.title))
-  globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
-  globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
-  globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : 'chart'))
-  let parts = compositionParts(comp)
-  let values: Map<string, string>[] = []
-  for (let i = 0; i < parts.length; i++) { values.push(new Map<string, string>()) }
-  let blocks = compositionBlocks(comp)
-  for (let i = 0; i < blocks.length; i++) { values.push(i < blockValues.length ? blockValues[i] : blockDefaults(blocks[i].kind)) }
-  let specs: (FragmentSpec | null)[] = (parts as (FragmentSpec | null)[]).concat(blocks)
-  // The custom section the model wrote, last: what nothing else on the screen does.
-  if (custom !== null) {
-    specs.push(custom)
-    values.push(new Map<string, string>())
-  }
-  return composeFragments(specs, globals, values)
+  return assemblePlan(screenPlan(comp, blockValues, custom), true)
 }
 
 /** How many blocks of its own a composition puts before its sections: the slot number of its first section, less one. */
@@ -3087,8 +3182,9 @@ export class ComposeResult {
   /** The plan was drawn again with what the person answered. */
   replanned: boolean = false
   /**
-   * The composition, when it has sections of the catalogue: they need their content filled before the program is
-   * assembled (assembleProgram with their values), so `source` is still empty. Null otherwise.
+   * The composition, whenever nothing is unbound. When it has sections of the catalogue or needs a custom section,
+   * those are filled first and the program assembled after (assembleProgram with them), so `source` is still empty;
+   * otherwise `source` is already its program. Null when the composition is not served.
    */
   composition: Composition | null = null
 }
@@ -3196,7 +3292,8 @@ export async function composeWith(prompt: string, askSketch: SketchAsk, askChoic
   result.answers = comp.answers
   if (comp.unbound.length > 0) { result.note = 'unbound: ' + comp.unbound.join('; '); return result }
   result.dropped = comp.dropped
-  if (comp.blocks.length > 0 || comp.custom.length > 0) { result.composition = comp } else { result.source = assembleProgram(comp) }
+  result.composition = comp
+  if (comp.blocks.length === 0 && comp.custom.length === 0) { result.source = assembleProgram(comp) }
   result.note = 'composed: ' + sketch.inputs.length.toString() + ' inputs, ' + sketch.values.length.toString() + ' values' +
     (sketch.hasCountdown ? ', countdown' : '') + (sketch.hasStopwatch ? ', stopwatch' : '') + (sketch.list !== null ? ', list' : '') +
     (comp.events.length > 0 ? ', ' + comp.events.length.toString() + ' effects' : '') +

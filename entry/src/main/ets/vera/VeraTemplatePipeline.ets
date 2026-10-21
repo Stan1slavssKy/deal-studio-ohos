@@ -18,7 +18,8 @@
  */
 
 import { settings } from './SettingsStore'
-import { selectSections, readSectionPick, composeProgram, SectionPickOutcome, SectionPick } from './VeraSectionCompose'
+import { selectSections, readSectionPick, composeProgram, specsOf, SectionPickOutcome, SectionPick } from './VeraSectionCompose'
+import { ScreenPlan, planFromBlocks, assemblePlan } from './ScreenPlan'
 import { verifyWeakPick, VERIFY_WEAK_PICKS, VerifyAnswer } from './VeraPickVerify'
 import { RouteInfo, jevStateOf, logicOf, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, ROUTE_SCRATCH, JEV_UNSURE, CHECK_NONE, CHECK_OFF, CHECK_YESNO,
   CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED } from './VeraRoute'
@@ -55,6 +56,8 @@ export class TemplateBuild {
   /** The composition record (VeraComposition.ets) as JSON, for template and complete; the program above is rebuilt from it. */
   composition: string = ''
   layout: string = 'stack'
+  /** The plan the program was assembled from (ScreenPlan.ets), once the sections are filled; null before. */
+  plan: ScreenPlan | null = null
   /** Which way this request went and why, for the Generate screen and the Metrics tab (VeraRoute.ets). */
   route: RouteInfo = new RouteInfo()
 }
@@ -229,7 +232,9 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
         note = note + ' intents=none(' + mode + ')'
       }
     }
-    let source = composeProgram(build.kinds, globalValues, instanceValues)
+    let plan = planFromBlocks(prompt, build.layout, specsOf(build.kinds), globalValues, instanceValues)
+    build.plan = plan
+    let source = assemblePlan(plan)
     let vbc2 = ''
     try {
       vbc2 = compileVeraSource(source).vbc2

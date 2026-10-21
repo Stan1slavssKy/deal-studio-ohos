@@ -772,7 +772,7 @@ export function bindPorts(chosenKinds: string[]): Map<string, string>[] {
 }
 
 /** The block of each chosen kind, null for 'none' or a kind there is no block of. */
-function specsOf(chosenKinds: string[]): (FragmentSpec | null)[] {
+export function specsOf(chosenKinds: string[]): (FragmentSpec | null)[] {
   let allSpecs = fragments()
   let specAt: (FragmentSpec | null)[] = []
   for (let kind of chosenKinds) { specAt.push(findFragment(allSpecs, kind)) }

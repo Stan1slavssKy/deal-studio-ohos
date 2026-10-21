@@ -13,7 +13,8 @@ import { AgentHost, BlockRequest, BlockFill } from './AgentHost'
 import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
 import { FragmentSpec } from '../VeraTemplates'
-import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, partCount, customInputs, ComposeResult, Composition, Sketch } from '../VeraCompose'
+import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, ComposeResult, Composition, Sketch } from '../VeraCompose'
+import { ScreenPlan } from '../ScreenPlan'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { smokeRun } from '../VeraSmoke'
 
@@ -44,6 +45,8 @@ export class AgentResult {
   custom: CustomResult | null = null
   /** The questions put to the person, with their answers. */
   asked: Asked[] = []
+  /** The screen's plan (ScreenPlan.ets) as far as it got: every slot and what fills it; null when Jev chose nothing. */
+  screen: ScreenPlan | null = null
   firstPreviewMs: number = 0
   previews: number = 0
   checkMs: number = 0
@@ -119,6 +122,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
         result.note += '; ' + (custom !== null ? 'custom section in ' + written.attempts.toString() + ' attempt(s)' : written.failed)
       }
     }
+    result.screen = screenPlan(comp, values, custom)
     if (ready) { composed.source = assembleProgram(comp, values, custom) }
   }
   if (composed.source.length > 0) {
