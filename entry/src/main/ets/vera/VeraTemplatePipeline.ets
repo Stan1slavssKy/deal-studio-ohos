@@ -56,7 +56,10 @@ export class TemplateBuild {
   /** The composition record (VeraComposition.ets) as JSON, for template and complete; the program above is rebuilt from it. */
   composition: string = ''
   layout: string = 'stack'
-  /** The plan the program was assembled from (ScreenPlan.ets), once the sections are filled; null before. */
+  /**
+   * The plan the program was assembled from (ScreenPlan.ets), once the sections are filled; null before. For `complete`
+   * it has a slot to be written for each thing the request needs that the sections do not do.
+   */
   plan: ScreenPlan | null = null
   /** Which way this request went and why, for the Generate screen and the Metrics tab (VeraRoute.ets). */
   route: RouteInfo = new RouteInfo()
@@ -73,6 +76,19 @@ function mergeHoleValues(values: Map<string, string>[], extra: Map<string, strin
   }
   return out
 }
+
+/**
+ * What a soft veto says the request needs that none of the sections does, in words: a slot of the plan for a section
+ * the model writes (agent/AgentHole.ets). Jev reads that section against it with the request beside it, so the words
+ * name the kind of thing, and the request says which.
+ */
+const SOFT_NEEDS: Map<string, string> = new Map<string, string>([
+  ['needs_logic', 'works out what the request asks to be calculated, converted, totalled, split, compared or decided, from what the person enters'],
+  ['needs_search_or_form', 'lets the person search, filter or sort, or fill in the form of several fields, that the request asks for'],
+  ['needs_multiple_counters', 'keeps a separate count or running total for each person or thing the request names'],
+  ['needs_live_ticking', 'shows what the request asks to tick, count or change by itself in real time'],
+  ['needs_integration', 'has the phone or another app do what the request asks']
+])
 
 function scratch(note: string, status: string, build: TemplateBuild, failure: string = ''): TemplateBuild {
   build.action = BUILD_SCRATCH
@@ -260,6 +276,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     build.composition = compositionToJson(record)
 
     if (outcome.needsLogic) {
+      for (let key of outcome.softVetoes) { plan.addToWrite('missing.' + key, SOFT_NEEDS.get(key) ?? key) }
       build.action = BUILD_COMPLETE
       build.route.route = ROUTE_BLOCKS_MODEL
       build.route.logic = logicOf(outcome.note)
@@ -269,6 +286,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     }
     // An intent panel without rows shows only "No actions": the model writes the calls instead.
     if (panelRows === 0) {
+      plan.addToWrite('missing.needs_integration', SOFT_NEEDS.get('needs_integration')!)
       build.action = BUILD_COMPLETE
       build.route.route = ROUTE_BLOCKS_MODEL
       build.note = note
@@ -278,6 +296,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     // The actions block's buttons only note which one was tapped. A screen of nothing else looks finished and does
     // nothing: phone-action requests ("a button for the torch") landed here without tripping needs_integration.
     if (sections.every((p: SectionPick): boolean => p.kind === 'actions')) {
+      plan.addToWrite('missing.buttons', 'makes each button do what the request asks, rather than only noting that it was tapped')
       build.action = BUILD_COMPLETE
       build.note = note + ' (placeholder buttons only)'
       build.status = 'Composed ' + shown + ', making its buttons do what the request asks...'

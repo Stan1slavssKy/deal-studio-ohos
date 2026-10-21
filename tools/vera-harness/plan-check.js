@@ -101,7 +101,7 @@ for (const label of fs.readdirSync(path.join(__dirname, 'compose'))) {
   const {parseSection} = loadVera('agent/AgentCustom')
   const section = parseSection('<classes>\n</classes>\n<fields>\nc_round: boolean = false\n</fields>\n<functions>\n' +
     'function c_flip(state: AppState, v: number): AppState {\n  return {c_round: !state.c_round__PASSTHROUGH__};\n}\n</functions>\n' +
-    '<view>\nsections.push(ui.Section("content", "", "", [ui.Button("default", "Round up", "c_flip", 0)]));\n</view>')
+    '<view>\nsections.push(ui.Section("content", "", "", [ui.Button("secondary", "Round up", "c_flip", 0, true)]));\n</view>')
   const filled = c.screenPlan(comp, [], section)
   assert.equal(slot(filled, 'custom.0').fill, P.FILL_HOLE)
   assert.equal(filled.components[slot(filled, 'custom.0').by].spec, section)

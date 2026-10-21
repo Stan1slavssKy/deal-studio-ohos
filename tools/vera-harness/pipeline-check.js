@@ -36,11 +36,14 @@ const run = async (outcome, opts = {}) => {
   // buttons that only note which one was tapped are not a finished screen: the model has to make them do something
   ;({build} = await run(jev(['actions'])))
   assert.equal(build.action, 'complete'); assert.match(build.note, /placeholder buttons only/); assert.ok(build.source.length > 0); assert.ok(build.vbc2.length > 0)
+  // what the sections lack is a slot of the plan, to be written (agent/AgentHole.ets)
+  assert.deepEqual(build.plan.toWrite().map(s => s.id), ['missing.buttons'])
   ;({build} = await run(jev(['metrics', 'actions'])))
   assert.equal(build.action, 'template', 'actions beside a real block stays a template')
 
   ;({build} = await run(jev(['checklist'], {needs_logic: 0.95})))
   assert.equal(build.action, 'complete'); assert.match(build.status, /adding the logic/)
+  assert.deepEqual(build.plan.toWrite().map(s => s.id), ['missing.needs_logic'])
 
   ;({build} = await run(jev(['checklist'], {needs_integration: 0.97})))
   assert.equal(build.action, 'scratch'); assert.match(build.note, /vetoed needs_integration/)
@@ -103,6 +106,7 @@ const run = async (outcome, opts = {}) => {
     rowsAnswer = 'no'
     ;({build} = await run(jev(['intent_panel'])))
     assert.equal(build.action, 'complete'); assert.match(build.note, /intents=none/); assert.match(build.status, /phone actions/)
+    assert.deepEqual(build.plan.toWrite().map(s => s.id), ['missing.needs_integration'])
     deepseek.extractTemplateContent = saved
     reg.registryEntries = savedReg
   }

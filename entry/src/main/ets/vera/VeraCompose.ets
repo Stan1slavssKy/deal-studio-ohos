@@ -30,7 +30,7 @@ import { FragmentSpec, StateFieldSpec, VetoSpec, fragments, vetoes } from './Ver
 import { composeFragments } from './VeraSectionCompose'
 import { blockDefaults } from './VeraTemplateContent'
 import { ScreenPlan, PlanSlot, PlanComponent, StateItem, assemblePlan, FILL_PART, FILL_BLOCK, FILL_EFFECT, FILL_HOLE, FILL_OPEN,
-  PLAN_FROM_SKETCH } from './ScreenPlan'
+  PLAN_FROM_SKETCH, TO_WRITE } from './ScreenPlan'
 
 const JEV_ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
 
@@ -1520,6 +1520,8 @@ export class Composition {
   inputs: SketchInput[] = []
   /** Requirements nothing in the vocabulary was chosen for; a composition with any is not served. */
   unbound: string[] = []
+  /** What the request asks the phone to do that nothing here does, in words: the asked events among the unbound. */
+  unboundNeeds: string[] = []
   /** Every answer with its confidence, for the trace. */
   answers: string[] = []
   /** A picture drawn from the sketch alone, before Jev answers: values it has no expression for show a dash. */
@@ -1741,6 +1743,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       comp.dropped.push('event "' + e.what + '": a detail of how the widget looks or is worked')
     } else if (e.asked) {
       comp.unbound.push('event "' + e.what + '": ' + missing)
+      comp.unboundNeeds.push(e.what + ' (' + e.when + ')')
     } else {
       // The sketch's own idea, not the request's: leave it out rather than refuse the screen.
       comp.dropped.push('event "' + e.what + '": ' + missing)
@@ -3037,7 +3040,7 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
   for (let i = 0; i < comp.custom.length; i++) {
     let slot = new PlanSlot('custom.' + i.toString(), comp.custom[i])
     slot.reads = comp.customReads.slice()
-    if (custom !== null) { add(slot, FILL_HOLE, plan.components.length - 1) } else { add(slot, FILL_OPEN, -1, 'to be written') }
+    if (custom !== null) { add(slot, FILL_HOLE, plan.components.length - 1) } else { add(slot, FILL_OPEN, -1, TO_WRITE) }
   }
   for (let i = 0; i < comp.unbound.length; i++) { add(new PlanSlot('unbound.' + i.toString(), comp.unbound[i]), FILL_OPEN, -1, 'nothing does it') }
   return plan
@@ -3179,6 +3182,8 @@ export class ComposeResult {
   parsed: Sketch | null = null
   /** What the sketch added and the screen leaves out, for the person to see. */
   dropped: string[] = []
+  /** When the composition is not served: what the request asks the phone to do that it could not (Composition.unboundNeeds). */
+  unboundNeeds: string[] = []
   /** The plan was drawn again with what the person answered. */
   replanned: boolean = false
   /**
@@ -3290,7 +3295,11 @@ export async function composeWith(prompt: string, askSketch: SketchAsk, askChoic
   if (body.length === 0) { result.note = 'Jev did not answer'; return result }
   let comp = readComposition(body, sketch, widget)
   result.answers = comp.answers
-  if (comp.unbound.length > 0) { result.note = 'unbound: ' + comp.unbound.join('; '); return result }
+  if (comp.unbound.length > 0) {
+    result.note = 'unbound: ' + comp.unbound.join('; ')
+    result.unboundNeeds = comp.unboundNeeds
+    return result
+  }
   result.dropped = comp.dropped
   result.composition = comp
   if (comp.blocks.length === 0 && comp.custom.length === 0) { result.source = assembleProgram(comp) }

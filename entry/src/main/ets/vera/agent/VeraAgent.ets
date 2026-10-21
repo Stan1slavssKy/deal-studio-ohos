@@ -10,11 +10,11 @@
  */
 
 import { AgentHost, BlockRequest, BlockFill } from './AgentHost'
-import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
+import { CustomResult } from './AgentCustom'
+import { writeHole } from './AgentHole'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
-import { FragmentSpec } from '../VeraTemplates'
 import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, ComposeResult, Composition, Sketch } from '../VeraCompose'
-import { ScreenPlan } from '../ScreenPlan'
+import { ScreenPlan, assemblePlan } from '../ScreenPlan'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { smokeRun } from '../VeraSmoke'
 
@@ -101,29 +101,19 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       ready = fill.failed.length === 0
       values = fill.values
     }
-    // What nothing else does: one section the model writes into the program the rest makes.
-    let custom: FragmentSpec | null = null
-    if (ready && comp.custom.length > 0 && !host.cancelled()) {
-      if (host.askCode === null || host.language.length === 0) {
-        result.note += '; no model to write a custom section'
-        ready = false
-      } else {
-        host.status('Writing the rest...')
-        let asked = new CustomRequest()
-        asked.needs = comp.custom
-        asked.prompt = request.prompt
-        asked.inputs = customInputs(comp)
-        asked.compose = (section: FragmentSpec | null): string => assembleProgram(comp, values, section)
-        asked.verify = host.askJev
-        let written = await writeSection(asked, host.language, host.askCode!)
-        result.custom = written
-        custom = written.section
-        ready = custom !== null
-        result.note += '; ' + (custom !== null ? 'custom section in ' + written.attempts.toString() + ' attempt(s)' : written.failed)
+    // The plan, and what nothing ready does in it: one section the model writes into the program the rest makes.
+    let plan = screenPlan(comp, values)
+    result.screen = plan
+    if (ready && plan.toWrite().length > 0 && !host.cancelled()) {
+      host.status('Writing the rest...')
+      let written = await writeHole(plan, request.prompt, customInputs(comp), host)
+      result.custom = written
+      ready = plan.toWrite().length === 0
+      if (written !== null) {
+        result.note += '; ' + (written.section !== null ? 'custom section in ' + written.attempts.toString() + ' attempt(s)' : written.failed)
       }
     }
-    result.screen = screenPlan(comp, values, custom)
-    if (ready) { composed.source = assembleProgram(comp, values, custom) }
+    if (ready) { composed.source = assemblePlan(plan) }
   }
   if (composed.source.length > 0) {
     let checkStart = Date.now()

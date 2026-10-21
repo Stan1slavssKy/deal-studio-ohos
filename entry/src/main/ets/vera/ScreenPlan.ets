@@ -21,6 +21,8 @@ import { findLayout } from './VeraLayouts'
 
 /** Nothing fills the slot yet; `detail` says why. */
 export const FILL_OPEN: string = 'open'
+/** The `detail` of an open slot a section the model writes is to fill; any other open slot refuses the screen. */
+export const TO_WRITE: string = 'to be written'
 /** A part the composer makes from the plan's state (VeraCompose.ets). */
 export const FILL_PART: string = 'part'
 /** A section of the catalogue (VeraTemplates.ets's fragments). */
@@ -103,6 +105,19 @@ export class ScreenPlan {
 
   open(): PlanSlot[] {
     return this.slots.filter((s: PlanSlot): boolean => s.fill === FILL_OPEN)
+  }
+
+  /** The open slots a section the model writes is to fill. */
+  toWrite(): PlanSlot[] {
+    return this.slots.filter((s: PlanSlot): boolean => s.fill === FILL_OPEN && s.detail === TO_WRITE)
+  }
+
+  /** A need nothing in the plan does yet, as a slot for a written section to fill. */
+  addToWrite(id: string, need: string): PlanSlot {
+    let slot = new PlanSlot(id, need)
+    slot.detail = TO_WRITE
+    this.slots.push(slot)
+    return slot
   }
 
   /** The slot to fill with the component at `index`, which must already be in the plan. */

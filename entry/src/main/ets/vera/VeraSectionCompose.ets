@@ -158,6 +158,8 @@ export class SectionPickOutcome {
    * hands it to the model to finish, instead of dropping to generation from scratch.
    */
   needsLogic: boolean
+  /** The soft vetoes that fired (needsLogic), by key: what the request needs that no section does. */
+  softVetoes: string[] = []
   /** The layout the sections were arranged in ('stack' when Jev chose none or the placement broke a slot rule). */
   layout: string = LAYOUT_STACK
   /** When nothing was chosen and nothing vetoed: the kinds Jev named below the bar (at least WEAK_FROM), in section order. */
@@ -621,6 +623,7 @@ export function readSectionPick(body: string, confirmed: string[] = []): Section
   if (needsRealData) { note = note + ' needs_real_data=' + realDataProbability.toFixed(2) }
   if (logicNotes.length > 0) { note = note + ' logic=' + logicNotes.join(',') }
   let outcome = new SectionPickOutcome(placed, globals, note, needsRealData, logicNotes.length > 0)
+  outcome.softVetoes = logicNotes.map((tag: string): string => tag.substring(0, tag.indexOf('=')))
   outcome.layout = usedLayout
   outcome.wanted = rescuedKind
   outcome.wantedP = rescuedP

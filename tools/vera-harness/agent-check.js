@@ -1,6 +1,7 @@
 // agent/VeraAgent.ets and agent/VeraBuildRoute.ets without the network: a host that replays recorded sketches and Jev
 // answers (tools/vera-harness/compose/) through runAgent -- streamed plan, previews, assembly, compile, first run -- and
-// the route's order between the agent and the blocks. The blocks have no network here, so they always answer scratch.
+// the route's order between the agent and the blocks. The blocks have no network here, so they answer scratch, except
+// where a canned section pick stands in for Jev's.
 'use strict'
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
@@ -205,6 +206,96 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(o.kind, route.OUTCOME_SCRATCH)
     assert.notEqual(o.blocks, null)
     assert.match(o.plan, /^A sketch of this app/)
+  }
+  // The blocks hand on the right sections for a request that needs more than they do: the layout stays, and what it
+  // lacks is written into it as one section the model writes and Jev reads against the need, before any generation.
+  {
+    const compose = loadVera('VeraSectionCompose')
+    const {deepseek} = loadVera('DeepSeekEngine')
+    const {settings} = loadVera('SettingsStore')
+    settings.getSelectorKey = () => 'test-key'
+    settings.hasExaKey = () => false
+    const savedPick = compose.selectSections, savedContent = deepseek.extractTemplateContent
+    deepseek.extractTemplateContent = async () => JSON.stringify({title: 'Party'})
+    const answers = {section1: {choice: 'metrics', confidence: 0.9}}
+    for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_logic'])
+      answers['veto.' + k] = {noul: k === 'needs_logic' ? 0.95 : 0}
+    compose.selectSections = async () => compose.readSectionPick(JSON.stringify({answers}))
+    const section = '<classes>\n</classes>\n<fields>\nc_people: number = 4\n</fields>\n<functions>\n' +
+      'function c_more(state: AppState, v: number): AppState {\n  return {c_people: state.c_people + 1__PASSTHROUGH__};\n}\n</functions>\n' +
+      '<view>\nsections.push(ui.Section("content", "", "", [ui.Text("body", "Slices each: " + ui.numberToString(16 / state.c_people)), ' +
+      'ui.Button("secondary", "One more", "c_more", 0, true)]));\n</view>'
+    const finishing = (jevDoes, reply = section) => {
+      const {host, seen} = replayHost('tip', {jev: ''})
+      host.language = 'VERA-L'
+      const asked = []
+      host.askCode = async (system, user) => { asked.push(user); return reply }
+      host.askJev = async body => {
+        seen.jev++
+        const q = JSON.parse(body).questions
+        if (q['does.0']) return JSON.stringify({answers: {'does.0': {probabilities: {yes: jevDoes, no: 1 - jevDoes}}}})
+        return ''
+      }
+      return {host, asked}
+    }
+    let {host, asked} = finishing(0.9)
+    let o = await route.buildScreen(routeRequest('pizza slices per person', true), host)
+    assert.equal(o.kind, route.OUTCOME_TEMPLATE, o.blocks && o.blocks.note)
+    assert.equal(o.blocks.action, 'template')
+    assert.match(o.blocks.source, /c_people/)
+    assert.ok(o.blocks.vbc2.length > 0)
+    assert.equal(o.blocks.composition, '')
+    assert.equal(o.hole.attempts, 1)
+    assert.match(asked[0], /works out what the request asks to be calculated/)
+    assert.ok(o.blocks.plan.slots.some(s => s.id === 'missing.needs_logic' && s.fill === 'hole'))
+    // Jev does not read the section as doing it: the blocks' base goes to the model to finish, as before.
+    ;({host} = finishing(0.1))
+    o = await route.buildScreen(routeRequest('pizza slices per person', true), host)
+    assert.equal(o.kind, route.OUTCOME_COMPLETE)
+    assert.match(o.blocks.note, /custom section does not do/)
+    assert.doesNotMatch(o.blocks.source, /c_people/)
+    // The writer says it cannot: the same.
+    ;({host} = finishing(0.9, '<cannot>needs the camera</cannot>'))
+    o = await route.buildScreen(routeRequest('pizza slices per person', true), host)
+    assert.equal(o.kind, route.OUTCOME_COMPLETE)
+    // Another generation mode finishes the program its own way.
+    ;({host, asked} = finishing(0.9))
+    o = await route.buildScreen(Object.assign(routeRequest('pizza slices per person', true), {mode: 'local'}), host)
+    assert.equal(o.kind, route.OUTCOME_COMPLETE)
+    assert.equal(asked.length, 0)
+    // What the agent's plan asks the phone to do and could not bind is something a plain pick of sections lacks too:
+    // the template is completed with it, and while nothing can do it, the model finishes the program.
+    const egg = JSON.parse(fixture('egg', 'jev-answer.json'))
+    const effectKey = Object.keys(egg.answers).find(k => k.startsWith('effect.'))
+    egg.answers[effectKey] = {choice: 'unavailable', confidence: 0.95}
+    const plain = {section1: {choice: 'metrics', confidence: 0.9}}
+    for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_logic'])
+      plain['veto.' + k] = {noul: 0}
+    compose.selectSections = async () => compose.readSectionPick(JSON.stringify({answers: plain}))
+    const eggRoute = (reply, jevDoes) => {
+      const {host} = replayHost('egg', {jev: JSON.stringify(egg)})
+      const jevPlan = host.askJev
+      host.language = 'VERA-L'
+      const asked = []
+      host.askCode = async (system, user) => { asked.push(user); return reply }
+      host.askJev = async body => JSON.parse(body).questions['does.0'] ?
+        JSON.stringify({answers: {'does.0': {probabilities: {yes: jevDoes, no: 1 - jevDoes}}}}) : jevPlan(body)
+      return {host, asked}
+    }
+    ;({host, asked} = eggRoute('<cannot>it cannot vibrate the phone</cannot>', 0.9))
+    o = await route.buildScreen(routeRequest('egg timer that vibrates', true), host)
+    assert.match(o.agent.note, /unbound: event/)
+    assert.equal(o.agent.composed.unboundNeeds.length, 1)
+    assert.equal(o.kind, route.OUTCOME_COMPLETE)
+    assert.equal(o.blocks.action, 'complete')
+    assert.match(o.blocks.note, /the plan also asks: /)
+    assert.match(asked[0], new RegExp(o.agent.composed.unboundNeeds[0].replace(/[()]/g, '.')))
+    ;({host} = eggRoute(section, 0.9))
+    o = await route.buildScreen(routeRequest('egg timer that vibrates', true), host)
+    assert.equal(o.kind, route.OUTCOME_TEMPLATE)
+    assert.ok(o.blocks.plan.slots.some(s => s.id === 'asked.0' && s.fill === 'hole'))
+    compose.selectSections = savedPick
+    deepseek.extractTemplateContent = savedContent
   }
   // Blocks first: the blocks run before the agent, and the agent still serves what they do not.
   route.setRouteOrder(route.ORDER_BLOCKS_FIRST)
