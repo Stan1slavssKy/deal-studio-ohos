@@ -4,6 +4,10 @@
  * makes, and settled like any block: compiled, then run once with every handler tapped (VeraSmoke.ets), with the
  * failing lines quoted back for a repair, at most twice. The model sees the language as generation does (the host's
  * skill prompt) and writes only the missing piece, so it is small and its names are its own (c_...).
+ *
+ * What the phone or another app must do, it does with sdk.call -- but only to a target the phone's own lookups found for
+ * that need (find_intent_function, find_sdk_function), copied exactly: the compiler does not check targets, so a made-up
+ * one compiles and does nothing. Every target in what it writes is checked against those found before it is served.
  */
 
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
@@ -27,10 +31,54 @@ const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE 
   'for every other field of the state kept as it is: return {c_count: state.c_count + 1__PASSTHROUGH__};\n' +
   '- The view statements run inside view(state): they may read any state field, but the local variables of the program\'s ' +
   'other sections are not visible there.\n' +
-  '- Do not repeat, change or restyle anything the program already has. Do what the section must do, completely.\n' +
-  '- The section never calls sdk.call: what the phone does is not its job.\n' +
-  '- If the section cannot really do it with this language and these components -- it needs a camera, a live feed, ' +
-  'the person\'s location or data the phone does not hold -- answer only <cannot>why</cannot>. Never fake it with made-up data.\n'
+  '- Do not repeat, change or restyle anything the program already has. Do what the section must do, completely.\n'
+
+/** The rule for phone calls: none, or only the targets the phone's lookups found. */
+function phoneRule(phone: string): string {
+  if (phone.length === 0) {
+    return '- The section never calls sdk.call: what the phone does is not its job.\n' +
+      '- If the section cannot really do it with this language and these components -- it needs a camera, a live feed, ' +
+      'the person\'s location or data the phone does not hold -- answer only <cannot>why</cannot>. Never fake it with made-up data.\n'
+  }
+  return '- What the phone or another app must do, the section does with sdk.call from a handler, calling ONLY targets from ' +
+    '"Phone functions found" in the request, copied exactly, with the parameters they show, values from the screen\'s state. ' +
+    'Its answer handler shows what came back: an answer starting with "declined" or "error" is a failure, anything else succeeded.\n' +
+    '- If none of the phone functions found does what is needed, or it needs something the phone cannot give a program ' +
+    '(a camera, a live feed, the person\'s location), answer only <cannot>why</cannot>. Never fake it, never pretend a call happened, ' +
+    'never call a target that is not listed.\n'
+}
+
+/** The targets the phone's lookups found, as the "call" or "target" of each result. */
+export function foundTargets(phone: string): string[] {
+  let out: string[] = []
+  let patterns: RegExp[] = [new RegExp('sdk\\.call\\(\\\\?"([^"\\\\]+)\\\\?"', 'g'), new RegExp('"target"\\s*:\\s*"([^"]+)"', 'g')]
+  for (let pattern of patterns) {
+    let m: RegExpExecArray | null = pattern.exec(phone)
+    while (m !== null) {
+      if (out.indexOf(m[1]) < 0) { out.push(m[1]) }
+      m = pattern.exec(phone)
+    }
+  }
+  return out
+}
+
+/** '' when every sdk.call in the reply calls a target found, else what is wrong. */
+function callProblem(reply: string, found: string[]): string {
+  let calls = reply.split('sdk.call(').length - 1
+  if (calls === 0) { return '' }
+  if (found.length === 0) { return 'The section calls sdk.call, which it never may: write it without phone calls, or answer <cannot>.' }
+  let literal = new RegExp('sdk\\.call\\(\\s*"([^"]+)"', 'g')
+  let named = 0
+  let m: RegExpExecArray | null = literal.exec(reply)
+  while (m !== null) {
+    named++
+    if (found.indexOf(m[1]) < 0) {
+      return 'The section calls "' + m[1] + '", which is not one of the phone functions found. Call only those, copied exactly, or answer <cannot>.'
+    }
+    m = literal.exec(reply)
+  }
+  return named === calls ? '' : 'Every sdk.call names its target as a string literal copied from the phone functions found.'
+}
 
 export class CustomRequest {
   /** What the section must do, each in words. */
@@ -41,6 +89,8 @@ export class CustomRequest {
   inputs: string[] = []
   /** The program for a given section ('' for none): the rest of the screen with that section after it. */
   compose: (section: FragmentSpec | null) => string = (_section: FragmentSpec | null): string => ''
+  /** The phone's functions found for the needs that are something the phone does (the lookups' answers); '' for none. */
+  phone: string = ''
   /** Jev, to read a section that compiles and runs against the needs; null serves it unread. */
   verify: ((body: string) => Promise<string>) | null = null
 }
@@ -155,10 +205,13 @@ function check(source: string): string {
 export async function writeSection(request: CustomRequest, language: string, ask: CodeAsk): Promise<CustomResult> {
   let result = new CustomResult()
   let started = Date.now()
-  let system = language + CONTRACT
+  let found = foundTargets(request.phone)
+  let phone = found.length > 0 ? request.phone : ''
+  let system = language + CONTRACT + phoneRule(phone)
   let asked = 'Request: ' + request.prompt + '\n\nThe section must do:\n- ' + request.needs.join('\n- ') +
     (request.inputs.length > 0 ? '\n\nThe person sets these on the screen and nothing else uses them yet; the section uses them:\n- ' +
       request.inputs.join('\n- ') : '') +
+    (phone.length > 0 ? '\n\nPhone functions found (the only targets the section may call):\n' + phone : '') +
     '\n\nThe program so far, which the section joins (do not repeat it):\n' + request.compose(null)
   let user = asked
   for (let attempt = 0; attempt <= REPAIRS; attempt++) {
@@ -169,9 +222,9 @@ export async function writeSection(request: CustomRequest, language: string, ask
     if (cannot !== null) { result.failed = 'custom section cannot: ' + cannot; break }
     let section = parseSection(reply)
     // A phone call the section makes up compiles and does nothing: its targets are not checked until the phone answers.
+    let calls = section === null ? '' : callProblem(reply, found)
     let problem = section === null ? 'The answer was not in the form asked for: <classes>, <fields>, <functions> and <view>.' :
-      (reply.indexOf('sdk.call') >= 0 ? 'The section calls sdk.call, which it never may: write it without phone calls, or answer <cannot>.' :
-      check(request.compose(section)))
+      (calls.length > 0 ? calls : check(request.compose(section)))
     if (problem.length === 0) {
       // It compiles and runs; whether it does what it is for is Jev's reading, and a section that does not is refused,
       // not repaired: the model has already said what it can do.

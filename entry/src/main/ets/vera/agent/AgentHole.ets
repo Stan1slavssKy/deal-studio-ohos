@@ -9,6 +9,9 @@ import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
 import { FragmentSpec } from '../VeraTemplates'
 import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE } from '../ScreenPlan'
 
+/** How much of each lookup's answer the writer is shown. */
+const LOOKUP_CHARS: number = 4000
+
 /** The plan with `section` after everything else, assembled; null assembles what is filled, the program so far. */
 function withSection(plan: ScreenPlan, section: FragmentSpec | null): string {
   if (section === null) { return assemblePlan(plan, true) }
@@ -37,6 +40,14 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   asked.inputs = hints
   asked.compose = (section: FragmentSpec | null): string => withSection(plan, section)
   asked.verify = host.askJev
+  // What the phone is to do: its functions found for each such need, the only targets the section may call.
+  let found: string[] = []
+  for (let s of slots) {
+    if (!s.phone) { continue }
+    let text = await host.lookup(s.need)
+    if (text.length > 0) { found.push('For "' + s.need + '":\n' + text.substring(0, LOOKUP_CHARS)) }
+  }
+  asked.phone = found.join('\n\n')
   let written = await writeSection(asked, host.language, host.askCode!)
   if (written.section !== null) {
     plan.components.push(new PlanComponent(FILL_HOLE, written.section, new Map<string, string>()))

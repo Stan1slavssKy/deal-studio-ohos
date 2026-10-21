@@ -1,4 +1,7 @@
-/** The app's AgentHost: the DeepSeek engine for the plan and the sections, the TypeSafe key for Jev, Exa for searches. */
+/**
+ * The app's AgentHost: the DeepSeek engine for the plan and the sections, the TypeSafe key for Jev, Exa for searches, and
+ * the phone's own lookups (the find_intent_function and find_sdk_function tools generation uses) for what the phone does.
+ */
 
 import { AgentHost, BlockRequest, BlockFill } from './AgentHost'
 import { BlockCalls, fillBlocksWith } from './AgentBlocks'
@@ -21,6 +24,11 @@ export function appAgentHost(status: (text: string) => void, preview: (vbc2: str
   host.language = language
   host.askCode = (system: string, user: string): Promise<string | null> =>
     deepseek.extractTemplateContent(system, user, CUSTOM_TOKENS, 'A section of its own')
+  host.lookup = async (need: string): Promise<string> => {
+    let asked = need.substring(0, 300)
+    return 'find_intent_function:\n' + (await discoveryToolResult('find_intent_function', asked, 0)) +
+      '\nfind_sdk_function:\n' + (await discoveryToolResult('find_sdk_function', asked, 0))
+  }
   host.status = status
   host.preview = preview
   host.cancelled = cancelled

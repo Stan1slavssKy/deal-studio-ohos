@@ -277,25 +277,72 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       const jevPlan = host.askJev
       host.language = 'VERA-L'
       const asked = []
-      host.askCode = async (system, user) => { asked.push(user); return reply }
+      // The agent's own section for it comes first, and cannot; then the blocks' layout is completed.
+      host.askCode = async (system, user) => { asked.push(user); return asked.length === 1 ? '<cannot>no phone functions</cannot>' : reply }
       host.askJev = async body => JSON.parse(body).questions['does.0'] ?
         JSON.stringify({answers: {'does.0': {probabilities: {yes: jevDoes, no: 1 - jevDoes}}}}) : jevPlan(body)
       return {host, asked}
     }
     ;({host, asked} = eggRoute('<cannot>it cannot vibrate the phone</cannot>', 0.9))
     o = await route.buildScreen(routeRequest('egg timer that vibrates', true), host)
-    assert.match(o.agent.note, /unbound: event/)
+    assert.match(o.agent.note, /custom section cannot/)
     assert.equal(o.agent.composed.unboundNeeds.length, 1)
     assert.equal(o.kind, route.OUTCOME_COMPLETE)
     assert.equal(o.blocks.action, 'complete')
     assert.match(o.blocks.note, /the plan also asks: /)
-    assert.match(asked[0], new RegExp(o.agent.composed.unboundNeeds[0].replace(/[()]/g, '.')))
+    assert.match(asked[1], new RegExp(o.agent.composed.unboundNeeds[0].replace(/[()]/g, '.')))
     ;({host} = eggRoute(section, 0.9))
     o = await route.buildScreen(routeRequest('egg timer that vibrates', true), host)
     assert.equal(o.kind, route.OUTCOME_TEMPLATE)
     assert.ok(o.blocks.plan.slots.some(s => s.id === 'asked.0' && s.fill === 'hole'))
     compose.selectSections = savedPick
     deepseek.extractTemplateContent = savedContent
+  }
+  // Something the phone does that no effect is: the agent leaves it to its section, shown the phone's functions found
+  // for it; the section may call only those, and a target it makes up is sent back for a repair.
+  {
+    const egg = JSON.parse(fixture('egg', 'jev-answer.json'))
+    egg.answers[Object.keys(egg.answers).find(k => k.startsWith('effect.'))] = {choice: 'unavailable', confidence: 0.95}
+    const alarm = 'com.huawei.hmos.clock/entry/EntryAbility/CreateAlarm'
+    const found = JSON.stringify({results: [{kind: 'registry', description: 'creates an alarm',
+      call: 'sdk.call("' + alarm + '", ["hour", "7", "minute", "30"], "yourHandlerName", "background")'}]})
+    const calling = target => '<classes>\n</classes>\n<fields>\nc_said: string = ""\n</fields>\n<functions>\n' +
+      'function c_set(state: AppState, v: number): AppState {\n  sdk.call("' + target + '", ["hour", "7", "minute", "30"], "c_answer", "background");\n' +
+      '  return {c_said: "Setting the alarm..."__PASSTHROUGH__};\n}\n' +
+      'function c_answer(state: AppState, value: string): AppState {\n  return {c_said: value__PASSTHROUGH__};\n}\n</functions>\n' +
+      '<view>\nsections.push(ui.Section("content", "", "", [ui.Button("primary", "Set alarm", "c_set", 0, true), ui.Text("body", state.c_said)]));\n</view>'
+    const phoneHost = (replies, lookup) => {
+      const {host} = replayHost('egg', {jev: JSON.stringify(egg)})
+      const jevPlan = host.askJev
+      host.language = 'VERA-L'
+      const seen = {systems: [], users: [], lookups: []}
+      host.askCode = async (system, user) => { seen.systems.push(system); seen.users.push(user); return replies.shift() }
+      host.lookup = async need => { seen.lookups.push(need); return lookup }
+      host.askJev = async body => JSON.parse(body).questions['does.0'] ?
+        JSON.stringify({answers: {'does.0': {probabilities: {yes: 0.9, no: 0.1}}}}) : jevPlan(body)
+      return {host, seen}
+    }
+    let {host, seen} = phoneHost([calling(alarm)], found)
+    let r = await runAgent(request('egg timer that sets an alarm'), host)
+    assert.ok(r.vbc2.length > 0, r.note)
+    assert.ok(r.source.includes(alarm))
+    assert.equal(seen.lookups.length, 1)
+    assert.match(seen.users[0], /Phone functions found/)
+    assert.match(seen.systems[0], /calling ONLY targets from/)
+    assert.ok(r.screen.slots.some(s => s.phone && s.fill === 'hole'), require('util').inspect(r.screen.slots.map(s => s.id + ':' + s.fill + (s.phone ? ':phone' : ''))))
+    // A made-up target is sent back, named; the repair that calls the one found is served.
+    ;({host, seen} = phoneHost([calling('com.example/clock/Main/SetAlarm'), calling(alarm)], found))
+    r = await runAgent(request('egg timer that sets an alarm'), host)
+    assert.ok(r.vbc2.length > 0, r.note)
+    assert.equal(r.custom.attempts, 2)
+    assert.match(seen.users[1], /calls "com\.example\/clock\/Main\/SetAlarm", which is not one of the phone functions found/)
+    // Nothing found: no phone calls at all.
+    ;({host, seen} = phoneHost([calling(alarm), calling(alarm), calling(alarm)], JSON.stringify({results: []})))
+    r = await runAgent(request('egg timer that sets an alarm'), host)
+    assert.equal(r.vbc2, '')
+    assert.match(seen.systems[0], /never calls sdk\.call/)
+    assert.doesNotMatch(seen.users[0], /Phone functions found/)
+    assert.match(r.note, /calls sdk\.call, which it never may/)
   }
   // Blocks first: the blocks run before the agent, and the agent still serves what they do not.
   route.setRouteOrder(route.ORDER_BLOCKS_FIRST)

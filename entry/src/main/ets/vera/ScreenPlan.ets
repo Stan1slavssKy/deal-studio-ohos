@@ -61,6 +61,8 @@ export class PlanSlot {
   writes: string[] = []
   /** For something the phone does: the moment it happens at; '' otherwise. */
   when: string = ''
+  /** Something the phone or another app does: whoever writes it is shown the phone's functions found for it. */
+  phone: boolean = false
   /** The kinds of component that may fill it ([] for any); a layout's slot names them. */
   accepts: string[] = []
   /** The request asked for it; a slot the plan added on its own can be left out rather than refuse the screen. */
@@ -113,9 +115,10 @@ export class ScreenPlan {
   }
 
   /** A need nothing in the plan does yet, as a slot for a written section to fill. */
-  addToWrite(id: string, need: string): PlanSlot {
+  addToWrite(id: string, need: string, phone: boolean = false): PlanSlot {
     let slot = new PlanSlot(id, need)
     slot.detail = TO_WRITE
+    slot.phone = phone
     this.slots.push(slot)
     return slot
   }
@@ -151,7 +154,7 @@ export function describePlan(plan: ScreenPlan): string {
       plan.components[s.by].spec!.kind : ''
     lines.push(s.id + ' ' + s.fill + (s.detail.length > 0 ? '(' + s.detail + ')' : '') + (kind.length > 0 ? ' by ' + kind : '') +
       (s.reads.length > 0 ? ' reads ' + s.reads.join(',') : '') + (s.writes.length > 0 ? ' writes ' + s.writes.join(',') : '') +
-      (s.when.length > 0 ? ' when ' + s.when : '') + ': ' + s.need)
+      (s.when.length > 0 ? ' when ' + s.when : '') + (s.phone ? ' (phone)' : '') + ': ' + s.need)
   }
   return lines.join('\n')
 }

@@ -70,7 +70,7 @@ function addAgentNeeds(build: TemplateBuild, agent: AgentResult | null): void {
   for (let i = 0; i < needs.length; i++) {
     let id = 'asked.' + i.toString()
     if (plan.slots.some((s: PlanSlot): boolean => s.id === id)) { continue }
-    plan.addToWrite(id, needs[i])
+    plan.addToWrite(id, needs[i], true)
     added.push(needs[i])
   }
   if (added.length > 0 && build.action === BUILD_TEMPLATE) {

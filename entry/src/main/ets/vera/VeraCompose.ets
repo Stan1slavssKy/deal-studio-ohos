@@ -1520,7 +1520,7 @@ export class Composition {
   inputs: SketchInput[] = []
   /** Requirements nothing in the vocabulary was chosen for; a composition with any is not served. */
   unbound: string[] = []
-  /** What the request asks the phone to do that nothing here does, in words: the asked events among the unbound. */
+  /** What the request asks the phone to do that no effect does, in words: the asked events left unbound or to a written section. */
   unboundNeeds: string[] = []
   /** Every answer with its confidence, for the trace. */
   answers: string[] = []
@@ -1543,6 +1543,8 @@ export class Composition {
   custom: string[] = []
   /** Inputs a figure left to the custom section reads: they stay on the screen though no part reads them. */
   customReads: string[] = []
+  /** The needs of `custom` that are something the phone or another app does: the section is shown the phone's functions for them. */
+  phoneNeeds: string[] = []
   constructor(sketch: Sketch) { this.sketch = sketch }
 }
 
@@ -1741,6 +1743,13 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     } else if (e.asked && comp.widget && missing === 'no effect' &&
         answerOf(answers, 'detail.event.' + e.id, ['detail'], comp.answers, OTHER_ADDED_ABOVE) === 'detail') {
       comp.dropped.push('event "' + e.what + '": a detail of how the widget looks or is worked')
+    } else if (e.asked && customEnabled && (missing === 'no effect' || missing === 'nothing on the screen marks that moment')) {
+      // Something the phone or another app does that none of the effects is: a section the model writes, shown the
+      // phone's functions found for it, does it -- with its own control for the moment when the screen has none.
+      let need = e.what + ' (' + e.when + ')'
+      comp.custom.push(need)
+      comp.phoneNeeds.push(need)
+      comp.unboundNeeds.push(need)
     } else if (e.asked) {
       comp.unbound.push('event "' + e.what + '": ' + missing)
       comp.unboundNeeds.push(e.what + ' (' + e.when + ')')
@@ -3040,6 +3049,7 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
   for (let i = 0; i < comp.custom.length; i++) {
     let slot = new PlanSlot('custom.' + i.toString(), comp.custom[i])
     slot.reads = comp.customReads.slice()
+    slot.phone = comp.phoneNeeds.indexOf(comp.custom[i]) >= 0
     if (custom !== null) { add(slot, FILL_HOLE, plan.components.length - 1) } else { add(slot, FILL_OPEN, -1, TO_WRITE) }
   }
   for (let i = 0; i < comp.unbound.length; i++) { add(new PlanSlot('unbound.' + i.toString(), comp.unbound[i]), FILL_OPEN, -1, 'nothing does it') }
@@ -3182,7 +3192,7 @@ export class ComposeResult {
   parsed: Sketch | null = null
   /** What the sketch added and the screen leaves out, for the person to see. */
   dropped: string[] = []
-  /** When the composition is not served: what the request asks the phone to do that it could not (Composition.unboundNeeds). */
+  /** What the request asks the phone to do that no effect does (Composition.unboundNeeds), for whoever builds the screen instead. */
   unboundNeeds: string[] = []
   /** The plan was drawn again with what the person answered. */
   replanned: boolean = false
@@ -3300,6 +3310,7 @@ export async function composeWith(prompt: string, askSketch: SketchAsk, askChoic
     result.unboundNeeds = comp.unboundNeeds
     return result
   }
+  result.unboundNeeds = comp.unboundNeeds
   result.dropped = comp.dropped
   result.composition = comp
   if (comp.blocks.length === 0 && comp.custom.length === 0) { result.source = assembleProgram(comp) }

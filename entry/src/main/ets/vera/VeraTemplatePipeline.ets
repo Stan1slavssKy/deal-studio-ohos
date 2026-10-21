@@ -276,7 +276,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     build.composition = compositionToJson(record)
 
     if (outcome.needsLogic) {
-      for (let key of outcome.softVetoes) { plan.addToWrite('missing.' + key, SOFT_NEEDS.get(key) ?? key) }
+      for (let key of outcome.softVetoes) { plan.addToWrite('missing.' + key, SOFT_NEEDS.get(key) ?? key, key === 'needs_integration') }
       build.action = BUILD_COMPLETE
       build.route.route = ROUTE_BLOCKS_MODEL
       build.route.logic = logicOf(outcome.note)
@@ -286,7 +286,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     }
     // An intent panel without rows shows only "No actions": the model writes the calls instead.
     if (panelRows === 0) {
-      plan.addToWrite('missing.needs_integration', SOFT_NEEDS.get('needs_integration')!)
+      plan.addToWrite('missing.needs_integration', SOFT_NEEDS.get('needs_integration')!, true)
       build.action = BUILD_COMPLETE
       build.route.route = ROUTE_BLOCKS_MODEL
       build.note = note
@@ -296,7 +296,7 @@ export async function buildFromTemplates(prompt: string, mode: string, onStatus:
     // The actions block's buttons only note which one was tapped. A screen of nothing else looks finished and does
     // nothing: phone-action requests ("a button for the torch") landed here without tripping needs_integration.
     if (sections.every((p: SectionPick): boolean => p.kind === 'actions')) {
-      plan.addToWrite('missing.buttons', 'makes each button do what the request asks, rather than only noting that it was tapped')
+      plan.addToWrite('missing.buttons', 'makes each button do what the request asks, rather than only noting that it was tapped', true)
       build.action = BUILD_COMPLETE
       build.note = note + ' (placeholder buttons only)'
       build.status = 'Composed ' + shown + ', making its buttons do what the request asks...'

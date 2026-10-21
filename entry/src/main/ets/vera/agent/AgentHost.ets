@@ -56,6 +56,11 @@ export class AgentHost {
   fillBlocks: (request: BlockRequest) => Promise<BlockFill> = defaultBlockFill
   /** The model that writes a custom section, null when there is none to ask: then a need nothing does refuses the screen. */
   askCode: CodeAsk | null = null
+  /**
+   * The phone's functions for something the phone or another app is to do: what find_intent_function and find_sdk_function
+   * answer for the need, as text with each result's call; '' when nothing can be looked up (then nothing is called).
+   */
+  lookup: (need: string) => Promise<string> = async (_need: string): Promise<string> => ''
   /** The language as generation is shown it (the skill prompt with the UI catalogue), for the custom section. */
   language: string = ''
   /** Asks the person a blocking question: the answer's index, or null for the default (the default host never asks). */
