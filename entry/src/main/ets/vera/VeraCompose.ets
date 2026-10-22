@@ -1884,8 +1884,16 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   // A figure nothing can work out, that the request wants, is left to the custom section: the model writes its working
   // and Jev reads it against what the figure means (agent/AgentCustom.ets). Its inputs stay on the screen for it.
   if (customEnabled) {
+    // Not one the parts themselves read -- the countdown's length, a figure worked out from it: the written section's names
+    // are its own, so the parts would be left reading a name nothing defines.
+    let readByParts: string[] = dependsOn(comp, comp.countdownFrom)
+    for (let v of sketch.values) {
+      let b = comp.bindings.get(v.id)
+      if (b === undefined || failed.has(v.id)) { continue }
+      readByParts = readByParts.concat([b.a, b.b], b.reads)
+    }
     failed.forEach((_why: string, id: string) => {
-      if (leaving.indexOf(id) >= 0) { return }
+      if (leaving.indexOf(id) >= 0 || readByParts.indexOf(id) >= 0) { return }
       let v = sketch.values.find((x: SketchValue): boolean => x.id === id)!
       comp.custom.push('the figure "' + v.label + '": ' + v.means)
       for (let input of sketch.inputs) { if (new RegExp('\\b' + input.id + '\\b').test(v.formula)) { comp.customReads.push(input.id) } }

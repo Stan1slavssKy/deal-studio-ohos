@@ -15,8 +15,8 @@ import { writeHole } from './AgentHole'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
 import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, ComposeResult, Composition, Sketch } from '../VeraCompose'
 import { ScreenPlan, assemblePlan } from '../ScreenPlan'
-import { compileVeraSource, CompileError } from '../VeraCompiler'
-import { smokeRun } from '../VeraSmoke'
+import { compileVeraSource } from '../VeraCompiler'
+import { Repaired, checkProgram, repairProgram } from './AgentRepair'
 
 export class AgentRequest {
   /** What to build, in the person's words (or the chat's request for them). */
@@ -43,6 +43,8 @@ export class AgentResult {
   blockFill: BlockFill | null = null
   /** What writing the custom section did, when the composition needed one. */
   custom: CustomResult | null = null
+  /** What repairing the assembled program by edits did, when it did not compile or run; null otherwise. */
+  repair: Repaired | null = null
   /** What writing the whole screen as one hole did, when nothing narrower served (agent/VeraBuildRoute.ets). */
   whole: CustomResult | null = null
   /** The questions put to the person, with their answers. */
@@ -119,18 +121,27 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
   }
   if (composed.source.length > 0) {
     let checkStart = Date.now()
-    try {
-      let compiled = compileVeraSource(composed.source)
-      result.errors = smokeRun(compiled)
-      if (result.errors.length === 0) {
-        result.source = composed.source
-        result.vbc2 = compiled.vbc2
-      }
-    } catch (e) {
-      result.errors = e instanceof CompileError ? (e as CompileError).message : (e as Error).message
-    }
+    result.errors = checkProgram(composed.source)
     result.checkMs = Date.now() - checkStart
-    if (result.errors.length > 0) { result.note += '; ' + result.errors }
+    // What the assembly got wrong is repaired by edits to it, not by building it again.
+    if (result.errors.length > 0 && host.askCode !== null && host.language.length > 0 && !host.cancelled()) {
+      host.status('Repairing the program...')
+      let repaired = await repairProgram(composed.source, result.errors, request.prompt, host.language, host.askCode!)
+      result.repair = repaired
+      if (repaired.source.length > 0) {
+        composed.source = repaired.source
+        result.errors = ''
+        result.note += '; repaired by edits in ' + repaired.rounds.toString() + ' round(s)'
+      } else {
+        result.note += '; repair: ' + repaired.failed
+      }
+    }
+    if (result.errors.length === 0) {
+      result.source = composed.source
+      result.vbc2 = compileVeraSource(composed.source).vbc2
+    } else {
+      result.note += '; ' + result.errors
+    }
   }
   result.ms = Date.now() - started
   return result

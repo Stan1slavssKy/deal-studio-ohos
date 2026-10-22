@@ -390,6 +390,33 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(asks.length, 0)
     route.setWholeScreenEnabled(true)
   }
+  // An assembled program that does not compile is repaired by SEARCH/REPLACE edits to it, checked again; edits that do
+  // not apply are asked for once more, and what still fails is said.
+  {
+    const {repairProgram, checkProgram} = loadVera('agent/AgentRepair')
+    const broken = 'import * as ui from "std/ui"\n@jsonable\nclass AppState { n: number; }\nfunction init(): AppState { return {n: 0}; }\n' +
+      'function bump(state: AppState, v: number): AppState { return {n: state.n + "1"}; }\n' +
+      'function view(state: AppState): ui.View { return ui.AppTheme("clean", "", [ui.Section("content", "", "", [ui.Text("body", ui.numberToString(state.n))])]); }'
+    const errors = checkProgram(broken)
+    assert.notEqual(errors, '')
+    const edit = '<<<<<<< SEARCH\nfunction bump(state: AppState, v: number): AppState { return {n: state.n + "1"}; }\n=======\n' +
+      'function bump(state: AppState, v: number): AppState { return {n: state.n + 1}; }\n>>>>>>> REPLACE'
+    const asked = []
+    let r = await repairProgram(broken, errors, 'a counter', 'VERA-L', async (system, user, budget) => { asked.push({user, budget}); return edit })
+    assert.equal(r.failed, '')
+    assert.equal(r.rounds, 1)
+    assert.match(r.source, /state\.n \+ 1\}/)
+    assert.ok(r.vbc2.length > 0)
+    assert.match(asked[0].user, /^The program:\n/)
+    assert.match(asked[0].user, /SEARCH/)
+    const replies = ['<<<<<<< SEARCH\nno such line\n=======\nx\n>>>>>>> REPLACE', edit]
+    r = await repairProgram(broken, errors, 'a counter', 'VERA-L', async () => replies.shift())
+    assert.equal(r.rounds, 2)
+    assert.equal(r.failed, '')
+    r = await repairProgram(broken, errors, 'a counter', 'VERA-L', async () => 'no edits here')
+    assert.equal(r.source, '')
+    assert.notEqual(r.failed, '')
+  }
   // Blocks first: the blocks run before the agent, and the agent still serves what they do not.
   route.setRouteOrder(route.ORDER_BLOCKS_FIRST)
   {
