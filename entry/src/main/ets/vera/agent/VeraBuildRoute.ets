@@ -7,7 +7,12 @@
  * kept until the agent has had its turn, so the agent is always tried first. Then its layout stays and what it lacks is
  * written into it as one section (AgentHole.ets), as the agent fills what nothing ready does; only when that cannot be
  * done does the model finish the whole program. What the agent's plan asks the phone to do and could not bind is
- * something the blocks' layout lacks too: a pick of sections that does not do it is not a finished screen. Never throws.
+ * something the blocks' layout lacks too: a pick of sections that does not do it is not a finished screen.
+ *
+ * When no part of the screen can be built from what is ready, the hole widens to the whole screen: the model writes it
+ * as one section against the agent's plan of it, looked up and checked the same way (AgentHole.ets), and Jev reads it
+ * against everything the plan says the screen does. Only then does the model finish the blocks' base or generate from
+ * scratch. Never throws.
  */
 
 import { AgentHost } from './AgentHost'
@@ -15,7 +20,8 @@ import { AgentRequest, AgentResult, runAgent } from './VeraAgent'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
 import { buildFromTemplates, TemplateBuild, BUILD_TEMPLATE, BUILD_COMPLETE, BUILD_CANCELLED } from '../VeraTemplatePipeline'
-import { assemblePlan, PlanSlot } from '../ScreenPlan'
+import { assemblePlan, PlanSlot, ScreenPlan } from '../ScreenPlan'
+import { wholeScreenPlan, sketchConstants } from '../VeraCompose'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { ROUTE_BLOCKS_MODEL } from '../VeraRoute'
 
@@ -31,6 +37,11 @@ export const OUTCOME_CANCELLED: string = 'cancelled'
 
 export const ORDER_AGENT_FIRST: string = 'agent-first'
 export const ORDER_BLOCKS_FIRST: string = 'blocks-first'
+
+/** The whole screen as one hole before any generation; `--ps veraWhole 0` turns it off, for comparison. */
+let wholeScreen: boolean = true
+export function setWholeScreenEnabled(on: boolean): void { wholeScreen = on }
+export function wholeScreenEnabled(): boolean { return wholeScreen }
 
 /** Agent first until the blocks' pick is cheap enough to put in front of every request; `--ps veraOrder blocks-first` swaps them. */
 let order: string = ORDER_AGENT_FIRST
@@ -79,6 +90,49 @@ function addAgentNeeds(build: TemplateBuild, agent: AgentResult | null): void {
     build.note += '; the plan also asks: ' + added.join('; ')
     build.status = 'Composed ' + build.kinds.join('+') + ', adding what the request asks the phone to do...'
   }
+}
+
+/**
+ * The whole screen as one hole, against the agent's sketch of it (or the request alone when there is none): true when
+ * it served, with the agent's result then holding the program.
+ */
+async function writeWholeScreen(request: RouteRequest, host: AgentHost, outcome: RouteOutcome): Promise<boolean> {
+  let agent = outcome.agent
+  if (!wholeScreen || request.agent === null || agent === null || request.mode !== 'deepseek') { return false }
+  let prompt = request.agent!.prompt
+  let sketch = agent!.composed.parsed
+  let plan: ScreenPlan
+  if (sketch !== null) {
+    plan = wholeScreenPlan(sketch!, request.agent!.widget)
+  } else {
+    plan = new ScreenPlan()
+    plan.widget = request.agent!.widget
+    plan.globals.set('__HEADER_STYLE__', 'none')
+    plan.addToWrite('screen.0', 'everything the request asks', true)
+  }
+  plan.prompt = prompt
+  host.status('Writing the whole screen...')
+  let facts: string[] = sketch !== null ? sketchConstants(sketch!) : []
+  if (plan.widget) { facts.push('This is a small widget inside a chat reply: no header of its own, at most two sections, compact') }
+  let written = await writeHole(plan, prompt, [], host, facts)
+  agent!.whole = written
+  if (written === null || written.section === null) {
+    agent!.note += '; whole screen: ' + (written !== null ? written.failed : 'nothing to write')
+    return false
+  }
+  let source = assemblePlan(plan)
+  try {
+    agent!.vbc2 = compileVeraSource(source).vbc2
+  } catch (e) {
+    agent!.note += '; whole screen: ' + (e instanceof CompileError ? (e as CompileError).message : (e as Error).message)
+    return false
+  }
+  agent!.source = source
+  agent!.composed.source = source
+  agent!.errors = ''
+  agent!.screen = plan
+  agent!.note += '; whole screen written in ' + written.attempts.toString() + ' attempt(s)'
+  return true
 }
 
 /**
@@ -139,9 +193,12 @@ export async function buildScreen(request: RouteRequest, host: AgentHost): Promi
       return outcome
     }
     if (host.cancelled()) { outcome.kind = OUTCOME_CANCELLED; return outcome }
-    outcome.kind = OUTCOME_COMPLETE
+  }
+  if (await writeWholeScreen(request, host, outcome)) {
+    outcome.kind = host.cancelled() ? OUTCOME_CANCELLED : OUTCOME_AGENT
     return outcome
   }
-  outcome.kind = OUTCOME_SCRATCH
+  if (host.cancelled()) { outcome.kind = OUTCOME_CANCELLED; return outcome }
+  outcome.kind = outcome.blocks !== null && outcome.blocks!.action === BUILD_COMPLETE ? OUTCOME_COMPLETE : OUTCOME_SCRATCH
   return outcome
 }

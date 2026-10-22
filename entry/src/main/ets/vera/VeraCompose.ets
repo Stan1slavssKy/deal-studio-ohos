@@ -3057,6 +3057,47 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
 }
 
 /**
+ * The plan of the whole screen as one hole (agent/AgentHole.ets), for when nothing narrower can be built: the sketch's
+ * header, and a slot to be written for each thing it says the screen does -- what the person sets, what is worked out,
+ * the clock, the list, what the phone does (each looked up), the ready needs and the rest. Jev reads the written
+ * screen against every one of them.
+ */
+export function wholeScreenPlan(sketch: Sketch, widget: boolean): ScreenPlan {
+  let plan = new ScreenPlan()
+  plan.origin = PLAN_FROM_SKETCH
+  plan.widget = widget
+  plan.globals.set('__THEME__', 'clean')
+  plan.globals.set('__HEADER_STYLE__', widget ? 'none' : 'default')
+  plan.globals.set('__TITLE__', inQuotes(sketch.title))
+  plan.globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
+  plan.globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
+  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : 'chart'))
+  let n = 0
+  let add = (need: string, phone: boolean = false): void => { plan.addToWrite('screen.' + (n++).toString(), need, phone) }
+  for (let input of sketch.inputs) {
+    add('the person sets ' + input.label + (input.options.length > 0 ? ' (one of: ' +
+      input.options.map((o: SketchOption): string => o.label).join(', ') + ')' : (input.unit.length > 0 ? ' (' + input.unit + ')' : '')))
+  }
+  for (let v of sketch.values) { add('shows ' + v.label + (v.means.length > 0 ? ': ' + v.means : '')) }
+  if (sketch.hasCountdown) { add('counts ' + sketch.countdown + ' down to zero, with start, stop and reset') }
+  if (sketch.hasStopwatch) { add('counts ' + sketch.stopwatch + ' up from zero, with start, stop and reset') }
+  if (sketch.list !== null) {
+    let list = sketch.list!
+    add('the person adds ' + list.label + (list.fields.length > 0 ? ', each with ' +
+      list.fields.map((f: ListField): string => f.label).join(', ') : '') + ', and sees them listed')
+  }
+  for (let e of sketch.events) { if (e.asked) { add(e.what + ' (' + e.when + ')', true) } }
+  for (let r of sketch.ready) { add(r) }
+  for (let o of sketch.other) { add(o) }
+  return plan
+}
+
+/** The fixed numbers the sketch names, for the whole screen's writer: "Pi: 3.14". */
+export function sketchConstants(sketch: Sketch): string[] {
+  return sketch.constants.map((k: SketchConstant): string => k.label + ': ' + numberLiteral(k.value))
+}
+
+/**
  * The program, or '' when the composition has anything unbound: its plan (screenPlan above) assembled, with what is
  * not written yet left out -- the program so far, which a custom section is written against.
  */

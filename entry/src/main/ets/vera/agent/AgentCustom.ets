@@ -14,8 +14,13 @@ import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { smokeRun } from '../VeraSmoke'
 
-/** Asks the model for code: (system prompt, request) -> its reply, or null when there was none. */
-export type CodeAsk = (system: string, user: string) => Promise<string | null>
+/** Asks the model for code: (system prompt, request, most tokens to write) -> its reply, or null when there was none. */
+export type CodeAsk = (system: string, user: string, budget: number) => Promise<string | null>
+
+/** Room for one section with its handlers and view. */
+export const SECTION_TOKENS: number = 3000
+/** Room for a whole screen written as one section. */
+export const SCREEN_TOKENS: number = 8000
 
 const REPAIRS: number = 2
 
@@ -89,10 +94,14 @@ export class CustomRequest {
   inputs: string[] = []
   /** The program for a given section ('' for none): the rest of the screen with that section after it. */
   compose: (section: FragmentSpec | null) => string = (_section: FragmentSpec | null): string => ''
+  /** Other things the writer is told: the fixed numbers the plan names. */
+  facts: string[] = []
   /** The phone's functions found for the needs that are something the phone does (the lookups' answers); '' for none. */
   phone: string = ''
   /** Jev, to read a section that compiles and runs against the needs; null serves it unread. */
   verify: ((body: string) => Promise<string>) | null = null
+  /** The section is the whole screen: the program so far has nothing but its header. */
+  whole: boolean = false
 }
 
 /** Jev reads the section against each need: a section that only says it cannot, or does something else, does not count. */
@@ -211,12 +220,15 @@ export async function writeSection(request: CustomRequest, language: string, ask
   let asked = 'Request: ' + request.prompt + '\n\nThe section must do:\n- ' + request.needs.join('\n- ') +
     (request.inputs.length > 0 ? '\n\nThe person sets these on the screen and nothing else uses them yet; the section uses them:\n- ' +
       request.inputs.join('\n- ') : '') +
+    (request.facts.length > 0 ? '\n\nFixed numbers the app uses:\n- ' + request.facts.join('\n- ') : '') +
     (phone.length > 0 ? '\n\nPhone functions found (the only targets the section may call):\n' + phone : '') +
+    (request.whole ? '\n\nThe program has nothing yet but its header: your section is the whole screen, everything the request ' +
+      'asks for. It may push several ui.Section(...) in its view.' : '') +
     '\n\nThe program so far, which the section joins (do not repeat it):\n' + request.compose(null)
   let user = asked
   for (let attempt = 0; attempt <= REPAIRS; attempt++) {
     result.attempts = attempt + 1
-    let reply = await ask(system, user)
+    let reply = await ask(system, user, request.whole ? SCREEN_TOKENS : SECTION_TOKENS)
     if (reply === null) { result.failed = 'no answer for the custom section'; break }
     let cannot = between(reply, 'cannot')
     if (cannot !== null) { result.failed = 'custom section cannot: ' + cannot; break }

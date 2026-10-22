@@ -43,6 +43,8 @@ export class AgentResult {
   blockFill: BlockFill | null = null
   /** What writing the custom section did, when the composition needed one. */
   custom: CustomResult | null = null
+  /** What writing the whole screen as one hole did, when nothing narrower served (agent/VeraBuildRoute.ets). */
+  whole: CustomResult | null = null
   /** The questions put to the person, with their answers. */
   asked: Asked[] = []
   /** The screen's plan (ScreenPlan.ets) as far as it got: every slot and what fills it; null when Jev chose nothing. */

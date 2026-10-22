@@ -14,7 +14,7 @@ import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
 import { setComposeEnabled, setComposePlanEnabled, setCustomSectionsEnabled } from '../vera/VeraCompose'
-import { setRouteOrder, routeOrder } from '../vera/agent/VeraBuildRoute'
+import { setRouteOrder, routeOrder, setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
@@ -309,6 +309,12 @@ export default class EntryAbility extends UIAbility {
     if (order !== null && order !== undefined) {
       setRouteOrder(String(order).trim())
       hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE order ' + routeOrder() + ' from launch parameter')
+    }
+    let whole = params['veraWhole']
+    if (whole !== null && whole !== undefined) {
+      let text = String(whole).trim()
+      setWholeScreenEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE whole screen ' + text + ' from launch parameter')
     }
   }
 

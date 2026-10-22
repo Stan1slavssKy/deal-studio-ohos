@@ -98,7 +98,7 @@ function host(log) {
   h.language = language
   // AGENT_ANSWER=other picks an answer other than the suggested one, to exercise drawing the plan again; else the default.
   h.ask = async q => process.env.AGENT_ANSWER === 'other' ? (q.fallback === 0 ? 1 : 0) : null
-  h.askCode = async (system, user) => { const reply = await deepseek(system, user, 3000, false); (log.code = log.code || []).push(reply); return reply }
+  h.askCode = async (system, user, budget) => { const reply = await deepseek(system, user, budget, false); (log.code = log.code || []).push(reply); return reply }
   return h
 }
 

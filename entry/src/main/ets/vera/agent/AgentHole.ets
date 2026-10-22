@@ -26,7 +26,8 @@ function withSection(plan: ScreenPlan, section: FragmentSpec | null): string {
  * what writing did, with `failed` saying why the slots are still open. `hints` are lines the writer is told about the
  * screen (inputs nothing else reads, and where they are in the state).
  */
-export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[], host: AgentHost): Promise<CustomResult | null> {
+export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[], host: AgentHost,
+    facts: string[] = []): Promise<CustomResult | null> {
   let slots: PlanSlot[] = plan.toWrite()
   if (slots.length === 0) { return null }
   if (host.askCode === null || host.language.length === 0) {
@@ -38,6 +39,9 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   asked.needs = slots.map((s: PlanSlot): string => s.need)
   asked.prompt = prompt
   asked.inputs = hints
+  asked.facts = facts
+  // A plan with nothing in it yet is the whole screen as one hole.
+  asked.whole = plan.components.length === 0
   asked.compose = (section: FragmentSpec | null): string => withSection(plan, section)
   asked.verify = host.askJev
   // What the phone is to do: its functions found for each such need, the only targets the section may call.

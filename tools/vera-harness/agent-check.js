@@ -344,6 +344,52 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.doesNotMatch(seen.users[0], /Phone functions found/)
     assert.match(r.note, /calls sdk\.call, which it never may/)
   }
+  // Nothing narrower serves: the whole screen is one hole, written against the sketch and read by Jev against everything
+  // it says the screen does, before any generation.
+  {
+    const screen = '<classes>\n</classes>\n<fields>\nc_bill: number = 50\nc_pct: number = 15\n</fields>\n<functions>\n' +
+      'function c_setBill(state: AppState, v: number): AppState {\n  return {c_bill: v__PASSTHROUGH__};\n}\n</functions>\n<view>\n' +
+      'sections.push(ui.Section("content", "", "", [ui.Text("body", "Tip: " + ui.numberToString(state.c_bill * state.c_pct / 100))]));\n</view>'
+    const wholeHost = (jevDoes, reply = screen) => {
+      const {host, seen} = replayHost('tip', {jev: ''})
+      const sketchJev = host.askJev
+      host.language = 'VERA-L'
+      const asks = []
+      host.askCode = async (system, user, budget) => { asks.push({user, budget}); return reply }
+      host.askJev = async body => {
+        const q = JSON.parse(body).questions
+        if (!q || !q['does.0']) return sketchJev(body)
+        const answers = {}
+        for (const k of Object.keys(q)) answers[k] = {probabilities: {yes: jevDoes, no: 1 - jevDoes}}
+        return JSON.stringify({answers})
+      }
+      return {host, asks, seen}
+    }
+    let {host, asks} = wholeHost(0.9)
+    let o = await route.buildScreen(routeRequest('tip calculator', false), host)
+    assert.equal(o.kind, route.OUTCOME_AGENT, o.agent.note)
+    assert.match(o.agent.source, /c_bill/)
+    assert.ok(o.agent.vbc2.length > 0)
+    assert.equal(o.agent.whole.attempts, 1)
+    assert.match(o.agent.note, /whole screen written in 1 attempt/)
+    assert.equal(asks.length, 1)
+    assert.ok(asks[0].budget > 3000)
+    assert.match(asks[0].user, /your section is the whole screen/)
+    assert.ok(o.agent.screen.slots.length > 1 && o.agent.screen.slots.every(s => s.fill === 'hole'))
+    assert.match(o.agent.source, /ui\.Header\(/)
+    // Jev does not read it as doing what the sketch says: generation, as before.
+    ;({host} = wholeHost(0.2))
+    o = await route.buildScreen(routeRequest('tip calculator', false), host)
+    assert.equal(o.kind, route.OUTCOME_SCRATCH)
+    assert.match(o.agent.note, /whole screen: custom section does not do/)
+    // Switched off: straight to generation.
+    route.setWholeScreenEnabled(false)
+    ;({host, asks} = wholeHost(0.9))
+    o = await route.buildScreen(routeRequest('tip calculator', false), host)
+    assert.equal(o.kind, route.OUTCOME_SCRATCH)
+    assert.equal(asks.length, 0)
+    route.setWholeScreenEnabled(true)
+  }
   // Blocks first: the blocks run before the agent, and the agent still serves what they do not.
   route.setRouteOrder(route.ORDER_BLOCKS_FIRST)
   {
