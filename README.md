@@ -14,11 +14,9 @@ available:
 | SGT-AL00, API 22 | SDK 26 emits Panda bytecode 0.1.0.7; the VM accepts ≤ 0.0.0.5 |
 | Mate 60 Pro, API 26 | SDK 26.0.0.26 is ABI-incompatible with the device's 26.0.0.37 |
 
-The dynamic port originally targeted **API 22**, where `webview-probe` ran and
-the WebView measurements were collected. The current build profile sets the
-compatible, target and compile SDK versions to **26.0.0**, using the local
-Hvigor/SDK setup below. This configuration change does not establish API 26
-runtime compatibility; the table above records earlier static-runtime failures.
+Dynamic ArkTS tolerates both skews — `webview-probe` is dynamic and ran fine on
+the API 22 phone. Building for API 26 requires a private environment, so the
+target is **API 22**, which is also where the WebView numbers already come from.
 
 ## What this does and does not establish
 
@@ -115,73 +113,28 @@ so and the other two modes are unaffected.
 
 ## Running it
 
-Build and device tools are external to this repo. Configure their locations in
-your shell environment; scripts never search machine-specific directories.
-Export both `OHOS_BASE_SDK_HOME` and `DEVECO_SDK_HOME` with your SDK root, and
-add your SDK toolchains and command-line-tools `bin` directories to `PATH`.
-
-| tool | required environment configuration |
-|---|---|
-| Hvigor 7.26.0.static wrapper | required `HVIGORW` naming the absolute path to the 7.26.0.static wrapper; no `PATH` fallback |
-| Build SDK 26.0.0 | `OHOS_BASE_SDK_HOME` and `DEVECO_SDK_HOME`, both naming existing SDK directories |
-| hdc | SDK toolchains directory on `PATH`, or `HDC_DIR` naming the directory containing `hdc` |
-| ArkTS Agent Kit | tools on `PATH`, or `KIT_ROOT` containing `tools/`, `.venv/bin/` or `bin/` |
-| hapsigner | `HAPSIGNER` naming the directory containing `dist/` |
-
-`OHOS_TOOLCHAINS` optionally prepends an additional toolchains directory for
-measurement. Missing or invalid required settings stop the script; explicit
-tool-location variables never fall back to another installation.
-
-The Agent Kit still supplies `arkui-sign` for the unchanged debug-signing path
-and `arkui-device-cli` for screen dumps. System signing still uses hapsigner
-with a JRE. The updater retains its Agent Kit preflight checks. To inspect the
-configured tools:
+Three things are needed and none of them is in this repo: the **ArkTS Agent
+Kit** (`arkui-hvigor`, `arkui-sign`, `arkui-device-cli`), **hdc**, and
+**hapsigner** with a JRE, for system signing. The scripts look for all three
+rather than assuming a location — `tool-paths.sh` does the looking, and
+`KIT_ROOT`, `HDC_DIR` and `HAPSIGNER` override it. To see what it finds here:
 
 ```bash
 bash -c 'source ./tool-paths.sh
-printf "%-18s %s\n" hvigorw "$(vera_hvigorw 2>&1)"
-printf "%-18s %s\n" OHOS_BASE_SDK_HOME "$(vera_sdk_home 2>&1)"
-for t in arkui-sign arkui-device-cli; do
-  printf "%-18s %s\n" "$t" "$(vera_kit_bin "$t" 2>&1)"; done
-printf "%-18s %s\n" hdc "$(vera_hdc_dir 2>&1)"
-printf "%-18s %s\n" hapsigner "$(vera_hapsigner 2>&1)"'
+for t in arkui-hvigor arkui-sign arkui-device-cli; do
+  printf "%-18s %s\n" "$t" "$(vera_kit_bin $t 2>&1 | tail -1)"; done
+printf "%-18s %s\n" hdc "$(vera_hdc_dir 2>&1 | tail -1)"
+printf "%-18s %s\n" hapsigner "$(vera_hapsigner 2>&1 | tail -1)"'
 ```
-
-For a routine update of an existing system installation:
 
 ```bash
-./update-phone.sh
+./build-hap.sh      # builds and signs; finds the UDID itself
+./measure.sh 3      # 3 cold reps per program -> results/device.jsonl
 ```
 
-It requires exactly one connected phone, builds unsigned, calls the existing
-system signer, installs without uninstalling or clearing data, and verifies
-that app identity, UID and first-install time are unchanged while update time
-advances. It stops on any failure.
-
-`build-hap.sh` validates and exports `OHOS_BASE_SDK_HOME` and `DEVECO_SDK_HOME`,
-then runs this command from the repository root. Export `HVIGORW` with the
-absolute path to your Hvigor 7.26.0.static wrapper before invoking the script;
-it never selects a wrapper from `PATH`:
-
-```bash
-bash "$HVIGORW" clean --mode module -p module=entry -p product=default createHapTask --analyze=normal --parallel --incremental --no-daemon
-```
-
-`createHapTask` runs `assembleHap` and renames the output to
-`entry/build/default/outputs/default/vera-probe-dyn-unsigned.hap`. The script
-copies it to `${HAP_OUT_DIR:-/tmp/vera-probe-dyn-hap}`. Hvigor output is shown
-directly; a nonzero exit or missing HAP stops the script. The command includes
-`clean` even though it also passes `--incremental`.
-
-Without `--unsigned`, `./build-hap.sh` retains its existing debug-signing
-behavior and finds the UDID itself. `./measure.sh 3` runs three cold repetitions
-per program and writes `results/device.jsonl`.
-
-Earlier device testing used `--mode debug` for API 22. On the API 26 device,
-AppGallery installed a disposed rule against debug-signed sideloaded apps and
-AMS refused the launch; `--mode release` yielded `os_integration`, which its
-risk control left alone. These are historical observations, not verification
-of the new SDK setup; signing behavior has not changed.
+Sign with `--mode debug` for API 22. On an API 26 device AppGallery installs a
+disposed rule against debug-signed sideloaded apps and AMS refuses the launch;
+`--mode release` yields `os_integration`, which its risk control leaves alone.
 
 ### System signing, for std/intent
 
@@ -190,8 +143,8 @@ needs the app to be a system app. `build-hap.sh` cannot produce one:
 `arkui-sign` takes no profile argument and reads the kit's own template.
 
 ```bash
-./build-hap.sh --unsigned
-./sign-system.sh
+./build-hap.sh        # ignore the HAP it signs; we want the unsigned one
+./sign-system.sh      # signs with signing/UnsgnedReleasedProfileTemplate.json
 hdc install /tmp/vera-probe-dyn-hap/vera-probe-dyn-system-signed.hap
 ```
 
@@ -210,13 +163,12 @@ install output is the test: `install bundle successfully` means the profile was
 accepted.
 
 An already-installed normal build cannot be updated into a system one —
-`9568294 install failed due to apptype not same`. The updater refuses this
-conversion. **Never uninstall or clear app data:** that destroys
-`{filesDir}/vera`, including every project, saved program state and stored API
-key. The sandbox is not readable from `hdc shell` on a release-signed build,
-so there is no backup route. For separate profile testing, use a throwaway
-`bundleName` and install alongside; never change the bundle name to work around
-an update failure.
+`9568294 install failed due to apptype not same`. It has to be uninstalled
+first, and `hdc uninstall` destroys `{filesDir}/vera`: every project, every
+saved program state, and the stored API key. The sandbox is not readable from
+`hdc shell` on a release-signed build, so there is no backup route. To test a
+profile without risking any of that, build under a throwaway `bundleName` and
+install alongside.
 
 To confirm afterwards:
 

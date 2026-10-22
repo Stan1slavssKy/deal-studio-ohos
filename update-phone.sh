@@ -6,13 +6,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/tool-paths.sh"
 START=$SECONDS
 
-HVIGORW=$(vera_hvigorw)
-OHOS_BASE_SDK_HOME=$(vera_sdk_home)
-export HVIGORW OHOS_BASE_SDK_HOME DEVECO_SDK_HOME
-printf '%-18s %s\n' hvigorw "$HVIGORW"
-printf '%-18s %s\n' OHOS_BASE_SDK_HOME "$OHOS_BASE_SDK_HOME"
-printf '%-18s %s\n' DEVECO_SDK_HOME "$DEVECO_SDK_HOME"
-for tool in arkui-sign arkui-device-cli; do
+for tool in arkui-hvigor arkui-sign arkui-device-cli; do
   path=$(vera_kit_bin "$tool")
   printf '%-18s %s\n' "$tool" "$path"
 done
