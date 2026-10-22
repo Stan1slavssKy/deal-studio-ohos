@@ -148,7 +148,7 @@ async function finishBlocks(build: TemplateBuild, prompt: string, host: AgentHos
   host.status('Writing what the sections do not do...')
   let written = await writeHole(plan, prompt, [], host)
   outcome.hole = written
-  if (written === null || written.section === null) {
+  if (written === null || plan.toWrite().length > 0) {
     build.note += '; ' + (written !== null ? written.failed : 'nothing to write')
     return false
   }
@@ -163,8 +163,10 @@ async function finishBlocks(build: TemplateBuild, prompt: string, host: AgentHos
   build.action = BUILD_TEMPLATE
   // The composition record has no place for a written section: a structural edit would drop it, so there is none.
   build.composition = ''
-  build.note += '; written section in ' + written.attempts.toString() + ' attempt(s)'
-  build.status = 'Composed ' + build.kinds.join('+') + ' with a section written for the rest'
+  build.note += written.section !== null ? '; written section in ' + written.attempts.toString() + ' attempt(s)' :
+    '; reported on the screen (' + written.failed + ')'
+  build.status = 'Composed ' + build.kinds.join('+') + (written.section !== null ? ' with a section written for the rest' :
+    ', with a notice for what it cannot do')
   return true
 }
 

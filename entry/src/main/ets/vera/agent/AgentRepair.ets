@@ -42,7 +42,7 @@ export async function repairProgram(source: string, errors: string, prompt: stri
   for (let round = 0; round < ROUNDS && problem.length > 0; round++) {
     out.rounds = round + 1
     let reply = await ask(language, 'The program:\n' + current + '\n\n' + repairPrompt('Request: ' + prompt, problem, true, current),
-      EDIT_TOKENS)
+      EDIT_TOKENS, false)
     if (reply === null) { problem = 'no answer for the repair'; break }
     let applied = applyRepair(current, reply)
     if (applied.source.length === 0) { problem = 'the edits did not apply: ' + applied.error; continue }

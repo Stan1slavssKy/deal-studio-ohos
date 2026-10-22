@@ -105,7 +105,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       const request = Object.assign(new CustomRequest(), {needs: ['a counter'], prompt: 'tip calculator with a counter',
         compose: s => c.assembleProgram(comp, [], s)})
       asks.length = 0
-      return writeSection(request, 'LANGUAGE', async (system, user) => { asks.push({system, user}); return replies.shift() })
+      return writeSection(request, 'LANGUAGE', async (system, user, budget, think) => { asks.push({system, user, budget, think}); return replies.shift() })
     }
     assert.equal(parseSection('no tags'), null)
     assert.equal(parseSection(good).stateFields[0].name, 'c_count')
@@ -120,7 +120,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     r = await run([good.replace('return {', 'sdk.call("x/y", [], "c_bump");\n  return {'), good])
     assert.equal(r.attempts, 2)
     assert.match(asks[1].user, /sdk\.call/)
-    // Compiles and runs, but Jev does not read it as doing the need: refused, not repaired.
+    // Compiles and runs, but Jev does not read it as doing the need: asked for again, saying which; still not, refused.
     {
       const {verifyRequest, undone} = loadVera('agent/AgentCustom')
       const request = Object.assign(new CustomRequest(), {needs: ['a counter', 'a photo'], prompt: 'p', compose: s => c.assembleProgram(comp, [], s)})
@@ -131,17 +131,31 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       assert.deepEqual(undone(request, said(0.9, 0.2)), ['a photo'])
       assert.deepEqual(undone(request, ''), [])
       request.verify = async () => said(0.9, 0.2)
-      const refused = await writeSection(request, 'L', async () => good)
+      const users = []
+      const refused = await writeSection(request, 'L', async (system, user) => { users.push(user); return good })
       assert.equal(refused.section, null)
       assert.match(refused.failed, /does not do: a photo/)
-      assert.equal(refused.attempts, 1)
+      assert.equal(refused.attempts, 4)
+      assert.match(users[1], /it does not do: a photo/)
+      let reads = [said(0.9, 0.2), said(0.9, 0.8)]
+      request.verify = async () => reads.shift()
+      const second = await writeSection(request, 'L', async () => good)
+      assert.ok(second.section !== null)
+      assert.equal(second.attempts, 2)
     }
     r = await run(['<cannot>it needs the camera</cannot>'])
     assert.equal(r.section, null)
+    assert.equal(r.cannot, 'it needs the camera')
     assert.match(r.failed, /cannot: it needs the camera/)
-    r = await run([broken, broken, broken])
+    assert.equal(asks.length, 1)
+    // The quick tries and their repairs fail: one more, thinking, with a larger budget; then it is refused.
+    r = await run([broken, broken, broken, broken])
     assert.equal(r.section, null)
-    assert.equal(r.attempts, 3)
+    assert.equal(r.attempts, 4)
+    assert.deepEqual(asks.map(a => a.think), [false, false, false, true])
+    assert.ok(asks[3].budget > asks[0].budget)
+    r = await run([broken, broken, broken, good])
+    assert.ok(r.section !== null && r.thought)
   }
 
   // Questions: Jev keeps only those a default cannot stand in for; the person's answer, when it differs from the
@@ -248,53 +262,45 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(o.hole.attempts, 1)
     assert.match(asked[0], /works out what the request asks to be calculated/)
     assert.ok(o.blocks.plan.slots.some(s => s.id === 'missing.needs_logic' && s.fill === 'hole'))
-    // Jev does not read the section as doing it: the blocks' base goes to the model to finish, as before.
-    ;({host} = finishing(0.1))
+    // Jev does not read the section as doing it, through the repairs and the thinking try: the layout is served with a
+    // notice in place of what it lacks, not handed to the model.
+    ;({host, asked} = finishing(0.1))
     o = await route.buildScreen(routeRequest('pizza slices per person', true), host)
-    assert.equal(o.kind, route.OUTCOME_COMPLETE)
-    assert.match(o.blocks.note, /custom section does not do/)
+    assert.equal(o.kind, route.OUTCOME_TEMPLATE)
+    assert.equal(asked.length, 4)
+    assert.match(o.blocks.note, /reported on the screen \(custom section does not do/)
     assert.doesNotMatch(o.blocks.source, /c_people/)
-    // The writer says it cannot: the same.
-    ;({host} = finishing(0.9, '<cannot>needs the camera</cannot>'))
+    assert.match(o.blocks.source, /ui\.InsetBanner\("warning", "Part of this app could not be built", "Not built: works out what the request asks/)
+    assert.ok(o.blocks.plan.slots.some(s => s.id === 'missing.needs_logic' && s.fill === 'reported'))
+    // The writer says it cannot: its own sentence is the notice, and it is not asked again.
+    ;({host, asked} = finishing(0.9, '<cannot>This app cannot use the camera.</cannot>'))
     o = await route.buildScreen(routeRequest('pizza slices per person', true), host)
-    assert.equal(o.kind, route.OUTCOME_COMPLETE)
+    assert.equal(o.kind, route.OUTCOME_TEMPLATE)
+    assert.equal(asked.length, 1)
+    assert.match(o.blocks.source, /"This app cannot use the camera\."/)
     // Another generation mode finishes the program its own way.
     ;({host, asked} = finishing(0.9))
     o = await route.buildScreen(Object.assign(routeRequest('pizza slices per person', true), {mode: 'local'}), host)
     assert.equal(o.kind, route.OUTCOME_COMPLETE)
     assert.equal(asked.length, 0)
-    // What the agent's plan asks the phone to do and could not bind is something a plain pick of sections lacks too:
-    // the template is completed with it, and while nothing can do it, the model finishes the program.
+    // Something the phone does that nothing here can: the agent serves the rest of its screen with the writer's own
+    // sentence as a notice in its place; the blocks are not needed.
     const egg = JSON.parse(fixture('egg', 'jev-answer.json'))
     const effectKey = Object.keys(egg.answers).find(k => k.startsWith('effect.'))
     egg.answers[effectKey] = {choice: 'unavailable', confidence: 0.95}
-    const plain = {section1: {choice: 'metrics', confidence: 0.9}}
-    for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_logic'])
-      plain['veto.' + k] = {noul: 0}
-    compose.selectSections = async () => compose.readSectionPick(JSON.stringify({answers: plain}))
-    const eggRoute = (reply, jevDoes) => {
+    {
       const {host} = replayHost('egg', {jev: JSON.stringify(egg)})
-      const jevPlan = host.askJev
       host.language = 'VERA-L'
       const asked = []
-      // The agent's own section for it comes first, and cannot; then the blocks' layout is completed.
-      host.askCode = async (system, user) => { asked.push(user); return asked.length === 1 ? '<cannot>no phone functions</cannot>' : reply }
-      host.askJev = async body => JSON.parse(body).questions['does.0'] ?
-        JSON.stringify({answers: {'does.0': {probabilities: {yes: jevDoes, no: 1 - jevDoes}}}}) : jevPlan(body)
-      return {host, asked}
+      host.askCode = async (system, user) => { asked.push(user); return '<cannot>This phone gives apps no way to vibrate here.</cannot>' }
+      o = await route.buildScreen(routeRequest('egg timer that vibrates', true), host)
+      assert.equal(o.kind, route.OUTCOME_AGENT, o.agent.note)
+      assert.equal(o.blocks, null)
+      assert.equal(asked.length, 1)
+      assert.match(o.agent.source, /ui\.InsetBanner\("warning", "Not available on this phone", "This phone gives apps no way to vibrate here\."/)
+      assert.match(o.agent.note, /reported on the screen/)
+      assert.ok(o.agent.screen.slots.some(s => s.phone && s.fill === 'reported'))
     }
-    ;({host, asked} = eggRoute('<cannot>it cannot vibrate the phone</cannot>', 0.9))
-    o = await route.buildScreen(routeRequest('egg timer that vibrates', true), host)
-    assert.match(o.agent.note, /custom section cannot/)
-    assert.equal(o.agent.composed.unboundNeeds.length, 1)
-    assert.equal(o.kind, route.OUTCOME_COMPLETE)
-    assert.equal(o.blocks.action, 'complete')
-    assert.match(o.blocks.note, /the plan also asks: /)
-    assert.match(asked[1], new RegExp(o.agent.composed.unboundNeeds[0].replace(/[()]/g, '.')))
-    ;({host} = eggRoute(section, 0.9))
-    o = await route.buildScreen(routeRequest('egg timer that vibrates', true), host)
-    assert.equal(o.kind, route.OUTCOME_TEMPLATE)
-    assert.ok(o.blocks.plan.slots.some(s => s.id === 'asked.0' && s.fill === 'hole'))
     compose.selectSections = savedPick
     deepseek.extractTemplateContent = savedContent
   }
@@ -316,7 +322,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       const jevPlan = host.askJev
       host.language = 'VERA-L'
       const seen = {systems: [], users: [], lookups: []}
-      host.askCode = async (system, user) => { seen.systems.push(system); seen.users.push(user); return replies.shift() }
+      host.askCode = async (system, user) => { seen.systems.push(system); seen.users.push(user); return replies.length > 1 ? replies.shift() : replies[0] }
       host.lookup = async need => { seen.lookups.push(need); return lookup }
       host.askJev = async body => JSON.parse(body).questions['does.0'] ?
         JSON.stringify({answers: {'does.0': {probabilities: {yes: 0.9, no: 0.1}}}}) : jevPlan(body)
@@ -336,13 +342,15 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.ok(r.vbc2.length > 0, r.note)
     assert.equal(r.custom.attempts, 2)
     assert.match(seen.users[1], /calls "com\.example\/clock\/Main\/SetAlarm", which is not one of the phone functions found/)
-    // Nothing found: no phone calls at all.
-    ;({host, seen} = phoneHost([calling(alarm), calling(alarm), calling(alarm)], JSON.stringify({results: []})))
+    // Nothing found: no phone calls at all; a section that keeps calling is not served, and the rest of the screen is,
+    // with a notice saying it could not be built.
+    ;({host, seen} = phoneHost([calling(alarm)], JSON.stringify({results: []})))
     r = await runAgent(request('egg timer that sets an alarm'), host)
-    assert.equal(r.vbc2, '')
     assert.match(seen.systems[0], /never calls sdk\.call/)
     assert.doesNotMatch(seen.users[0], /Phone functions found/)
     assert.match(r.note, /calls sdk\.call, which it never may/)
+    assert.doesNotMatch(r.source, new RegExp(alarm))
+    assert.match(r.source, /ui\.InsetBanner\("warning", "Part of this app could not be built"/)
   }
   // Nothing narrower serves: the whole screen is one hole, written against the sketch and read by Jev against everything
   // it says the screen does, before any generation.

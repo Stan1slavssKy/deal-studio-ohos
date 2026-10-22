@@ -14,8 +14,11 @@ import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { smokeRun } from '../VeraSmoke'
 
-/** Asks the model for code: (system prompt, request, most tokens to write) -> its reply, or null when there was none. */
-export type CodeAsk = (system: string, user: string, budget: number) => Promise<string | null>
+/**
+ * Asks the model for code: (system prompt, request, most tokens to write, whether it thinks first) -> its reply, or null
+ * when there was none.
+ */
+export type CodeAsk = (system: string, user: string, budget: number, think: boolean) => Promise<string | null>
 
 /** Room for one section with its handlers and view. */
 export const SECTION_TOKENS: number = 3000
@@ -23,6 +26,8 @@ export const SECTION_TOKENS: number = 3000
 export const SCREEN_TOKENS: number = 8000
 
 const REPAIRS: number = 2
+/** A thinking reply spends tokens on its reasoning before the section: this many times the budget. */
+const THINKING_ROOM: number = 3
 
 const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE section to a VERA-L program that already exists, ' +
   'and you write only that section, in exactly this form and nothing else:\n' +
@@ -38,18 +43,23 @@ const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE 
   'other sections are not visible there.\n' +
   '- Do not repeat, change or restyle anything the program already has. Do what the section must do, completely.\n'
 
+/** What <cannot> holds: it is shown to the person on the screen, in place of what could not be built. */
+const CANNOT_FORM: string = 'one short sentence for the person using the app, in plain words about their phone and its apps: ' +
+  'what this app cannot do, and why (for example: This phone does not let apps set alarms in the Clock app.). Never mention ' +
+  'the language, the section, sdk.call or code'
+
 /** The rule for phone calls: none, or only the targets the phone's lookups found. */
 function phoneRule(phone: string): string {
   if (phone.length === 0) {
     return '- The section never calls sdk.call: what the phone does is not its job.\n' +
       '- If the section cannot really do it with this language and these components -- it needs a camera, a live feed, ' +
-      'the person\'s location or data the phone does not hold -- answer only <cannot>why</cannot>. Never fake it with made-up data.\n'
+      'the person\'s location or data the phone does not hold -- answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it with made-up data.\n'
   }
   return '- What the phone or another app must do, the section does with sdk.call from a handler, calling ONLY targets from ' +
     '"Phone functions found" in the request, copied exactly, with the parameters they show, values from the screen\'s state. ' +
     'Its answer handler shows what came back: an answer starting with "declined" or "error" is a failure, anything else succeeded.\n' +
     '- If none of the phone functions found does what is needed, or it needs something the phone cannot give a program ' +
-    '(a camera, a live feed, the person\'s location), answer only <cannot>why</cannot>. Never fake it, never pretend a call happened, ' +
+    '(a camera, a live feed, the person\'s location), answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it, never pretend a call happened, ' +
     'never call a target that is not listed.\n'
 }
 
@@ -147,6 +157,10 @@ export function undone(request: CustomRequest, answer: string): string[] {
 export class CustomResult {
   /** The section that compiled and ran, null when none did. */
   section: FragmentSpec | null = null
+  /** The writer's own sentence for the person when it answered that it cannot do it; '' otherwise. */
+  cannot: string = ''
+  /** The last try was made with thinking on. */
+  thought: boolean = false
   /** Model calls made: the first and the repairs. */
   attempts: number = 0
   /** Why it did not work out, '' when it did. */
@@ -226,27 +240,36 @@ export async function writeSection(request: CustomRequest, language: string, ask
       'asks for. It may push several ui.Section(...) in its view.' : '') +
     '\n\nThe program so far, which the section joins (do not repeat it):\n' + request.compose(null)
   let user = asked
-  for (let attempt = 0; attempt <= REPAIRS; attempt++) {
+  // The first try and its repairs without thinking, then one more with it: slower, for what the quick tries got wrong.
+  for (let attempt = 0; attempt <= REPAIRS + 1; attempt++) {
+    let think = attempt > REPAIRS
     result.attempts = attempt + 1
-    let reply = await ask(system, user, request.whole ? SCREEN_TOKENS : SECTION_TOKENS)
+    result.thought = think
+    let budget = request.whole ? SCREEN_TOKENS : SECTION_TOKENS
+    let reply = await ask(system, user, think ? budget * THINKING_ROOM : budget, think)
     if (reply === null) { result.failed = 'no answer for the custom section'; break }
     let cannot = between(reply, 'cannot')
-    if (cannot !== null) { result.failed = 'custom section cannot: ' + cannot; break }
+    if (cannot !== null) { result.cannot = cannot; result.failed = 'custom section cannot: ' + cannot; break }
     let section = parseSection(reply)
     // A phone call the section makes up compiles and does nothing: its targets are not checked until the phone answers.
     let calls = section === null ? '' : callProblem(reply, found)
     let problem = section === null ? 'The answer was not in the form asked for: <classes>, <fields>, <functions> and <view>.' :
       (calls.length > 0 ? calls : check(request.compose(section)))
     if (problem.length === 0) {
-      // It compiles and runs; whether it does what it is for is Jev's reading, and a section that does not is refused,
-      // not repaired: the model has already said what it can do.
+      // It compiles and runs; whether it does what it is for is Jev's reading. One it reads as not doing a need is asked
+      // for again, saying which.
       let missed: string[] = request.verify !== null ? undone(request, await request.verify!(verifyRequest(request, reply))) : []
-      if (missed.length > 0) { result.failed = 'custom section does not do: ' + missed.join('; '); break }
-      result.section = section
-      result.failed = ''
-      break
+      if (missed.length === 0) {
+        result.section = section
+        result.failed = ''
+        break
+      }
+      result.failed = 'custom section does not do: ' + missed.join('; ')
+      problem = 'Read against the request, it does not do: ' + missed.join('; ') + '. It must really do that, used as written -- ' +
+        'or, if it cannot be done here, answer <cannot>.'
+    } else {
+      result.failed = 'custom section: ' + problem.split('\n')[0]
     }
-    result.failed = 'custom section: ' + problem.split('\n')[0]
     user = asked + '\n\nYour section was:\n' + reply + '\n\nIt failed:\n' + problem + '\n\nWrite the whole section again, fixed, in the same form.'
   }
   result.ms = Date.now() - started

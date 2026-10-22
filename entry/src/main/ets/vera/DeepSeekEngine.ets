@@ -849,14 +849,15 @@ export class DeepSeekEngine {
    * request this engine makes, not a second generation attempt.
    */
   async extractTemplateContent(systemPrompt: string, userPrompt: string, maxTokens: number,
-      purpose: string = 'Text for the blocks'): Promise<string | null> {
+      purpose: string = 'Text for the blocks', thinking: boolean = false): Promise<string | null> {
     // The engine holds one request and one set of flags: a stale template run must not take them from a generation.
     if (!settings.hasApiKey() || this.generating) { return null }
     let messages: Record<string, Object>[] = []
     messages.push(plainMessage('system', systemPrompt))
     messages.push(plainMessage('user', userPrompt))
     let savedThinking = this.thinking
-    this.thinking = false
+    // Off, except for the agent's last try at a section that failed without it (agent/AgentCustom.ets).
+    this.thinking = thinking
     this.cancelled = false
     this.generating = true
     let startedAt = Date.now()

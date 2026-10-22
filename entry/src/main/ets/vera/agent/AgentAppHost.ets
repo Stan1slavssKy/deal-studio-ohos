@@ -19,8 +19,8 @@ export function appAgentHost(status: (text: string) => void, preview: (vbc2: str
   host.askJev = (body: string): Promise<string> => askJev(body, settings.getSelectorKey())
   host.fillBlocks = (request: BlockRequest): Promise<BlockFill> => fillBlocksWith(request, appBlockCalls())
   host.language = language
-  host.askCode = (system: string, user: string, budget: number): Promise<string | null> =>
-    deepseek.extractTemplateContent(system, user, budget, 'A section of its own')
+  host.askCode = (system: string, user: string, budget: number, think: boolean): Promise<string | null> =>
+    deepseek.extractTemplateContent(system, user, budget, think ? 'A section of its own, thinking' : 'A section of its own', think)
   host.lookup = async (need: string): Promise<string> => {
     let asked = need.substring(0, 300)
     return 'find_intent_function:\n' + (await discoveryToolResult('find_intent_function', asked, 0)) +

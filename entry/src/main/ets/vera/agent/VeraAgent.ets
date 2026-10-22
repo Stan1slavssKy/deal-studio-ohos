@@ -114,7 +114,8 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       result.custom = written
       ready = plan.toWrite().length === 0
       if (written !== null) {
-        result.note += '; ' + (written.section !== null ? 'custom section in ' + written.attempts.toString() + ' attempt(s)' : written.failed)
+        result.note += '; ' + (written.section !== null ? 'custom section in ' + written.attempts.toString() + ' attempt(s)' :
+          'reported on the screen (' + written.failed + ')')
       }
     }
     if (ready) { composed.source = assemblePlan(plan) }

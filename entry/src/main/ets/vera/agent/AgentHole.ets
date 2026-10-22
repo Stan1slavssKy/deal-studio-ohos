@@ -7,10 +7,28 @@
 import { AgentHost } from './AgentHost'
 import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
 import { FragmentSpec } from '../VeraTemplates'
-import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE } from '../ScreenPlan'
+import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED } from '../ScreenPlan'
 
 /** How much of each lookup's answer the writer is shown. */
 const LOOKUP_CHARS: number = 4000
+
+/** Text as it goes between the quotes of a VERA string literal: no quotes, backslashes or line breaks. */
+function literal(text: string): string {
+  return text.split('\\').join('/').split('"').join("'").split('\n').join(' ').trim()
+}
+
+/**
+ * A warning in place of what could not be built. The plan's needs are its own wording, not the person's, so the title is
+ * fixed and `why` -- the writer's own sentence for the person when it said it cannot -- carries the rest.
+ */
+export function noticeBlock(cannot: boolean, why: string): FragmentSpec {
+  let title = cannot ? 'Not available on this phone' : 'Part of this app could not be built'
+  let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("warning", "' + literal(title) + '", "' +
+    literal(why) + '", "", "", "warning")]));\n}'
+  let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
+  spec.indexed = false
+  return spec
+}
 
 /** The plan with `section` after everything else, assembled; null assembles what is filled, the program so far. */
 function withSection(plan: ScreenPlan, section: FragmentSpec | null): string {
@@ -56,6 +74,13 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   if (written.section !== null) {
     plan.components.push(new PlanComponent(FILL_HOLE, written.section, new Map<string, string>()))
     for (let s of slots) { plan.fillWith(s, FILL_HOLE, plan.components.length - 1) }
+  } else if (!asked.whole) {
+    // Reported, not dropped: the rest of the screen is served with a notice in place of what could not be built. The
+    // whole screen as a hole has no rest to serve.
+    let cannot = written.cannot.length > 0
+    let why = cannot ? written.cannot : 'Not built: ' + asked.needs.join('; ') + '. ' + written.failed
+    plan.components.push(new PlanComponent(FILL_REPORTED, noticeBlock(cannot, why), new Map<string, string>()))
+    for (let s of slots) { plan.fillWith(s, FILL_REPORTED, plan.components.length - 1, why) }
   }
   return written
 }

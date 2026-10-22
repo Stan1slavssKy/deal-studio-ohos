@@ -32,12 +32,12 @@ const wholeRoute = flag('-r')
 const prompts = fs.readFileSync(promptFile, 'utf8').split('\n')
   .filter(l => l.trim() && !l.startsWith('#')).map(l => l.split('\t')).filter(([label]) => !args.length || args.includes(label))
 
-async function deepseek(system, user, maxTokens, json) {
+async function deepseek(system, user, maxTokens, json, think = false) {
   const res = await fetch('https://api.deepseek.com/chat/completions', {method: 'POST',
     headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.ARKESTR_API_KEY},
     body: JSON.stringify(Object.assign({model: 'deepseek-flash', stream: false, temperature: 0, max_tokens: maxTokens,
-      thinking: {type: 'disabled'}, messages: [{role: 'system', content: system}, {role: 'user', content: user}]},
-      json ? {response_format: {type: 'json_object'}} : {}))})
+      thinking: {type: think ? 'enabled' : 'disabled'}, messages: [{role: 'system', content: system}, {role: 'user', content: user}]},
+      think ? {reasoning_effort: 'low'} : {}, json ? {response_format: {type: 'json_object'}} : {}))})
   const body = await res.json()
   if (!res.ok) throw Error('DeepSeek HTTP ' + res.status + ' ' + JSON.stringify(body).slice(0, 200))
   return body.choices[0].message.content
@@ -98,7 +98,7 @@ function host(log) {
   h.language = language
   // AGENT_ANSWER=other picks an answer other than the suggested one, to exercise drawing the plan again; else the default.
   h.ask = async q => process.env.AGENT_ANSWER === 'other' ? (q.fallback === 0 ? 1 : 0) : null
-  h.askCode = async (system, user, budget) => { const reply = await deepseek(system, user, budget, false); (log.code = log.code || []).push(reply); return reply }
+  h.askCode = async (system, user, budget, think) => { const reply = await deepseek(system, user, budget, false, think); (log.code = log.code || []).push(reply); return reply }
   return h
 }
 

@@ -31,6 +31,11 @@ export const FILL_BLOCK: string = 'block'
 export const FILL_EFFECT: string = 'effect'
 /** A section the model wrote for this request. */
 export const FILL_HOLE: string = 'hole'
+/**
+ * Not done, and the screen says so: a notice in its place says what this phone or app cannot do and why. The rest of
+ * the screen is served with it, rather than nothing.
+ */
+export const FILL_REPORTED: string = 'reported'
 
 export const PLAN_FROM_SKETCH: string = 'sketch'
 export const PLAN_FROM_LAYOUT: string = 'layout'
