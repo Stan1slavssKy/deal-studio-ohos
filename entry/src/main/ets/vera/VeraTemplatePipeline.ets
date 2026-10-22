@@ -106,12 +106,13 @@ function scratch(note: string, status: string, build: TemplateBuild, failure: st
  * real data goes to scratch there.
  */
 export async function buildFromTemplates(prompt: string, mode: string, onStatus: (status: string) => void,
-    isCancelled: () => boolean): Promise<TemplateBuild> {
+    isCancelled: () => boolean, picked: Promise<SectionPickOutcome> | null = null): Promise<TemplateBuild> {
   let build = new TemplateBuild()
   try {
     onStatus('Checking for a canned template...')
     let jevStart = Date.now()
-    let outcome: SectionPickOutcome = await selectSections(prompt, settings.getSelectorKey())
+    // Jev's pick, unless the caller started it already (the route asks for it while the agent plans).
+    let outcome: SectionPickOutcome = picked !== null ? await picked! : await selectSections(prompt, settings.getSelectorKey())
     build.jevMs = Date.now() - jevStart
     if (isCancelled()) { build.action = BUILD_CANCELLED; return build }
     build.route.jev = jevStateOf(outcome)

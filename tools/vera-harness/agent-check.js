@@ -486,6 +486,20 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.match((await writeHole(whole, 'alarm', [], host)).failed, /known from an earlier hole/)
     assert.equal(writes, 1)
   }
+  // Jev's pick of sections starts with the agent's plan, not after it, and the blocks use that pick, not a second one.
+  {
+    const compose = loadVera('VeraSectionCompose')
+    const saved = compose.selectSections
+    const order = []
+    compose.selectSections = async () => { order.push('pick'); return new compose.SectionPickOutcome(null, new Map(), 'none') }
+    const {host} = replayHost('tip', {jev: ''})
+    const plan = host.askPlan
+    host.askPlan = async (...a) => { order.push('plan'); return plan(...a) }
+    const o = await route.buildScreen(routeRequest('tip calculator', true), host)
+    assert.equal(o.kind, route.OUTCOME_NOT_BUILT)
+    assert.deepEqual(order, ['pick', 'plan'])
+    compose.selectSections = saved
+  }
   // Blocks first: the blocks run before the agent, and the agent still serves what they do not.
   route.setRouteOrder(route.ORDER_BLOCKS_FIRST)
   {
