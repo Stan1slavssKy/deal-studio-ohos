@@ -55,13 +55,42 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.ok(r.vbc2.length > 0, r.note)
     assert.deepEqual(seen.status, ['Sketching the widget...'])
   }
-  // Jev does not answer: nothing served, but the plan is kept for the generation that follows.
+  // Jev does not answer, twice: nothing served by the agent, but the plan is kept for the route's wider holes.
   {
-    const {host} = replayHost('tip', {jev: ''})
+    const {host, seen} = replayHost('tip', {jev: ''})
     const r = await runAgent(request('tip calculator'), host)
     assert.equal(r.vbc2, '')
-    assert.equal(r.note, 'Jev did not answer')
+    assert.equal(r.note, 'Jev did not answer twice')
+    assert.equal(seen.jev, 2)
     assert.match(r.plan, /^A sketch of this app/)
+  }
+  // Jev answers the second time: served.
+  {
+    const {host} = replayHost('tip')
+    const answer = host.askJev
+    let calls = 0
+    host.askJev = async body => ++calls === 1 ? '' : answer(body)
+    const r = await runAgent(request('tip calculator'), host)
+    assert.ok(r.vbc2.length > 0, r.note)
+    assert.equal(calls, 2)
+  }
+  // A plan that cannot be used is asked for again with what was wrong quoted, then once with thinking on.
+  {
+    const {host} = replayHost('tip')
+    const good = fixture('tip', 'sketch.json')
+    const asks = []
+    const replies = ['not json at all', null, good]
+    host.askPlan = async (system, user, onText, think) => { asks.push({user, think}); return replies.shift() }
+    const r = await runAgent(request('tip calculator'), host)
+    assert.ok(r.vbc2.length > 0, r.note)
+    assert.equal(r.composed.planTries, 3)
+    assert.deepEqual(asks.map(a => a.think), [false, false, true])
+    assert.match(asks[1].user, /could not be used: it was not one JSON object in the form asked for: not json at all/)
+    assert.match(asks[2].user, /could not be used: there was no answer/)
+    const none = replayHost('tip').host
+    none.askPlan = async () => 'nope'
+    const r2 = await runAgent(request('tip calculator'), none)
+    assert.equal(r2.note, 'no usable sketch after 3 tries')
   }
 
   // A need the plan says a ready-made section handles: Jev's section joins the composition's own parts, its content

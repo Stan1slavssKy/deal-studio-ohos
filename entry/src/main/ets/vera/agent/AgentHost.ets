@@ -45,7 +45,7 @@ export async function defaultBlockFill(request: BlockRequest): Promise<BlockFill
 
 export class AgentHost {
   /** The plan: DeepSeek with no thinking, one JSON object. */
-  askPlan: SketchAsk = async (_system: string, _user: string, _onText: (soFar: string) => void): Promise<string | null> => null
+  askPlan: SketchAsk = async (_system: string, _user: string, _onText: (soFar: string) => void, _think: boolean): Promise<string | null> => null
   /** Jev's choices for a plan. */
   askJev: JevAsk = async (_body: string): Promise<string> => ''
   /** One line for the person: what the agent is doing now. */

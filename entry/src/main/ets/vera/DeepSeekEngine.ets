@@ -776,19 +776,20 @@ export class DeepSeekEngine {
    * budget, like extractUiNeeds; null on any failure, and the caller generates from scratch.
    */
   async extractSketch(systemPrompt: string, userPrompt: string,
-      onText: (soFar: string) => void = (_t: string): void => {}): Promise<string | null> {
+      onText: (soFar: string) => void = (_t: string): void => {}, thinking: boolean = false): Promise<string | null> {
     if (!settings.hasApiKey()) { return null }
     let messages: Record<string, Object>[] = []
     messages.push(plainMessage('system', systemPrompt))
     messages.push(plainMessage('user', userPrompt))
     let savedThinking = this.thinking
-    this.thinking = false
+    // Off, except for the last try at a plan when the quick ones could not be used (VeraCompose.ets's usablePlan).
+    this.thinking = thinking
     this.cancelled = false
     this.generating = true
     let startedAt = Date.now()
     try {
       let soFar = ''
-      let turn = await this.streamOnce(messages, 0, 1500, (token: string): void => {
+      let turn = await this.streamOnce(messages, 0, thinking ? 6000 : 1500, (token: string): void => {
         soFar += token
         onText(soFar)
       }, TOOLS_OFF, 'sketch', 1)

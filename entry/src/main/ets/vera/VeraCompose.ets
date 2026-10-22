@@ -3330,6 +3330,8 @@ export class ComposeResult {
   unboundNeeds: string[] = []
   /** The plan was drawn again with what the person answered. */
   replanned: boolean = false
+  /** How many times the plan was asked for until one could be used (usablePlan), all drawings together. */
+  planTries: number = 0
   /**
    * The composition, whenever nothing is unbound. When it has sections of the catalogue or needs a custom section,
    * those are filled first and the program assembled after (assembleProgram with them), so `source` is still empty;
@@ -3362,7 +3364,7 @@ export async function askJev(body: string, apiKey: string): Promise<string> {
 }
 
 /** Asks for the sketch: (system prompt, request, reply so far) -> the whole reply, or null when there was none. */
-export type SketchAsk = (system: string, user: string, onText: (soFar: string) => void) => Promise<string | null>
+export type SketchAsk = (system: string, user: string, onText: (soFar: string) => void, think: boolean) => Promise<string | null>
 /** Asks Jev: request body -> response body, '' when there was none. */
 export type JevAsk = (body: string) => Promise<string>
 
@@ -3370,7 +3372,8 @@ export type JevAsk = (body: string) => Promise<string>
 export async function composeFromPrompt(prompt: string, apiKey: string,
     onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false): Promise<ComposeResult> {
   return composeWith(prompt,
-    (system: string, user: string, onText: (soFar: string) => void): Promise<string | null> => deepseek.extractSketch(system, user, onText),
+    (system: string, user: string, onText: (soFar: string) => void, think: boolean): Promise<string | null> =>
+      deepseek.extractSketch(system, user, onText, think),
     (body: string): Promise<string> => askJev(body, apiKey), onSketch, widget)
 }
 
@@ -3380,7 +3383,8 @@ class Planned {
 }
 
 /** One plan, streamed: each new shape of it goes to onSketch as it arrives, and the whole one at the end. */
-async function planOnce(askSketch: SketchAsk, prompt: string, onSketch: (partial: Sketch) => void): Promise<Planned> {
+async function planOnce(askSketch: SketchAsk, prompt: string, onSketch: (partial: Sketch) => void,
+    think: boolean = false): Promise<Planned> {
   let out = new Planned()
   let shown = ''
   out.text = await askSketch(SKETCH_PROMPT, prompt, (soFar: string): void => {
@@ -3392,12 +3396,41 @@ async function planOnce(askSketch: SketchAsk, prompt: string, onSketch: (partial
     if (signature === shown) { return }
     shown = signature
     onSketch(partial)
-  })
+  }, think)
   if (out.text !== null) {
     let whole = parseSketch(out.text!)
     if (whole !== null && sketchSignature(whole) !== shown) { onSketch(whole) }
   }
   return out
+}
+
+/**
+ * A plan that can be used, asked for until there is one: the first, then once more with what was wrong with it quoted,
+ * then once with thinking on. Null text when none of the three is usable; `tries` says how many were made.
+ */
+async function usablePlan(askSketch: SketchAsk, prompt: string, onSketch: (partial: Sketch) => void): Promise<UsablePlan> {
+  let out = new UsablePlan()
+  let user = prompt
+  for (let attempt = 0; attempt < 3; attempt++) {
+    out.tries = attempt + 1
+    let planned = await planOnce(askSketch, user, onSketch, attempt === 2)
+    let sketch = planned.text !== null ? parseSketch(planned.text!) : null
+    if (sketch !== null) {
+      out.text = planned.text!
+      out.sketch = sketch
+      return out
+    }
+    let wrong = planned.text === null ? 'there was no answer' : 'it was not one JSON object in the form asked for: ' +
+      planned.text!.substring(0, 200)
+    user = prompt + '\n\nThe last answer could not be used: ' + wrong + '. Answer with the JSON object only, in the form asked for.'
+  }
+  return out
+}
+
+class UsablePlan {
+  text: string = ''
+  sketch: Sketch | null = null
+  tries: number = 0
 }
 
 /**
@@ -3411,32 +3444,36 @@ export async function composeWith(prompt: string, askSketch: SketchAsk, askChoic
     review: PlanReview | null = null): Promise<ComposeResult> {
   let result = new ComposeResult()
   let started = Date.now()
-  let planned = await planOnce(askSketch, prompt, onSketch)
+  // A plan that cannot be used is asked for again, not given up on (usablePlan).
+  let usable = await usablePlan(askSketch, prompt, onSketch)
   result.sketchMs = Date.now() - started
-  let text = planned.text
-  if (text === null) { result.note = 'no sketch'; return result }
-  let sketch = parseSketch(text)
-  if (sketch === null) { result.note = 'sketch did not parse'; return result }
+  result.planTries = usable.tries
+  if (usable.sketch === null) { result.note = 'no usable sketch after ' + usable.tries.toString() + ' tries'; return result }
+  let text: string | null = usable.text
+  let sketch: Sketch = usable.sketch!
   // What the plan left open, settled (the person's answers): the plan is drawn again with it, and Jev reads it too.
   let settled = review !== null && sketch.questions.length > 0 ? await review(sketch) : ''
   if (settled.length > 0) {
     prompt = prompt + '\n\n' + settled
     let again = Date.now()
-    planned = await planOnce(askSketch, prompt, onSketch)
+    let redrawn = await usablePlan(askSketch, prompt, onSketch)
     result.sketchMs += Date.now() - again
     result.replanned = true
-    let redrawn = planned.text !== null ? parseSketch(planned.text!) : null
-    if (redrawn === null) { result.note = 'the plan drawn again did not parse'; return result }
-    text = planned.text
-    sketch = redrawn
+    result.planTries += redrawn.tries
+    if (redrawn.sketch === null) { result.note = 'no usable sketch drawn again after ' + redrawn.tries.toString() + ' tries'; return result }
+    text = redrawn.text
+    sketch = redrawn.sketch!
     sketch.questions = []
   }
   result.sketch = text!
   result.parsed = sketch
   started = Date.now()
-  let body = await askChoices(buildComposeRequest(prompt, sketch, widget))
+  let request = buildComposeRequest(prompt, sketch, widget)
+  let body = await askChoices(request)
+  // No answer is most often the network: once more before the plan is left to the route's wider holes.
+  if (body.length === 0) { body = await askChoices(request) }
   result.jevMs = Date.now() - started
-  if (body.length === 0) { result.note = 'Jev did not answer'; return result }
+  if (body.length === 0) { result.note = 'Jev did not answer twice'; return result }
   let comp = readComposition(body, sketch, widget)
   result.answers = comp.answers
   if (comp.unbound.length > 0) {

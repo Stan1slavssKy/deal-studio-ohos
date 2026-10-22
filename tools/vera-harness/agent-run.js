@@ -80,7 +80,7 @@ const route = loadVera('agent/VeraBuildRoute')
 
 function host(log) {
   const h = new AgentHost()
-  h.askPlan = async (system, user, onText) => { const t = Date.now(); const text = await deepseek(system, user, 1500, true); log.planMs = Date.now() - t; onText(text); return text }
+  h.askPlan = async (system, user, onText, think) => { const t = Date.now(); const text = await deepseek(system, user, think ? 6000 : 1500, true, think); log.planMs = Date.now() - t; onText(text); return text }
   h.askJev = async body => {
     log.jevRequest = body
     const res = await fetch('https://api.typesafe.ai/v1/systemone', {method: 'POST',

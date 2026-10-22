@@ -14,8 +14,8 @@ import { webSearch } from '../VeraWebSearch'
 export function appAgentHost(status: (text: string) => void, preview: (vbc2: string) => void,
     cancelled: () => boolean = (): boolean => false, language: string = ''): AgentHost {
   let host = new AgentHost()
-  host.askPlan = (system: string, user: string, onText: (soFar: string) => void): Promise<string | null> =>
-    deepseek.extractSketch(system, user, onText)
+  host.askPlan = (system: string, user: string, onText: (soFar: string) => void, think: boolean): Promise<string | null> =>
+    deepseek.extractSketch(system, user, onText, think)
   host.askJev = (body: string): Promise<string> => askJev(body, settings.getSelectorKey())
   host.fillBlocks = (request: BlockRequest): Promise<BlockFill> => fillBlocksWith(request, appBlockCalls())
   host.language = language
