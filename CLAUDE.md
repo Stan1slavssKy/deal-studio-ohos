@@ -11,22 +11,33 @@ For a rebuild and in-place update, run `./update-phone.sh` directly: it checks
 the tools and the installed app before building. Do not repeat the checks below
 or reread the build scripts on routine update requests unless the command fails.
 
-For other build workflows, the build needs three things that are not in this
-repo. Run this first — it prints what it found and what it did not:
+For other build workflows, check the external tools first — this prints what
+it found and what it did not:
 
 ```bash
 bash -c 'source ./tool-paths.sh
-for t in arkui-hvigor arkui-sign arkui-device-cli; do
-  printf "%-18s %s\n" "$t" "$(vera_kit_bin $t 2>&1 | tail -1)"; done
-printf "%-18s %s\n" hdc "$(vera_hdc_dir 2>&1 | tail -1)"
-printf "%-18s %s\n" hapsigner "$(vera_hapsigner 2>&1 | tail -1)"'
+printf "%-18s %s\n" hvigorw "$(vera_hvigorw 2>&1)"
+printf "%-18s %s\n" OHOS_BASE_SDK_HOME "$(vera_sdk_home 2>&1)"
+for t in arkui-sign arkui-device-cli; do
+  printf "%-18s %s\n" "$t" "$(vera_kit_bin "$t" 2>&1)"; done
+printf "%-18s %s\n" hdc "$(vera_hdc_dir 2>&1)"
+printf "%-18s %s\n" hapsigner "$(vera_hapsigner 2>&1)"'
 ```
 
-| what | used for | how the scripts find it |
+Set tool locations in the shell environment, never in scripts or documentation.
+Export both `OHOS_BASE_SDK_HOME` and `DEVECO_SDK_HOME` with your SDK root, and
+add your SDK toolchains and command-line-tools `bin` directories to `PATH`.
+
+| what | used for | required environment configuration |
 |---|---|---|
-| **ArkTS Agent Kit** | `arkui-hvigor` builds, `arkui-sign` debug-signs, `arkui-device-cli` dumps the screen | `$KIT_ROOT`, else a few known locations; the binaries live in `tools/` in an unpacked kit and `.venv/bin` in a pip install, and both are searched |
-| **hdc** | everything that talks to the phone | `$HDC_DIR`, else `~/Desktop/hdc`, `~/hdc`, else `PATH` |
-| **hapsigner** | `sign-system.sh` calls `dist/hap-sign-tool.jar`; needs a JRE | `$HAPSIGNER`, else `~/agent-kit-sdk/hapsigner` |
+| **Hvigor 7.26.0.static** | builds with `createHapTask` | required `HVIGORW` naming the absolute path to the 7.26.0.static wrapper; invoked with `bash`, never resolved from `PATH` |
+| **Build SDK 26.0.0** | compile SDK; the build profile targets `26.0.0` | `OHOS_BASE_SDK_HOME` and `DEVECO_SDK_HOME`, both naming existing SDK directories; exported by the builder |
+| **ArkTS Agent Kit** | unchanged `arkui-sign` debug signing and `arkui-device-cli` screen dumps; updater retains both preflight checks | tools on `PATH`, or `KIT_ROOT` containing `tools/`, `.venv/bin/` or `bin/` |
+| **hdc** | everything that talks to the phone | SDK toolchains directory on `PATH`, or `HDC_DIR` naming the directory containing `hdc` |
+| **hapsigner** | unchanged `sign-system.sh` calls `dist/hap-sign-tool.jar`; needs a JRE | `HAPSIGNER` naming the directory containing `dist/` |
+
+`OHOS_TOOLCHAINS` optionally prepends an additional toolchains directory for
+measurement. There are no machine-specific installation path defaults.
 
 One more thing is not in this repo and is not checked by that command:
 **llama.cpp**, under `entry/src/main/cpp/llama.cpp` (git-ignored). Fetch the commit
@@ -39,10 +50,12 @@ fetching it, delete `entry/.cxx` once so CMake sees it.
 **If any of them prints an ERROR line, stop and ask the person working with you
 — do not guess a path and do not install anything.** Ask exactly this:
 
-> This repo needs the ArkTS Agent Kit, hdc and hapsigner, and I cannot find
-> *(name the ones that failed)*. Where are they on this machine? I will use them
-> through `KIT_ROOT` / `HDC_DIR` / `HAPSIGNER` — or I can add the location to
-> `tool-paths.sh` if it should be found automatically from now on.
+> This repo needs Hvigor, the OpenHarmony SDK, the ArkTS Agent Kit, hdc and
+> hapsigner, and I cannot find *(name the ones that failed)*. Where are they on
+> this machine? Please configure `HVIGORW`, `OHOS_BASE_SDK_HOME` and
+> `DEVECO_SDK_HOME`, `KIT_ROOT` or `PATH`, `HDC_DIR` or `PATH`, and `HAPSIGNER`
+> as appropriate. I will use these environment settings without storing paths
+> in scripts or documentation.
 
 An explicitly set variable is an instruction, not a hint: if the thing is not
 where it says, the script fails and names the variable rather than quietly using
@@ -57,11 +70,27 @@ For routine updates:
 ```
 
 This requires exactly one connected phone and an existing system installation
-with the same bundle name. It builds incrementally, skips debug signing, signs
-once with the system profile, installs without deleting anything, and verifies
+with the same bundle name. It runs the clean build below, skips debug signing,
+signs once with the system profile, installs without deleting anything, and verifies
 that the app ID, UID and first install time did not change while update time
 advanced. On any error, stop: never uninstall, clear app data, or change the
 bundle name to work around an update failure. The script prints elapsed time.
+
+`build-hap.sh` validates and exports `OHOS_BASE_SDK_HOME` and `DEVECO_SDK_HOME`,
+then invokes Hvigor from the repository root. Export `HVIGORW` with the absolute
+path to your Hvigor 7.26.0.static wrapper; it never selects a wrapper from `PATH`:
+
+```bash
+bash "$HVIGORW" clean --mode module -p module=entry -p product=default createHapTask --analyze=normal --parallel --incremental --no-daemon
+```
+
+`createHapTask` depends on `assembleHap`
+and renames the output to
+`entry/build/default/outputs/default/vera-probe-dyn-unsigned.hap`. The builder
+shows Hvigor output directly, stops on a nonzero exit or missing artifact, and
+copies the HAP to `${HAP_OUT_DIR:-/tmp/vera-probe-dyn-hap}`. This is a clean
+build despite the `--incremental` flag. Do not restore the `arkui-hvigor`
+wrapper or expect its JSON status/diagnostics protocol.
 
 For separate build/sign steps:
 

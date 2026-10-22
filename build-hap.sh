@@ -11,7 +11,9 @@ esac
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/tool-paths.sh"
-HVIGOR=$(vera_kit_bin arkui-hvigor)
+HVIGORW=$(vera_hvigorw)
+OHOS_BASE_SDK_HOME=$(vera_sdk_home)
+export OHOS_BASE_SDK_HOME DEVECO_SDK_HOME
 if [[ "$UNSIGNED_ONLY" == false ]]; then
   HDC_PATH=$(vera_hdc_dir)
   export PATH="$HDC_PATH:$PATH"
@@ -20,31 +22,21 @@ UDID=${UDID:-}
 HAP_OUT_DIR="${HAP_OUT_DIR:-/tmp/vera-probe-dyn-hap}"
 HAP_NAME="vera-probe-dyn-unsigned.hap"
 
-echo "=== Build HAP (arkui-hvigor) ==="
+echo "=== Build HAP ==="
+printf 'Hvigor wrapper: %s\n' "$HVIGORW"
 HVIGOR_EXIT=0
-HVIGOR_OUTPUT=$("$HVIGOR" --directory /tmp/ --json "$SCRIPT_DIR" 2>/dev/null) || HVIGOR_EXIT=$?
-STATUS=$(echo "$HVIGOR_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','?'))" 2>/dev/null || echo "?")
-DIAGS=$(echo "$HVIGOR_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('summary',{}).get('diagnostic_count',0))" 2>/dev/null || echo "?")
-
-echo "  Status: $STATUS"
-echo "  Diagnostics: $DIAGS"
-
-if [[ "$STATUS" != "ok" || "$HVIGOR_EXIT" -ne 0 ]]; then
-  printf 'ERROR: hvigor failed (exit %s, status %s).\n' "$HVIGOR_EXIT" "$STATUS" >&2
-  if [[ "$DIAGS" != "0" ]]; then
-    echo "$HVIGOR_OUTPUT" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-for r in d.get('diagnostics',[]):
-    print(f\"  {r.get('code','?')} L{r.get('line','?')}: {r.get('message','?')}\")
-" 2>/dev/null
-  fi
-  exit 1
+(
+  cd -- "$SCRIPT_DIR" || exit
+  bash "$HVIGORW" clean --mode module -p module=entry -p product=default createHapTask --analyze=normal --parallel --incremental --no-daemon
+) || HVIGOR_EXIT=$?
+if [[ "$HVIGOR_EXIT" -ne 0 ]]; then
+  printf 'ERROR: hvigor failed (exit %s).\n' "$HVIGOR_EXIT" >&2
+  exit "$HVIGOR_EXIT"
 fi
 
 echo
 echo "=== Copy HAP ==="
-HAP_SRC="$SCRIPT_DIR/entry/build/default/outputs/default/entry-default-unsigned.hap"
+HAP_SRC="$SCRIPT_DIR/entry/build/default/outputs/default/$HAP_NAME"
 if [[ ! -f "$HAP_SRC" ]]; then
   echo "ERROR: HAP not found at $HAP_SRC" >&2
   exit 1
