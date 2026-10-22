@@ -132,7 +132,9 @@ export function verifyRequest(request: CustomRequest, reply: string): string {
   }
   let body: Record<string, Object> = {}
   body['model'] = 'jev-latest'
-  body['state'] = 'Request: ' + request.prompt + '\nThe section, as code:\n' + reply
+  // What the code does not show: the runtime keeps the app's state between visits by itself.
+  body['state'] = 'Request: ' + request.prompt + '\nThe app\'s state (every field) is saved and restored by the phone between ' +
+    'visits without any code for it.\nThe section, as code:\n' + reply
   body['questions'] = questions
   return JSON.stringify(body)
 }
@@ -161,6 +163,11 @@ export class CustomResult {
   cannot: string = ''
   /** The last try was made with thinking on. */
   thought: boolean = false
+  /**
+   * The needs Jev does not read `section` as doing, when no try did them all: the best section that compiles and runs is
+   * served, and only these are reported. Empty when the section does everything.
+   */
+  missed: string[] = []
   /** Model calls made: the first and the repairs. */
   attempts: number = 0
   /** Why it did not work out, '' when it did. */
@@ -202,6 +209,15 @@ export function parseSection(reply: string): FragmentSpec | null {
 }
 
 /** The diagnostics with the program line each one points at, so the repair sees what it wrote there. */
+/**
+ * How to fix a diagnostic the message alone does not say how to: a writer told only "expected View, found View[]" wrote
+ * the same line four times over, thinking included.
+ */
+const FIXES: string[][] = [
+  ['expected View, found View[]', 'a list of views is not one view: wrap it as ui.Column("default", theList)'],
+  ['expected View[], found View', 'one view is not a list: put it in brackets, [theView]']
+]
+
 function quoted(source: string, errors: string): string {
   let lines = source.split('\n')
   let out: string[] = []
@@ -210,6 +226,7 @@ function quoted(source: string, errors: string): string {
     let colon = e.indexOf(':')
     let n = colon > 0 ? Number(e.substring(0, colon)) : NaN
     if (!isNaN(n) && n >= 1 && n <= lines.length) { out.push('    line ' + n.toString() + ': ' + lines[n - 1].trim()) }
+    for (let fix of FIXES) { if (e.indexOf(fix[0]) >= 0) { out.push('    fix: ' + fix[1]) } }
   }
   return out.join('\n')
 }
@@ -240,6 +257,9 @@ export async function writeSection(request: CustomRequest, language: string, ask
       'asks for. It may push several ui.Section(...) in its view.' : '') +
     '\n\nThe program so far, which the section joins (do not repeat it):\n' + request.compose(null)
   let user = asked
+  // The best section that compiled and ran but that Jev reads as missing a need: kept, in case no try does them all.
+  let best: FragmentSpec | null = null
+  let bestMissed: string[] = []
   // The first try and its repairs without thinking, then one more with it: slower, for what the quick tries got wrong.
   for (let attempt = 0; attempt <= REPAIRS + 1; attempt++) {
     let think = attempt > REPAIRS
@@ -265,12 +285,23 @@ export async function writeSection(request: CustomRequest, language: string, ask
         break
       }
       result.failed = 'custom section does not do: ' + missed.join('; ')
+      // One Jev reads as doing none of it is no part of the screen.
+      if (missed.length < request.needs.length && (best === null || missed.length < bestMissed.length)) {
+        best = section
+        bestMissed = missed
+      }
       problem = 'Read against the request, it does not do: ' + missed.join('; ') + '. It must really do that, used as written -- ' +
         'or, if it cannot be done here, answer <cannot>.'
     } else {
       result.failed = 'custom section: ' + problem.split('\n')[0]
     }
     user = asked + '\n\nYour section was:\n' + reply + '\n\nIt failed:\n' + problem + '\n\nWrite the whole section again, fixed, in the same form.'
+  }
+  // No try did everything, but one works and does part of it: that one is served, and what it misses is reported.
+  if (result.section === null && result.cannot.length === 0 && best !== null) {
+    result.section = best
+    result.missed = bestMissed
+    result.failed = 'custom section does not do: ' + bestMissed.join('; ')
   }
   result.ms = Date.now() - started
   return result

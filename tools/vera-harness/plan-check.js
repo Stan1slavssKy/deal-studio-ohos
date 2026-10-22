@@ -113,4 +113,19 @@ for (const label of fs.readdirSync(path.join(__dirname, 'compose'))) {
   assert.equal(P.assemblePlan(refused), '')
 }
 
+// What the plan leaves open is settled, not refused: a figure the countdown runs from that no formula works out becomes
+// a number the person sets, starting from the plan's own example; the person's own to-dos become a section they fill.
+{
+  const c2 = loadVera('VeraCompose')
+  const boil = compositionOf('default-boil')
+  assert.deepEqual(boil.unbound, [])
+  assert.ok(boil.defaulted.some(d => /set by you, starting at/.test(d)), boil.defaulted.join('; '))
+  assert.ok(boil.inputs.some(i => boil.countdownFrom === i.id), boil.countdownFrom)
+  assert.equal(smokeRun(compileVeraSource(c2.assembleProgram(boil))), '')
+  const todos = compositionOf('own-todos')
+  assert.deepEqual(todos.unbound, [])
+  assert.ok(todos.custom.some(n => /the person's own: they add, change and remove them; the list starts empty/.test(n)))
+  assert.deepEqual(c2.screenPlan(todos).toWrite().map(s => s.id), ['custom.0'])
+}
+
 console.log('plan-check: ok')

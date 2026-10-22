@@ -22,7 +22,7 @@ function literal(text: string): string {
  * fixed and `why` -- the writer's own sentence for the person when it said it cannot -- carries the rest.
  */
 export function noticeBlock(cannot: boolean, why: string): FragmentSpec {
-  let title = cannot ? 'Not available on this phone' : 'Part of this app could not be built'
+  let title = cannot ? 'Not available on this phone' : (why.startsWith('It may not do') ? 'Not checked' : 'Part of this app could not be built')
   let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("warning", "' + literal(title) + '", "' +
     literal(why) + '", "", "", "warning")]));\n}'
   let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
@@ -73,7 +73,17 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   let written = await writeSection(asked, host.language, host.askCode!)
   if (written.section !== null) {
     plan.components.push(new PlanComponent(FILL_HOLE, written.section, new Map<string, string>()))
-    for (let s of slots) { plan.fillWith(s, FILL_HOLE, plan.components.length - 1) }
+    let at = plan.components.length - 1
+    let missed = slots.filter((s: PlanSlot): boolean => written.missed.indexOf(s.need) >= 0)
+    if (missed.length > 0) {
+      // Served, with a notice for the part of it Jev does not read it as doing.
+      let why = 'It may not do: ' + missed.map((s: PlanSlot): string => s.need).join('; ') + '.'
+      plan.components.push(new PlanComponent(FILL_REPORTED, noticeBlock(false, why), new Map<string, string>()))
+    }
+    for (let s of slots) {
+      if (missed.indexOf(s) >= 0) { plan.fillWith(s, FILL_REPORTED, plan.components.length - 1, written.failed) }
+      else { plan.fillWith(s, FILL_HOLE, at) }
+    }
   } else if (!asked.whole) {
     // Reported, not dropped: the rest of the screen is served with a notice in place of what could not be built. The
     // whole screen as a hole has no rest to serve.

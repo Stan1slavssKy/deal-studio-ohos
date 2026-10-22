@@ -120,7 +120,8 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     r = await run([good.replace('return {', 'sdk.call("x/y", [], "c_bump");\n  return {'), good])
     assert.equal(r.attempts, 2)
     assert.match(asks[1].user, /sdk\.call/)
-    // Compiles and runs, but Jev does not read it as doing the need: asked for again, saying which; still not, refused.
+    // Compiles and runs, but Jev does not read it as doing a need: asked for again, saying which; still not, the best one is
+    // served and only what it misses is reported.
     {
       const {verifyRequest, undone} = loadVera('agent/AgentCustom')
       const request = Object.assign(new CustomRequest(), {needs: ['a counter', 'a photo'], prompt: 'p', compose: s => c.assembleProgram(comp, [], s)})
@@ -132,11 +133,13 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       assert.deepEqual(undone(request, ''), [])
       request.verify = async () => said(0.9, 0.2)
       const users = []
-      const refused = await writeSection(request, 'L', async (system, user) => { users.push(user); return good })
-      assert.equal(refused.section, null)
-      assert.match(refused.failed, /does not do: a photo/)
-      assert.equal(refused.attempts, 4)
+      const partial = await writeSection(request, 'L', async (system, user) => { users.push(user); return good })
+      assert.ok(partial.section !== null)
+      assert.deepEqual(partial.missed, ['a photo'])
+      assert.match(partial.failed, /does not do: a photo/)
+      assert.equal(partial.attempts, 4)
       assert.match(users[1], /it does not do: a photo/)
+      assert.match(body.state, /saved and restored by the phone between visits/)
       let reads = [said(0.9, 0.2), said(0.9, 0.8)]
       request.verify = async () => reads.shift()
       const second = await writeSection(request, 'L', async () => good)
@@ -262,13 +265,12 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(o.hole.attempts, 1)
     assert.match(asked[0], /works out what the request asks to be calculated/)
     assert.ok(o.blocks.plan.slots.some(s => s.id === 'missing.needs_logic' && s.fill === 'hole'))
-    // Jev does not read the section as doing it, through the repairs and the thinking try: the layout is served with a
-    // notice in place of what it lacks, not handed to the model.
+    // Jev does not read the section as doing its one need, through the repairs and the thinking try: the layout is served
+    // with a notice in place of what it lacks, not handed to the model.
     ;({host, asked} = finishing(0.1))
     o = await route.buildScreen(routeRequest('pizza slices per person', true), host)
     assert.equal(o.kind, route.OUTCOME_TEMPLATE)
     assert.equal(asked.length, 4)
-    assert.match(o.blocks.note, /reported on the screen \(custom section does not do/)
     assert.doesNotMatch(o.blocks.source, /c_people/)
     assert.match(o.blocks.source, /ui\.InsetBanner\("warning", "Part of this app could not be built", "Not built: works out what the request asks/)
     assert.ok(o.blocks.plan.slots.some(s => s.id === 'missing.needs_logic' && s.fill === 'reported'))

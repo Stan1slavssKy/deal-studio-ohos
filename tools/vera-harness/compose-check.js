@@ -174,20 +174,31 @@ assert.equal(c.closePartialJson('{"a": 1} trailing'), '{"a": 1}')
   assert.ok(q['unit.kind'].criteria.neither)
   const read = unit => c.readComposition(JSON.stringify({answers: {'countdown.length': {type: 'choice', choice: 'kind', confidence: 0.9},
     'unit.kind': {type: 'choice', choice: unit, confidence: 0.9}}}), sk)
-  assert.ok(read('neither').unbound.some(u => /seconds or minutes/.test(u)))
-  assert.ok(c.readComposition('{"answers": {}}', sk).unbound.some(u => /nothing sets its length/.test(u)))
+  // Not a length of time, or nothing sets it: the person sets it, in minutes, and is told.
+  for (const comp of [read('neither'), c.readComposition('{"answers": {}}', sk)]) {
+    assert.deepEqual(comp.unbound, [])
+    assert.equal(comp.countdownFrom, 'countdownLength')
+    assert.equal(comp.countdownUnit, 'minutes')
+    assert.ok(comp.inputs.some(i => i.id === 'countdownLength' && i.measure === 'minutes'))
+    assert.deepEqual(comp.defaulted, ['Steep length: set by you, starting at 5 minutes'])
+    compileVeraSource(c.assembleProgram(comp))
+  }
+  assert.equal(sk.inputs.length, 1, 'the sketch itself is not changed')
+  assert.equal(read('minutes').countdownFrom, 'kind')
 }
 
-// A number nothing reads is left out, and named, only when Jev says the request did not ask for it.
+// A number nothing reads is left out and named: as not asked for when Jev says so, else as not used on the screen.
 {
   const sk = c.parseSketch('{"title": "T", "inputs": [{"id": "eggs", "label": "Eggs", "kind": "count", "value": 2}], "stopwatch": {"label": "Boil"}}')
   const read = answer => c.readComposition(JSON.stringify({answers: answer}), sk)
   const added = read({'asked.eggs': {type: 'choice', choice: 'added', confidence: 0.9}})
   assert.deepEqual(added.unbound, [])
   assert.ok(added.dropped.some(d => /Eggs/.test(d)))
-  assert.ok(read({'asked.eggs': {type: 'choice', choice: 'asked', confidence: 0.9}}).unbound.some(u => /Eggs/.test(u)))
-  assert.ok(read({'asked.eggs': {type: 'choice', choice: 'added', confidence: 0.4}}).unbound.some(u => /Eggs/.test(u)), 'a hesitant "added" refuses')
-  assert.ok(read({}).unbound.some(u => /Eggs/.test(u)), 'no answer refuses')
+  for (const comp of [read({'asked.eggs': {type: 'choice', choice: 'asked', confidence: 0.9}}),
+      read({'asked.eggs': {type: 'choice', choice: 'added', confidence: 0.4}}), read({})]) {
+    assert.deepEqual(comp.unbound, [])
+    assert.ok(comp.dropped.some(d => /Eggs.*nothing on the screen uses it/.test(d)))
+  }
 }
 
 // A sketch and hand-written answers through the composer, compiler and VM.
@@ -233,8 +244,10 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   const timer = JSON.stringify({title: 'T', inputs: [{id: 'len', label: 'Length', kind: 'choice', measure: 'minutes',
     options: [{label: '1 minute', value: 60}, {label: '5 minutes', value: 300}], value: 1}], countdown: {label: 'Timer', length: 'len'}})
   assert.match(runSketch(timer, {'countdown.length': pick('len'), 'unit.len': pick('seconds')}).screen(), /5:00/)
-  assert.ok(c.readComposition(JSON.stringify({answers: {'countdown.length': pick('len'), 'unit.len': {type: 'choice', choice: 'minutes', confidence: 0.3}}}),
-    c.parseSketch(timer)).unbound.some(u => /seconds or minutes/.test(u)), 'an unsure unit refuses')
+  // Jev unsure of the unit: read by the numbers' size, and the person told; 300 is no number of minutes for a timer.
+  const unsure = c.readComposition(JSON.stringify({answers: {'countdown.length': pick('len'), 'unit.len': {type: 'choice', choice: 'minutes', confidence: 0.3}}}),
+    c.parseSketch(timer))
+  assert.deepEqual([unsure.unbound, unsure.countdownFrom, unsure.countdownUnit, unsure.defaulted], [[], 'len', 'seconds', ['Length: taken as seconds']])
   const p = runSketch(JSON.stringify({title: 'T', inputs: [{id: 'mins', label: 'Time', kind: 'amount', measure: 'minutes', value: 50},
     {id: 'km', label: 'Distance', kind: 'amount', value: 8}], values: [{id: 'pace', label: 'Pace', format: 'minutes'}]}),
   {'expr.pace': pick('divide:mins:km'), 'steps.pace': pick('one'), 'widget.mins': pick('stepper'), 'widget.km': pick('stepper')})
@@ -293,7 +306,8 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   // The time must come from the entry: a calendar event at a countdown's end has no entry to read.
   const wrong = c.readComposition(JSON.stringify({answers: {...answers, 'moment.cal': pick('countdown_end')}}),
     c.parseSketch(sketch.replace('"events"', '"countdown": {"label": "T"}, "events"')))
-  assert.ok(wrong.unbound.some(u => /no entry is added then/.test(u)) || wrong.unbound.some(u => /countdown/.test(u)))
+  // (The countdown's missing length is now a default the person sets: the event alone is what refuses.)
+  assert.ok(wrong.unbound.some(u => /no entry is added or tapped then/.test(u)), wrong.unbound.join('; '))
   // An unsure argument refuses the event.
   const unsure = c.readComposition(JSON.stringify({answers: {...answers, 'arg.cal.calendar_add.time': {type: 'choice', choice: 'entry.timeItem', confidence: 0.2}}}), sk)
   assert.ok(unsure.unbound.some(u => /time of day the event starts/.test(u)))
@@ -606,7 +620,10 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
     other: ['roll the dice and show each face']}))
   const answers = JSON.stringify({answers: {'covers.0': pick('none'), 'asked.other.0': pick('asked'), 'asked.dice': pick('asked'),
     'widget.dice': pick('stepper')}})
-  assert.ok(c.readComposition(answers, sketch).unbound.some(u => /Dice/.test(u)))
+  // Without the custom section the request's item refuses the screen, and the input is left out with a note.
+  const without = c.readComposition(answers, sketch)
+  assert.ok(without.unbound.some(u => /roll the dice/.test(u)))
+  assert.ok(without.dropped.some(d => /Dice.*nothing on the screen uses it/.test(d)))
   c.setCustomSectionsEnabled(true)
   const comp = c.readComposition(answers, sketch)
   c.setCustomSectionsEnabled(false)

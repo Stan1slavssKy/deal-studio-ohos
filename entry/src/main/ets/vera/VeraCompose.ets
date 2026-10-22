@@ -1127,6 +1127,54 @@ export function expressionsFor(sketch: Sketch, index: number): Map<string, strin
   return out
 }
 
+/**
+ * A number the screen needs that nothing works out, as an input the person sets instead, starting from `value`: the
+ * plan's own guess when it gave one. It takes `id` as it is, so whatever reads that name reads the input.
+ */
+function defaultInput(comp: Composition, id: string, label: string, measure: string, value: number): SketchInput {
+  let input = new SketchInput()
+  input.id = id
+  input.label = label
+  input.kind = measure === 'money' ? 'amount' : (measure === 'percent' ? 'percent' : 'count')
+  input.measure = measure
+  input.value = isFinite(value) ? value : 0
+  input.min = measure === 'minutes' || measure === 'seconds' ? 1 : 0
+  input.max = Math.max(100, Math.ceil(Math.abs(input.value) * 4))
+  // The inputs of the sketch and of the composition's copy of it are one list.
+  comp.sketch.inputs.push(input)
+  comp.widgets.set(id, defaultWidget(input.kind))
+  comp.defaulted.push(label + ': set by you, starting at ' + numberLiteral(input.value) + (measure === 'minutes' ||
+    measure === 'seconds' ? ' ' + measure : ''))
+  return input
+}
+
+/** Every name the sketch already uses, so a name made for it is new. */
+function sketchIds(sketch: Sketch): string[] {
+  let ids: string[] = RESERVED_IDS.slice()
+  for (let i of sketch.inputs) { ids.push(i.id) }
+  for (let k of sketch.constants) { ids.push(k.id) }
+  for (let v of sketch.values) { ids.push(v.id) }
+  if (sketch.list !== null) { for (let f of sketch.list!.fields) { ids.push(f.id) } }
+  return ids
+}
+
+/** The starting number of an input, a constant or a value's worked example, NaN when there is none. */
+function startingNumber(sketch: Sketch, source: string): number {
+  let id = source.substring(source.indexOf('.') + 1)
+  let input = sketch.inputs.find((i: SketchInput): boolean => i.id === id)
+  // A choice's own value is its option's position; its numbers are the options'.
+  if (input !== undefined && input.options.length > 0) {
+    let most = input.options[0].value
+    for (let o of input.options) { most = Math.max(most, o.value) }
+    return most
+  }
+  if (input !== undefined) { return input.value }
+  let k = sketch.constants.find((c: SketchConstant): boolean => c.id === id)
+  if (k !== undefined) { return k.value }
+  let v = sketch.values.find((x: SketchValue): boolean => x.id === id)
+  return v !== undefined ? v.result : NaN
+}
+
 function copyOf(m: Map<string, string>): Map<string, string> {
   let out: Map<string, string> = new Map<string, string>()
   m.forEach((v: string, k: string) => { out.set(k, v) })
@@ -1516,6 +1564,8 @@ export class Composition {
   events: SketchEvent[] = []
   /** What was left out without refusing, for the trace. */
   dropped: string[] = []
+  /** What the plan left open and a default settled, in words for the person: "Cook time: set by you, starting at 6". */
+  defaulted: string[] = []
   /** The inputs the screen shows: the sketch's, less numbers nothing reads. */
   inputs: SketchInput[] = []
   /** Requirements nothing in the vocabulary was chosen for; a composition with any is not served. */
@@ -1597,6 +1647,9 @@ function answerOf(answers: Record<string, Object>, key: string, allowed: string[
 
 export function readComposition(body: string, sketch: Sketch, widget: boolean = false): Composition {
   let comp = new Composition(sketch)
+  // Its own list of inputs: a default adds one (defaultInput), and the sketch is read again for a widget.
+  comp.sketch = withList(sketch, sketch.list)
+  comp.sketch.inputs = sketch.inputs.slice()
   comp.widget = widget
   let answers: Record<string, Object> = {}
   try {
@@ -1615,7 +1668,11 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     let kind = answerOf(answers, 'ready.' + i.toString(), READY_KINDS, comp.answers, READY_ABOVE)
     let own = answerOf(answers, 'whose.' + i.toString(), ['own'], comp.answers, OWN_RECORDS_ABOVE) === 'own'
     comp.readyKinds.push(own ? '' : kind)
-    if (own) {
+    if (own && customEnabled) {
+      // Their own records are theirs to enter: a section that keeps what they add, starting empty, and makes up none.
+      comp.custom.push(sketch.ready[i] + ' -- these are the person\'s own: they add, change and remove them; the list starts ' +
+        'empty and the app never makes any up')
+    } else if (own) {
       comp.unbound.push('the person\'s own records, which no section can make up: ' + sketch.ready[i])
     } else if (kind.length > 0) {
       comp.blocks.push(kind)
@@ -1679,16 +1736,32 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     let sources: string[] = []
     lengthSources(sketch).forEach((_d: string, key: string) => { sources.push(key) })
     comp.countdownFrom = answerOf(answers, 'countdown.length', sources, comp.answers)
-    if (comp.countdownFrom.length === 0) { comp.unbound.push('countdown: nothing sets its length') }
-    else if (dependsOn(comp, comp.countdownFrom).some((d: string): boolean => CLOCK_OPERANDS.indexOf(d) >= 0)) {
-      comp.unbound.push('countdown: its length is worked out from the countdown itself')
-    } else {
+    let unclear = comp.countdownFrom.length === 0 ||
+      dependsOn(comp, comp.countdownFrom).some((d: string): boolean => CLOCK_OPERANDS.indexOf(d) >= 0)
+    if (!unclear) {
       // A worked-out value's unit is its format; an input's or a constant's is Jev's reading of its labels.
       comp.countdownUnit = measureOf(sketch, comp.countdownFrom)
       if (answers['unit.' + comp.countdownFrom] !== undefined) {
         comp.countdownUnit = answerOf(answers, 'unit.' + comp.countdownFrom, ['seconds', 'minutes'], comp.answers, UNIT_ABOVE)
-        if (comp.countdownUnit.length === 0) { comp.unbound.push('countdown: not clear that its length is in seconds or minutes') }
+        if (comp.countdownUnit.length === 0) {
+          // Not a length of time at all -- a tea timer once ran from its choice's position, 0 to 2 -- is not used for one.
+          // A time Jev is only unsure of the unit of is read by its size: past two hours' worth of minutes is seconds.
+          unclear = answerOf(answers, 'unit.' + comp.countdownFrom, ['neither'], [], UNIT_ABOVE) === 'neither'
+          if (!unclear) {
+            let start = startingNumber(comp.sketch, comp.countdownFrom)
+            comp.countdownUnit = isFinite(start) && start > 120 ? 'seconds' : 'minutes'
+            comp.defaulted.push(labelOf(sketch, comp.countdownFrom) + ': taken as ' + comp.countdownUnit)
+          }
+        }
       }
+    }
+    if (unclear) {
+      // Nothing sets how long it runs (or only the countdown itself, or a number that is not a time): the person sets
+      // it, in minutes.
+      let id = usableId('countdownLength', sketchIds(comp.sketch))
+      defaultInput(comp, id, (sketch.countdown.length > 0 ? sketch.countdown : 'Timer') + ' length', 'minutes', 5)
+      comp.countdownFrom = id
+      comp.countdownUnit = 'minutes'
     }
   }
 
@@ -1743,9 +1816,10 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     } else if (e.asked && comp.widget && missing === 'no effect' &&
         answerOf(answers, 'detail.event.' + e.id, ['detail'], comp.answers, OTHER_ADDED_ABOVE) === 'detail') {
       comp.dropped.push('event "' + e.what + '": a detail of how the widget looks or is worked')
-    } else if (e.asked && customEnabled && (missing === 'no effect' || missing === 'nothing on the screen marks that moment')) {
-      // Something the phone or another app does that none of the effects is: a section the model writes, shown the
-      // phone's functions found for it, does it -- with its own control for the moment when the screen has none.
+    } else if (e.asked && customEnabled) {
+      // Something the phone or another app does that the effects cannot do as asked -- none of them is it, nothing on the
+      // screen marks its moment, nothing gives one of its details: a section the model writes, shown the phone's
+      // functions found for it, does it, with its own controls for what the screen lacks.
       let need = e.what + ' (' + e.when + ')'
       comp.custom.push(need)
       comp.phoneNeeds.push(need)
@@ -1818,7 +1892,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   comp.args.forEach((given: Map<string, string>) => {
     given.forEach((source: string) => { if (source.startsWith('input.')) { read.push(source.substring(6)) } })
   })
-  for (let input of sketch.inputs) {
+  for (let input of comp.sketch.inputs) {
     if (read.indexOf(input.id) >= 0 || comp.customReads.indexOf(input.id) >= 0) { comp.inputs.push(input); continue }
     let extra = isNumeric(input.kind) && answerOf(answers, 'asked.' + input.id, ['added'], comp.answers, ADDED_ABOVE) === 'added'
     if (extra) { comp.dropped.push('input "' + input.label + '": not asked for, and nothing reads it') }
@@ -1830,7 +1904,8 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       comp.inputs.push(input)
       comp.customReads.push(input.id)
     }
-    else { comp.unbound.push('input "' + input.label + '": nothing reads it') }
+    // Nothing on the screen would use it: left out, and the person is told, rather than the screen refused.
+    else { comp.dropped.push('input "' + input.label + '": nothing on the screen uses it') }
   }
   // Inputs that nothing reads make a form that does nothing: the sketch has lost what they were for.
   if (sketch.values.length === 0 && !sketch.hasCountdown && !sketch.hasStopwatch && sketch.list === null && comp.events.length === 0 &&
@@ -1893,8 +1968,18 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
       readByParts = readByParts.concat([b.a, b.b], b.reads)
     }
     failed.forEach((_why: string, id: string) => {
-      if (leaving.indexOf(id) >= 0 || readByParts.indexOf(id) >= 0) { return }
+      if (leaving.indexOf(id) >= 0) { return }
       let v = sketch.values.find((x: SketchValue): boolean => x.id === id)!
+      if (readByParts.indexOf(id) >= 0) {
+        // The parts read it by name -- the countdown's length, a figure worked out from it: it becomes a number the
+        // person sets, under the same name, starting from the plan's own example.
+        let measure = v.format === 'money' || v.format === 'percent' || v.format === 'minutes' || v.format === 'seconds' ?
+          v.format : 'number'
+        defaultInput(comp, id, v.label, measure, v.result)
+        leaving.push(id)
+        written.push(id)
+        return
+      }
       comp.custom.push('the figure "' + v.label + '": ' + v.means)
       for (let input of sketch.inputs) { if (new RegExp('\\b' + input.id + '\\b').test(v.formula)) { comp.customReads.push(input.id) } }
       leaving.push(id)
