@@ -456,6 +456,36 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(r.source, '')
     assert.notEqual(r.failed, '')
   }
+  // What one hole of a request learned is not asked again by the next: a phone need it said it cannot do is reported as
+  // it said, and a lookup is made once.
+  {
+    const {writeHole} = loadVera('agent/AgentHole')
+    const P = loadVera('ScreenPlan')
+    const host = new (loadVera('agent/AgentHost').AgentHost)()
+    host.language = 'VERA-L'
+    let writes = 0, lookups = 0
+    host.askCode = async () => { writes++; return '<cannot>This phone does not let apps set alarms.</cannot>' }
+    host.lookup = async () => { lookups++; return JSON.stringify({results: []}) }
+    const plan = () => {
+      const p = new P.ScreenPlan()
+      p.components.push(new P.PlanComponent(P.FILL_PART, null, new Map()))
+      p.addToWrite('a', 'set an alarm (the person taps Set)', true)
+      return p
+    }
+    const first = plan()
+    await writeHole(first, 'alarm', [], host)
+    assert.equal(writes, 1)
+    const second = plan()
+    const r = await writeHole(second, 'alarm', [], host)
+    assert.equal(writes, 1)
+    assert.equal(lookups, 1)
+    assert.equal(r.cannot, 'This phone does not let apps set alarms.')
+    assert.equal(second.slots[0].fill, P.FILL_REPORTED)
+    const whole = new P.ScreenPlan()
+    whole.addToWrite('a', 'set an alarm (the person taps Set)', true)
+    assert.match((await writeHole(whole, 'alarm', [], host)).failed, /known from an earlier hole/)
+    assert.equal(writes, 1)
+  }
   // Blocks first: the blocks run before the agent, and the agent still serves what they do not.
   route.setRouteOrder(route.ORDER_BLOCKS_FIRST)
   {

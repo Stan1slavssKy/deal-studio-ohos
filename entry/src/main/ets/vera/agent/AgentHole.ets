@@ -48,6 +48,27 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
     facts: string[] = []): Promise<CustomResult | null> {
   let slots: PlanSlot[] = plan.toWrite()
   if (slots.length === 0) { return null }
+  // Phone needs an earlier hole of this request already found nothing can do are reported as it said, not asked again.
+  let known = slots.filter((s: PlanSlot): boolean => s.phone && host.cannot.has(s.need))
+  if (known.length > 0 && plan.components.length === 0 && known.length === slots.length) {
+    // The whole screen is nothing but those: there is nothing to write, and no rest to serve.
+    let nothing = new CustomResult()
+    nothing.cannot = host.cannot.get(known[0].need)!
+    nothing.failed = 'custom section cannot: ' + nothing.cannot + ' (known from an earlier hole)'
+    return nothing
+  }
+  if (known.length > 0) {
+    let why = host.cannot.get(known[0].need)!
+    plan.components.push(new PlanComponent(FILL_REPORTED, noticeBlock(true, why), new Map<string, string>()))
+    for (let s of known) { plan.fillWith(s, FILL_REPORTED, plan.components.length - 1, why) }
+    slots = plan.toWrite()
+    if (slots.length === 0) {
+      let reported = new CustomResult()
+      reported.cannot = why
+      reported.failed = 'custom section cannot: ' + why + ' (known from an earlier hole)'
+      return reported
+    }
+  }
   if (host.askCode === null || host.language.length === 0) {
     let none = new CustomResult()
     none.failed = 'no model to write a custom section'
@@ -66,11 +87,13 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   let found: string[] = []
   for (let s of slots) {
     if (!s.phone) { continue }
-    let text = await host.lookup(s.need)
+    let text = host.looked.get(s.need) ?? await host.lookup(s.need)
+    host.looked.set(s.need, text)
     if (text.length > 0) { found.push('For "' + s.need + '":\n' + text.substring(0, LOOKUP_CHARS)) }
   }
   asked.phone = found.join('\n\n')
   let written = await writeSection(asked, host.language, host.askCode!)
+  if (written.cannot.length > 0) { for (let s of slots) { if (s.phone) { host.cannot.set(s.need, written.cannot) } } }
   if (written.section !== null) {
     plan.components.push(new PlanComponent(FILL_HOLE, written.section, new Map<string, string>()))
     let at = plan.components.length - 1

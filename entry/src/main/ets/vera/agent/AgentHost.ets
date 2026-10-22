@@ -65,6 +65,12 @@ export class AgentHost {
   language: string = ''
   /** Asks the person a blocking question: the answer's index, or null for the default (the default host never asks). */
   ask: (question: AgentQuestion) => Promise<number | null> = async (_question: AgentQuestion): Promise<number | null> => null
+  /**
+   * What this request's holes already learned, so a later, wider hole does not repeat it: each phone need a writer said
+   * it cannot do, with its sentence for the person, and each lookup made.
+   */
+  cannot: Map<string, string> = new Map<string, string>()
+  looked: Map<string, string> = new Map<string, string>()
   /** True once the person has asked to stop. */
   cancelled: () => boolean = (): boolean => false
 }
