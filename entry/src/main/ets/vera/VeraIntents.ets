@@ -18,6 +18,7 @@ import hilog from '@ohos.hilog'
 import { BusinessError } from '@ohos.base'
 import { AbilityContext } from './VeraPermissions'
 import Want from '@ohos.app.ability.Want'
+import { unreachableTarget } from './VeraIntentCatalog'
 
 const DOMAIN = 0x0000
 
@@ -53,6 +54,11 @@ function writeParam(params: Record<string, Object>, platformName: string, value:
  * The answer is the target's own result, as JSON.
  */
 export async function runRawIntent(target: string, values: Map<string, string>, mode: string): Promise<string> {
+  // An app known to accept and then ignore calls from here: say so, rather than pass on its empty 'ok'.
+  if (unreachableTarget(target)) {
+    hilog.info(DOMAIN, 'VERA', 'VERA-INTENT-RAW ' + target + ' refused: app does not act on calls from this app')
+    return 'error 801: ' + target.split('/')[0].trim() + ' does not act on requests from this app on this phone'
+  }
   let parts = target.split('/')
   // Three parts, no intent name: nothing to tell the target, so just open it.
   if (parts.length === 3) { return launchRawTarget(parts[0].trim(), parts[2].trim()) }

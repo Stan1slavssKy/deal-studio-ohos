@@ -34,7 +34,7 @@
  * (Refine) without reverting it.
  */
 
-import { INTENT_CATALOG, IntentSpec, IntentParam } from './VeraIntentCatalog'
+import { INTENT_CATALOG, IntentSpec, IntentParam, unreachableTarget } from './VeraIntentCatalog'
 import { registryEntries, RegistryEntry, requestWords } from './VeraIntentRegistry'
 import { identifierTokens, needWords } from './VeraSdkIndex'
 import { CeliaIntentEntry, celiaIntentIndexEntries, celiaIndexSize } from './VeraCeliaIntentIndex'
@@ -210,7 +210,7 @@ function registryIndex(): Map<string, RegistryEntry> {
  */
 export function celiaEntryIfInstalled(c: CeliaIntentEntry): IntentEntry | null {
   let reg = registryIndex().get(c.bundle + '/' + c.intentName)
-  if (reg === undefined) { return null }
+  if (reg === undefined || unreachableTarget(c.bundle)) { return null }
   let e = new IntentEntry()
   e.kind = 'celia'
   e.name = reg.target
@@ -282,7 +282,7 @@ export function allEntries(): IntentEntry[] {
     return cachedEntries!
   }
   let entries: IntentEntry[] = []
-  for (let spec of INTENT_CATALOG) { entries.push(catalogEntry(spec)) }
+  for (let spec of INTENT_CATALOG) { if (!unreachableTarget(spec.bundle)) { entries.push(catalogEntry(spec)) } }
   let celiaMatched: Set<string> = new Set<string>()
   for (let c of celiaIntentIndexEntries()) {
     let e = celiaEntryIfInstalled(c)
@@ -292,7 +292,7 @@ export function allEntries(): IntentEntry[] {
     }
   }
   for (let reg of registryEntries()) {
-    if (!celiaMatched.has(reg.bundle + '/' + reg.intentName)) { entries.push(rawEntry(reg)) }
+    if (!celiaMatched.has(reg.bundle + '/' + reg.intentName) && !unreachableTarget(reg.bundle)) { entries.push(rawEntry(reg)) }
   }
   cachedEntries = entries
   cachedRegistryLength = registryLength

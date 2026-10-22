@@ -1,0 +1,149 @@
+/**
+ * The agent: the slow path for a request the blocks do not serve. It plans the screen (DeepSeek, no thinking,
+ * a JSON plan), has Jev choose how each part of the plan is built, assembles the program and checks it --
+ * compiled, then run once with every handler tapped (VeraSmoke.ets) -- before anything is shown.
+ *
+ * The plan is VeraCompose.ets's sketch; Jev's choices bind each of its parts, and pick a section of the catalogue
+ * (VeraTemplates.ets) for each need the plan says one handles whole, whose content and holes the host fills. What
+ * neither does is one custom section the model writes (AgentCustom.ets). Callers see only runAgent and AgentResult,
+ * so those can change behind it. Never throws.
+ */
+
+import { AgentHost, BlockRequest, BlockFill } from './AgentHost'
+import { CustomResult } from './AgentCustom'
+import { writeHole } from './AgentHole'
+import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
+import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, ComposeResult, Composition, Sketch } from '../VeraCompose'
+import { ScreenPlan, assemblePlan } from '../ScreenPlan'
+import { compileVeraSource } from '../VeraCompiler'
+import { Repaired, checkProgram, repairProgram } from './AgentRepair'
+
+export class AgentRequest {
+  /** What to build, in the person's words (or the chat's request for them). */
+  prompt: string = ''
+  /** A widget inside a chat reply rather than a whole screen. */
+  widget: boolean = false
+}
+
+export class AgentResult {
+  /** The checked program; empty when the agent could not build one. */
+  source: string = ''
+  vbc2: string = ''
+  /** One line for the trace: what was built, or why not. */
+  note: string = ''
+  /** Why the assembled program was not served: compile or runtime diagnostics, '' when it was or when nothing was assembled. */
+  errors: string = ''
+  /** The plan and Jev's answers, with their timings. */
+  composed: ComposeResult = new ComposeResult()
+  /** The plan in words for a generation to keep to, '' when there is none or plans are off. */
+  plan: string = ''
+  /** The catalogue's sections on the screen, in order; empty when it has none. */
+  blocks: string[] = []
+  /** What filling them did, when there were any. */
+  blockFill: BlockFill | null = null
+  /** What writing the custom section did, when the composition needed one. */
+  custom: CustomResult | null = null
+  /** What repairing the assembled program by edits did, when it did not compile or run; null otherwise. */
+  repair: Repaired | null = null
+  /** What writing the whole screen as one hole did, when nothing narrower served (agent/VeraBuildRoute.ets). */
+  whole: CustomResult | null = null
+  /** The questions put to the person, with their answers. */
+  asked: Asked[] = []
+  /** The screen's plan (ScreenPlan.ets) as far as it got: every slot and what fills it; null when Jev chose nothing. */
+  screen: ScreenPlan | null = null
+  firstPreviewMs: number = 0
+  previews: number = 0
+  checkMs: number = 0
+  ms: number = 0
+}
+
+export async function runAgent(request: AgentRequest, host: AgentHost): Promise<AgentResult> {
+  let result = new AgentResult()
+  let started = Date.now()
+  host.status(request.widget ? 'Sketching the widget...' : 'Composing...')
+  let composed = await composeWith(request.prompt, host.askPlan, host.askJev, (partial: Sketch): void => {
+    if (host.cancelled()) { return }
+    let source = provisionalProgram(partial, request.widget)
+    if (source.length === 0) { return }
+    try {
+      host.preview(compileVeraSource(source).vbc2)
+      result.previews++
+      if (result.firstPreviewMs === 0) { result.firstPreviewMs = Date.now() - started }
+    } catch (_e) {
+      // A partial plan that does not compile is skipped; the next one replaces it.
+    }
+  }, request.widget, async (sketch: Sketch): Promise<string> => {
+    if (host.cancelled()) { return '' }
+    let settled = await askBlocking(request.prompt, sketch.questions, host.askJev, (q: AgentQuestion): Promise<number | null> => {
+      host.status('Waiting for your answer...')
+      return host.ask(q)
+    }, result.asked)
+    if (settled.length > 0) { host.status('Planning again with your answer...') }
+    return settled
+  })
+  result.composed = composed
+  result.note = composed.note
+  result.plan = composed.parsed !== null && composePlanEnabled() ? sketchPlan(composed.parsed!) : ''
+  // Sections of the catalogue: their content written for the request (from a search when it needs real data), and
+  // their holes, before the program is assembled.
+  if (composed.composition !== null && !host.cancelled()) {
+    let comp: Composition = composed.composition!
+    let values: Map<string, string>[] = []
+    let ready = true
+    if (comp.blocks.length > 0) {
+      host.status(comp.realData ? 'Looking up real data...' : 'Filling in the sections...')
+      let blocks = new BlockRequest()
+      blocks.kinds = comp.blocks
+      blocks.prompt = request.prompt
+      blocks.realData = comp.realData
+      blocks.offset = partCount(comp)
+      blocks.compose = (filled: Map<string, string>[]): string => assembleProgram(comp, filled)
+      let fill = await host.fillBlocks(blocks)
+      result.blocks = comp.blocks
+      result.blockFill = fill
+      result.note += '; ' + (fill.failed.length > 0 ? fill.failed : fill.note)
+      ready = fill.failed.length === 0
+      values = fill.values
+    }
+    // The plan, and what nothing ready does in it: one section the model writes into the program the rest makes.
+    let plan = screenPlan(comp, values)
+    result.screen = plan
+    if (ready && plan.toWrite().length > 0 && !host.cancelled()) {
+      host.status('Writing the rest...')
+      let written = await writeHole(plan, request.prompt, customInputs(comp), host)
+      result.custom = written
+      ready = plan.toWrite().length === 0
+      if (written !== null) {
+        result.note += '; ' + (written.section !== null ? 'custom section in ' + written.attempts.toString() + ' attempt(s)' :
+          'reported on the screen (' + written.failed + ')')
+      }
+    }
+    if (ready) { composed.source = assemblePlan(plan) }
+  }
+  if (composed.source.length > 0) {
+    let checkStart = Date.now()
+    result.errors = checkProgram(composed.source)
+    result.checkMs = Date.now() - checkStart
+    // What the assembly got wrong is repaired by edits to it, not by building it again.
+    if (result.errors.length > 0 && host.askCode !== null && host.language.length > 0 && !host.cancelled()) {
+      host.status('Repairing the program...')
+      let repaired = await repairProgram(composed.source, result.errors, request.prompt, host.language, host.askCode!)
+      result.repair = repaired
+      if (repaired.source.length > 0) {
+        composed.source = repaired.source
+        result.errors = ''
+        result.note += '; repaired by edits in ' + repaired.rounds.toString() + ' round(s)'
+      } else {
+        result.note += '; repair: ' + repaired.failed
+      }
+    }
+    if (result.errors.length === 0) {
+      result.source = composed.source
+      result.vbc2 = compileVeraSource(composed.source).vbc2
+    } else {
+      result.note += '; ' + result.errors
+    }
+  }
+  result.ms = Date.now() - started
+  return result
+}

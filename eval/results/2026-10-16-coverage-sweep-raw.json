@@ -1,0 +1,1262 @@
+[
+ {
+  "id": "hf-01-terse",
+  "label": "coverage",
+  "ms": 708,
+  "picked": "section1=progress_goal section2=none(duplicate progress_goal) section3=none section4=none section5=none section6=none logic=needs_logic=0.87",
+  "raw": "s1=progress_goal@0.93 s2=progress_goal@0.64 s3=progress_goal@0.36 s4=none@0.29 s5=none@0.38 s6=none@0.42 +master_list@0.13 +detail_view@0.09 +record_log@0.08 +number_strip@0.12 +breakdown_table@0.06 +series_chart@0.07 +progress_line@0.27 +list_summary@0.24 +checklist@0.57 layout=progress_list@0.56"
+ },
+ {
+  "id": "hf-01-descriptive",
+  "label": "coverage",
+  "ms": 920,
+  "picked": "section1=progress_goal section2=none(duplicate progress_goal) section3=none section4=none section5=none section6=none logic=needs_logic=0.93",
+  "raw": "s1=progress_goal@0.71 s2=progress_goal@0.51 s3=progress_goal@0.40 s4=progress_goal@0.35 s5=progress_goal@0.33 s6=progress_goal@0.31 +master_list@0.11 +detail_view@0.09 +number_strip@0.09 +progress_line@0.28 +list_summary@0.35 +checklist@0.61 layout=progress_list@0.44"
+ },
+ {
+  "id": "hf-01-computation",
+  "label": "coverage",
+  "ms": 725,
+  "picked": "section1=progress_goal section2=none section3=none section4=none section5=none section6=none layout=progress_list +list_summary +checklist logic=needs_logic=0.96",
+  "raw": "s1=progress_goal@0.55 s2=progress_goal@0.26 s3=progress_goal@0.21 s4=none@0.40 s5=none@0.31 s6=none@0.49 +number_strip@0.08 +progress_line@0.24 +list_summary@0.67 +checklist@0.12 layout=progress_list@0.95"
+ },
+ {
+  "id": "hf-02-terse",
+  "label": "coverage",
+  "ms": 754,
+  "picked": "section1=none section2=none section3=series_chart section4=none section5=none(duplicate series_chart) section6=none logic=needs_integration=0.34,needs_multiple_counters=0.82,needs_logic=0.90",
+  "raw": "s1=record_log@0.28 s2=series_chart@0.46 s3=series_chart@0.61 s4=series_chart@0.46 s5=series_chart@0.54 s6=series_chart@0.49 +filter_box@0.10 +master_list@0.26 +detail_view@0.11 +record_log@0.10 +number_strip@0.21 +breakdown_table@0.10 +series_chart@0.60 +checklist@0.12 layout=none@0.32"
+ },
+ {
+  "id": "hf-02-descriptive",
+  "label": "coverage",
+  "ms": 1343,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=log_entries@0.40 s2=bar_chart@0.29 s3=bar_chart@0.38 s4=bar_chart@0.37 s5=bar_chart@0.31 s6=bar_chart@0.34 +filter_box@0.07 +master_list@0.24 +detail_view@0.11 +record_log@0.06 +number_strip@0.41 +breakdown_table@0.24 +series_chart@0.71 +checklist@0.13 layout=log_report@0.66"
+ },
+ {
+  "id": "hf-02-computation",
+  "label": "coverage",
+  "ms": 720,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=number_strip@0.25 s2=number_strip@0.28 s3=number_strip@0.37 s4=number_strip@0.37 s5=number_strip@0.34 s6=number_strip@0.33 +master_list@0.07 +number_strip@0.28 layout=log_report@0.63"
+ },
+ {
+  "id": "hf-03-terse",
+  "label": "coverage",
+  "ms": 551,
+  "picked": "section1=none section2=none section3=key_facts section4=none section5=none section6=none logic=needs_logic=0.98",
+  "raw": "s1=none@0.47 s2=key_facts@0.49 s3=key_facts@0.56 s4=key_facts@0.44 s5=none@0.64 s6=none@0.55 layout=none@0.70"
+ },
+ {
+  "id": "hf-03-descriptive",
+  "label": "coverage",
+  "ms": 603,
+  "picked": "section1=none section2=key_facts section3=none(duplicate key_facts) section4=none section5=none section6=none logic=needs_search_or_form=0.83,needs_logic=0.98",
+  "raw": "s1=none@0.32 s2=key_facts@0.62 s3=key_facts@0.53 s4=none@0.51 s5=none@0.64 s6=none@0.60 layout=none@0.66"
+ },
+ {
+  "id": "hf-03-computation",
+  "label": "coverage",
+  "ms": 576,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=key_facts@0.34 s2=key_facts@0.46 s3=none@0.46 s4=none@0.62 s5=none@0.61 s6=none@0.53 layout=none@0.66"
+ },
+ {
+  "id": "hf-04-terse",
+  "label": "coverage",
+  "ms": 1714,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.29 s2=none@0.43 s3=none@0.47 s4=none@0.56 s5=none@0.63 s6=none@0.61 +filter_box@0.09 +master_list@0.24 +detail_view@0.12 +record_log@0.27 +number_strip@0.22 +breakdown_table@0.16 +series_chart@0.12 +settle_up@0.09 +itinerary@0.19 +progress_line@0.39 +list_summary@0.40 +checklist@0.54 layout=progress_list@0.47"
+ },
+ {
+  "id": "hf-04-descriptive",
+  "label": "coverage",
+  "ms": 911,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=note@0.46 s2=note@0.20 s3=none@0.24 s4=none@0.27 s5=none@0.34 s6=none@0.32 +master_list@0.27 +detail_view@0.20 +number_strip@0.29 +breakdown_table@0.06 +series_chart@0.09 +progress_line@0.33 +list_summary@0.41 +checklist@0.42 layout=progress_list@0.54"
+ },
+ {
+  "id": "hf-04-computation",
+  "label": "coverage",
+  "ms": 1172,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist",
+  "raw": "s1=note@0.18 s2=list_summary@0.16 s3=none@0.21 s4=none@0.31 s5=none@0.32 s6=none@0.34 +master_list@0.21 +detail_view@0.07 +number_strip@0.21 +progress_line@0.23 +list_summary@0.48 +checklist@0.40 layout=progress_list@0.89"
+ },
+ {
+  "id": "hf-05-terse",
+  "label": "coverage",
+  "ms": 654,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist needs_real_data=0.36",
+  "raw": "s1=checklist@0.45 s2=checklist@0.27 s3=checklist@0.20 s4=none@0.33 s5=none@0.39 s6=none@0.40 +master_list@0.24 +detail_view@0.12 +number_strip@0.08 +progress_line@0.13 +list_summary@0.18 +checklist@0.76 layout=progress_list@0.86"
+ },
+ {
+  "id": "hf-05-descriptive",
+  "label": "coverage",
+  "ms": 2830,
+  "picked": "section1=checklist section2=none section3=none section4=none section5=none section6=none layout=progress_list logic=needs_logic=0.89",
+  "raw": "s1=checklist@0.51 s2=checklist@0.44 s3=key_facts@0.25 s4=none@0.22 s5=none@0.27 s6=none@0.32 +filter_box@0.08 +master_list@0.10 +detail_view@0.15 +number_strip@0.08 +progress_line@0.16 +list_summary@0.23 +checklist@0.88 layout=progress_list@0.89"
+ },
+ {
+  "id": "hf-05-computation",
+  "label": "coverage",
+  "ms": 964,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=timeline@0.29 s2=checklist@0.27 s3=timeline@0.23 s4=none@0.34 s5=none@0.41 s6=none@0.41 +filter_box@0.09 +master_list@0.14 +detail_view@0.14 +progress_line@0.09 +list_summary@0.07 +checklist@0.65 layout=progress_list@0.58"
+ },
+ {
+  "id": "hf-06-terse",
+  "label": "coverage",
+  "ms": 1650,
+  "picked": "vetoed needs_integration=0.91",
+  "raw": "s1=none@0.93 s2=none@0.88 s3=none@0.88 s4=none@0.93 s5=none@0.93 s6=none@0.93 layout=none@0.94"
+ },
+ {
+  "id": "hf-06-descriptive",
+  "label": "coverage",
+  "ms": 1444,
+  "picked": "vetoed needs_integration=0.97",
+  "raw": "s1=none@0.66 s2=none@0.59 s3=none@0.63 s4=none@0.77 s5=none@0.79 s6=none@0.81 +checklist@0.07 layout=none@0.83"
+ },
+ {
+  "id": "hf-06-computation",
+  "label": "coverage",
+  "ms": 1011,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=metrics@0.31 s2=metrics@0.24 s3=none@0.27 s4=none@0.37 s5=none@0.42 s6=none@0.42 +progress_line@0.08 +list_summary@0.25 +checklist@0.08 layout=progress_list@0.65"
+ },
+ {
+  "id": "pf-01-terse",
+  "label": "coverage",
+  "ms": 2320,
+  "picked": "section1=record_log section2=none section3=bar_chart section4=none section5=none section6=none(duplicate bar_chart)",
+  "raw": "s1=record_log@0.66 s2=bar_chart@0.28 s3=bar_chart@0.59 s4=bar_chart@0.49 s5=bar_chart@0.47 s6=bar_chart@0.52 +filter_box@0.11 +master_list@0.34 +detail_view@0.10 +record_log@0.41 +number_strip@0.29 +breakdown_table@0.26 +series_chart@0.73 +checklist@0.20 layout=log_report@0.72"
+ },
+ {
+  "id": "pf-01-descriptive",
+  "label": "coverage",
+  "ms": 2513,
+  "picked": "section1=record_log section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=record_log@0.82 s2=record_log@0.40 s3=bar_chart@0.41 s4=bar_chart@0.39 s5=bar_chart@0.32 s6=bar_chart@0.34 +filter_box@0.06 +master_list@0.15 +detail_view@0.15 +record_log@0.39 +number_strip@0.37 +breakdown_table@0.14 +series_chart@0.90 +checklist@0.11 layout=log_report@0.56"
+ },
+ {
+  "id": "pf-01-computation",
+  "label": "coverage",
+  "ms": 580,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+  "raw": "s1=record_log@0.21 s2=bar_chart@0.28 s3=number_strip@0.44 s4=number_strip@0.33 s5=none@0.28 s6=number_strip@0.27 +master_list@0.11 +record_log@0.13 +number_strip@0.31 +breakdown_table@0.08 +series_chart@0.16 +checklist@0.07 layout=log_report@0.83"
+ },
+ {
+  "id": "pf-02-terse",
+  "label": "coverage",
+  "ms": 1151,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.37 s2=none@0.45 s3=none@0.42 s4=none@0.43 s5=none@0.49 s6=none@0.52 +filter_box@0.06 +number_strip@0.07 +checklist@0.06 layout=none@0.89"
+ },
+ {
+  "id": "pf-02-descriptive",
+  "label": "coverage",
+  "ms": 523,
+  "picked": "section1=none section2=none section3=key_facts section4=none section5=none section6=none logic=needs_search_or_form=0.89,needs_logic=0.98",
+  "raw": "s1=none@0.37 s2=key_facts@0.43 s3=key_facts@0.56 s4=key_facts@0.49 s5=key_facts@0.45 s6=key_facts@0.41 layout=stack@0.51"
+ },
+ {
+  "id": "pf-02-computation",
+  "label": "coverage",
+  "ms": 796,
+  "picked": "section1=none section2=key_facts section3=none(duplicate key_facts) section4=none(duplicate key_facts) section5=none(duplicate key_facts) section6=none(duplicate key_facts)",
+  "raw": "s1=key_facts@0.48 s2=key_facts@0.62 s3=key_facts@0.61 s4=key_facts@0.53 s5=key_facts@0.53 s6=key_facts@0.55 +number_strip@0.06 layout=stack@0.39"
+ },
+ {
+  "id": "pf-03-terse",
+  "label": "coverage",
+  "ms": 599,
+  "picked": "section1=record_log section2=none section3=settle_up section4=none(duplicate settle_up) section5=none(duplicate settle_up) section6=none(duplicate settle_up) layout=log_report needs_real_data=0.55",
+  "raw": "s1=record_log@0.62 s2=settle_up@0.43 s3=settle_up@0.84 s4=settle_up@0.88 s5=settle_up@0.89 s6=settle_up@0.87 +filter_box@0.07 +master_list@0.13 +detail_view@0.07 +record_log@0.31 +number_strip@0.23 +breakdown_table@0.36 +series_chart@0.14 +settle_up@0.87 +checklist@0.14 layout=log_report@0.99"
+ },
+ {
+  "id": "pf-03-descriptive",
+  "label": "coverage",
+  "ms": 498,
+  "picked": "section1=record_log section2=none section3=settle_up section4=none(duplicate settle_up) section5=none(duplicate settle_up) section6=none(duplicate settle_up) layout=log_report needs_real_data=0.38",
+  "raw": "s1=record_log@0.91 s2=settle_up@0.28 s3=settle_up@0.92 s4=settle_up@0.89 s5=settle_up@0.88 s6=settle_up@0.87 +filter_box@0.06 +master_list@0.17 +detail_view@0.09 +record_log@0.65 +number_strip@0.64 +breakdown_table@0.58 +series_chart@0.12 +settle_up@0.87 +checklist@0.18 layout=log_report@1.00"
+ },
+ {
+  "id": "pf-03-computation",
+  "label": "coverage",
+  "ms": 499,
+  "picked": "section1=none section2=settle_up section3=none(duplicate settle_up) section4=none(duplicate settle_up) section5=none(duplicate settle_up) section6=none(duplicate settle_up) layout=log_report +record_log",
+  "raw": "s1=record_log@0.43 s2=settle_up@0.65 s3=settle_up@0.79 s4=settle_up@0.79 s5=settle_up@0.74 s6=settle_up@0.75 +filter_box@0.06 +master_list@0.10 +detail_view@0.06 +record_log@0.28 +number_strip@0.29 +breakdown_table@0.22 +series_chart@0.15 +settle_up@0.47 +progress_line@0.06 +checklist@0.08 layout=log_report@0.98"
+ },
+ {
+  "id": "pf-04-terse",
+  "label": "coverage",
+  "ms": 933,
+  "picked": "section1=checklist section2=none section3=none section4=none section5=none section6=none needs_real_data=0.48",
+  "raw": "s1=checklist@0.57 s2=checklist@0.46 s3=none@0.37 s4=none@0.41 s5=none@0.49 s6=none@0.49 +filter_box@0.15 +master_list@0.50 +detail_view@0.24 +record_log@0.20 +number_strip@0.13 +breakdown_table@0.08 +series_chart@0.06 +progress_line@0.16 +list_summary@0.14 +checklist@0.81 layout=progress_list@0.56"
+ },
+ {
+  "id": "pf-04-descriptive",
+  "label": "coverage",
+  "ms": 606,
+  "picked": "section1=checklist section2=none section3=list_summary section4=none(duplicate list_summary) section5=none(duplicate list_summary) section6=none(duplicate list_summary) layout=progress_list logic=needs_search_or_form=0.71",
+  "raw": "s1=checklist@0.70 s2=checklist@0.45 s3=list_summary@0.62 s4=list_summary@0.57 s5=list_summary@0.56 s6=list_summary@0.55 +filter_box@0.13 +master_list@0.63 +detail_view@0.19 +record_log@0.07 +number_strip@0.30 +breakdown_table@0.08 +progress_line@0.45 +list_summary@0.84 +checklist@0.95 layout=progress_list@1.00"
+ },
+ {
+  "id": "pf-04-computation",
+  "label": "coverage",
+  "ms": 951,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +list_summary +checklist",
+  "raw": "s1=list_summary@0.39 s2=checklist@0.45 s3=checklist@0.32 s4=none@0.34 s5=none@0.38 s6=none@0.39 +master_list@0.10 +detail_view@0.08 +number_strip@0.10 +progress_line@0.19 +list_summary@0.78 +checklist@0.58 layout=progress_list@1.00"
+ },
+ {
+  "id": "pf-05-terse",
+  "label": "coverage",
+  "ms": 647,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=data_table@0.27 s2=data_table@0.33 s3=data_table@0.25 s4=none@0.23 s5=none@0.29 s6=none@0.29 +filter_box@0.06 +master_list@0.23 +detail_view@0.14 +record_log@0.09 +number_strip@0.39 +breakdown_table@0.16 +series_chart@0.13 +checklist@0.13 layout=log_report@0.26"
+ },
+ {
+  "id": "pf-05-descriptive",
+  "label": "coverage",
+  "ms": 484,
+  "picked": "section1=none section2=data_table section3=none section4=none section5=none section6=none layout=log_report +record_log",
+  "raw": "s1=data_table@0.38 s2=data_table@0.52 s3=number_strip@0.27 s4=number_strip@0.31 s5=number_strip@0.35 s6=number_strip@0.31 +master_list@0.13 +detail_view@0.10 +number_strip@0.30 +breakdown_table@0.10 +checklist@0.11 layout=log_report@0.88"
+ },
+ {
+  "id": "pf-05-computation",
+  "label": "coverage",
+  "ms": 835,
+  "picked": "section1=key_facts section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=key_facts@0.59 s2=key_facts@0.40 s3=key_facts@0.41 s4=key_facts@0.35 s5=key_facts@0.36 s6=none@0.42 +master_list@0.06 +number_strip@0.14 layout=stack@0.51"
+ },
+ {
+  "id": "pf-06-terse",
+  "label": "coverage",
+  "ms": 530,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=master_list@0.32 s2=none@0.28 s3=none@0.34 s4=none@0.42 s5=none@0.46 s6=none@0.49 +filter_box@0.13 +master_list@0.61 +detail_view@0.25 +record_log@0.36 +number_strip@0.23 +breakdown_table@0.22 +series_chart@0.17 +progress_line@0.07 +checklist@0.29 layout=log_report@0.54"
+ },
+ {
+  "id": "pf-06-descriptive",
+  "label": "coverage",
+  "ms": 516,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+  "raw": "s1=record_log@0.42 s2=breakdown_table@0.27 s3=breakdown_table@0.20 s4=none@0.24 s5=none@0.26 s6=none@0.33 +filter_box@0.08 +master_list@0.57 +detail_view@0.21 +record_log@0.36 +number_strip@0.26 +breakdown_table@0.13 +series_chart@0.06 +checklist@0.15 layout=log_report@0.96"
+ },
+ {
+  "id": "pf-06-computation",
+  "label": "coverage",
+  "ms": 1211,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=record_log@0.23 s2=number_strip@0.37 s3=number_strip@0.45 s4=number_strip@0.41 s5=number_strip@0.39 s6=number_strip@0.38 +master_list@0.07 +record_log@0.09 +number_strip@0.16 layout=log_report@0.68"
+ },
+ {
+  "id": "pt-01-terse",
+  "label": "coverage",
+  "ms": 1284,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.37 s2=none@0.45 s3=none@0.51 s4=none@0.66 s5=none@0.73 s6=none@0.72 +filter_box@0.06 +master_list@0.27 +detail_view@0.18 +progress_line@0.07 +checklist@0.63 layout=progress_list@0.47"
+ },
+ {
+  "id": "pt-01-descriptive",
+  "label": "coverage",
+  "ms": 460,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +list_summary +checklist logic=needs_search_or_form=0.93",
+  "raw": "s1=metrics@0.37 s2=list_summary@0.34 s3=list_summary@0.35 s4=metrics@0.33 s5=list_summary@0.32 s6=list_summary@0.29 +filter_box@0.08 +master_list@0.38 +detail_view@0.13 +number_strip@0.28 +series_chart@0.07 +progress_line@0.15 +list_summary@0.73 +checklist@0.69 layout=progress_list@1.00"
+ },
+ {
+  "id": "pt-01-computation",
+  "label": "coverage",
+  "ms": 906,
+  "picked": "section1=list_summary section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist logic=needs_multiple_counters=0.71,needs_logic=0.81",
+  "raw": "s1=list_summary@0.54 s2=list_summary@0.44 s3=list_summary@0.44 s4=list_summary@0.43 s5=list_summary@0.44 s6=list_summary@0.49 +master_list@0.10 +detail_view@0.06 +number_strip@0.15 +breakdown_table@0.06 +series_chart@0.07 +progress_line@0.11 +list_summary@0.66 +checklist@0.25 layout=progress_list@0.99"
+ },
+ {
+  "id": "pt-02-terse",
+  "label": "coverage",
+  "ms": 536,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.26 s2=none@0.26 s3=none@0.33 s4=none@0.45 s5=none@0.57 s6=none@0.57 +filter_box@0.10 +master_list@0.33 +detail_view@0.13 +number_strip@0.12 +breakdown_table@0.07 +series_chart@0.06 +itinerary@0.09 +checklist@0.36 layout=none@0.71"
+ },
+ {
+  "id": "pt-02-descriptive",
+  "label": "coverage",
+  "ms": 505,
+  "picked": "section1=none section2=data_table section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.91,needs_logic=0.95",
+  "raw": "s1=data_table@0.43 s2=data_table@0.52 s3=data_table@0.49 s4=data_table@0.44 s5=none@0.42 s6=none@0.46 +master_list@0.27 +detail_view@0.09 +number_strip@0.08 +itinerary@0.12 +checklist@0.30 layout=none@0.41"
+ },
+ {
+  "id": "pt-02-computation",
+  "label": "coverage",
+  "ms": 480,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=key_facts@0.19 s2=none@0.24 s3=none@0.26 s4=none@0.37 s5=none@0.40 s6=none@0.39 +master_list@0.06 +number_strip@0.09 +breakdown_table@0.09 +series_chart@0.08 +progress_line@0.06 +checklist@0.07 layout=none@0.29"
+ },
+ {
+  "id": "pt-03-terse",
+  "label": "coverage",
+  "ms": 625,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=note@0.49 s2=none@0.38 s3=none@0.50 s4=none@0.61 s5=none@0.65 s6=none@0.65 +filter_box@0.10 +master_list@0.28 +detail_view@0.07 +record_log@0.17 +settle_up@0.06 +itinerary@0.13 +list_summary@0.07 +checklist@0.49 layout=none@0.89"
+ },
+ {
+  "id": "pt-03-descriptive",
+  "label": "coverage",
+  "ms": 459,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=note@0.27 s2=number_strip@0.14 s3=none@0.19 s4=none@0.39 s5=none@0.40 s6=none@0.45 +filter_box@0.07 +master_list@0.53 +detail_view@0.24 +number_strip@0.29 +list_summary@0.13 +checklist@0.24 layout=master_detail@0.17"
+ },
+ {
+  "id": "pt-03-computation",
+  "label": "coverage",
+  "ms": 2615,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.25 s2=none@0.42 s3=none@0.48 s4=none@0.57 s5=none@0.62 s6=none@0.60 +filter_box@0.06 +master_list@0.27 +detail_view@0.07 +number_strip@0.06 +list_summary@0.07 +checklist@0.20 layout=none@0.71"
+ },
+ {
+  "id": "pt-04-terse",
+  "label": "coverage",
+  "ms": 1415,
+  "picked": "section1=master_list section2=none(duplicate master_list) section3=none section4=none section5=none section6=none logic=needs_integration=0.78",
+  "raw": "s1=master_list@0.55 s2=master_list@0.51 s3=none@0.45 s4=none@0.59 s5=none@0.59 s6=none@0.63 +filter_box@0.12 +master_list@0.60 +detail_view@0.25 +checklist@0.33 layout=none@0.40"
+ },
+ {
+  "id": "pt-04-descriptive",
+  "label": "coverage",
+  "ms": 1600,
+  "picked": "vetoed needs_integration=0.90",
+  "raw": "s1=master_list@0.27 s2=none@0.25 s3=none@0.23 s4=none@0.31 s5=none@0.36 s6=none@0.44 +master_list@0.67 +detail_view@0.31 +checklist@0.33 layout=master_detail@0.48"
+ },
+ {
+  "id": "pt-04-computation",
+  "label": "coverage",
+  "ms": 691,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=timer@0.49 s2=timer@0.38 s3=actions@0.26 s4=none@0.36 s5=none@0.41 s6=none@0.41 +master_list@0.23 +detail_view@0.19 +progress_line@0.08 +list_summary@0.06 +checklist@0.17 layout=none@0.22"
+ },
+ {
+  "id": "pt-05-terse",
+  "label": "coverage",
+  "ms": 1150,
+  "picked": "section1=log_entries section2=none section3=none section4=none section5=none section6=none needs_real_data=0.48 logic=needs_logic=0.97",
+  "raw": "s1=log_entries@0.52 s2=log_entries@0.32 s3=number_strip@0.46 s4=number_strip@0.44 s5=number_strip@0.47 s6=number_strip@0.44 +filter_box@0.06 +master_list@0.18 +detail_view@0.10 +record_log@0.21 +number_strip@0.39 +breakdown_table@0.12 +checklist@0.19 layout=log_report@0.46"
+ },
+ {
+  "id": "pt-05-descriptive",
+  "label": "coverage",
+  "ms": 564,
+  "picked": "section1=record_log section2=none section3=none section4=none section5=none section6=none layout=log_report",
+  "raw": "s1=record_log@0.53 s2=data_table@0.35 s3=number_strip@0.34 s4=number_strip@0.35 s5=number_strip@0.37 s6=number_strip@0.34 +master_list@0.20 +detail_view@0.11 +record_log@0.08 +number_strip@0.38 +breakdown_table@0.15 +checklist@0.09 layout=log_report@1.00"
+ },
+ {
+  "id": "pt-05-computation",
+  "label": "coverage",
+  "ms": 448,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=data_table@0.38 s2=data_table@0.31 s3=number_strip@0.47 s4=number_strip@0.41 s5=number_strip@0.40 s6=number_strip@0.33 +master_list@0.08 +record_log@0.10 +number_strip@0.27 +breakdown_table@0.07 +series_chart@0.06 +checklist@0.09 layout=log_report@0.54"
+ },
+ {
+  "id": "pt-06-terse",
+  "label": "coverage",
+  "ms": 610,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=checklist@0.47 s2=checklist@0.42 s3=none@0.34 s4=none@0.48 s5=none@0.50 s6=none@0.52 +filter_box@0.07 +master_list@0.24 +detail_view@0.15 +itinerary@0.23 +checklist@0.53 layout=none@0.27"
+ },
+ {
+  "id": "pt-06-descriptive",
+  "label": "coverage",
+  "ms": 660,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.52 s2=none@0.52 s3=none@0.60 s4=none@0.65 s5=none@0.69 s6=none@0.71 +master_list@0.06 +checklist@0.12 layout=none@0.82"
+ },
+ {
+  "id": "pt-06-computation",
+  "label": "coverage",
+  "ms": 488,
+  "picked": "section1=timeline section2=none(duplicate timeline) section3=none(duplicate timeline) section4=none section5=none section6=none",
+  "raw": "s1=timeline@0.69 s2=timeline@0.61 s3=timeline@0.50 s4=timeline@0.35 s5=timeline@0.33 s6=timeline@0.34 +master_list@0.06 +number_strip@0.07 +itinerary@0.14 +progress_line@0.07 +list_summary@0.07 +checklist@0.14 layout=itinerary_day@0.76"
+ },
+ {
+  "id": "hc-01-terse",
+  "label": "coverage",
+  "ms": 1844,
+  "picked": "section1=checklist section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=checklist@0.52 s2=none@0.48 s3=none@0.57 s4=none@0.71 s5=none@0.69 s6=none@0.72 +filter_box@0.09 +master_list@0.23 +detail_view@0.06 +record_log@0.09 +number_strip@0.08 +breakdown_table@0.08 +series_chart@0.07 +itinerary@0.10 +progress_line@0.15 +list_summary@0.18 +checklist@0.48 layout=none@0.68"
+ },
+ {
+  "id": "hc-01-descriptive",
+  "label": "coverage",
+  "ms": 468,
+  "picked": "section1=none section2=none section3=list_summary section4=none(duplicate list_summary) section5=none section6=none layout=progress_list +checklist",
+  "raw": "s1=list_summary@0.47 s2=list_summary@0.43 s3=list_summary@0.52 s4=list_summary@0.50 s5=list_summary@0.41 s6=list_summary@0.44 +filter_box@0.09 +master_list@0.44 +detail_view@0.21 +number_strip@0.33 +breakdown_table@0.06 +series_chart@0.10 +progress_line@0.55 +list_summary@0.83 +checklist@0.94 layout=progress_list@1.00"
+ },
+ {
+  "id": "hc-01-computation",
+  "label": "coverage",
+  "ms": 942,
+  "picked": "section1=list_summary section2=none(duplicate list_summary) section3=none section4=none section5=none section6=none layout=progress_list +checklist",
+  "raw": "s1=list_summary@0.54 s2=list_summary@0.55 s3=list_summary@0.46 s4=list_summary@0.39 s5=list_summary@0.35 s6=list_summary@0.39 +master_list@0.36 +detail_view@0.13 +number_strip@0.15 +progress_line@0.58 +list_summary@0.93 +checklist@0.83 layout=progress_list@1.00"
+ },
+ {
+  "id": "hc-02-terse",
+  "label": "coverage",
+  "ms": 565,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.51 s2=data_table@0.46 s3=data_table@0.48 s4=none@0.54 s5=none@0.64 s6=none@0.69 +master_list@0.12 +detail_view@0.09 +number_strip@0.07 +checklist@0.09 layout=none@0.69"
+ },
+ {
+  "id": "hc-02-descriptive",
+  "label": "coverage",
+  "ms": 1483,
+  "picked": "section1=none section2=data_table section3=none(duplicate data_table) section4=none section5=none section6=none logic=needs_logic=0.98",
+  "raw": "s1=none@0.29 s2=data_table@0.55 s3=data_table@0.53 s4=data_table@0.45 s5=none@0.46 s6=none@0.51 +filter_box@0.06 +master_list@0.10 +detail_view@0.11 +number_strip@0.09 +checklist@0.06 layout=none@0.66"
+ },
+ {
+  "id": "hc-02-computation",
+  "label": "coverage",
+  "ms": 592,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.40 s2=none@0.39 s3=none@0.55 s4=none@0.63 s5=none@0.70 s6=none@0.61 +number_strip@0.06 layout=stack@0.53"
+ },
+ {
+  "id": "hc-03-terse",
+  "label": "coverage",
+  "ms": 1001,
+  "picked": "section1=timeline section2=none(duplicate timeline) section3=none(duplicate timeline) section4=none(duplicate timeline) section5=none(duplicate timeline) section6=none(duplicate timeline) logic=needs_search_or_form=0.86",
+  "raw": "s1=timeline@0.65 s2=timeline@0.56 s3=timeline@0.62 s4=timeline@0.60 s5=timeline@0.52 s6=timeline@0.51 +filter_box@0.11 +master_list@0.44 +detail_view@0.19 +record_log@0.10 +number_strip@0.12 +breakdown_table@0.07 +list_summary@0.06 +checklist@0.33 layout=none@0.41"
+ },
+ {
+  "id": "hc-03-descriptive",
+  "label": "coverage",
+  "ms": 462,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=master_list@0.27 s2=number_strip@0.25 s3=number_strip@0.34 s4=number_strip@0.40 s5=number_strip@0.36 s6=number_strip@0.34 +filter_box@0.10 +master_list@0.84 +detail_view@0.78 +record_log@0.16 +number_strip@0.62 +breakdown_table@0.15 +series_chart@0.10 +checklist@0.33 layout=master_detail@0.50"
+ },
+ {
+  "id": "hc-03-computation",
+  "label": "coverage",
+  "ms": 499,
+  "picked": "section1=log_entries section2=none section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.91,needs_logic=0.86",
+  "raw": "s1=log_entries@0.50 s2=number_strip@0.21 s3=number_strip@0.21 s4=detail_view@0.18 s5=detail_view@0.17 s6=detail_view@0.20 +filter_box@0.09 +master_list@0.70 +detail_view@0.62 +record_log@0.21 +number_strip@0.36 +breakdown_table@0.06 +list_summary@0.06 +checklist@0.39 layout=master_detail@0.44"
+ },
+ {
+  "id": "hc-04-terse",
+  "label": "coverage",
+  "ms": 473,
+  "picked": "vetoed needs_integration=0.98",
+  "raw": "s1=none@0.88 s2=none@0.92 s3=none@0.93 s4=none@0.94 s5=none@0.95 s6=none@0.96 +master_list@0.08 +checklist@0.07 layout=none@0.96"
+ },
+ {
+  "id": "hc-04-descriptive",
+  "label": "coverage",
+  "ms": 566,
+  "picked": "vetoed needs_integration=0.93",
+  "raw": "s1=none@0.47 s2=key_facts@0.35 s3=key_facts@0.50 s4=key_facts@0.40 s5=none@0.44 s6=none@0.47 +master_list@0.11 +checklist@0.08 layout=none@0.66"
+ },
+ {
+  "id": "hc-04-computation",
+  "label": "coverage",
+  "ms": 689,
+  "picked": "section1=key_facts section2=none section3=none section4=none section5=none section6=none logic=needs_integration=0.87",
+  "raw": "s1=key_facts@0.53 s2=none@0.60 s3=none@0.57 s4=none@0.64 s5=none@0.66 s6=none@0.67 layout=none@0.86"
+ },
+ {
+  "id": "hc-05-terse",
+  "label": "coverage",
+  "ms": 1333,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.25 s2=key_facts@0.26 s3=key_facts@0.36 s4=none@0.34 s5=none@0.37 s6=none@0.43 +filter_box@0.06 +master_list@0.08 +detail_view@0.07 +number_strip@0.27 +breakdown_table@0.08 +checklist@0.06 layout=none@0.45"
+ },
+ {
+  "id": "hc-05-descriptive",
+  "label": "coverage",
+  "ms": 499,
+  "picked": "section1=none section2=data_table section3=none(duplicate data_table) section4=none section5=none section6=none logic=needs_search_or_form=0.87,needs_logic=0.98",
+  "raw": "s1=data_table@0.26 s2=data_table@0.65 s3=data_table@0.67 s4=data_table@0.48 s5=data_table@0.41 s6=data_table@0.40 +filter_box@0.08 +master_list@0.26 +detail_view@0.28 +number_strip@0.17 +breakdown_table@0.09 +checklist@0.13 layout=log_report@0.51"
+ },
+ {
+  "id": "hc-05-computation",
+  "label": "coverage",
+  "ms": 528,
+  "picked": "section1=key_facts section2=none(duplicate key_facts) section3=none(duplicate key_facts) section4=none section5=none section6=none logic=needs_logic=0.91",
+  "raw": "s1=key_facts@0.67 s2=key_facts@0.66 s3=key_facts@0.60 s4=key_facts@0.47 s5=none@0.43 s6=key_facts@0.46 +number_strip@0.06 layout=none@0.40"
+ },
+ {
+  "id": "hc-06-terse",
+  "label": "coverage",
+  "ms": 970,
+  "picked": "section1=none section2=none section3=breakdown_table section4=none section5=none section6=none",
+  "raw": "s1=none@0.24 s2=breakdown_table@0.33 s3=breakdown_table@0.50 s4=breakdown_table@0.43 s5=breakdown_table@0.44 s6=breakdown_table@0.41 +filter_box@0.06 +master_list@0.10 +detail_view@0.06 +record_log@0.18 +number_strip@0.21 +breakdown_table@0.20 +series_chart@0.16 +itinerary@0.08 +list_summary@0.06 +checklist@0.18 layout=none@0.47"
+ },
+ {
+  "id": "hc-06-descriptive",
+  "label": "coverage",
+  "ms": 479,
+  "picked": "section1=none section2=breakdown_table section3=none(duplicate breakdown_table) section4=none section5=none(duplicate breakdown_table) section6=none logic=needs_search_or_form=0.85,needs_multiple_counters=0.91",
+  "raw": "s1=record_log@0.38 s2=breakdown_table@0.50 s3=breakdown_table@0.65 s4=breakdown_table@0.49 s5=breakdown_table@0.51 s6=breakdown_table@0.45 +master_list@0.18 +detail_view@0.06 +number_strip@0.20 +breakdown_table@0.26 +series_chart@0.08 +checklist@0.15 layout=log_report@0.77"
+ },
+ {
+  "id": "hc-06-computation",
+  "label": "coverage",
+  "ms": 510,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.40 s2=none@0.50 s3=none@0.61 s4=none@0.67 s5=none@0.77 s6=none@0.76 +number_strip@0.07 +checklist@0.06 layout=none@0.62"
+ },
+ {
+  "id": "tp-01-terse",
+  "label": "coverage",
+  "ms": 540,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=search_list@0.41 s2=search_list@0.35 s3=none@0.38 s4=none@0.44 s5=none@0.49 s6=none@0.55 +filter_box@0.72 +master_list@0.67 +detail_view@0.21 +itinerary@0.10 +checklist@0.36 layout=master_detail@0.47"
+ },
+ {
+  "id": "tp-01-descriptive",
+  "label": "coverage",
+  "ms": 624,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=master_detail +master_list +filter_box +detail_view",
+  "raw": "s1=master_list@0.34 s2=search_list@0.32 s3=detail_view@0.33 s4=none@0.31 s5=none@0.38 s6=none@0.41 +filter_box@0.82 +master_list@0.86 +detail_view@0.80 +number_strip@0.22 +progress_line@0.06 +list_summary@0.10 +checklist@0.32 layout=master_detail@0.98"
+ },
+ {
+  "id": "tp-01-computation",
+  "label": "coverage",
+  "ms": 529,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=master_detail +master_list +detail_view needs_real_data=0.49 logic=needs_search_or_form=0.84",
+  "raw": "s1=search_list@0.37 s2=master_list@0.43 s3=detail_view@0.36 s4=detail_view@0.35 s5=none@0.29 s6=none@0.31 +filter_box@0.61 +master_list@0.87 +detail_view@0.85 +checklist@0.27 layout=master_detail@0.98"
+ },
+ {
+  "id": "tp-02-terse",
+  "label": "coverage",
+  "ms": 507,
+  "picked": "section1=itinerary section2=none(duplicate itinerary) section3=none section4=none section5=none section6=none layout=itinerary_day needs_real_data=0.51",
+  "raw": "s1=itinerary@0.78 s2=itinerary@0.53 s3=itinerary@0.42 s4=itinerary@0.40 s5=itinerary@0.38 s6=itinerary@0.42 +filter_box@0.12 +master_list@0.48 +detail_view@0.19 +itinerary@0.83 +progress_line@0.29 +list_summary@0.20 +checklist@0.90 layout=itinerary_day@1.00"
+ },
+ {
+  "id": "tp-02-descriptive",
+  "label": "coverage",
+  "ms": 494,
+  "picked": "section1=itinerary section2=none section3=none section4=none section5=none section6=none layout=itinerary_day +progress_line logic=needs_search_or_form=0.85",
+  "raw": "s1=itinerary@0.66 s2=itinerary@0.40 s3=progress_line@0.34 s4=itinerary@0.25 s5=itinerary@0.24 s6=itinerary@0.25 +filter_box@0.09 +master_list@0.33 +detail_view@0.24 +number_strip@0.13 +itinerary@0.76 +progress_line@0.78 +list_summary@0.75 +checklist@0.93 layout=itinerary_day@0.96"
+ },
+ {
+  "id": "tp-02-computation",
+  "label": "coverage",
+  "ms": 534,
+  "picked": "section1=itinerary section2=none section3=none section4=none section5=none section6=none layout=itinerary_day +list_summary needs_real_data=0.47",
+  "raw": "s1=itinerary@0.78 s2=itinerary@0.36 s3=itinerary@0.43 s4=itinerary@0.37 s5=itinerary@0.42 s6=none@0.35 +master_list@0.33 +detail_view@0.10 +number_strip@0.11 +itinerary@0.85 +progress_line@0.58 +list_summary@0.88 +checklist@0.82 layout=itinerary_day@0.81"
+ },
+ {
+  "id": "tp-03-terse",
+  "label": "coverage",
+  "ms": 470,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.33 s2=none@0.28 s3=number_strip@0.38 s4=number_strip@0.35 s5=none@0.46 s6=none@0.45 +filter_box@0.06 +master_list@0.12 +detail_view@0.08 +record_log@0.09 +number_strip@0.18 +breakdown_table@0.09 +checklist@0.09 layout=log_report@0.41"
+ },
+ {
+  "id": "tp-03-descriptive",
+  "label": "coverage",
+  "ms": 455,
+  "picked": "section1=none section2=none section3=number_strip section4=none(duplicate number_strip) section5=none(duplicate number_strip) section6=none(duplicate number_strip) layout=log_report +record_log",
+  "raw": "s1=log_entries@0.34 s2=number_strip@0.29 s3=number_strip@0.60 s4=number_strip@0.55 s5=number_strip@0.54 s6=number_strip@0.52 +filter_box@0.06 +master_list@0.13 +detail_view@0.09 +record_log@0.09 +number_strip@0.45 +breakdown_table@0.09 +checklist@0.12 layout=log_report@0.82"
+ },
+ {
+  "id": "tp-03-computation",
+  "label": "coverage",
+  "ms": 471,
+  "picked": "section1=none section2=none section3=number_strip section4=none section5=none section6=none",
+  "raw": "s1=none@0.24 s2=number_strip@0.40 s3=number_strip@0.50 s4=none@0.39 s5=none@0.43 s6=none@0.40 +number_strip@0.20 layout=log_report@0.24"
+ },
+ {
+  "id": "tp-04-terse",
+  "label": "coverage",
+  "ms": 611,
+  "picked": "vetoed needs_integration=0.98 needs_real_data=0.92",
+  "raw": "s1=none@0.69 s2=none@0.66 s3=none@0.70 s4=none@0.77 s5=none@0.77 s6=none@0.76 +master_list@0.06 +itinerary@0.09 layout=none@0.75"
+ },
+ {
+  "id": "tp-04-descriptive",
+  "label": "coverage",
+  "ms": 493,
+  "picked": "vetoed needs_integration=0.98 needs_real_data=0.93",
+  "raw": "s1=none@0.38 s2=key_facts@0.31 s3=none@0.36 s4=none@0.40 s5=none@0.47 s6=none@0.46 +master_list@0.06 +itinerary@0.09 layout=none@0.65"
+ },
+ {
+  "id": "tp-04-computation",
+  "label": "coverage",
+  "ms": 590,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=key_facts@0.37 s2=key_facts@0.28 s3=none@0.38 s4=none@0.52 s5=none@0.57 s6=none@0.57 +master_list@0.07 +detail_view@0.07 +itinerary@0.07 +checklist@0.06 layout=none@0.71"
+ },
+ {
+  "id": "tp-05-terse",
+  "label": "coverage",
+  "ms": 643,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.28 s2=none@0.38 s3=none@0.40 s4=none@0.54 s5=none@0.63 s6=none@0.65 +filter_box@0.08 +master_list@0.14 +detail_view@0.11 +number_strip@0.06 +checklist@0.09 layout=none@0.65"
+ },
+ {
+  "id": "tp-05-descriptive",
+  "label": "coverage",
+  "ms": 513,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=log_entries@0.49 s2=number_strip@0.34 s3=key_facts@0.38 s4=key_facts@0.35 s5=key_facts@0.31 s6=key_facts@0.34 +master_list@0.07 +number_strip@0.15 +breakdown_table@0.08 +checklist@0.11 layout=log_report@0.72"
+ },
+ {
+  "id": "tp-05-computation",
+  "label": "coverage",
+  "ms": 623,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=key_facts@0.37 s2=key_facts@0.39 s3=key_facts@0.44 s4=key_facts@0.38 s5=key_facts@0.37 s6=key_facts@0.38 layout=none@0.33"
+ },
+ {
+  "id": "tp-06-terse",
+  "label": "coverage",
+  "ms": 541,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=metrics@0.27 s2=none@0.26 s3=none@0.26 s4=none@0.39 s5=none@0.39 s6=none@0.45 +master_list@0.09 +detail_view@0.07 +number_strip@0.15 +breakdown_table@0.08 +checklist@0.06 layout=log_report@0.38"
+ },
+ {
+  "id": "tp-06-descriptive",
+  "label": "coverage",
+  "ms": 569,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=log_entries@0.20 s2=data_table@0.33 s3=data_table@0.42 s4=none@0.33 s5=none@0.41 s6=none@0.46 +master_list@0.09 +detail_view@0.12 +number_strip@0.10 +breakdown_table@0.06 +checklist@0.09 layout=log_report@0.70"
+ },
+ {
+  "id": "tp-06-computation",
+  "label": "coverage",
+  "ms": 642,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=key_facts@0.37 s2=key_facts@0.49 s3=key_facts@0.47 s4=none@0.36 s5=none@0.37 s6=none@0.37 +master_list@0.07 +detail_view@0.06 +number_strip@0.17 layout=none@0.29"
+ },
+ {
+  "id": "el-01-terse",
+  "label": "coverage",
+  "ms": 589,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=master_list@0.23 s2=none@0.33 s3=none@0.39 s4=none@0.48 s5=none@0.55 s6=none@0.57 +filter_box@0.14 +master_list@0.58 +detail_view@0.17 +number_strip@0.09 +breakdown_table@0.06 +series_chart@0.07 +progress_line@0.12 +list_summary@0.12 +checklist@0.72 layout=none@0.29"
+ },
+ {
+  "id": "el-01-descriptive",
+  "label": "coverage",
+  "ms": 463,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist +list_summary logic=needs_search_or_form=0.91,needs_logic=0.82",
+  "raw": "s1=list_summary@0.46 s2=list_summary@0.42 s3=list_summary@0.49 s4=list_summary@0.47 s5=list_summary@0.38 s6=list_summary@0.34 +filter_box@0.09 +master_list@0.63 +detail_view@0.15 +number_strip@0.28 +progress_line@0.75 +list_summary@0.77 +checklist@0.83 layout=progress_list@0.99"
+ },
+ {
+  "id": "el-01-computation",
+  "label": "coverage",
+  "ms": 647,
+  "picked": "section1=list_summary section2=none(duplicate list_summary) section3=none(duplicate list_summary) section4=none(duplicate list_summary) section5=none(duplicate list_summary) section6=none(duplicate list_summary) layout=progress_list +checklist",
+  "raw": "s1=list_summary@0.66 s2=list_summary@0.66 s3=list_summary@0.66 s4=list_summary@0.50 s5=list_summary@0.54 s6=list_summary@0.54 +filter_box@0.06 +master_list@0.35 +detail_view@0.08 +number_strip@0.22 +series_chart@0.06 +progress_line@0.63 +list_summary@0.89 +checklist@0.73 layout=progress_list@1.00"
+ },
+ {
+  "id": "el-02-terse",
+  "label": "coverage",
+  "ms": 501,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.25 s2=none@0.25 s3=none@0.29 s4=none@0.41 s5=none@0.48 s6=none@0.50 +filter_box@0.09 +master_list@0.30 +detail_view@0.11 +number_strip@0.16 +progress_line@0.27 +list_summary@0.23 +checklist@0.54 layout=none@0.41"
+ },
+ {
+  "id": "el-02-descriptive",
+  "label": "coverage",
+  "ms": 507,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.36 s2=none@0.24 s3=metrics@0.26 s4=none@0.35 s5=none@0.44 s6=none@0.52 +master_list@0.18 +detail_view@0.22 +number_strip@0.18 +progress_line@0.08 +list_summary@0.21 +checklist@0.43 layout=progress_list@0.38"
+ },
+ {
+  "id": "el-02-computation",
+  "label": "coverage",
+  "ms": 1603,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +list_summary +checklist",
+  "raw": "s1=list_summary@0.26 s2=list_summary@0.25 s3=none@0.21 s4=none@0.40 s5=none@0.47 s6=none@0.46 +master_list@0.20 +detail_view@0.08 +number_strip@0.17 +progress_line@0.39 +list_summary@0.69 +checklist@0.62 layout=progress_list@0.95"
+ },
+ {
+  "id": "el-03-terse",
+  "label": "coverage",
+  "ms": 500,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=data_table@0.36 s2=data_table@0.35 s3=none@0.27 s4=none@0.36 s5=none@0.40 s6=none@0.41 +master_list@0.15 +detail_view@0.08 +number_strip@0.23 +breakdown_table@0.09 +checklist@0.12 layout=log_report@0.44"
+ },
+ {
+  "id": "el-03-descriptive",
+  "label": "coverage",
+  "ms": 730,
+  "picked": "section1=data_table section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+  "raw": "s1=data_table@0.62 s2=data_table@0.24 s3=key_facts@0.35 s4=key_facts@0.27 s5=key_facts@0.29 s6=none@0.32 +master_list@0.13 +detail_view@0.08 +number_strip@0.19 +breakdown_table@0.07 +checklist@0.10 layout=log_report@0.82"
+ },
+ {
+  "id": "el-03-computation",
+  "label": "coverage",
+  "ms": 687,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=data_table@0.32 s2=none@0.37 s3=key_facts@0.34 s4=none@0.39 s5=none@0.48 s6=none@0.51 +number_strip@0.06 layout=none@0.32"
+ },
+ {
+  "id": "el-04-terse",
+  "label": "coverage",
+  "ms": 1241,
+  "picked": "section1=record_log section2=none section3=series_chart section4=none(duplicate series_chart) section5=none(duplicate series_chart) section6=none(duplicate series_chart) layout=log_report",
+  "raw": "s1=record_log@0.69 s2=series_chart@0.45 s3=series_chart@0.67 s4=series_chart@0.67 s5=series_chart@0.66 s6=series_chart@0.62 +filter_box@0.09 +master_list@0.25 +detail_view@0.09 +record_log@0.44 +number_strip@0.29 +breakdown_table@0.43 +series_chart@0.75 +checklist@0.17 layout=log_report@0.95"
+ },
+ {
+  "id": "el-04-descriptive",
+  "label": "coverage",
+  "ms": 1334,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +series_chart +record_log",
+  "raw": "s1=record_log@0.40 s2=bar_chart@0.22 s3=bar_chart@0.43 s4=bar_chart@0.44 s5=bar_chart@0.49 s6=bar_chart@0.48 +master_list@0.19 +detail_view@0.12 +record_log@0.08 +number_strip@0.45 +breakdown_table@0.17 +series_chart@0.74 +checklist@0.12 layout=log_report@0.92"
+ },
+ {
+  "id": "el-04-computation",
+  "label": "coverage",
+  "ms": 648,
+  "picked": "section1=none section2=none section3=bar_chart section4=none section5=none section6=none logic=needs_multiple_counters=0.82,needs_logic=0.90",
+  "raw": "s1=log_entries@0.27 s2=bar_chart@0.46 s3=bar_chart@0.60 s4=bar_chart@0.46 s5=bar_chart@0.36 s6=bar_chart@0.41 +filter_box@0.06 +master_list@0.11 +detail_view@0.06 +record_log@0.09 +number_strip@0.25 +breakdown_table@0.12 +series_chart@0.32 +checklist@0.11 layout=log_report@0.70"
+ },
+ {
+  "id": "el-05-terse",
+  "label": "coverage",
+  "ms": 516,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.39 s2=none@0.47 s3=none@0.53 s4=none@0.59 s5=none@0.65 s6=none@0.63 +filter_box@0.08 +master_list@0.16 +detail_view@0.10 +itinerary@0.09 +progress_line@0.07 +list_summary@0.06 +checklist@0.22 layout=none@0.80"
+ },
+ {
+  "id": "el-05-descriptive",
+  "label": "coverage",
+  "ms": 581,
+  "picked": "section1=none section2=timeline section3=none(duplicate timeline) section4=none section5=none section6=none logic=needs_search_or_form=0.90,needs_logic=0.90",
+  "raw": "s1=none@0.27 s2=timeline@0.55 s3=timeline@0.61 s4=timeline@0.49 s5=timeline@0.42 s6=none@0.44 +filter_box@0.08 +master_list@0.30 +detail_view@0.11 +checklist@0.31 layout=stack@0.32"
+ },
+ {
+  "id": "el-05-computation",
+  "label": "coverage",
+  "ms": 449,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.27 s2=timeline@0.32 s3=none@0.35 s4=none@0.39 s5=none@0.44 s6=none@0.41 +master_list@0.10 +itinerary@0.10 +checklist@0.20 layout=none@0.33"
+ },
+ {
+  "id": "el-06-terse",
+  "label": "coverage",
+  "ms": 970,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.77 s2=none@0.65 s3=none@0.67 s4=none@0.73 s5=none@0.79 s6=none@0.77 layout=none@0.89"
+ },
+ {
+  "id": "el-06-descriptive",
+  "label": "coverage",
+  "ms": 667,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.36 s2=none@0.40 s3=none@0.34 s4=none@0.50 s5=none@0.52 s6=none@0.60 +master_list@0.09 +checklist@0.11 layout=none@0.42"
+ },
+ {
+  "id": "el-06-computation",
+  "label": "coverage",
+  "ms": 3088,
+  "picked": "section1=number_strip section2=none(duplicate number_strip) section3=none section4=none section5=none section6=none layout=log_report +record_log",
+  "raw": "s1=number_strip@0.60 s2=number_strip@0.66 s3=number_strip@0.37 s4=number_strip@0.36 s5=number_strip@0.34 s6=number_strip@0.32 +master_list@0.06 +detail_view@0.06 +number_strip@0.71 +breakdown_table@0.10 +series_chart@0.08 +checklist@0.06 layout=log_report@0.83"
+ },
+ {
+  "id": "gs-01-terse",
+  "label": "coverage",
+  "ms": 636,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=key_facts@0.21 s2=breakdown_table@0.19 s3=none@0.36 s4=none@0.51 s5=none@0.59 s6=none@0.60 +number_strip@0.06 +checklist@0.07 layout=log_report@0.42"
+ },
+ {
+  "id": "gs-01-descriptive",
+  "label": "coverage",
+  "ms": 730,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.22 s2=none@0.32 s3=none@0.38 s4=none@0.48 s5=none@0.51 s6=none@0.57 +master_list@0.07 +number_strip@0.08 +breakdown_table@0.06 +checklist@0.10 layout=log_report@0.53"
+ },
+ {
+  "id": "gs-01-computation",
+  "label": "coverage",
+  "ms": 495,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+  "raw": "s1=breakdown_table@0.32 s2=breakdown_table@0.44 s3=breakdown_table@0.43 s4=breakdown_table@0.37 s5=breakdown_table@0.35 s6=breakdown_table@0.36 +master_list@0.07 +detail_view@0.07 +record_log@0.06 +number_strip@0.07 +breakdown_table@0.06 +series_chart@0.06 +checklist@0.06 layout=log_report@0.81"
+ },
+ {
+  "id": "gs-02-terse",
+  "label": "coverage",
+  "ms": 584,
+  "picked": "section1=record_log section2=series_chart section3=none(duplicate series_chart) section4=none(duplicate series_chart) section5=none(duplicate series_chart) section6=none(duplicate series_chart) layout=log_report",
+  "raw": "s1=record_log@0.52 s2=series_chart@0.60 s3=series_chart@0.76 s4=series_chart@0.72 s5=series_chart@0.72 s6=series_chart@0.71 +filter_box@0.06 +master_list@0.18 +detail_view@0.09 +record_log@0.37 +number_strip@0.50 +breakdown_table@0.32 +series_chart@0.75 +checklist@0.18 layout=log_report@1.00"
+ },
+ {
+  "id": "gs-02-descriptive",
+  "label": "coverage",
+  "ms": 662,
+  "picked": "section1=none section2=series_chart section3=none(duplicate series_chart) section4=none(duplicate series_chart) section5=none(duplicate series_chart) section6=none(duplicate series_chart) layout=log_report +record_log",
+  "raw": "s1=record_log@0.48 s2=series_chart@0.52 s3=series_chart@0.75 s4=series_chart@0.69 s5=series_chart@0.66 s6=series_chart@0.64 +master_list@0.11 +detail_view@0.06 +record_log@0.18 +number_strip@0.27 +breakdown_table@0.23 +series_chart@0.78 +checklist@0.10 layout=log_report@1.00"
+ },
+ {
+  "id": "gs-02-computation",
+  "label": "coverage",
+  "ms": 475,
+  "picked": "section1=none section2=breakdown_table section3=none(duplicate breakdown_table) section4=none(duplicate breakdown_table) section5=none(duplicate breakdown_table) section6=none(duplicate breakdown_table) layout=log_report +record_log",
+  "raw": "s1=breakdown_table@0.46 s2=breakdown_table@0.57 s3=breakdown_table@0.59 s4=breakdown_table@0.52 s5=breakdown_table@0.55 s6=breakdown_table@0.51 +master_list@0.06 +record_log@0.08 +number_strip@0.44 +breakdown_table@0.23 +series_chart@0.16 layout=log_report@1.00"
+ },
+ {
+  "id": "gs-03-terse",
+  "label": "coverage",
+  "ms": 825,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.43 s2=none@0.40 s3=none@0.37 s4=none@0.46 s5=none@0.50 s6=none@0.57 +master_list@0.10 +detail_view@0.06 +number_strip@0.07 +progress_line@0.09 +checklist@0.15 layout=none@0.47"
+ },
+ {
+  "id": "gs-03-descriptive",
+  "label": "coverage",
+  "ms": 536,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=progress_line@0.40 s2=progress_line@0.45 s3=none@0.29 s4=none@0.42 s5=none@0.51 s6=none@0.48 +master_list@0.17 +number_strip@0.08 +progress_line@0.20 +list_summary@0.23 +checklist@0.20 layout=none@0.34"
+ },
+ {
+  "id": "gs-03-computation",
+  "label": "coverage",
+  "ms": 495,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.28 s2=none@0.35 s3=none@0.42 s4=none@0.52 s5=none@0.57 s6=none@0.49 +master_list@0.09 +detail_view@0.06 +number_strip@0.10 +progress_line@0.09 +list_summary@0.19 +checklist@0.13 layout=progress_list@0.42"
+ },
+ {
+  "id": "gs-04-terse",
+  "label": "coverage",
+  "ms": 497,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.70 s2=none@0.75 s3=none@0.81 s4=none@0.85 s5=none@0.85 s6=none@0.88 +filter_box@0.07 +master_list@0.11 +checklist@0.06 layout=none@0.96"
+ },
+ {
+  "id": "gs-04-descriptive",
+  "label": "coverage",
+  "ms": 615,
+  "picked": "section1=timer section2=none(duplicate timer) section3=none(duplicate timer) section4=none(duplicate timer) section5=none(duplicate timer) section6=none logic=needs_integration=0.40,needs_live_ticking=0.84,needs_multiple_counters=0.77,needs_logic=0.89",
+  "raw": "s1=timer@0.76 s2=timer@0.73 s3=timer@0.71 s4=timer@0.64 s5=timer@0.50 s6=timer@0.46 layout=none@0.76"
+ },
+ {
+  "id": "gs-04-computation",
+  "label": "coverage",
+  "ms": 468,
+  "picked": "section1=timer section2=none(duplicate timer) section3=none section4=none section5=none section6=none logic=needs_logic=0.91",
+  "raw": "s1=timer@0.85 s2=timer@0.65 s3=timer@0.45 s4=none@0.60 s5=none@0.71 s6=none@0.68 layout=none@0.68"
+ },
+ {
+  "id": "gs-05-terse",
+  "label": "coverage",
+  "ms": 1127,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.60 s2=none@0.59 s3=none@0.64 s4=none@0.68 s5=none@0.70 s6=none@0.74 +master_list@0.06 +checklist@0.13 layout=none@0.83"
+ },
+ {
+  "id": "gs-05-descriptive",
+  "label": "coverage",
+  "ms": 506,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.40 s2=none@0.28 s3=none@0.31 s4=none@0.49 s5=none@0.51 s6=none@0.60 +master_list@0.06 +checklist@0.11 layout=none@0.33"
+ },
+ {
+  "id": "gs-05-computation",
+  "label": "coverage",
+  "ms": 817,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.53 s2=none@0.61 s3=none@0.49 s4=none@0.71 s5=none@0.75 s6=none@0.67 +checklist@0.09 layout=none@0.64"
+ },
+ {
+  "id": "gs-06-terse",
+  "label": "coverage",
+  "ms": 522,
+  "picked": "section1=data_table section2=none(duplicate data_table) section3=none section4=none section5=none section6=none",
+  "raw": "s1=data_table@0.62 s2=data_table@0.50 s3=data_table@0.37 s4=none@0.45 s5=none@0.47 s6=none@0.41 +master_list@0.09 +checklist@0.07 layout=none@0.56"
+ },
+ {
+  "id": "gs-06-descriptive",
+  "label": "coverage",
+  "ms": 544,
+  "picked": "section1=none section2=data_table section3=none(duplicate data_table) section4=none(duplicate data_table) section5=none(duplicate data_table) section6=none logic=needs_logic=0.87",
+  "raw": "s1=none@0.36 s2=data_table@0.74 s3=data_table@0.71 s4=data_table@0.60 s5=data_table@0.55 s6=none@0.47 layout=none@0.65"
+ },
+ {
+  "id": "gs-06-computation",
+  "label": "coverage",
+  "ms": 879,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.38 s2=none@0.53 s3=none@0.55 s4=none@0.69 s5=none@0.72 s6=none@0.70 +checklist@0.10 layout=none@0.56"
+ },
+ {
+  "id": "sc-01-terse",
+  "label": "coverage",
+  "ms": 551,
+  "picked": "section1=search_list section2=none section3=none section4=none section5=none section6=none needs_real_data=0.63",
+  "raw": "s1=search_list@0.61 s2=search_list@0.44 s3=search_list@0.31 s4=none@0.46 s5=none@0.49 s6=none@0.54 +filter_box@0.77 +master_list@0.69 +detail_view@0.18 +checklist@0.16 layout=master_detail@0.64"
+ },
+ {
+  "id": "sc-01-descriptive",
+  "label": "coverage",
+  "ms": 1166,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=master_detail +master_list +filter_box +detail_view needs_real_data=0.39",
+  "raw": "s1=search_list@0.31 s2=search_list@0.31 s3=detail_view@0.40 s4=detail_view@0.40 s5=none@0.39 s6=none@0.40 +filter_box@0.83 +master_list@0.87 +detail_view@0.74 +number_strip@0.22 +checklist@0.23 layout=master_detail@0.89"
+ },
+ {
+  "id": "sc-01-computation",
+  "label": "coverage",
+  "ms": 456,
+  "picked": "section1=search_list section2=none section3=none section4=none section5=none section6=none layout=master_detail +filter_box +master_list +detail_view needs_real_data=0.56 logic=needs_integration=0.42",
+  "raw": "s1=search_list@0.77 s2=master_list@0.43 s3=detail_view@0.47 s4=detail_view@0.41 s5=none@0.37 s6=none@0.44 +filter_box@0.72 +master_list@0.89 +detail_view@0.66 +checklist@0.46 layout=master_detail@0.99"
+ },
+ {
+  "id": "sc-02-terse",
+  "label": "coverage",
+  "ms": 1198,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=checklist@0.40 s2=none@0.38 s3=none@0.45 s4=none@0.55 s5=none@0.61 s6=none@0.67 +filter_box@0.16 +master_list@0.60 +detail_view@0.16 +number_strip@0.07 +progress_line@0.11 +list_summary@0.11 +checklist@0.76 layout=none@0.65"
+ },
+ {
+  "id": "sc-02-descriptive",
+  "label": "coverage",
+  "ms": 714,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist needs_real_data=0.67 logic=needs_search_or_form=0.90,needs_multiple_counters=0.71",
+  "raw": "s1=metrics@0.35 s2=metrics@0.31 s3=metrics@0.40 s4=metrics@0.37 s5=metrics@0.34 s6=metrics@0.28 +filter_box@0.10 +master_list@0.39 +detail_view@0.13 +number_strip@0.27 +breakdown_table@0.12 +series_chart@0.06 +progress_line@0.29 +list_summary@0.64 +checklist@0.89 layout=progress_list@0.96"
+ },
+ {
+  "id": "sc-02-computation",
+  "label": "coverage",
+  "ms": 601,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist logic=needs_logic=0.82",
+  "raw": "s1=metrics@0.32 s2=checklist@0.26 s3=list_summary@0.26 s4=list_summary@0.25 s5=list_summary@0.25 s6=list_summary@0.25 +master_list@0.18 +detail_view@0.09 +number_strip@0.27 +breakdown_table@0.08 +series_chart@0.09 +itinerary@0.06 +progress_line@0.13 +list_summary@0.63 +checklist@0.51 layout=progress_list@0.93"
+ },
+ {
+  "id": "sc-03-terse",
+  "label": "coverage",
+  "ms": 595,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.25 s2=none@0.31 s3=none@0.50 s4=none@0.59 s5=none@0.64 s6=none@0.65 +filter_box@0.15 +master_list@0.48 +detail_view@0.18 +number_strip@0.10 +breakdown_table@0.07 +series_chart@0.07 +progress_line@0.08 +list_summary@0.08 +checklist@0.64 layout=none@0.51"
+ },
+ {
+  "id": "sc-03-descriptive",
+  "label": "coverage",
+  "ms": 960,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=metrics@0.46 s2=metrics@0.31 s3=metrics@0.44 s4=metrics@0.37 s5=metrics@0.34 s6=metrics@0.31 +filter_box@0.11 +master_list@0.62 +detail_view@0.16 +number_strip@0.55 +breakdown_table@0.24 +series_chart@0.16 +progress_line@0.11 +list_summary@0.44 +checklist@0.76 layout=log_report@0.44"
+ },
+ {
+  "id": "sc-03-computation",
+  "label": "coverage",
+  "ms": 651,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=metrics@0.29 s2=none@0.23 s3=none@0.26 s4=none@0.36 s5=none@0.41 s6=none@0.35 +number_strip@0.12 +series_chart@0.06 +progress_line@0.08 +list_summary@0.30 +checklist@0.14 layout=progress_list@0.57"
+ },
+ {
+  "id": "sc-04-terse",
+  "label": "coverage",
+  "ms": 550,
+  "picked": "vetoed needs_integration=0.94 needs_real_data=0.63",
+  "raw": "s1=none@0.83 s2=none@0.82 s3=none@0.89 s4=none@0.93 s5=none@0.94 s6=none@0.95 +filter_box@0.07 +master_list@0.16 +checklist@0.08 layout=none@0.94"
+ },
+ {
+  "id": "sc-04-descriptive",
+  "label": "coverage",
+  "ms": 441,
+  "picked": "vetoed needs_integration=0.94",
+  "raw": "s1=timer@0.62 s2=timer@0.59 s3=timer@0.67 s4=timer@0.63 s5=timer@0.60 s6=timer@0.51 +master_list@0.07 layout=none@0.54"
+ },
+ {
+  "id": "sc-04-computation",
+  "label": "coverage",
+  "ms": 534,
+  "picked": "section1=timer section2=none(duplicate timer) section3=none(duplicate timer) section4=none(duplicate timer) section5=none(duplicate timer) section6=none(duplicate timer) logic=needs_integration=0.49,needs_logic=0.87",
+  "raw": "s1=timer@0.65 s2=timer@0.80 s3=timer@0.79 s4=timer@0.78 s5=timer@0.55 s6=timer@0.63 +number_strip@0.06 layout=stack@0.63"
+ },
+ {
+  "id": "sc-05-terse",
+  "label": "coverage",
+  "ms": 486,
+  "picked": "section1=record_log section2=none(duplicate record_log) section3=none section4=none section5=none section6=none needs_real_data=0.68",
+  "raw": "s1=record_log@0.73 s2=record_log@0.56 s3=record_log@0.43 s4=record_log@0.35 s5=record_log@0.36 s6=record_log@0.34 +filter_box@0.12 +master_list@0.37 +detail_view@0.19 +record_log@0.44 +number_strip@0.31 +breakdown_table@0.23 +series_chart@0.15 +settle_up@0.10 +checklist@0.30 layout=log_report@0.59"
+ },
+ {
+  "id": "sc-05-descriptive",
+  "label": "coverage",
+  "ms": 658,
+  "picked": "section1=record_log section2=none section3=none section4=none section5=breakdown_table section6=none layout=log_report needs_real_data=0.42",
+  "raw": "s1=record_log@0.62 s2=breakdown_table@0.36 s3=breakdown_table@0.49 s4=breakdown_table@0.47 s5=breakdown_table@0.52 s6=breakdown_table@0.49 +filter_box@0.13 +master_list@0.49 +detail_view@0.33 +record_log@0.57 +number_strip@0.61 +breakdown_table@0.31 +series_chart@0.22 +checklist@0.46 layout=log_report@0.93"
+ },
+ {
+  "id": "sc-05-computation",
+  "label": "coverage",
+  "ms": 621,
+  "picked": "section1=none section2=breakdown_table section3=none section4=none section5=none section6=none layout=log_report +record_log",
+  "raw": "s1=record_log@0.38 s2=breakdown_table@0.53 s3=breakdown_table@0.49 s4=breakdown_table@0.42 s5=breakdown_table@0.47 s6=breakdown_table@0.41 +master_list@0.15 +detail_view@0.07 +record_log@0.20 +number_strip@0.41 +breakdown_table@0.12 +series_chart@0.08 +checklist@0.08 layout=log_report@0.96"
+ },
+ {
+  "id": "sc-06-terse",
+  "label": "coverage",
+  "ms": 528,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=master_list@0.31 s2=none@0.34 s3=none@0.40 s4=none@0.43 s5=none@0.42 s6=none@0.46 +filter_box@0.12 +master_list@0.26 +detail_view@0.11 +record_log@0.22 +number_strip@0.22 +breakdown_table@0.43 +series_chart@0.27 +settle_up@0.10 +itinerary@0.06 +progress_line@0.18 +list_summary@0.13 +checklist@0.44 layout=none@0.34"
+ },
+ {
+  "id": "sc-06-descriptive",
+  "label": "coverage",
+  "ms": 525,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log needs_real_data=0.42",
+  "raw": "s1=data_table@0.16 s2=breakdown_table@0.20 s3=breakdown_table@0.17 s4=none@0.23 s5=none@0.27 s6=none@0.29 +master_list@0.15 +detail_view@0.09 +number_strip@0.06 +breakdown_table@0.10 +series_chart@0.07 +checklist@0.10 layout=log_report@0.88"
+ },
+ {
+  "id": "sc-06-computation",
+  "label": "coverage",
+  "ms": 576,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=master_list@0.21 s2=none@0.25 s3=none@0.29 s4=none@0.43 s5=none@0.42 s6=none@0.42 +master_list@0.13 +detail_view@0.06 +record_log@0.08 +number_strip@0.07 +breakdown_table@0.06 +series_chart@0.08 +checklist@0.08 layout=log_report@0.78"
+ },
+ {
+  "id": "si-01-terse",
+  "label": "coverage",
+  "ms": 500,
+  "picked": "section1=checklist section2=none(duplicate checklist) section3=none section4=none section5=none section6=none layout=progress_list",
+  "raw": "s1=checklist@0.85 s2=checklist@0.57 s3=none@0.44 s4=none@0.51 s5=none@0.50 s6=none@0.59 +filter_box@0.06 +master_list@0.27 +detail_view@0.06 +progress_line@0.09 +list_summary@0.08 +checklist@0.93 layout=progress_list@0.93"
+ },
+ {
+  "id": "si-01-descriptive",
+  "label": "coverage",
+  "ms": 745,
+  "picked": "section1=none section2=none section3=list_summary section4=none(duplicate list_summary) section5=none(duplicate list_summary) section6=none(duplicate list_summary) layout=progress_list +checklist logic=needs_search_or_form=0.82",
+  "raw": "s1=list_summary@0.37 s2=checklist@0.48 s3=list_summary@0.79 s4=list_summary@0.73 s5=list_summary@0.70 s6=list_summary@0.70 +filter_box@0.09 +master_list@0.32 +detail_view@0.17 +number_strip@0.30 +progress_line@0.37 +list_summary@0.79 +checklist@0.91 layout=progress_list@1.00"
+ },
+ {
+  "id": "si-01-computation",
+  "label": "coverage",
+  "ms": 489,
+  "picked": "section1=list_summary section2=none(duplicate list_summary) section3=none(duplicate list_summary) section4=none section5=none(duplicate list_summary) section6=none(duplicate list_summary) layout=progress_list +checklist logic=needs_logic=0.92",
+  "raw": "s1=list_summary@0.57 s2=list_summary@0.56 s3=list_summary@0.62 s4=list_summary@0.46 s5=list_summary@0.54 s6=list_summary@0.53 +master_list@0.15 +number_strip@0.18 +progress_line@0.34 +list_summary@0.88 +checklist@0.26 layout=progress_list@1.00"
+ },
+ {
+  "id": "si-02-terse",
+  "label": "coverage",
+  "ms": 887,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=data_table@0.29 s2=data_table@0.40 s3=data_table@0.37 s4=none@0.44 s5=none@0.51 s6=none@0.52 +filter_box@0.12 +master_list@0.43 +detail_view@0.14 +record_log@0.10 +number_strip@0.25 +breakdown_table@0.12 +series_chart@0.12 +progress_line@0.19 +list_summary@0.24 +checklist@0.62 layout=none@0.57"
+ },
+ {
+  "id": "si-02-descriptive",
+  "label": "coverage",
+  "ms": 463,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=data_table@0.24 s2=data_table@0.31 s3=data_table@0.39 s4=data_table@0.27 s5=none@0.23 s6=none@0.31 +filter_box@0.10 +master_list@0.52 +detail_view@0.18 +record_log@0.11 +number_strip@0.39 +breakdown_table@0.12 +list_summary@0.07 +checklist@0.28 layout=log_report@0.50"
+ },
+ {
+  "id": "si-02-computation",
+  "label": "coverage",
+  "ms": 471,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.27 s2=none@0.29 s3=none@0.32 s4=none@0.41 s5=none@0.49 s6=none@0.50 +master_list@0.06 +number_strip@0.12 +list_summary@0.08 +checklist@0.08 layout=none@0.57"
+ },
+ {
+  "id": "si-03-terse",
+  "label": "coverage",
+  "ms": 483,
+  "picked": "section1=data_table section2=none(duplicate data_table) section3=none section4=none section5=none section6=none logic=needs_logic=0.96",
+  "raw": "s1=data_table@0.60 s2=data_table@0.52 s3=data_table@0.38 s4=data_table@0.29 s5=none@0.35 s6=none@0.43 +filter_box@0.06 +master_list@0.10 +detail_view@0.11 +number_strip@0.10 +checklist@0.11 layout=none@0.52"
+ },
+ {
+  "id": "si-03-descriptive",
+  "label": "coverage",
+  "ms": 504,
+  "picked": "section1=data_table section2=none section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.78,needs_logic=0.99",
+  "raw": "s1=data_table@0.60 s2=breakdown_table@0.26 s3=key_facts@0.27 s4=key_facts@0.25 s5=none@0.28 s6=none@0.34 +master_list@0.06 +number_strip@0.07 layout=none@0.26"
+ },
+ {
+  "id": "si-03-computation",
+  "label": "coverage",
+  "ms": 569,
+  "picked": "section1=data_table section2=none section3=none section4=none section5=none section6=none logic=needs_logic=0.95",
+  "raw": "s1=data_table@0.62 s2=data_table@0.37 s3=key_facts@0.25 s4=none@0.38 s5=none@0.42 s6=none@0.46 layout=stack@0.52"
+ },
+ {
+  "id": "si-04-terse",
+  "label": "coverage",
+  "ms": 562,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=checklist@0.24 s2=checklist@0.39 s3=none@0.38 s4=none@0.51 s5=none@0.50 s6=none@0.56 +filter_box@0.20 +master_list@0.58 +detail_view@0.27 +number_strip@0.12 +breakdown_table@0.08 +series_chart@0.07 +progress_line@0.11 +list_summary@0.11 +checklist@0.75 layout=none@0.21"
+ },
+ {
+  "id": "si-04-descriptive",
+  "label": "coverage",
+  "ms": 493,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist logic=needs_search_or_form=0.85,needs_logic=0.84",
+  "raw": "s1=metrics@0.40 s2=checklist@0.26 s3=metrics@0.35 s4=metrics@0.41 s5=metrics@0.34 s6=metrics@0.32 +filter_box@0.09 +master_list@0.39 +detail_view@0.14 +number_strip@0.29 +breakdown_table@0.06 +progress_line@0.13 +list_summary@0.28 +checklist@0.84 layout=progress_list@0.92"
+ },
+ {
+  "id": "si-04-computation",
+  "label": "coverage",
+  "ms": 510,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=progress_list +checklist logic=needs_search_or_form=0.83,needs_logic=0.82",
+  "raw": "s1=none@0.36 s2=none@0.49 s3=none@0.57 s4=none@0.66 s5=none@0.70 s6=none@0.69 +filter_box@0.17 +master_list@0.25 +detail_view@0.17 +record_log@0.14 +number_strip@0.18 +breakdown_table@0.11 +series_chart@0.11 +settle_up@0.13 +itinerary@0.07 +progress_line@0.20 +list_summary@0.29 +checklist@0.23 layout=progress_list@0.38"
+ },
+ {
+  "id": "si-05-terse",
+  "label": "coverage",
+  "ms": 479,
+  "picked": "section1=record_log section2=none section3=none section4=none section5=none section6=none layout=log_report",
+  "raw": "s1=record_log@0.51 s2=bar_chart@0.25 s3=bar_chart@0.33 s4=bar_chart@0.35 s5=bar_chart@0.34 s6=bar_chart@0.33 +filter_box@0.15 +master_list@0.29 +detail_view@0.21 +record_log@0.13 +number_strip@0.32 +breakdown_table@0.45 +series_chart@0.53 +checklist@0.27 layout=log_report@0.92"
+ },
+ {
+  "id": "si-05-descriptive",
+  "label": "coverage",
+  "ms": 469,
+  "picked": "section1=record_log section2=none section3=none section4=none section5=none section6=none layout=log_report +series_chart",
+  "raw": "s1=record_log@0.59 s2=breakdown_table@0.32 s3=bar_chart@0.26 s4=bar_chart@0.19 s5=bar_chart@0.18 s6=bar_chart@0.18 +filter_box@0.06 +master_list@0.15 +detail_view@0.07 +record_log@0.07 +number_strip@0.31 +breakdown_table@0.40 +series_chart@0.66 +checklist@0.14 layout=log_report@0.99"
+ },
+ {
+  "id": "si-05-computation",
+  "label": "coverage",
+  "ms": 464,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=metrics@0.20 s2=data_table@0.18 s3=key_facts@0.34 s4=key_facts@0.22 s5=key_facts@0.26 s6=none@0.32 +master_list@0.13 +detail_view@0.08 +number_strip@0.30 +breakdown_table@0.06 +list_summary@0.09 +checklist@0.09 layout=log_report@0.48"
+ },
+ {
+  "id": "si-06-terse",
+  "label": "coverage",
+  "ms": 509,
+  "picked": "vetoed needs_integration=0.97 needs_real_data=0.95",
+  "raw": "s1=none@0.51 s2=data_table@0.50 s3=data_table@0.42 s4=none@0.46 s5=none@0.55 s6=none@0.54 +filter_box@0.09 +master_list@0.25 +detail_view@0.14 +checklist@0.19 layout=none@0.66"
+ },
+ {
+  "id": "si-06-descriptive",
+  "label": "coverage",
+  "ms": 505,
+  "picked": "vetoed needs_integration=0.98 needs_real_data=0.97",
+  "raw": "s1=none@0.42 s2=data_table@0.46 s3=data_table@0.69 s4=data_table@0.68 s5=data_table@0.49 s6=data_table@0.49 +filter_box@0.09 +master_list@0.37 +detail_view@0.15 +checklist@0.18 layout=none@0.42"
+ },
+ {
+  "id": "si-06-computation",
+  "label": "coverage",
+  "ms": 752,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=key_facts@0.25 s2=data_table@0.34 s3=key_facts@0.24 s4=none@0.36 s5=none@0.41 s6=none@0.36 +master_list@0.31 +detail_view@0.23 +number_strip@0.06 +checklist@0.09 layout=none@0.40"
+ },
+ {
+  "id": "ts-01-terse",
+  "label": "coverage",
+  "ms": 549,
+  "picked": "section1=timer section2=none(duplicate timer) section3=none(duplicate timer) section4=none section5=none section6=none",
+  "raw": "s1=timer@0.77 s2=timer@0.67 s3=timer@0.50 s4=timer@0.46 s5=none@0.41 s6=timer@0.43 +itinerary@0.09 +progress_line@0.08 +checklist@0.13 layout=none@0.27"
+ },
+ {
+  "id": "ts-01-descriptive",
+  "label": "coverage",
+  "ms": 480,
+  "picked": "section1=timer section2=none(duplicate timer) section3=none(duplicate timer) section4=none section5=none(duplicate timer) section6=none logic=needs_search_or_form=0.72",
+  "raw": "s1=timer@0.69 s2=timer@0.79 s3=timer@0.70 s4=timer@0.49 s5=timer@0.50 s6=none@0.45 layout=none@0.39"
+ },
+ {
+  "id": "ts-01-computation",
+  "label": "coverage",
+  "ms": 479,
+  "picked": "section1=timer section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=timer@0.82 s2=timer@0.43 s3=timer@0.43 s4=none@0.53 s5=none@0.59 s6=none@0.56 +itinerary@0.12 +progress_line@0.10 +checklist@0.08 layout=itinerary_day@0.42"
+ },
+ {
+  "id": "ts-02-terse",
+  "label": "coverage",
+  "ms": 501,
+  "picked": "section1=timer section2=none(duplicate timer) section3=none section4=none section5=none section6=none needs_real_data=0.72 logic=needs_logic=0.97",
+  "raw": "s1=timer@0.53 s2=timer@0.54 s3=timer@0.46 s4=none@0.54 s5=none@0.51 s6=none@0.60 +master_list@0.08 +detail_view@0.07 layout=none@0.62"
+ },
+ {
+  "id": "ts-02-descriptive",
+  "label": "coverage",
+  "ms": 459,
+  "picked": "section1=calendar_event section2=timeline section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.85,needs_logic=0.94",
+  "raw": "s1=calendar_event@0.60 s2=timeline@0.67 s3=timeline@0.46 s4=key_facts@0.33 s5=key_facts@0.35 s6=key_facts@0.32 +filter_box@0.07 +master_list@0.08 +checklist@0.13 layout=stack@0.30"
+ },
+ {
+  "id": "ts-02-computation",
+  "label": "coverage",
+  "ms": 1228,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=timer@0.44 s2=none@0.40 s3=none@0.56 s4=none@0.66 s5=none@0.70 s6=none@0.73 layout=none@0.70"
+ },
+ {
+  "id": "ts-03-terse",
+  "label": "coverage",
+  "ms": 491,
+  "picked": "section1=timeline section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=timeline@0.55 s2=timeline@0.46 s3=none@0.47 s4=none@0.62 s5=none@0.60 s6=none@0.62 +filter_box@0.07 +master_list@0.10 +detail_view@0.06 +record_log@0.11 +itinerary@0.15 +list_summary@0.06 +checklist@0.13 layout=none@0.65"
+ },
+ {
+  "id": "ts-03-descriptive",
+  "label": "coverage",
+  "ms": 511,
+  "picked": "section1=none section2=timeline section3=none(duplicate timeline) section4=none section5=none section6=none logic=needs_search_or_form=0.92,needs_logic=0.88",
+  "raw": "s1=timeline@0.37 s2=timeline@0.77 s3=timeline@0.53 s4=none@0.28 s5=none@0.38 s6=none@0.47 +filter_box@0.06 +master_list@0.22 +detail_view@0.10 +number_strip@0.42 +itinerary@0.09 +progress_line@0.07 +list_summary@0.16 +checklist@0.18 layout=itinerary_day@0.29"
+ },
+ {
+  "id": "ts-03-computation",
+  "label": "coverage",
+  "ms": 1430,
+  "picked": "section1=timeline section2=none(duplicate timeline) section3=none(duplicate timeline) section4=none section5=none section6=none(duplicate timeline) layout=itinerary_day +itinerary logic=needs_search_or_form=0.81",
+  "raw": "s1=timeline@0.76 s2=timeline@0.72 s3=timeline@0.52 s4=timeline@0.42 s5=timeline@0.45 s6=timeline@0.52 +master_list@0.26 +detail_view@0.06 +number_strip@0.11 +itinerary@0.26 +checklist@0.19 layout=itinerary_day@0.96"
+ },
+ {
+  "id": "ts-04-terse",
+  "label": "coverage",
+  "ms": 799,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=log_entries@0.22 s2=number_strip@0.29 s3=number_strip@0.36 s4=number_strip@0.31 s5=none@0.35 s6=none@0.36 +master_list@0.06 +detail_view@0.06 +number_strip@0.19 +breakdown_table@0.11 +checklist@0.06 layout=log_report@0.57"
+ },
+ {
+  "id": "ts-04-descriptive",
+  "label": "coverage",
+  "ms": 489,
+  "picked": "section1=none section2=none section3=none section4=none section5=none section6=none layout=log_report +record_log",
+  "raw": "s1=log_entries@0.32 s2=number_strip@0.22 s3=number_strip@0.35 s4=number_strip@0.36 s5=number_strip@0.39 s6=number_strip@0.40 +master_list@0.08 +detail_view@0.08 +number_strip@0.24 +breakdown_table@0.12 +checklist@0.07 layout=log_report@0.88"
+ },
+ {
+  "id": "ts-04-computation",
+  "label": "coverage",
+  "ms": 659,
+  "picked": "section1=none section2=key_facts section3=none section4=none section5=none section6=none",
+  "raw": "s1=key_facts@0.49 s2=key_facts@0.51 s3=key_facts@0.48 s4=key_facts@0.41 s5=none@0.38 s6=none@0.40 +number_strip@0.08 layout=stack@0.36"
+ },
+ {
+  "id": "ts-05-terse",
+  "label": "coverage",
+  "ms": 762,
+  "picked": "none (section1=none section2=none section3=none section4=none section5=none section6=none)",
+  "raw": "s1=none@0.71 s2=none@0.53 s3=none@0.45 s4=none@0.61 s5=none@0.68 s6=none@0.75 +master_list@0.08 layout=stack@0.40"
+ },
+ {
+  "id": "ts-05-descriptive",
+  "label": "coverage",
+  "ms": 978,
+  "picked": "section1=none section2=key_facts section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.87,needs_logic=0.98",
+  "raw": "s1=none@0.69 s2=key_facts@0.56 s3=key_facts@0.44 s4=none@0.55 s5=none@0.57 s6=none@0.64 layout=none@0.47"
+ },
+ {
+  "id": "ts-05-computation",
+  "label": "coverage",
+  "ms": 535,
+  "picked": "section1=key_facts section2=none(duplicate key_facts) section3=none section4=none section5=none section6=none logic=needs_logic=0.95",
+  "raw": "s1=key_facts@0.65 s2=key_facts@0.57 s3=key_facts@0.44 s4=key_facts@0.40 s5=none@0.47 s6=none@0.44 layout=stack@0.50"
+ },
+ {
+  "id": "ts-06-terse",
+  "label": "coverage",
+  "ms": 500,
+  "picked": "section1=timeline section2=none section3=none section4=none section5=none section6=none logic=needs_search_or_form=0.86,needs_logic=0.95",
+  "raw": "s1=timeline@0.60 s2=timeline@0.48 s3=timeline@0.37 s4=none@0.44 s5=none@0.49 s6=none@0.53 +filter_box@0.10 +master_list@0.15 +detail_view@0.08 +itinerary@0.07 +checklist@0.13 layout=none@0.58"
+ },
+ {
+  "id": "ts-06-descriptive",
+  "label": "coverage",
+  "ms": 950,
+  "picked": "section1=none section2=none section3=data_table section4=none section5=none section6=none logic=needs_search_or_form=0.91,needs_logic=0.98",
+  "raw": "s1=data_table@0.28 s2=data_table@0.39 s3=data_table@0.55 s4=none@0.39 s5=none@0.44 s6=none@0.42 +master_list@0.11 +detail_view@0.06 +checklist@0.11 layout=none@0.39"
+ },
+ {
+  "id": "ts-06-computation",
+  "label": "coverage",
+  "ms": 670,
+  "picked": "section1=timeline section2=none section3=none section4=none section5=none section6=none",
+  "raw": "s1=timeline@0.61 s2=timeline@0.45 s3=none@0.42 s4=none@0.57 s5=none@0.57 s6=none@0.52 +master_list@0.10 +detail_view@0.06 +itinerary@0.08 +checklist@0.15 layout=itinerary_day@0.35"
+ }
+]

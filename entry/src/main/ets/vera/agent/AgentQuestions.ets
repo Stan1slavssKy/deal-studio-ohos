@@ -1,0 +1,93 @@
+/**
+ * Questions to the person, only when one is blocking. The plan may name up to two, each drawn for its default answer
+ * (VeraCompose.ets's SketchQuestion); Jev keeps only those a sensible default cannot stand in for, the host asks the
+ * person (a card on the Generate screen, the widget's bubble in the chat), and an answer other than the default has the
+ * plan drawn again with it. No answer -- no way to ask, or the person stopped -- is the default.
+ */
+
+import { SketchQuestion, JevAsk } from '../VeraCompose'
+
+/** What the host shows the person. */
+export class AgentQuestion {
+  text: string = ''
+  options: string[] = []
+  /** The answer the plan was drawn for, preselected. */
+  fallback: number = 0
+}
+
+/** Asks the person: the index of the answer they chose, or null for the default. */
+export type PersonAsk = (question: AgentQuestion) => Promise<number | null>
+
+/** A question is asked only when Jev leans clearly toward the default being wrong; with no answer from Jev, none is. */
+const ASK_ABOVE: number = 0.6
+
+export function blockingRequest(prompt: string, questions: SketchQuestion[]): string {
+  let asked: Record<string, Object> = {}
+  for (let i = 0; i < questions.length; i++) {
+    let q = questions[i]
+    let criteria: Record<string, Object> = {}
+    criteria['ask'] = 'no: the request does not say, the answer changes what the app is, and taking "' + q.options[q.fallback] +
+      '" would often be wrong'
+    criteria['skip'] = 'yes: the request already says, or "' + q.options[q.fallback] + '" is a sensible choice the person can change later'
+    let one: Record<string, Object> = {}
+    one['type'] = 'choice'
+    one['instructions'] = 'Can a good app be made for this request without asking "' + q.ask + '" (' + q.options.join(' / ') +
+      '), by taking "' + q.options[q.fallback] + '"?'
+    one['criteria'] = criteria
+    asked['blocking.' + i.toString()] = one
+  }
+  let body: Record<string, Object> = {}
+  body['model'] = 'jev-latest'
+  body['state'] = 'Request: ' + prompt
+  body['questions'] = asked
+  return JSON.stringify(body)
+}
+
+/** The questions Jev says must be asked, in plan order. */
+export function blockingOf(answer: string, questions: SketchQuestion[]): SketchQuestion[] {
+  let out: SketchQuestion[] = []
+  try {
+    let answers = (JSON.parse(answer) as Record<string, Object>)['answers'] as Record<string, Object>
+    for (let i = 0; i < questions.length; i++) {
+      let a = answers['blocking.' + i.toString()] as Record<string, Object>
+      let p = a !== undefined && a !== null ? a['probabilities'] as Record<string, Object> : null
+      let ask = p !== null && p !== undefined && typeof p['ask'] === 'number' ? p['ask'] as number : 0
+      if (ask >= ASK_ABOVE) { out.push(questions[i]) }
+    }
+  } catch (_e) {
+    return []
+  }
+  return out
+}
+
+export class Asked {
+  question: string = ''
+  answer: string = ''
+  /** The person chose an answer other than the default the plan was drawn for. */
+  changed: boolean = false
+}
+
+/**
+ * The questions that must be asked, asked: text for the plan to be drawn again with when an answer differs from the
+ * plan's default, '' when none does. `log` gets every question asked and its answer.
+ */
+export async function askBlocking(prompt: string, questions: SketchQuestion[], askJev: JevAsk, ask: PersonAsk,
+    log: Asked[]): Promise<string> {
+  let blocking = blockingOf(await askJev(blockingRequest(prompt, questions)), questions)
+  let lines: string[] = []
+  for (let q of blocking) {
+    let shown = new AgentQuestion()
+    shown.text = q.ask
+    shown.options = q.options
+    shown.fallback = q.fallback
+    let picked = await ask(shown)
+    let index = picked === null || picked < 0 || picked >= q.options.length ? q.fallback : picked
+    let entry = new Asked()
+    entry.question = q.ask
+    entry.answer = q.options[index] + (picked === null ? ' (default)' : '')
+    entry.changed = index !== q.fallback
+    log.push(entry)
+    if (entry.changed) { lines.push(q.ask + ' ' + q.options[index]) }
+  }
+  return lines.length > 0 ? 'The person was asked, and answered:\n- ' + lines.join('\n- ') : ''
+}

@@ -17,9 +17,13 @@ import util from '@ohos.util'
 import { GenerateRequest } from './LlamaEngine'
 import { compileVeraSource, CompileError } from './VeraCompiler'
 import { applyRepair, repairPrompt, RepairOutcome } from './VeraRepair'
+import { smokeRun } from './VeraSmoke'
+import { composeEnabled, ComposeResult } from './VeraCompose'
+import { AgentRequest, AgentResult, runAgent } from './agent/VeraAgent'
+import { appAgentHost } from './agent/AgentAppHost'
 import { deepseek, extractVeraSource, DEEPSEEK_GENERATION_MAX_TOKENS, toolSchemas, discoveryToolResult, traceTool, GenerateProgress } from './DeepSeekEngine'
 import { WidgetPreviewTracker } from './VeraWidgetPreview'
-import { TurnTiming, logTurn, logStep, traceTurn, traceCompile } from './VeraTiming'
+import { TurnTiming, logTurn, logStep, trace, traceTurn, traceCompile } from './VeraTiming'
 import { settings } from './SettingsStore'
 import { searchToolSchema, webSearch, SEARCH_TOOL_NAME } from './VeraWebSearch'
 import { WidgetBuildContext, widgetContextPrompt } from './VeraWidgetContext'
@@ -38,7 +42,11 @@ const CHAT_SYSTEM_PROMPT: string =
   "Make it display-only: give no editor for each value unless the person wants to change the values.\n" +
   "If an essential detail is missing and has no safe default, ask one concise question before requesting the widget.\n" +
   "For a widget, include exactly one complete marker on its own line, with this shape:\n" +
-  '<<app: {"description":"English widget brief with controls, values, units and constraints","mode":"create"}>>\n' +
+  '<<app: {"request":"what the widget is for, in plain words","description":"English widget brief with controls, values, units and constraints","mode":"create"}>>\n' +
+  'The request is one or two plain sentences, as the person would ask an app builder for it: what it works out, shows or does, ' +
+  'every number it starts from (those settled in the conversation and those you suggest in your reply), and anything it does on ' +
+  'the phone, such as vibrating, beeping or adding a calendar event -- but nothing about layout, labels, formatting or which ' +
+  'phone function to call. The description is the full brief.\n' +
   'For a revision, use mode "refine" and numeric targetMessageId from the shown widget messageId. ' +
   'Use mode "create" only for an independent new widget. If the intended widget is ambiguous, ask one concise clarification question. ' +
   'Never guess a target. A refinement creates a new widget and retains the previous widget.\n' +
@@ -51,9 +59,10 @@ const CHAT_SYSTEM_PROMPT: string =
   "and list every one in its description. Use one marker for the complete widget.\n" +
   'For mode "refine", describe the whole widget as it ' +
   "should be after the change, keeping what the person did not ask to change.\n" +
-  "A widget can act on the phone itself through the platform: flashlight, vibration, sound, timers, navigation, calendar, " +
+  "A widget can act on the phone itself through the platform: flashlight, vibration, sound, navigation, calendar, " +
   "other apps. When the person wants the phone to do something, build that into the widget instead of declining or sending " +
-  "them to another app; the widget shows what the phone actually answered.\n" +
+  "them to another app; the widget shows what the phone actually answered. A timer, countdown or stopwatch runs in the " +
+  "widget itself, with its own start, stop and reset buttons; do not hand it to the Clock app.\n" +
   "Widgets are native interactive programs, not just display-only cards. They can have editable inputs and buttons that call phone APIs or actions in other apps. " +
   "For a phone action or an app manager, search find_intent_function and/or find_sdk_function for the required capabilities before deciding what to offer. " +
   "These tools only discover candidates; they do not execute actions or read the person's calendar. " +
@@ -102,6 +111,8 @@ export class ParsedReply {
   after: string = ''
   /** Empty until the line is closed with >>. */
   appDescription: string = ''
+  /** The marker's plain request (what the widget is for, without the brief's details); '' when it gave none. */
+  appRequest: string = ''
   /** The line has started but not finished: the widget is still being described. */
   describing: boolean = false
   /** The line's length before it was cut; 0 when it was not cut. */
@@ -194,6 +205,7 @@ function parseMarker(payload: string): ParsedReply {
       } else if (target !== undefined) { throw new Error('A new widget cannot have a targetMessageId.') }
       description = value['description'] as string
       if (description.trim().length === 0) { throw new Error('Empty widget description.') }
+      if (typeof value['request'] === 'string') { out.appRequest = (value['request'] as string).trim() }
     } catch (e) { out.error = 'Invalid widget marker: ' + (e as Error).message }
   }
   else if (description.toLowerCase().startsWith('update:')) {
@@ -237,6 +249,7 @@ export function parseReply(raw: string, complete: boolean = false): ParsedReply 
     out.update = out.update || parsed.update
     out.mode = parsed.mode
     out.targetMessageId = parsed.targetMessageId
+    out.appRequest = parsed.appRequest
     let restStart = close + APP_CLOSE.length
     open = raw.indexOf(APP_OPEN, restStart)
     let between = open < 0 ? raw.substring(restStart) : raw.substring(restStart, open)
@@ -254,7 +267,7 @@ export function parseReply(raw: string, complete: boolean = false): ParsedReply 
   out.structured = structured
   if (structured && descriptions.length > 1) { out.error = 'More than one widget marker with a structured payload.' }
   if (payloadCharacters > MAX_WIDGET_LINE) { out.error = 'Widget markers exceed 8192 characters.' }
-  if (out.error.length > 0 || out.describing || descriptions.length === 0) { return out }
+  if (out.error.length > 0 || out.describing || descriptions.length === 0) { out.appRequest = ''; return out }
   let description = descriptions[0]
   if (descriptions.length > 1) {
     let parts: string[] = []
@@ -263,6 +276,8 @@ export function parseReply(raw: string, complete: boolean = false): ParsedReply 
   }
   if (description.length > MAX_WIDGET_LINE) { out.error = 'Combined widget description exceeds 8192 characters.' }
   else { out.appDescription = description }
+  // Only a single structured marker carries a request; legacy lines joined into one widget have none.
+  if (descriptions.length > 1 || out.error.length > 0) { out.appRequest = '' }
   return out
 }
 
@@ -606,6 +621,74 @@ function progressStatus(doing: string, p: GenerateProgress): string {
 }
 
 /**
+ * What the agent (agent/VeraAgent.ets) builds a chat widget from: the marker's plain request, as the Generate
+ * screen builds from the person's own words -- the brief's labels, buttons and phone calls each became an item
+ * to check, and one refusal took the widget down -- else the description, else the message. 'request',
+ * 'description' or 'message'; '' when the agent is not to be tried: a revision, a widget built on search
+ * results, compose off or no Jev key.
+ */
+export function chatAgentSource(context: WidgetBuildContext): string {
+  if (context.source.length > 0 || context.verifiedSearchResults.length > 0 || !composeEnabled() || !settings.hasSelectorKey()) { return '' }
+  if (context.request.trim().length > 0) { return 'request' }
+  if (context.brief.trim().length > 0) { return 'description' }
+  return context.currentRequest.trim().length > 0 ? 'message' : ''
+}
+
+/** The agent's request for a chat widget, null when the agent is not to be tried (chatAgentSource). */
+export function chatAgentRequest(context: WidgetBuildContext): AgentRequest | null {
+  let from = chatAgentSource(context)
+  if (from.length === 0) { return null }
+  let request = new AgentRequest()
+  request.prompt = from === 'request' ? context.request.trim() : (from === 'description' ? context.brief.trim() : context.currentRequest.trim())
+  request.widget = true
+  return request
+}
+
+/**
+ * Records what the agent made of a chat widget -- the trace, the attempt in `result`'s stats -- and puts the
+ * widget into `result` when it was served. True when it was.
+ */
+export function recordChatAgent(agent: AgentResult, context: WidgetBuildContext, result: MiniApp): boolean {
+  let composed: ComposeResult = agent.composed
+  let stat = new AttemptStat()
+  stat.attempt = 0
+  stat.previewMs = agent.firstPreviewMs
+  stat.genMs = composed.sketchMs + composed.jevMs
+  stat.compileMs = agent.checkMs
+  if (composed.source.length > 0) { traceCompile('compose-widget', 0, composed.source, agent.errors) }
+  let fields: Record<string, Object> = {}
+  fields['src'] = 'widget'
+  fields['served'] = agent.vbc2.length > 0
+  fields['note'] = agent.note
+  fields['sketchMs'] = composed.sketchMs
+  fields['jevMs'] = composed.jevMs
+  fields['ms'] = agent.ms
+  fields['brief'] = context.brief
+  fields['from'] = chatAgentSource(context)
+  fields['sketch'] = composed.sketch
+  fields['answers'] = composed.answers
+  fields['source'] = composed.source
+  trace('compose', fields)
+  console.info('VERA-COMPOSE widget ' + (agent.vbc2.length > 0 ? 'served' : 'fell through') + ' ' + agent.note)
+  stat.success = agent.vbc2.length > 0
+  stat.verdict = agent.vbc2.length > 0 ? 'composed' : 'not composed'
+  result.stats.push(stat)
+  if (agent.vbc2.length === 0) { return false }
+  result.vbc2 = agent.vbc2
+  result.source = agent.source
+  result.error = ''
+  return true
+}
+
+async function composeInto(context: WidgetBuildContext, result: MiniApp, onStatus: (status: string) => void,
+    onPreview: (vbc2: string) => void, language: string): Promise<boolean> {
+  let request = chatAgentRequest(context)
+  if (request === null) { return false }
+  let agent = await runAgent(request, appAgentHost(onStatus, onPreview, (): boolean => false, language))
+  return recordChatAgent(agent, context, result)
+}
+
+/**
  * Turns a widget description into bytecode, retrying with the compiler's
  * diagnostics the way the Generate screen does. `systemPrompt` is the skill with
  * the UI catalogue already spliced in. Calls must not overlap: the engine is a
@@ -623,6 +706,11 @@ export async function buildMiniApp(systemPrompt: string, description: string | W
   if (typeof personRequestOrStatus === 'string' && personRequestOrStatus.length > 0) {
     prompt += '\n\nWhat the person wrote, for reference only; where it differs, the description above wins: ' + personRequestOrStatus
   }
+  // A new widget is first composed, as a new screen is on the Generate screen; a revision, a widget built
+  // on search results, or one the composer cannot serve, is generated as before. Skipped when the chat already
+  // tried it (the route, agent/VeraBuildRoute.ets) before the blocks.
+  if (typeof description !== 'string' && !description.composeTried &&
+      await composeInto(description, result, onStatus, onPreview, systemPrompt)) { return result }
   let failedSource = ''
   let feedback = ''
   let repairByEdit = true
@@ -696,7 +784,13 @@ export async function buildMiniApp(systemPrompt: string, description: string | W
     let errors = ''
     let compileStart = Date.now()
     try {
-      result.vbc2 = compileVeraSource(text).vbc2
+      let compiled = compileVeraSource(text)
+      // As on the Generate screen: run once before serving, and repair a runtime error like a compile error.
+      let smokeStart = Date.now()
+      let ran = smokeRun(compiled)
+      logStep('smoke', smokeStart, 'src=widget attempt=' + attempt.toString() + ' ok=' + (ran.length === 0).toString())
+      if (ran.length > 0) { throw new Error(ran) }
+      result.vbc2 = compiled.vbc2
       result.source = text
       result.error = ''
       stat.compileMs = Date.now() - compileStart

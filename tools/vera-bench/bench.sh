@@ -2,7 +2,7 @@
 # Generation benchmark: drives the Generate screen on the connected phone, one
 # prompt at a time, and keeps the app's full trace of every run.
 #
-#   tools/vera-bench/bench.sh [-n RUNS] [-o OUTDIR] [-p PROMPTS.tsv] [-e EFFORT] [label ...]
+#   tools/vera-bench/bench.sh [-n RUNS] [-o OUTDIR] [-p PROMPTS.tsv] [-e EFFORT] [-a 'LAUNCH ARGS'] [label ...]
 #   python3 tools/vera-bench/report.py OUTDIR
 #
 # Each run: force-stop the app, open the first project in the list, open
@@ -21,18 +21,23 @@
 # -e sets DeepSeek's reasoning_effort (low, medium, high, ..., or default for
 # the app's own, low) on the phone before the first run. The app keeps it, so
 # it stays in force for later runs and normal use until it is set again.
+#
+# -a adds launch parameters to every run's app start, for flags that last one
+# session, e.g. -a '--ps veraCompose 0'.
 set -u
 
 RUNS=1
 OUT=bench-$(date +%Y%m%d-%H%M%S)
 PROMPTS=$(dirname "$0")/prompts.tsv
 EFFORT=''
-while getopts "n:o:p:e:" opt; do
+LAUNCH_ARGS=''
+while getopts "n:o:p:e:a:" opt; do
   case $opt in
     n) RUNS=$OPTARG ;;
     o) OUT=$OPTARG ;;
     p) PROMPTS=$OPTARG ;;
     e) EFFORT=$OPTARG ;;
+    a) LAUNCH_ARGS=$OPTARG ;;
     *) exit 2 ;;
   esac
 done
@@ -73,7 +78,7 @@ start_generation() {
   hdc shell aa force-stop $BUNDLE >/dev/null
   hdc shell "rm -f $TRACE" >/dev/null
   hdc shell power-shell wakeup >/dev/null
-  hdc shell aa start -a EntryAbility -b $BUNDLE >/dev/null
+  hdc shell aa start -a EntryAbility -b $BUNDLE $LAUNCH_ARGS >/dev/null
   wait_for 'New Project' 30 || { echo "  project list did not appear" >&2; return 1; }
   tap "$PROJECT_ROW" 1
   wait_for '"Pin"' || { echo "  project page did not appear" >&2; return 1; }
@@ -126,6 +131,7 @@ run_one() {
 mkdir -p "$OUT"
 [ "$(hdc list targets | grep -vc '^\s*$')" = "1" ] || { echo "need exactly one connected phone" >&2; exit 1; }
 git -C "$(dirname "$0")" log -1 --format='%h %s' > "$OUT/build.txt" 2>/dev/null
+[ -n "$LAUNCH_ARGS" ] && printf 'launch: %s\n' "$LAUNCH_ARGS" >> "$OUT/build.txt"
 if [ -n "$EFFORT" ]; then
   hdc shell aa start -a EntryAbility -b $BUNDLE --ps reasoningEffort "$EFFORT" >/dev/null
   sleep 3

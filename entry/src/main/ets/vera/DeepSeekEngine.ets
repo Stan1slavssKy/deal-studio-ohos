@@ -121,6 +121,19 @@ const TOOLS_AUTO = 'auto'
 const TOOLS_NONE = 'none'
 const TOOLS_OFF = 'off'
 
+/**
+ * One of the small model calls that is not the program itself: the text for a block, a block's function bodies, the second
+ * opinion on a weak pick, the choice of UI components. Kept per run so the Metrics tab can show what each cost.
+ */
+export class SideCall {
+  purpose: string = ''
+  ms: number = 0
+  inputTokens: number = 0
+  cachedTokens: number = 0
+  outputTokens: number = 0
+  ok: boolean = true
+}
+
 class StreamTurn {
   content: string = ''
   reasoning: string = ''
@@ -376,7 +389,21 @@ async function curatedSdkAlso(need: string): Promise<SdkEntry[]> {
   return out
 }
 
-export async function discoveryToolResult(name: string, need: string, round: number = 0): Promise<string> {
+/** The embedding ranking, then what the keyword ranking adds that it does not have (by call): both, for `both`. */
+function mergedIntents(embedded: IntentEntry[] | null, token: IntentEntry[], both: boolean): IntentEntry[] {
+  if (embedded === null) { return token }
+  if (!both) { return embedded }
+  let out: IntentEntry[] = embedded.slice()
+  for (let e of token) { if (!out.some((o: IntentEntry): boolean => o.callHint === e.callHint)) { out.push(e) } }
+  return out
+}
+
+/**
+ * `both` shows what the keyword ranking finds beside the embedding one (the agent's lookups, agent/AgentAppHost.ets): the
+ * embedding ranking alone once left out MeeTime's SendTextMessage, which the keywords had first, for "sends a text message
+ * to the partner's number".
+ */
+export async function discoveryToolResult(name: string, need: string, round: number = 0, both: boolean = false): Promise<string> {
   let startedAt = Date.now()
   if (name === INTENT_TOOL_NAME) {
     let tokenResults = findIntentFunction(need, INTENT_SEARCH_LIMIT)
@@ -386,7 +413,7 @@ export async function discoveryToolResult(name: string, need: string, round: num
     let embedMs = Date.now() - embedStartedAt
     console.info('VERA-INTENT-EMBED-CMP need="' + need + '" token=' + intentKeysList(tokenResults) +
       ' embedding=' + (embedResults === null ? 'n/a' : intentKeysList(embedResults)))
-    let results = embedResults !== null ? embedResults : tokenResults
+    let results = mergedIntents(embedResults, tokenResults, both)
     console.info('VERA-INTENT-TOOL round=' + round.toString() + ' need="' + need +
       '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
       (results.length > 0 ? ' top=' + results[0].kind + ':' + results[0].name : ''))
@@ -525,6 +552,25 @@ export class DeepSeekEngine {
   /** Tool-call round trips in the last generation. */
   lastToolRounds(): number { return this.toolRounds }
   lastInputTokens(): number { return this.inputTokens }
+
+  private sideCalls: SideCall[] = []
+  /** Forget the small calls of the previous run; the Generate screen calls it when a run starts. */
+  clearSideCalls(): void { this.sideCalls = [] }
+  /** The small calls of this run, oldest first. */
+  getSideCalls(): SideCall[] { return this.sideCalls.slice() }
+  private recordSideCall(purpose: string, startedAt: number, turn: StreamTurn | null): void {
+    let call = new SideCall()
+    call.purpose = purpose
+    call.ms = Date.now() - startedAt
+    if (turn !== null) {
+      call.inputTokens = turn.inputTokens
+      call.cachedTokens = turn.cacheHitTokens
+      call.outputTokens = turn.outputTokens
+    } else {
+      call.ok = false
+    }
+    this.sideCalls.push(call)
+  }
 
   async generate(request: GenerateRequest, onToken: TokenCallback,
       onProgress: ProgressCallback = noProgress): Promise<GenerateResult> {
@@ -739,6 +785,39 @@ export class DeepSeekEngine {
    * with. null on any failure -- no key, no network, an answer that is not a
    * JSON array -- and the caller then describes the whole catalogue.
    */
+  /**
+   * The sketch for VeraCompose.ets: the request as JSON data, no code. Thinking off and a small
+   * budget, like extractUiNeeds; null on any failure, and the caller generates from scratch.
+   */
+  async extractSketch(systemPrompt: string, userPrompt: string,
+      onText: (soFar: string) => void = (_t: string): void => {}, thinking: boolean = false): Promise<string | null> {
+    if (!settings.hasApiKey()) { return null }
+    let messages: Record<string, Object>[] = []
+    messages.push(plainMessage('system', systemPrompt))
+    messages.push(plainMessage('user', userPrompt))
+    let savedThinking = this.thinking
+    // Off, except for the last try at a plan when the quick ones could not be used (VeraCompose.ets's usablePlan).
+    this.thinking = thinking
+    this.cancelled = false
+    this.generating = true
+    let startedAt = Date.now()
+    try {
+      let soFar = ''
+      let turn = await this.streamOnce(messages, 0, thinking ? 6000 : 1500, (token: string): void => {
+        soFar += token
+        onText(soFar)
+      }, TOOLS_OFF, 'sketch', 1)
+      console.info('VERA-COMPOSE sketch ms=' + (Date.now() - startedAt).toString())
+      return turn.content
+    } catch (e) {
+      console.warn('VERA-COMPOSE sketch failed: ' + (e as Error).message)
+      return null
+    } finally {
+      this.thinking = savedThinking
+      this.generating = false
+    }
+  }
+
   async extractUiNeeds(userPrompt: string): Promise<string[] | null> {
     // Same guard as extractTemplateContent: a stale run must not take the engine's flags from a generation.
     if (!settings.hasApiKey() || this.generating) { return null }
@@ -752,6 +831,7 @@ export class DeepSeekEngine {
     let startedAt = Date.now()
     try {
       let turn = await this.streamOnce(messages, 0, 300, (_token: string): void => {}, TOOLS_OFF, 'uineeds', 1)
+      this.recordSideCall('Pick the UI components', startedAt, turn)
       let text = extractVeraSource(turn.content)
       let start = text.indexOf('[')
       let end = text.lastIndexOf(']')
@@ -765,6 +845,7 @@ export class DeepSeekEngine {
       return needs.length > 0 ? needs : null
     } catch (e) {
       console.warn('VERA-UI-NEEDS failed: ' + (e as Error).message)
+      this.recordSideCall('Pick the UI components', startedAt, null)
       return null
     } finally {
       this.thinking = savedThinking
@@ -782,22 +863,26 @@ export class DeepSeekEngine {
    * extractUiNeeds above, because this is meant to be the cheapest possible
    * request this engine makes, not a second generation attempt.
    */
-  async extractTemplateContent(systemPrompt: string, userPrompt: string, maxTokens: number): Promise<string | null> {
+  async extractTemplateContent(systemPrompt: string, userPrompt: string, maxTokens: number,
+      purpose: string = 'Text for the blocks', thinking: boolean = false): Promise<string | null> {
     // The engine holds one request and one set of flags: a stale template run must not take them from a generation.
     if (!settings.hasApiKey() || this.generating) { return null }
     let messages: Record<string, Object>[] = []
     messages.push(plainMessage('system', systemPrompt))
     messages.push(plainMessage('user', userPrompt))
     let savedThinking = this.thinking
-    this.thinking = false
+    // Off, except for the agent's last try at a section that failed without it (agent/AgentCustom.ets).
+    this.thinking = thinking
     this.cancelled = false
     this.generating = true
     let startedAt = Date.now()
     try {
       let turn = await this.streamOnce(messages, 0.2, maxTokens, (_token: string): void => {}, TOOLS_OFF, 'template', 1)
+      this.recordSideCall(purpose, startedAt, turn)
       console.info('VERA-TEMPLATE-CONTENT ms=' + (Date.now() - startedAt).toString())
       return extractVeraSource(turn.content)
     } catch (e) {
+      this.recordSideCall(purpose, startedAt, null)
       console.warn('VERA-TEMPLATE-CONTENT failed: ' + (e as Error).message)
       return null
     } finally {

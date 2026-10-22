@@ -36,11 +36,14 @@ const run = async (outcome, opts = {}) => {
   // buttons that only note which one was tapped are not a finished screen: the model has to make them do something
   ;({build} = await run(jev(['actions'])))
   assert.equal(build.action, 'complete'); assert.match(build.note, /placeholder buttons only/); assert.ok(build.source.length > 0); assert.ok(build.vbc2.length > 0)
+  // what the sections lack is a slot of the plan, to be written (agent/AgentHole.ets)
+  assert.deepEqual(build.plan.toWrite().map(s => s.id), ['missing.buttons'])
   ;({build} = await run(jev(['metrics', 'actions'])))
   assert.equal(build.action, 'template', 'actions beside a real block stays a template')
 
   ;({build} = await run(jev(['checklist'], {needs_logic: 0.95})))
   assert.equal(build.action, 'complete'); assert.match(build.status, /adding the logic/)
+  assert.deepEqual(build.plan.toWrite().map(s => s.id), ['missing.needs_logic'])
 
   ;({build} = await run(jev(['checklist'], {needs_integration: 0.97})))
   assert.equal(build.action, 'scratch'); assert.match(build.note, /vetoed needs_integration/)
@@ -72,9 +75,11 @@ const run = async (outcome, opts = {}) => {
     deepseek.extractTemplateContent = async () => { calls++; return JSON.stringify(Object.assign({holes: {rowMatches2: lower}}, rowsAnswer)) }
     ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view'])))
     assert.equal(build.action, 'template'); assert.match(build.note, /holes=filled\(1\)/); assert.match(build.source, /strings\.toLowerCase\(label\)/)
+    assert.equal(build.route.holes, true, 'the route says the model wrote function bodies')
     deepseek.extractTemplateContent = async () => JSON.stringify(rowsAnswer)
     ;({build} = await run(jev(['filter_box', 'master_list', 'detail_view'])))
     assert.equal(build.action, 'template'); assert.match(build.note, /holes=default\(unusable answer\)/); assert.match(build.source, /strings\.contains\(label, query\)/)
+    assert.equal(build.route.holes, false)
     // no filter: the model is not asked about holes at all
     calls = 0
     deepseek.extractTemplateContent = async () => { calls++; return JSON.stringify(rowsAnswer) }
@@ -101,9 +106,70 @@ const run = async (outcome, opts = {}) => {
     rowsAnswer = 'no'
     ;({build} = await run(jev(['intent_panel'])))
     assert.equal(build.action, 'complete'); assert.match(build.note, /intents=none/); assert.match(build.status, /phone actions/)
+    assert.deepEqual(build.plan.toWrite().map(s => s.id), ['missing.needs_integration'])
     deepseek.extractTemplateContent = saved
     reg.registryEntries = savedReg
   }
+
+  // a timer whose finish action the model writes: it is shown the SDK functions found for the request, the body is settled against the
+  // compiler, and the route says the model wrote function bodies
+  {
+    const engine = loadVera('DeepSeekEngine'), saved = deepseek.extractTemplateContent, savedDiscovery = engine.discoveryToolResult
+    const seen = []
+    engine.discoveryToolResult = async (name, need) => { seen.push([name, need]); return '{"found":[{"call":"SensorServiceKit.vibrator.vibrate"}]}' }
+    let hole = null
+    deepseek.extractTemplateContent = async (system, user) => {
+      if (/Functions to write/.test(user)) { hole = {system, user}; return JSON.stringify({holes: {whenFinished1: 'sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "1500"], "onFinishedAnswerIDX");\nreturn 0;'}}) }
+      return JSON.stringify({title: 'Egg', section1_presets: [['Soft', '360'], ['Hard', '600']]})
+    }
+    const timerJev = slot => compose.readSectionPick(JSON.stringify({answers: Object.assign({section1: {choice: 'timer', confidence: 0.9},
+      'section1.timer.finish_action': {noul: slot}}, Object.fromEntries(['needs_integration', 'needs_real_data', 'needs_search_or_form',
+      'needs_live_ticking', 'needs_multiple_counters', 'needs_logic'].map(k => ['veto.' + k, {noul: k === 'needs_integration' ? 0.82 : 0}])))}))
+    ;({build} = await run(timerJev(0.9), 0.9))
+    assert.equal(build.action, 'template', 'the finish action is covered by the hole: no model rewrite'); assert.equal(build.route.holes, true)
+    assert.match(build.source, /sdk\.call\("SensorServiceKit\.vibrator\.vibrate"/); assert.match(build.source, /"onFinishedAnswer1"/)
+    assert.deepEqual(seen, [['find_sdk_function', 'grocery']]); assert.match(hole.user, /SensorServiceKit\.vibrator\.vibrate/)
+    // no finish action asked for: no lookup, no hole call, and the integration veto still decides
+    seen.length = 0; hole = null
+    ;({build} = await run(timerJev(0.1), 0.9))
+    assert.equal(build.action, 'complete'); assert.equal(seen.length, 0); assert.equal(hole, null)
+    deepseek.extractTemplateContent = saved; engine.discoveryToolResult = savedDiscovery
+  }
+
+  // the route: what Jev said, whether a second look was taken, and which way the request went
+  const verify = loadVera('VeraPickVerify')
+  const weakBody = extra => JSON.stringify({answers: Object.assign({section1: {choice: 'checklist', confidence: 0.3}, section2: {choice: 'none', confidence: 0.6},
+    'veto.needs_integration': {noul: 0}, 'veto.needs_real_data': {noul: 0}, 'veto.needs_search_or_form': {noul: 0}, 'veto.needs_live_ticking': {noul: 0},
+    'veto.needs_multiple_counters': {noul: 0}, 'veto.needs_logic': {noul: 0}}, extra || {})})
+  const weak = extra => { const o = compose.readSectionPick(weakBody(extra)); o.rawBody = weakBody(extra); return o }
+  ;({build} = await run(jev(['checklist']), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev, build.route.check], ['blocks', 'sure', 'none']); assert.deepEqual(build.route.kinds, ['checklist'])
+  ;({build} = await run(jev(['checklist'], {needs_logic: 0.95}), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev], ['blocks+model', 'sure']); assert.match(build.route.logic, /needs_logic=0\.95/)
+  ;({build} = await run(jev(['checklist'], {needs_integration: 0.97}), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev], ['scratch', 'vetoed'])
+  ;({build} = await run(jev(['none', 'none']), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev], ['scratch', 'none'])
+  ;({build} = await run(jev(['checklist'], {needs_real_data: 0.9}), 0.9))
+  assert.equal(build.route.route, 'scratch'); assert.match(build.route.failure, /needs real data/)
+  // weak pick, second look off (the shipped setting): scratch, and the page can say the check was off
+  ;({build} = await run(weak(), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev, build.route.check, build.route.weak], ['scratch', 'unsure', 'off', ['checklist']])
+  // weak pick, second look on
+  verify.VERIFY_WEAK_PICKS = true
+  verify.verifyWeakPick = async () => Object.assign(new verify.VerifyAnswer(), {confirmed: ['checklist']})
+  ;({build} = await run(weak(), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev, build.route.check], ['blocks', 'unsure', 'confirmed']); assert.deepEqual(build.route.kinds, ['checklist'])
+  verify.verifyWeakPick = async () => Object.assign(new verify.VerifyAnswer(), {missing: 'scaling by people'})
+  ;({build} = await run(weak(), 0.9))
+  assert.deepEqual([build.route.route, build.route.check, build.route.missing], ['scratch', 'rejected', 'scaling by people'])
+  verify.verifyWeakPick = async () => Object.assign(new verify.VerifyAnswer(), {failed: true})
+  ;({build} = await run(weak(), 0.9))
+  assert.deepEqual([build.route.route, build.route.check], ['scratch', 'failed'])
+  verify.VERIFY_WEAK_PICKS = false
+  // the yes/no question built the block
+  ;({build} = await run(weak({'include.checklist': {noul: 0.6}}), 0.9))
+  assert.deepEqual([build.route.route, build.route.jev, build.route.check, build.route.wanted], ['blocks', 'unsure', 'yesno', 'checklist'])
 
   console.log('pipeline-check: ok')
 })().catch(e => { console.error(e); process.exit(1) })

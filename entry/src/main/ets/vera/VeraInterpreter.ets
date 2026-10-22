@@ -46,6 +46,10 @@ export const NULL_VALUE: VeraNullValue = new VeraNullValue()
 
 export class RuntimeTrap extends Error {
   trapCode: string
+  /** The source line it happened on: 0 until the frame it happened in has said, -1 when the bytecode has no lines. */
+  line: number = 0
+  /** For a trap from running too long or a list growing without end: the line of the loop it was in, else 0. */
+  loopLine: number = 0
   constructor(code: string, message: string) { super(message); this.trapCode = code; }
 }
 
@@ -85,13 +89,17 @@ export class BytecodeFunction {
   localCount: number
   isAsync: boolean
   instructions: Instruction[]
+  /** The source line of each instruction; empty for bytecode compiled before lines were kept. */
+  lines: number[]
 
-  constructor(name: string, paramCount: number, localCount: number, isAsync: boolean, instructions: Instruction[]) {
+  constructor(name: string, paramCount: number, localCount: number, isAsync: boolean, instructions: Instruction[],
+      lines: number[] = []) {
     this.name = name
     this.parameterCount = paramCount
     this.localCount = localCount
     this.isAsync = isAsync
     this.instructions = instructions
+    this.lines = lines
   }
 }
 
@@ -151,6 +159,15 @@ export class VirtualMachine {
   }
 
   private run(frame: Frame): RuntimeValue {
+    try {
+      return this.runFrame(frame)
+    } catch (e) {
+      if (e instanceof RuntimeTrap && e.line === 0) { locateTrap(e, frame.fn, frame.pc - 1) }
+      throw e as Error
+    }
+  }
+
+  private runFrame(frame: Frame): RuntimeValue {
     while (frame.pc < frame.fn.instructions.length) {
       this.steps += 1
       if (this.steps > this.maxSteps) {
@@ -496,6 +513,33 @@ export function decodeRuntimeValue(raw: Object): RuntimeValue {
   throw new RuntimeTrap('R0025', 'unknown saved value tag: ' + tag)
 }
 
+/**
+ * Says where a trap happened: the function and line, and for one that comes from running too long or a list
+ * growing without end, the loop it happened in -- what a person or a repair needs to find the mistake.
+ */
+function locateTrap(trap: RuntimeTrap, fn: BytecodeFunction, at: number): void {
+  if (at < 0 || at >= fn.lines.length || fn.lines[at] <= 0) { trap.line = -1; return }
+  trap.line = fn.lines[at]
+  let where = ' (in ' + fn.name + ', line ' + trap.line.toString()
+  if (trap.trapCode === 'R0017' || trap.trapCode === 'R0022') {
+    // The innermost loop around it: the backward jump over it whose target is nearest.
+    let start = -1
+    for (let i = at; i < fn.instructions.length; i++) {
+      let inst = fn.instructions[i]
+      if (inst.op === 'jump' && inst.target <= at && inst.target > start) { start = inst.target }
+    }
+    if (start >= 0 && fn.lines[start] > 0) {
+      trap.loopLine = fn.lines[start]
+      // A list that outgrew its limit was fed by a loop that never ended; a run out of steps may also be a
+      // loop that ends, but too late (5 s of audio built sample by sample).
+      where += ', inside the loop at line ' + fn.lines[start].toString() + (trap.trapCode === 'R0022'
+        ? ', which never stopped: check that something in it changes what its condition reads'
+        : ', which never stopped or does too much work for one tap: check that it ends, and how many times it runs')
+    }
+  }
+  trap.message = trap.message + where + ')'
+}
+
 export function deserializeVbc2(source: string): BytecodeModule {
   let root = JSON.parse(source) as Object[]
   if (!Array.isArray(root) || root[0] !== 'VBC2') {
@@ -515,7 +559,8 @@ export function deserializeVbc2(source: string): BytecodeModule {
       item[1] as number,
       item[2] as number,
       item[3] as boolean,
-      instructions
+      instructions,
+      item.length > 5 ? item[5] as number[] : []
     ))
   }
   return new BytecodeModule(functions, entries)

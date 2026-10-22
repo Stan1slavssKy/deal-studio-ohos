@@ -2250,6 +2250,9 @@ class LoopLabels {
 
 class FunctionBuilder {
   instructions: Instruction[] = []
+  /** The source line each instruction came from, for a runtime error to name. */
+  lines: number[] = []
+  line: number = 0
   bindings: Map<string, Binding> = new Map<string, Binding>()
   capturedBindings: Map<string, number> = new Map<string, number>()
   loops: LoopLabels[] = []
@@ -2263,6 +2266,7 @@ class FunctionBuilder {
 
   emit(inst: Instruction): number {
     this.instructions.push(inst)
+    this.lines.push(this.line)
     return this.instructions.length - 1
   }
 
@@ -2322,7 +2326,7 @@ class BytecodeCompiler {
     this.block(decl.body, b)
     b.emit(mkInst('push-null'))
     b.emit(mkInst('return'))
-    this.functions.push(new BytecodeFunction(decl.name, decl.parameters.length, b.localCount, decl.isAsync, b.instructions))
+    this.functions.push(new BytecodeFunction(decl.name, decl.parameters.length, b.localCount, decl.isAsync, b.instructions, b.lines))
   }
 
   private block(block: BlockStatement, b: FunctionBuilder): void {
@@ -2330,6 +2334,13 @@ class BytecodeCompiler {
   }
 
   private statement(stmt: Statement, b: FunctionBuilder): void {
+    let outer = b.line
+    b.line = stmt.span.start.line
+    this.statementAt(stmt, b)
+    b.line = outer
+  }
+
+  private statementAt(stmt: Statement, b: FunctionBuilder): void {
     if (stmt instanceof BlockStatement) this.block(stmt, b)
     else if (stmt instanceof LetStatement) {
       this.expression(stmt.initializer, b)
@@ -2365,6 +2376,7 @@ class BytecodeCompiler {
       let loop = new LoopLabels([], [], start)
       b.loops.push(loop)
       this.block(stmt.body, b)
+      b.line = stmt.span.start.line
       b.emit(mkJump(start))
       let end = b.instructions.length
       this.patch(b, exit, end)
@@ -2406,6 +2418,7 @@ class BytecodeCompiler {
     let loop = new LoopLabels([], [], -1)
     b.loops.push(loop)
     this.block(stmt.body, b)
+    b.line = stmt.span.start.line
     let advance = b.instructions.length
     b.emit(mkLoadLocal(indexSlot))
     b.emit(mkPushNumber(1))
@@ -2443,6 +2456,13 @@ class BytecodeCompiler {
   }
 
   private expression(expr: Expression, b: FunctionBuilder): void {
+    let outer = b.line
+    b.line = expr.span.start.line
+    this.expressionAt(expr, b)
+    b.line = outer
+  }
+
+  private expressionAt(expr: Expression, b: FunctionBuilder): void {
     if (expr instanceof IntExpression) b.emit(mkPushNumber(expr.value))
     else if (expr instanceof NumberExpression) b.emit(mkPushNumber(expr.value))
     else if (expr instanceof StringExpression) b.emit(mkPushString(expr.value))
@@ -2560,7 +2580,7 @@ class BytecodeCompiler {
     let captures: number[] = []
     let captureValues = Array.from(child.capturedBindings.values())
     for (let v of captureValues) captures.push(v)
-    this.functions.push(new BytecodeFunction(name, expr.parameters.length, child.localCount, false, child.instructions))
+    this.functions.push(new BytecodeFunction(name, expr.parameters.length, child.localCount, false, child.instructions, child.lines))
     parent.emit(mkMakeClosure(name, captures))
   }
 
@@ -2665,7 +2685,7 @@ function serializeVbc2(module: BytecodeModule): string {
   for (let fn of module.functions) {
     let instrs: Object[] = []
     for (let inst of fn.instructions) instrs.push(encodeInstruction(inst))
-    functions.push([fn.name, fn.parameterCount, fn.localCount, fn.isAsync, instrs])
+    functions.push([fn.name, fn.parameterCount, fn.localCount, fn.isAsync, instrs, fn.lines])
   }
   return JSON.stringify(['VBC2', module.entryCandidates, functions])
 }
@@ -2674,7 +2694,25 @@ function serializeVbc2(module: BytecodeModule): string {
 
 export class CompileResult {
   vbc2: string
+  /**
+   * Every handler a tap, a ticker or an answer can reach -- (state, value) to state -- with the kind of value
+   * it takes: number, string or boolean. For running a new program once before it is served.
+   */
+  handlers: Map<string, string> = new Map<string, string>()
   constructor(vbc2: string) { this.vbc2 = vbc2 }
+}
+
+function handlersOf(model: SemanticModel): Map<string, string> {
+  let handlers: Map<string, string> = new Map<string, string>()
+  let init = model.functions.get('init')
+  if (init === undefined) { return handlers }
+  let state = init.result
+  model.functions.forEach((fn: VeraFunctionType, name: string) => {
+    if (fn.isAsync || fn.parameters.length !== 2 || !identical(fn.parameters[0], state) || !identical(fn.result, state)) { return }
+    let value = fn.parameters[1]
+    if (value === NUMBER || value === STRING || value === BOOLEAN) { handlers.set(name, (value as PrimitiveType).name) }
+  })
+  return handlers
 }
 
 export class CompileOptions {
@@ -2694,5 +2732,7 @@ export function compileVeraSource(source: string, sourceName: string = '<source>
   let app = new Parser(source, sourceName).parse()
   let model = new Analyzer(app, options).analyze()
   let module = new BytecodeCompiler(model).compile()
-  return new CompileResult(serializeVbc2(module))
+  let result = new CompileResult(serializeVbc2(module))
+  result.handlers = handlersOf(model)
+  return result
 }

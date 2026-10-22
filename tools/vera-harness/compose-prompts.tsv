@@ -1,0 +1,25 @@
+# label<TAB>prompt -- simple requests for compose-proto.js -p, written the way people ask, kept apart from the
+# bench prompts so the composer's vocabulary and sketch prompt are not tuned to the requests it is measured on.
+# These can be built from the parts, so a right answer is a working screen that does what was asked.
+soft-egg	I need to boil egg soft, give me a timer
+tea	Tea steeping timer with green, black and herbal tea, vibrate when ready
+plank	Plank timer for 60 seconds that beeps at the end
+stopwatch	A simple stopwatch
+discount	Shop discount: price and discount percent, show what I save and what I pay
+bmi	BMI calculator with my weight in kg and height in meters
+fuel	Trip fuel cost: distance in km, consumption in liters per 100 km and fuel price per liter
+convert	Convert kilometers to miles
+split	Split a restaurant bill between friends
+savings	Savings goal: goal amount, saved so far, show percent reached and what is left
+pace	Running pace: distance in km and time in minutes, show minutes per km
+tiles	How many boxes of tiles do I need: room area in square meters, one box covers 1.5 square meters
+counter	Push-up counter
+expenses	Expense log: add an expense with what it was for and the amount, show the total spent
+shopping	Shopping list where I can add items and remove them
+# These need something the parts do not have, so a right answer is a refusal.
+weather	Show today's weather where I am
+notes	Notes app with search and tags
+alarm	Set an alarm for 7am in the clock app
+quiz	A quiz game with 10 questions about capital cities
+mortgage	Monthly mortgage payment for a loan amount, yearly interest rate and term in years
+dice	Roll two dice

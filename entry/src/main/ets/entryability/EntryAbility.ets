@@ -12,6 +12,8 @@ import { requestBenchmark } from '../vera/VeraSearchBenchmark'
 import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
+import { setComposeEnabled, setComposePlanEnabled, setCustomSectionsEnabled } from '../vera/VeraCompose'
+import { setRouteOrder, routeOrder, setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
@@ -44,6 +46,7 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkEval(want)
     this.extractUiEval(want)
     this.extractUiAb(want)
+    this.extractCompose(want)
     this.extractTemplateSelect(want)
   }
 
@@ -62,6 +65,7 @@ export default class EntryAbility extends UIAbility {
     this.extractSdkEval(want)
     this.extractUiEval(want)
     this.extractUiAb(want)
+    this.extractCompose(want)
     this.extractTemplateSelect(want)
     if (this.pendingProjectId.length > 0) {
       this.navigateToProject()
@@ -277,6 +281,40 @@ export default class EntryAbility extends UIAbility {
     if (flag === null || flag === undefined) { return }
     requestUiAb()
     hilog.info(DOMAIN, 'VERA', 'VERA-UI-AB requested from launch parameter')
+  }
+
+  private extractCompose(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let params = want.parameters as Record<string, Object>
+    let flag = params['veraCompose']
+    if (flag !== null && flag !== undefined) {
+      let text = String(flag).trim()
+      setComposeEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE ' + text + ' from launch parameter')
+    }
+    let plan = params['veraComposePlan']
+    if (plan !== null && plan !== undefined) {
+      let text = String(plan).trim()
+      setComposePlanEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE plan ' + text + ' from launch parameter')
+    }
+    let custom = params['veraCustom']
+    if (custom !== null && custom !== undefined) {
+      let text = String(custom).trim()
+      setCustomSectionsEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE custom sections ' + text + ' from launch parameter')
+    }
+    let order = params['veraOrder']
+    if (order !== null && order !== undefined) {
+      setRouteOrder(String(order).trim())
+      hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE order ' + routeOrder() + ' from launch parameter')
+    }
+    let whole = params['veraWhole']
+    if (whole !== null && whole !== undefined) {
+      let text = String(whole).trim()
+      setWholeScreenEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE whole screen ' + text + ' from launch parameter')
+    }
   }
 
   /**

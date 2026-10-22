@@ -72,8 +72,10 @@ export function formatMs(ms: number): string {
 
 /** The compiler groups diagnostics by layer: E1 is the parser, E2 names and types. */
 export function failureVerdict(errors: string): string {
+  let r = errors.match(/R\d{4}/)
+  if (r !== null && errors.indexOf('The program compiled, but') >= 0) { return 'runtime ' + r[0] }
   let m = errors.match(/E\d{4}/)
-  if (m === null) { return 'compile' }
+  if (m === null) { return errors.indexOf('The program compiled, but') >= 0 ? 'runtime' : 'compile' }
   let code = m[0]
   let layer = code.substring(1, 2)
   let name = layer === '1' ? 'parser' : (layer === '2' ? 'names & types' : 'layer E' + layer)

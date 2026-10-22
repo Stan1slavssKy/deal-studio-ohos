@@ -8,8 +8,9 @@ import { refreshForms } from '../vera/FormUpdater'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
 import { compileVeraSource, CompileError } from '../vera/VeraCompiler'
 import { applyRepair, repairPrompt } from '../vera/VeraRepair'
+import { smokeRun } from '../vera/VeraSmoke'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
-import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS } from '../vera/DeepSeekEngine'
+import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS, SideCall } from '../vera/DeepSeekEngine'
 import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
 import { consent } from '../vera/VeraConsentStore'
@@ -26,8 +27,15 @@ import { uiEvalRequested, runUiEval } from '../vera/VeraUiEval'
 import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
 import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
-import { buildFromTemplates, TemplateBuild, BUILD_CANCELLED, BUILD_SCRATCH, BUILD_COMPLETE } from '../vera/VeraTemplatePipeline'
+import { composeEnabled, ComposeResult } from '../vera/VeraCompose'
+import { TemplateBuild, BUILD_COMPLETE, BUILD_TEMPLATE } from '../vera/VeraTemplatePipeline'
+import { AgentRequest, AgentResult } from '../vera/agent/VeraAgent'
+import { appAgentHost } from '../vera/agent/AgentAppHost'
+import { AgentQuestion } from '../vera/agent/AgentQuestions'
+import { QuestionCard } from '../components/QuestionCard'
+import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE, OUTCOME_COMPLETE, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
+import { RouteInfo, routeLabel, routeShort, jevLabel, checkLabel, checkShort, routeWhy, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED, CHECK_NONE } from '../vera/VeraRoute'
 import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
@@ -123,11 +131,12 @@ class SourceDelta {
  * the syntax, one rejected later reads fine and means the wrong thing.
  */
 function codeOf(errors: string): string {
-  let m = errors.match(/E\d{4}/)
+  let m = errors.match(/[ER]\d{4}/)
   return m === null ? '' : m[0]
 }
 
 function layerOf(errors: string): string {
+  if (errors.indexOf('The program compiled, but') >= 0) { return 'runtime' }
   let code = codeOf(errors)
   if (code.length === 0) { return 'compile' }
   let layer = code.substring(1, 2)
@@ -218,7 +227,7 @@ struct GeneratePage {
   @State compileErrors: string = ''
   /**
    * Experiment only (experiment/jev-template-select branch): what
-   * tryTemplateSelect decided for the most recent attempt, regardless of
+   * the blocks (noteBlocks) decided for the most recent attempt, regardless of
    * outcome -- mirrors ChatMessage.templatePick (ChatPage.ets), which this
    * page lacked until it became clear hilog's ring buffer and the transient
    * `status` line (overwritten by the next phase) left no way to check
@@ -227,7 +236,28 @@ struct GeneratePage {
    * against the current one.
    */
   @State lastTemplatePick: string = ''
+  /** Which way the request went (VeraRoute.ets): shown under the status line and on the Metrics tab. */
+  @State routeInfo: RouteInfo = new RouteInfo()
+  @State routeKnown: boolean = false
+  @State routeVerifyMs: number = 0
+  /** Set when the model's step failed and the blocks are shown without it. */
+  @State routeFallback: string = ''
+  /** The small model calls of this run (text for blocks, function bodies, second opinion, UI choice), for the Metrics tab. */
+  @State sideCalls: SideCall[] = []
   @State compiledVbc2: string = ''
+  /**
+   * A picture of the screen drawn from the composer's sketch while the real program is still on its way:
+   * it builds up as the sketch streams in, and stays up through a fallback generation. Taps are off;
+   * it is never saved, and the finished program replaces it.
+   */
+  @State previewVbc2: string = ''
+  @State previewNote: string = ''
+  /** A blocking question from the agent (agent/AgentQuestions.ets), shown above the preview until it is answered. */
+  @State questionText: string = ''
+  @State questionOptions: string[] = []
+  @State questionFallback: number = 0
+  /** Answers the open question: an index, or null for its default. */
+  private answerQuestion: ((index: number | null) => void) | null = null
   @State compiledSource: string = ''
   @State refinePrompt: string = ''
   @State program: RunTotals = new RunTotals()
@@ -531,9 +561,16 @@ struct GeneratePage {
     this.fastJevMs = 0
     this.fastSearchMs = -1
     this.fastContentMs = 0
+    this.routeKnown = false
+    this.routeVerifyMs = 0
+    this.routeFallback = ''
+    this.sideCalls = []
     this.serverBytecode = ''
     this.compiledVbc2 = ''
     this.compiledSource = ''
+    this.previewVbc2 = ''
+    this.previewNote = ''
+    this.settleQuestion(null)
     this.cancelRequested = false
     this.failedSource = ''
     this.lastTemplatePick = ''
@@ -550,6 +587,8 @@ struct GeneratePage {
     this.startRun(this.prompt.trim())
     this.genStartTime = Date.now()
     logMark('gen-start', 'chars=' + this.prompt.trim().length.toString())
+    deepseek.clearSideCalls()
+    this.sideCalls = []
     let startFields: Record<string, Object> = {}
     startFields['prompt'] = this.prompt.trim()
     startFields['refining'] = this.previousSource.length > 0
@@ -561,46 +600,47 @@ struct GeneratePage {
     // itself, mid-generation, the first time either is worth calling.
     // JevSelector.ets is unchanged and still callable; nothing here calls it.
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
-    // Experiment only (experiment/jev-template-select branch): try a Jev
-    // section composition first, gated behind --ps veraTemplateSelect 1 plus
-    // the TypeSafe key. Off, no key, unreachable, low confidence, a tripped
-    // veto, or a composed source that fails to compile all fall straight
-    // through to the normal path inside tryTemplateSelect/startAttemptOne --
-    // see VeraSectionCompose.ets.
-    // Not on top of a saved program: with previousSource set this is a change to it (the model edits it), and a composed
-    // template would replace it. Chat makes the same choice for an existing widget.
-    if (templateSelectEnabled() && settings.hasSelectorKey() && this.previousSource.length === 0) {
-      this.tryTemplateSelect(this.prompt.trim())
+    // A new screen goes through the route (agent/VeraBuildRoute.ets): the agent and the blocks in the route's
+    // order; what neither builds is reported as not built, not generated.
+    // Not on top of a saved program: with previousSource set this is a change to it (the model edits it).
+    let route = new RouteRequest()
+    route.mode = this.mode
+    if (this.previousSource.length === 0 && settings.hasSelectorKey()) {
+      if (this.mode === MODE_DEEPSEEK && composeEnabled()) {
+        route.agent = new AgentRequest()
+        route.agent.prompt = this.prompt.trim()
+      }
+      if (templateSelectEnabled()) { route.blocksPrompt = this.prompt.trim() }
+    }
+    if (route.agent !== null || route.blocksPrompt.length > 0) {
+      this.tryRoute(this.prompt.trim(), route)
       return
     }
     this.startAttemptOne(this.prompt.trim())
   }
 
-  /**
-   * The Jev template path (VeraTemplatePipeline.ets). A composed screen that compiles, runs and is
-   * judged to cover the request is the result; one that is the right base but not enough is handed
-   * to the model to finish (completionBase), with the bare template as the fallback; anything else
-   * falls through to generation from scratch.
-   */
-  private async tryTemplateSelect(userPrompt: string): Promise<void> {
+  private async tryRoute(userPrompt: string, route: RouteRequest): Promise<void> {
     let run = this.runId
-    let build: TemplateBuild = await buildFromTemplates(userPrompt, this.mode,
-      (s: string): void => { if (run === this.runId) { this.status = s } },
-      (): boolean => run !== this.runId || this.cancelRequested)
-    if (run !== this.runId) { return }
-    this.fastJevMs = build.jevMs
-    this.fastPathRan = true
-    this.fastSearchMs = build.searchMs
-    this.fastContentMs = build.contentMs
-    if (build.action === BUILD_CANCELLED) { return }
-    this.lastTemplatePick = build.note
-    if (build.action === BUILD_SCRATCH) {
-      if (build.status.length > 0) { this.status = build.status }
-      this.startAttemptOne(userPrompt)
+    let host = appAgentHost((s: string): void => { if (run === this.runId) { this.status = s } }, (vbc2: string): void => {
+      if (run !== this.runId || this.cancelRequested) { return }
+      this.previewVbc2 = vbc2
+      this.previewNote = 'Sketching the screen...'
+    }, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate)
+    host.ask = (question: AgentQuestion): Promise<number | null> => this.askPerson(question)
+    let outcome: RouteOutcome = await buildScreen(route, host)
+    if (run !== this.runId || outcome.kind === OUTCOME_CANCELLED) { return }
+    if (outcome.agent !== null) { this.traceAgent(outcome.agent!) }
+    if (outcome.blocks !== null) { this.noteBlocks(outcome.blocks!) }
+    if (outcome.kind === OUTCOME_AGENT) {
+      this.showAgent(outcome.agent!)
       return
     }
-    this.templateKinds = build.kinds
-    if (build.action === BUILD_COMPLETE) {
+    if (outcome.kind === OUTCOME_TEMPLATE) {
+      this.showTemplate(outcome.blocks!)
+      return
+    }
+    if (outcome.kind === OUTCOME_COMPLETE) {
+      let build: TemplateBuild = outcome.blocks!
       this.completionBase = build.source
       this.completionBaseVbc2 = build.vbc2
       this.completionComposition = build.composition
@@ -608,6 +648,70 @@ struct GeneratePage {
       this.startAttemptOne(userPrompt, 'Completing template')
       return
     }
+    // Nothing built it: no generation from scratch, the reason is shown, to be seen and fixed.
+    this.totalMs = Date.now() - this.genStartTime
+    this.generating = false
+    this.status = 'Not built (' + (this.totalMs / 1000).toFixed(1) + ' s): ' + outcome.reason
+    if (this.previewVbc2.length > 0) { this.previewNote = 'Preview from the sketch only — the app was not built' }
+    this.traceEnd('not built: ' + outcome.reason)
+  }
+
+  private traceAgent(result: AgentResult): void {
+    let composed: ComposeResult = result.composed
+    if (composed.source.length > 0) { traceCompile('compose', 0, composed.source, result.errors) }
+    let fields: Record<string, Object> = {}
+    fields['served'] = result.vbc2.length > 0
+    fields['note'] = result.note
+    fields['sketchMs'] = composed.sketchMs
+    fields['firstPreviewMs'] = result.firstPreviewMs
+    fields['previews'] = result.previews
+    fields['jevMs'] = composed.jevMs
+    fields['ms'] = result.ms
+    fields['sketch'] = composed.sketch
+    fields['answers'] = composed.answers
+    fields['source'] = composed.source
+    trace('compose', fields)
+    console.info('VERA-COMPOSE ' + (result.vbc2.length > 0 ? 'served' : 'fell through') + ' ' + result.note)
+  }
+
+  private showAgent(result: AgentResult): void {
+    let composed: ComposeResult = result.composed
+    this.generatedSource = result.source
+    this.compiledSource = result.source
+    this.compiledVbc2 = result.vbc2
+    this.compiled = true
+    this.compileErrors = ''
+    this.composerOpen = false
+    this.tab = TAB_PREVIEW
+    this.generating = false
+    this.totalMs = Date.now() - this.genStartTime
+    this.status = 'Composed in ' + (this.totalMs / 1000).toFixed(1) + ' s (sketch ' + (composed.sketchMs / 1000).toFixed(1) +
+      ' s, Jev ' + (composed.jevMs / 1000).toFixed(1) + ' s), no generation' +
+      (composed.dropped.length > 0 ? '. Left out: ' + composed.dropped.join('; ') : '')
+    let endFields: Record<string, Object> = {}
+    endFields['ok'] = true
+    endFields['attempt'] = 0
+    endFields['totalMs'] = this.totalMs
+    endFields['via'] = 'compose'
+    trace('gen-end', endFields)
+  }
+
+  /** What the blocks (VeraTemplatePipeline.ets) answered, for the route rows and the Metrics tab, whichever way the request went. */
+  private noteBlocks(build: TemplateBuild): void {
+    this.fastJevMs = build.jevMs
+    this.fastPathRan = true
+    this.fastSearchMs = build.searchMs
+    this.fastContentMs = build.contentMs
+    this.routeInfo = build.route
+    this.routeKnown = true
+    this.routeVerifyMs = build.verifyMs
+    this.sideCalls = deepseek.getSideCalls()
+    this.lastTemplatePick = build.note
+    if (build.action === BUILD_COMPLETE || build.action === BUILD_TEMPLATE) { this.templateKinds = build.kinds }
+  }
+
+  /** A screen composed from blocks that compiles, runs and is judged to cover the request: the result as it is. */
+  private showTemplate(build: TemplateBuild): void {
     this.generatedSource = build.source
     this.compiledVbc2 = build.vbc2
     this.compiledSource = build.source
@@ -619,6 +723,13 @@ struct GeneratePage {
     this.generating = false
     this.totalMs = Date.now() - this.genStartTime
     this.status = build.status
+    // The trace's closing event for a screen composed from blocks with no model call; tools/vera-bench waits for it.
+    let templateEnd: Record<string, Object> = {}
+    templateEnd['ok'] = true
+    templateEnd['attempt'] = 0
+    templateEnd['totalMs'] = this.totalMs
+    templateEnd['outcome'] = 'template'
+    trace('gen-end', templateEnd)
   }
 
   /**
@@ -628,7 +739,7 @@ struct GeneratePage {
    * ready), describes the whole catalogue. The choice is made once and kept for
    * the retries, which only rewrite the user prompt.
    */
-  private async startAttemptOne(userPrompt: string, label: string = 'Generating'): Promise<void> {
+  private async startAttemptOne(userPrompt: string, label: string = 'Generating', plan: string = ''): Promise<void> {
     let run = this.runId
     this.systemPrompt = this.promptTemplate
     this.uiSelected = []
@@ -658,7 +769,7 @@ struct GeneratePage {
       }
     }
     this.status = label + ' (attempt 1/' + MAX_RETRIES + ')...'
-    this.runAttempt(userPrompt, '')
+    this.runAttempt(plan.length > 0 ? userPrompt + '\n\n' + plan : userPrompt, '')
   }
 
   private async doServerGenerate(): Promise<void> {
@@ -672,6 +783,10 @@ struct GeneratePage {
     this.fastJevMs = 0
     this.fastSearchMs = -1
     this.fastContentMs = 0
+    this.routeKnown = false
+    this.routeVerifyMs = 0
+    this.routeFallback = ''
+    this.sideCalls = []
     this.serverBytecode = ''
     this.compiledVbc2 = ''
     this.compiledSource = ''
@@ -763,7 +878,10 @@ struct GeneratePage {
       // Initial generation, refinement, and retries share reasoning and output settings.
       await ensureCapabilities(this.hostContext())
       if (this.cancelRequested) { return new GenerateResult() }
-      deepseek.setThinking(true)
+      // Finishing a composed screen only adds to it, and reasoning was most of that call's output; repairs and a
+      // generation from scratch still think.
+      let finishingBase = this.completionBase.length > 0 && request.previousSource === this.completionBase
+      deepseek.setThinking(!finishingBase)
       request.maxTokens = DEEPSEEK_GENERATION_MAX_TOKENS
       return deepseek.generate(request, onToken)
     }
@@ -901,7 +1019,12 @@ struct GeneratePage {
     let compileStart = Date.now()
     try {
       let result = compileVeraSource(this.generatedSource.trim())
-      vbc2 = result.vbc2
+      // Run once before serving: a program that compiles can still stop at its first tap, and that is
+      // repaired here like a compile error rather than found on the screen.
+      let smokeStart = Date.now()
+      errors = smokeRun(result)
+      logStep('smoke', smokeStart, 'src=generate attempt=' + this.attempt.toString() + ' ok=' + (errors.length === 0).toString())
+      vbc2 = errors.length === 0 ? result.vbc2 : ''
     } catch (e) {
       if (e instanceof CompileError) {
         errors = e.message
@@ -966,14 +1089,16 @@ struct GeneratePage {
       // repaired by edits.
       this.repairByEdit = !(this.mode === MODE_DEEPSEEK && deepseek.lastFinishReason() === 'length')
       this.attempt++
-      this.status = 'Compile failed, retrying (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
+      this.status = (metrics.failLayer === 'runtime' ? 'Stopped on its first run' : 'Compile failed') +
+        ', retrying (attempt ' + this.attempt + '/' + MAX_RETRIES + ')...'
       await this.runAttempt(userPrompt, errors)
     } else {
       this.totalMs = Date.now() - this.genStartTime
       this.generating = false
       this.traceEnd('compile')
       if (!this.fallBackToTemplate('Logic step failed to compile after ' + MAX_RETRIES + ' attempts')) {
-        this.status = 'Compilation failed after ' + MAX_RETRIES + ' attempts'
+        this.status = (metrics.failLayer === 'runtime' ? 'Still stopping on its first run' : 'Compilation failed') +
+          ' after ' + MAX_RETRIES + ' attempts'
       }
     }
   }
@@ -995,6 +1120,7 @@ struct GeneratePage {
     this.tab = TAB_PREVIEW
     this.generating = false
     this.status = reason + '; showing the template without it'
+    this.routeFallback = reason
     return true
   }
 
@@ -1008,6 +1134,7 @@ struct GeneratePage {
   }
 
   private addToProgram(metrics: AttemptMetrics): void {
+    this.sideCalls = deepseek.getSideCalls()
     let record = this.currentRun()
     if (record !== null) {
       record!.attempts = [...record!.attempts, metrics]
@@ -1079,6 +1206,7 @@ struct GeneratePage {
 
   private formatUsd(value: number): string {
     if (value <= 0) { return '$0' }
+    if (value < 0.0001) { return '$' + value.toFixed(5) }
     if (value < 0.01) { return '$' + value.toFixed(4) }
     return '$' + value.toFixed(3)
   }
@@ -1315,6 +1443,10 @@ struct GeneratePage {
     this.fastJevMs = 0
     this.fastSearchMs = -1
     this.fastContentMs = 0
+    this.routeKnown = false
+    this.routeVerifyMs = 0
+    this.routeFallback = ''
+    this.sideCalls = []
     this.serverBytecode = ''
     this.cancelRequested = false
     this.runId++
@@ -1327,7 +1459,28 @@ struct GeneratePage {
     this.startAttemptOne(ask, 'Refining')
   }
 
+  /** The open question goes with its default: stopping or starting again must not leave the agent waiting. */
+  private settleQuestion(index: number | null): void {
+    let answer = this.answerQuestion
+    this.answerQuestion = null
+    this.questionText = ''
+    this.questionOptions = []
+    if (answer !== null) { answer(index) }
+  }
+
+  /** Puts the agent's question on the screen; the promise settles with the person's tap. */
+  private askPerson(question: AgentQuestion): Promise<number | null> {
+    this.settleQuestion(null)
+    return new Promise<number | null>((resolve: (index: number | null) => void) => {
+      this.questionText = question.text
+      this.questionOptions = question.options
+      this.questionFallback = question.fallback
+      this.answerQuestion = resolve
+    })
+  }
+
   private stopGeneration(): void {
+    this.settleQuestion(null)
     this.cancelRequested = true
     this.runId++
     if (this.mode === MODE_LOCAL) { engine.stop() }
@@ -1431,6 +1584,82 @@ struct GeneratePage {
     let total = 0
     for (let a of this.attempts) total += a.outputTokens
     return total
+  }
+
+  /** The small calls that belong to one stage of the run: '1' checking Jev, '2' filling in text, '3' before the program is written. */
+  private sideCallsOf(stage: string): SideCall[] {
+    let out: SideCall[] = []
+    for (let call of this.sideCalls) {
+      let own = call.purpose === 'Second opinion on a weak pick' ? '1' : (call.purpose === 'Pick the UI components' ? '3' : '2')
+      if (own === stage) { out.push(call) }
+    }
+    return out
+  }
+
+  private sideInput(calls: SideCall[]): number { let n = 0; for (let c of calls) { n += c.inputTokens } return n }
+  private sideCached(calls: SideCall[]): number { let n = 0; for (let c of calls) { n += c.cachedTokens } return n }
+  private sideOutput(calls: SideCall[]): number { let n = 0; for (let c of calls) { n += c.outputTokens } return n }
+  private sideMs(calls: SideCall[]): number { let n = 0; for (let c of calls) { n += c.ms } return n }
+  private sideCost(calls: SideCall[]): number { return this.costOf(this.sideInput(calls), this.sideCached(calls), this.sideOutput(calls)) }
+
+  /** One small call on one line: what it was for, how long it took, what it read and wrote, what it cost. */
+  private callLine(call: SideCall): string {
+    if (!call.ok) { return this.formatMs(call.ms) + ' \u00B7 failed' }
+    return this.formatMs(call.ms) + ' \u00B7 ' + call.inputTokens + ' in' +
+      (call.cachedTokens > 0 ? ' (' + call.cachedTokens + ' cached)' : '') + ' \u00B7 ' + call.outputTokens + ' out \u00B7 ~' +
+      this.formatUsd(this.costOf(call.inputTokens, call.cachedTokens, call.outputTokens))
+  }
+
+  /** Colour of the route headline: blocks alone, blocks the model finishes, or a program written from scratch. */
+  routeTone(): string {
+    if (this.routeInfo.route === ROUTE_BLOCKS) { return '#1F9D4C' }
+    if (this.routeInfo.route === ROUTE_BLOCKS_MODEL) { return '#C77700' }
+    return '#4A5A80'
+  }
+
+  /** A numbered stage heading with a coloured bar, so the three parts of a run cannot be mistaken for one another. */
+  @Builder
+  stageHeader(num: string, title: string, who: string, color: string) {
+    Column({ space: 4 }) {
+      // The row is narrower than the pane: the pane's right edge slices whatever touches it.
+      Row({ space: 8 }) {
+        Text(num)
+          .fontSize(12)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#FFFFFF')
+          .backgroundColor(color)
+          .borderRadius(10)
+          .width(20)
+          .height(20)
+          .textAlign(TextAlign.Center)
+        Text(title).fontSize(13).fontWeight(FontWeight.Bold).fontColor(color).layoutWeight(1).maxLines(1)
+        Text(who)
+          .fontSize(10)
+          .fontColor(color)
+          .maxLines(1)
+          .border({ width: 1, color: color, radius: 6 })
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+      }
+      .width('92%')
+      Divider().strokeWidth(2).color(color)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: 6 })
+  }
+
+  /** One small model call as a card: its purpose, then time, tokens and cost. */
+  @Builder
+  callRow(call: SideCall) {
+    Column({ space: 2 }) {
+      Text(call.purpose).fontSize(12).fontWeight(FontWeight.Medium).fontColor('#222222')
+      Text(this.callLine(call)).fontSize(11).fontColor(call.ok ? '#666666' : '#C62828')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(10)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(8)
   }
 
   /**
@@ -1582,6 +1811,32 @@ struct GeneratePage {
         .width('100%')
         .padding({ left: 16, right: 16, top: 8, bottom: 4 })
 
+        if (this.routeKnown) {
+          Column({ space: 2 }) {
+            Text(routeLabel(this.routeInfo))
+              .fontSize(13)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.routeTone())
+            Text(jevLabel(this.routeInfo) + '  \u00B7  ' + checkLabel(this.routeInfo))
+              .fontSize(11)
+              .fontColor('#555555')
+              .maxLines(2)
+            Text(routeWhy(this.routeInfo))
+              .fontSize(11)
+              .fontColor('#777777')
+              .maxLines(4)
+            if (this.routeFallback.length > 0) {
+              Text('The model step failed (' + this.routeFallback + '), so the blocks are shown without it.')
+                .fontSize(11)
+                .fontColor('#B25000')
+                .maxLines(3)
+            }
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .padding({ left: 16, right: 16, top: 0, bottom: 4 })
+        }
+
         // Experiment only (experiment/jev-template-select branch): survives
         // the next status change and hilog's ring buffer getting
         // overwritten -- see ChatMessage.templatePick for the Chat-side
@@ -1661,8 +1916,20 @@ struct GeneratePage {
 
         if (this.tab === TAB_PREVIEW) {
           Column() {
+            if (this.questionText.length > 0) {
+              QuestionCard({ question: this.questionText, options: this.questionOptions, fallback: this.questionFallback,
+                onPick: (index: number): void => { this.settleQuestion(index) } })
+                .margin({ bottom: 8 })
+            }
             if (this.hasResult()) {
               VeraPreview({ vbc2: this.compiledVbc2 })
+            } else if (this.generating && this.previewVbc2.length > 0) {
+              Text(this.previewNote)
+                .fontSize(12)
+                .fontColor('#8A6D00')
+                .width('100%')
+                .padding({ left: 12, right: 12, top: 6, bottom: 2 })
+              VeraPreview({ previewOnly: true, vbc2: this.previewVbc2 })
             } else {
               Text(this.generating ? 'Building...' : 'The program will run here once it compiles')
                 .fontSize(13)
@@ -1695,24 +1962,62 @@ struct GeneratePage {
         } else {
           Scroll() {
             Column({ space: 10 }) {
+              if (this.routeKnown || this.attempts.length > 0) {
+                // Totals first, then the three stages in the order they happen.
+                Row({ space: 8 }) {
+                  this.cell('Total time', this.formatMs(this.totalMs), 'the whole run')
+                  if (this.mode === MODE_DEEPSEEK) {
+                    this.cell('Total cost', '~' + this.formatUsd(this.runCost() + this.sideCost(this.sideCalls)), 'all model calls')
+                  }
+                }
+                .width('100%')
+              }
+              if (this.routeKnown) {
+                this.stageHeader('1', 'Choosing blocks', 'Jev', '#2F6FEB')
+                Row({ space: 8 }) {
+                  this.cell('Route', routeShort(this.routeInfo), jevLabel(this.routeInfo))
+                  this.cell('Jev', this.formatMs(this.fastJevMs), 'classify + pick blocks')
+                }
+                .width('100%')
+                Row({ space: 8 }) {
+                  this.cell('Check', checkShort(this.routeInfo),
+                    this.routeInfo.check === CHECK_NONE ? 'no second look needed' : checkLabel(this.routeInfo).replace('Check: ', ''))
+                  if (this.fastSearchMs >= 0) {
+                    this.cell('Search', this.formatMs(this.fastSearchMs), 'real-data lookup')
+                  }
+                }
+                .width('100%')
+                ForEach(this.sideCallsOf('1'), (call: SideCall) => { this.callRow(call) })
+                Text(routeWhy(this.routeInfo)).fontSize(12).fontColor('#555555').width('92%')
+
+                if (this.sideCallsOf('2').length > 0 || this.fastContentMs > 0) {
+                  this.stageHeader('2', 'Model fills in text', 'DeepSeek \u00B7 text only', '#1F9D4C')
+                  ForEach(this.sideCallsOf('2'), (call: SideCall) => { this.callRow(call) })
+                  Row({ space: 8 }) {
+                    this.cell('Stage time', this.formatMs(this.sideMs(this.sideCallsOf('2'))), 'text for the blocks')
+                    this.cell('Stage cost', '~' + this.formatUsd(this.sideCost(this.sideCallsOf('2'))),
+                      this.sideInput(this.sideCallsOf('2')) + ' in \u00B7 ' + this.sideOutput(this.sideCallsOf('2')) + ' out')
+                  }
+                  .width('100%')
+                }
+              }
               if (this.attempts.length === 0 && !this.fastPathRan) {
                 Text('No run yet').fontSize(13).fontColor('#BBBBBB').width('100%')
               } else if (this.attempts.length > 0) {
-                // The headline is two of the same tiles as everything else:
-                // a right-aligned column inside a full-width row kept landing
+                this.stageHeader(this.routeKnown ? '3' : '1', 'Model writes the program', 'DeepSeek', '#C77700')
+                ForEach(this.sideCallsOf('3'), (call: SideCall) => { this.callRow(call) })
+                // Two tiles per row: a right-aligned column inside a full-width row kept landing
                 // past the edge, and this needs no special case.
                 Row({ space: 8 }) {
-                  this.cell('Time', this.formatMs(this.totalMs), this.runVerdict())
+                  this.cell('Writing', this.formatMs(this.runLlmMs()), this.runVerdict())
                   if (this.mode === MODE_DEEPSEEK) {
-                    this.cell('Cost', '~' + this.formatUsd(this.runCost()), 'incl. failed attempts')
+                    this.cell('Stage cost', '~' + this.formatUsd(this.runCost()), 'incl. failed attempts')
                   }
                 }
                 .width('100%')
 
-                // Where the run time actually went: waiting on the model, or
-                // working on the phone.
+                // Where the writing time went: waiting on the model, or working on the phone.
                 Row({ space: 8 }) {
-                  this.cell('LLM wall', this.formatMs(this.runLlmMs()), 'all calls this run')
                   this.cell('On device', this.formatMs(this.runCompileMs()), 'compiler only')
                 }
                 .width('100%')
@@ -1798,25 +2103,6 @@ struct GeneratePage {
                   ForEach(this.pastRuns(), (record: RunRecord) => {
                     this.pastRun(record, this.indexOfRun(record))
                   })
-                }
-              } else {
-                // Fast path composed the result directly; no DeepSeek "attempt" ran at all.
-                Row({ space: 8 }) {
-                  this.cell('Time', this.formatMs(this.totalMs), 'fast path, no code generation')
-                }
-                .width('100%')
-                Row({ space: 8 }) {
-                  this.cell('Jev', this.formatMs(this.fastJevMs), 'classify + pick fragments')
-                  if (this.fastSearchMs >= 0) {
-                    this.cell('Search', this.formatMs(this.fastSearchMs), 'real-data grounding')
-                  }
-                }
-                .width('100%')
-                if (this.fastContentMs > 0) {
-                  Row({ space: 8 }) {
-                    this.cell('Fill', this.formatMs(this.fastContentMs), 'content for the template')
-                  }
-                  .width('100%')
                 }
               }
             }

@@ -47,6 +47,15 @@ const SECTION_COUNT: number = 6
 
 /** Top-level bar for a section's fragment-kind choice: a wrong answer here skips that slot entirely. */
 const SECTION_PICK_ABOVE: number = 0.5
+/** A section answer below SECTION_PICK_ABOVE but at or above this is a weak candidate: reported, and may be confirmed by VeraPickVerify.ets. */
+const WEAK_FROM: number = 0.25
+/**
+ * When no section cleared its bar, the one block (that can stand alone) whose own yes/no question "does the request ask for this
+ * part" is answered above this is built. Each kind has such a question, independent of the others: a 26-way section choice
+ * splits its probability between the kinds, so an obvious plain list scored 0.3 as a section pick and 0.5 to 0.6 as a yes/no.
+ * Provisional: calibrated on one prompt so far (see eval/results/2026-10-19-*want*).
+ */
+const WANT_ABOVE: number = 0.5
 /** Per-slot cosmetic bar, same role as VeraTemplateSelect.ets's SLOT_PICK_ABOVE. */
 const SLOT_PICK_ABOVE: number = 0.25
 /**
@@ -149,8 +158,17 @@ export class SectionPickOutcome {
    * hands it to the model to finish, instead of dropping to generation from scratch.
    */
   needsLogic: boolean
+  /** The soft vetoes that fired (needsLogic), by key: what the request needs that no section does. */
+  softVetoes: string[] = []
   /** The layout the sections were arranged in ('stack' when Jev chose none or the placement broke a slot rule). */
   layout: string = LAYOUT_STACK
+  /** When nothing was chosen and nothing vetoed: the kinds Jev named below the bar (at least WEAK_FROM), in section order. */
+  weakKinds: string[] = []
+  /** Jev's answer body as received, so the weak candidates can be re-read once confirmed. */
+  rawBody: string = ''
+  /** The block built from its own yes/no question because no section cleared its bar ('' when none), and that question's answer. */
+  wanted: string = ''
+  wantedP: number = 0
   constructor(sections: SectionPick[] | null, globalValues: Map<string, string>, note: string, needsRealData: boolean = false,
       needsLogic: boolean = false) {
     this.sections = sections
@@ -228,6 +246,16 @@ export function buildSectionRequest(prompt: string): string {
     questions['include.' + kind] = includeQuestion
   }
 
+  let asked: string[] = layoutKinds()
+  for (let spec of specs) {
+    if (asked.indexOf(spec.kind) >= 0) { continue }
+    let wantQuestion: Record<string, Object> = {}
+    wantQuestion['type'] = 'noul'
+    wantQuestion['instructions'] = 'Does the request ask for this part of the screen: ' + spec.criteria + '?'
+    wantQuestion['criteria'] = criteriaRecord(includeCriteria)
+    questions['want.' + spec.kind] = wantQuestion
+  }
+
   let layoutCriteria: Record<string, Object> = {}
   for (let layout of layouts()) { layoutCriteria[layout.id] = layout.criteria }
   layoutCriteria[LAYOUT_NONE] = 'no particular arrangement'
@@ -298,6 +326,18 @@ function readNoulProbability(answers: Record<string, Object>, key: string): numb
   return value as number
 }
 
+/** The yes/no answer to "does the request ask for this block": the include question for a layout kind, else the want question. */
+function wantProbability(answers: Record<string, Object>, kind: string): number {
+  let include = readNoulProbability(answers, 'include.' + kind)
+  return include > 0 ? include : readNoulProbability(answers, 'want.' + kind)
+}
+
+/** A block that makes sense on its own: it takes no value from another block. */
+function standsAlone(spec: FragmentSpec): boolean {
+  for (let port of spec.ports) { if (port.dir === 'reads') { return false } }
+  return true
+}
+
 function readNoulValue(answers: Record<string, Object>, key: string, above: number): boolean {
   let raw = answers[key]
   if (raw === null || raw === undefined) { return false }
@@ -361,7 +401,7 @@ function readVetoProbability(answers: Record<string, Object>, veto: VetoSpec): n
  * doubt about the *whole* request; it just leaves that slot empty, same as a single bad cosmetic
  * slot answer falling back to its default.
  */
-export function readSectionPick(body: string): SectionPickOutcome {
+export function readSectionPick(body: string, confirmed: string[] = []): SectionPickOutcome {
   let specs = fragments()
   let emptyGlobals: Map<string, string> = new Map<string, string>()
   let answers: Record<string, Object> = {}
@@ -416,6 +456,11 @@ export function readSectionPick(body: string): SectionPickOutcome {
         }
       }
     }
+    if (kind === 'none' && confirmed.length > 0) {
+      // a weak candidate somebody else has confirmed (VeraPickVerify.ets) counts as picked
+      let weak = readChoiceValue(answers, 'section' + i.toString(), allowedKinds, WEAK_FROM, 'none')
+      if (confirmed.indexOf(weak) >= 0) { kind = weak }
+    }
     if (kind === 'none') {
       picks.push(new SectionPick('none', new Map<string, string>()))
       notes.push('section' + i.toString() + '=none')
@@ -443,6 +488,29 @@ export function readSectionPick(body: string): SectionPickOutcome {
     picks.push(new SectionPick(kind, slotValues))
     if (coverNote.length > 0) { weakPicks.push(picks[picks.length - 1]); weakNoteAt.push(notes.length) }
     notes.push('section' + i.toString() + '=' + kind + coverNote)
+  }
+
+  let anyPicked = false
+  let rescuedKind = ''
+  let rescuedP = 0
+  for (let pick of picks) { if (pick.kind !== 'none') { anyPicked = true } }
+  if (!anyPicked) {
+    let bestKind = ''
+    let best = WANT_ABOVE
+    for (let spec of specs) {
+      if (!standsAlone(spec)) { continue }
+      let p = wantProbability(answers, spec.kind)
+      if (p > best) { best = p; bestKind = spec.kind }
+    }
+    let wanted = findFragment(specs, bestKind)
+    if (wanted !== null) {
+      let wantedValues: Map<string, string> = new Map<string, string>()
+      for (let slot of wanted.slots) { wantedValues.set(slot.token, readSlotValue(answers, 1, wanted.kind, slot)) }
+      picks[0] = new SectionPick(wanted.kind, wantedValues)
+      notes[0] = 'section1=' + wanted.kind + '(wanted ' + best.toFixed(2) + ')'
+      rescuedKind = wanted.kind
+      rescuedP = best
+    }
   }
 
   let layoutIds: string[] = [LAYOUT_NONE]
@@ -538,7 +606,12 @@ export function readSectionPick(body: string): SectionPickOutcome {
   let anyChosen = false
   for (let pick of placed) { if (pick.kind !== 'none') { anyChosen = true } }
   if (!anyChosen) {
-    return new SectionPickOutcome(null, emptyGlobals, 'none (' + notes.join(' ') + ')')
+    let nothing = new SectionPickOutcome(null, emptyGlobals, 'none (' + notes.join(' ') + ')')
+    for (let i = 1; i <= SECTION_COUNT; i++) {
+      let weak = readChoiceValue(answers, 'section' + i.toString(), allowedKinds, WEAK_FROM, 'none')
+      if (weak !== 'none' && nothing.weakKinds.indexOf(weak) < 0) { nothing.weakKinds.push(weak) }
+    }
+    return nothing
   }
 
   let globals: Map<string, string> = new Map<string, string>()
@@ -550,7 +623,10 @@ export function readSectionPick(body: string): SectionPickOutcome {
   if (needsRealData) { note = note + ' needs_real_data=' + realDataProbability.toFixed(2) }
   if (logicNotes.length > 0) { note = note + ' logic=' + logicNotes.join(',') }
   let outcome = new SectionPickOutcome(placed, globals, note, needsRealData, logicNotes.length > 0)
+  outcome.softVetoes = logicNotes.map((tag: string): string => tag.substring(0, tag.indexOf('=')))
   outcome.layout = usedLayout
+  outcome.wanted = rescuedKind
+  outcome.wantedP = rescuedP
   return outcome
 }
 
@@ -573,15 +649,98 @@ export function readSectionPick(body: string): SectionPickOutcome {
  * so substitution cannot be limited to just the view block. Module-level, not nested inside
  * composeProgram -- ArkTS does not support nested functions (arkts-no-nested-funcs).
  */
-function resolveInstanceText(text: string, idx: string, values: Map<string, string> | undefined): string {
-  let resolved = text.split('IDX').join(idx)
+function resolveInstanceText(text: string, idx: string, values: Map<string, string> | undefined, indexed: boolean = true): string {
+  let resolved = indexed ? text.split('IDX').join(idx) : text
   if (values !== undefined) {
     values.forEach((value: string, token: string) => {
-      let resolvedToken = token.split('IDX').join(idx)
+      let resolvedToken = indexed ? token.split('IDX').join(idx) : token
       resolved = resolved.split(resolvedToken).join(value)
     })
   }
   return resolved
+}
+
+const PASSTHROUGH: string = '__PASSTHROUGH__'
+
+function isIdentChar(c: string): boolean {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_'
+}
+
+/** The keys an object literal sets between its opening brace at `open` and `end`, at its own level only. */
+function keysSet(text: string, open: number, end: number): string[] {
+  let keys: string[] = []
+  let depth = 0
+  let expectKey = true
+  let i = open + 1
+  while (i < end) {
+    let c = text.charAt(i)
+    if (c === '"') {
+      i++
+      while (i < end && text.charAt(i) !== '"') { i += text.charAt(i) === '\\' ? 2 : 1 }
+      expectKey = false
+    } else if (c === '{' || c === '(' || c === '[') {
+      depth++
+      expectKey = false
+    } else if (c === '}' || c === ')' || c === ']') {
+      depth--
+    } else if (c === ',' && depth === 0) {
+      expectKey = true
+    } else if (expectKey && depth === 0 && isIdentChar(c)) {
+      let start = i
+      while (i < end && isIdentChar(text.charAt(i))) { i++ }
+      let name = text.substring(start, i)
+      while (i < end && text.charAt(i) === ' ') { i++ }
+      if (i < end && text.charAt(i) === ':') { keys.push(name) }
+      expectKey = false
+      continue
+    }
+    i++
+  }
+  return keys
+}
+
+/**
+ * Every __PASSTHROUGH__ in `text` replaced by `, name: state.name` for each AppState field its object literal does not
+ * already set. A block names its own fields and passes the rest through; a part that also sets another part's
+ * field (an input that restarts the countdown) names that one too, and it is not passed through twice.
+ */
+function fillPassthrough(text: string, fields: string[]): string {
+  let out = ''
+  let opens: number[] = []
+  let i = 0
+  let copied = 0
+  while (i < text.length) {
+    let c = text.charAt(i)
+    if (c === '"') {
+      i++
+      while (i < text.length && text.charAt(i) !== '"') { i += text.charAt(i) === '\\' ? 2 : 1 }
+    } else if (c === '/' && text.charAt(i + 1) === '/') {
+      while (i < text.length && text.charAt(i) !== '\n') { i++ }
+      continue
+    } else if (c === '{') {
+      opens.push(i)
+    } else if (c === '}') {
+      opens.pop()
+    } else if (c === '_' && text.startsWith(PASSTHROUGH, i)) {
+      let set = opens.length > 0 ? keysSet(text, opens[opens.length - 1], i) : []
+      let rest = ''
+      for (let name of fields) { if (set.indexOf(name) < 0) { rest = rest + ', ' + name + ': state.' + name } }
+      // A comma already written before the token ({a: 1, __PASSTHROUGH__}) is the one the passthrough brings.
+      let upTo = i
+      while (upTo > copied && text.charAt(upTo - 1) === ' ') { upTo-- }
+      if (upTo > copied && text.charAt(upTo - 1) === ',') { upTo-- } else { upTo = i }
+      // A literal that sets nothing ({__PASSTHROUGH__}: the state as it is) takes the fields without a leading comma.
+      let before = upTo
+      while (before > 0 && text.charAt(before - 1) === ' ') { before-- }
+      if (before > 0 && text.charAt(before - 1) === '{' && rest.length > 0) { rest = rest.substring(2) }
+      out = out + text.substring(copied, upTo) + rest
+      i += PASSTHROUGH.length
+      copied = i
+      continue
+    }
+    i++
+  }
+  return out + text.substring(copied)
 }
 
 /**
@@ -590,7 +749,8 @@ function resolveInstanceText(text: string, idx: string, values: Map<string, stri
  * 1-based number, the same one "IDX" resolves to.
  */
 export function markedHole(key: string, instance: string, body: string): string {
-  return '//@hole ' + key + instance + ' begin\n' + body + '\n//@hole ' + key + instance + ' end'
+  // A body may name a handler of its own block as "...IDX"; the number is settled here, so a stored body survives the block moving.
+  return '//@hole ' + key + instance + ' begin\n' + body.split('IDX').join(instance) + '\n//@hole ' + key + instance + ' end'
 }
 
 /** instanceValues for one slot plus the default body of every hole the caller left unfilled. */
@@ -611,18 +771,29 @@ function withHoleDefaults(spec: FragmentSpec, idx: string, values: Map<string, s
  * reads ports (or 'none') gets an empty map. Exported for the host checks.
  */
 export function bindPorts(chosenKinds: string[]): Map<string, string>[] {
+  return bindSpecPorts(specsOf(chosenKinds))
+}
+
+/** The block of each chosen kind, null for 'none' or a kind there is no block of. */
+export function specsOf(chosenKinds: string[]): (FragmentSpec | null)[] {
   let allSpecs = fragments()
+  let specAt: (FragmentSpec | null)[] = []
+  for (let kind of chosenKinds) { specAt.push(findFragment(allSpecs, kind)) }
+  return specAt
+}
+
+function bindSpecPorts(specAt: (FragmentSpec | null)[]): Map<string, string>[] {
   let out: Map<string, string>[] = []
-  for (let i = 0; i < chosenKinds.length; i++) {
+  for (let i = 0; i < specAt.length; i++) {
     let bound: Map<string, string> = new Map<string, string>()
-    let spec = findFragment(allSpecs, chosenKinds[i])
+    let spec = specAt[i]
     if (spec !== null) {
       for (let port of spec.ports) {
         if (port.dir !== 'reads') { continue }
         let expr = port.fallback
-        for (let j = 0; j < chosenKinds.length; j++) {
+        for (let j = 0; j < specAt.length; j++) {
           if (j === i) { continue }
-          let other = findFragment(allSpecs, chosenKinds[j])
+          let other = specAt[j]
           if (other === null) { continue }
           let found = ''
           for (let candidate of other.ports) {
@@ -649,10 +820,17 @@ function applyPorts(text: string, bound: Map<string, string>): string {
 }
 
 export function composeProgram(chosenKinds: string[], globalValues: Map<string, string>, instanceValues: Map<string, string>[]): string {
-  let allSpecs = fragments()
-  /** specAt[i] is null for a 'none'/unknown slot i; every other array below is indexed the same way, by original slot position. */
-  let specAt: (FragmentSpec | null)[] = []
-  for (let kind of chosenKinds) { specAt.push(findFragment(allSpecs, kind)) }
+  return composeFragments(specsOf(chosenKinds), globalValues, instanceValues)
+}
+
+/**
+ * The program from the blocks given in screen order -- the catalogue's (fragments()) or ones made for one request
+ * (VeraCompose.ets's parts). specAt[i] is null for an empty slot; every other array below is indexed the same way,
+ * by original slot position. Globals: __THEME__, __TITLE__, __EYEBROW__, __SUPPORTING__ (text as it goes between
+ * quotes), __HEADER_STYLE__ ('none' for no header), __HEADER_ICON__ ('check' when not given), __BANNER_SECTION__.
+ */
+export function composeFragments(specAt: (FragmentSpec | null)[], globalValues: Map<string, string>,
+    instanceValues: Map<string, string>[]): string {
 
   let supportClasses: string[] = []
   let extraImports: string[] = []
@@ -674,7 +852,7 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     let names: string[] = []
     if (spec !== null) {
       for (let field of spec.stateFields) {
-        let name = field.name.split('IDX').join(idx)
+        let name = spec.indexed ? field.name.split('IDX').join(idx) : field.name
         names.push(name)
         classFieldLines.push('  ' + name + ': ' + field.type + ';')
       }
@@ -682,7 +860,7 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     allFieldNames.push(names)
   }
 
-  let portBindings = bindPorts(chosenKinds)
+  let portBindings = bindSpecPorts(specAt)
   let slotValues: Map<string, string>[] = []
   for (let i = 0; i < specAt.length; i++) {
     let spec = specAt[i]
@@ -694,23 +872,19 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     let spec = specAt[i]
     if (spec === null) { continue }
     let idx = (i + 1).toString()
-    if (spec.initStatements.length > 0) { initStatementLines.push(applyPorts(resolveInstanceText(spec.initStatements, idx, slotValues[i]), portBindings[i])) }
-    if (spec.initEntries.length > 0) { initEntryParts.push(spec.initEntries.split('IDX').join(idx)) }
+    if (spec.initStatements.length > 0) { initStatementLines.push(applyPorts(resolveInstanceText(spec.initStatements, idx, slotValues[i], spec.indexed), portBindings[i])) }
+    if (spec.initEntries.length > 0) { initEntryParts.push(spec.indexed ? spec.initEntries.split('IDX').join(idx) : spec.initEntries) }
   }
 
+  let everyField: string[] = []
+  for (let names of allFieldNames) { for (let name of names) { everyField.push(name) } }
   let functionBlocks: string[] = []
   for (let i = 0; i < specAt.length; i++) {
     let spec = specAt[i]
     if (spec === null) { continue }
     let idx = (i + 1).toString()
-    let passthrough = ''
-    for (let j = 0; j < specAt.length; j++) {
-      if (j === i) { continue }
-      for (let name of allFieldNames[j]) { passthrough = passthrough + ', ' + name + ': state.' + name }
-    }
-    let fn = applyPorts(resolveInstanceText(spec.functions, idx, slotValues[i]), portBindings[i])
-    fn = fn.split('__PASSTHROUGH__').join(passthrough)
-    functionBlocks.push(fn)
+    let fn = applyPorts(resolveInstanceText(spec.functions, idx, slotValues[i], spec.indexed), portBindings[i])
+    functionBlocks.push(fillPassthrough(fn, everyField))
   }
 
   let viewBlocks: string[] = []
@@ -718,7 +892,7 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
     let spec = specAt[i]
     if (spec === null) { continue }
     let idx = (i + 1).toString()
-    let block = applyPorts(resolveInstanceText(spec.viewBlock, idx, slotValues[i]), portBindings[i])
+    let block = applyPorts(resolveInstanceText(spec.viewBlock, idx, slotValues[i], spec.indexed), portBindings[i])
     viewBlocks.push(block)
   }
 
@@ -752,8 +926,12 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
   if (eyebrow === undefined) { eyebrow = '' }
   let supporting = globalValues.get('__SUPPORTING__')
   if (supporting === undefined) { supporting = '' }
-  lines.push('  sections.push(ui.Header("' + headerStyle + '", "' + title + '", "' + eyebrow + '", "' + supporting + '", "check"));')
-  for (let vb of viewBlocks) { lines.push('  ' + vb.split('\n').join('\n  ')) }
+  let icon = globalValues.get('__HEADER_ICON__')
+  if (icon === undefined) { icon = 'check' }
+  if (headerStyle !== 'none') {
+    lines.push('  sections.push(ui.Header("' + headerStyle + '", "' + title + '", "' + eyebrow + '", "' + supporting + '", "' + icon + '"));')
+  }
+  for (let vb of viewBlocks) { if (vb.length > 0) { lines.push('  ' + vb.split('\n').join('\n  ')) } }
   if (bannerShow) { lines.push('  sections.push(' + bannerSectionView() + ');') }
   lines.push('  return ui.AppTheme("' + theme + '", "", sections);')
   lines.push('}')
@@ -776,6 +954,12 @@ function rawAnswers(body: string): string {
       let inc = answers['include.' + kind] as Record<string, Object>
       if (inc !== undefined && inc !== null && typeof inc['noul'] === 'number' && (inc['noul'] as number) > 0.05) {
         parts.push('+' + kind + '@' + (inc['noul'] as number).toFixed(2))
+      }
+    }
+    for (let spec of fragments()) {
+      let want = answers['want.' + spec.kind] as Record<string, Object>
+      if (want !== undefined && want !== null && typeof want['noul'] === 'number' && (want['noul'] as number) > 0.05) {
+        parts.push('?' + spec.kind + '@' + (want['noul'] as number).toFixed(2))
       }
     }
     let layout = answers['__LAYOUT__'] as Record<string, Object>
@@ -815,6 +999,7 @@ export async function selectSections(prompt: string, apiKey: string): Promise<Se
       return new SectionPickOutcome(null, emptyGlobals, 'none (selector answered ' + code.toString() + ')')
     }
     let outcome = readSectionPick(response.result as string)
+    outcome.rawBody = response.result as string
     hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS ms=' + (Date.now() - started).toString() + ' picked=' + outcome.note)
     hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS raw ' + rawAnswers(response.result as string))
     return outcome

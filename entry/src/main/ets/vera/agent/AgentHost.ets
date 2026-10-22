@@ -1,0 +1,105 @@
+/**
+ * What the agent needs from whoever runs it: the two model calls, and where its progress goes. The Generate
+ * screen and the chat each make one (appAgentHost in AgentAppHost.ets); the host harness makes its own with
+ * fetch, so the agent itself imports no UI and no network client and runs under node unchanged.
+ */
+
+import { SketchAsk, JevAsk } from '../VeraCompose'
+import { blockDefaults } from '../VeraTemplateContent'
+import { CodeAsk } from './AgentCustom'
+import { AgentQuestion } from './AgentQuestions'
+
+/** Sections of the catalogue the plan asked for, to have their content (and their holes) filled for this request. */
+export class BlockRequest {
+  /** The sections' kinds, in screen order. */
+  kinds: string[] = []
+  prompt: string = ''
+  /** Their content has to come from a search: real places, prices or facts. */
+  realData: boolean = false
+  /** How many blocks of its own the screen puts before them: the first section's slot number, less one. */
+  offset: number = 0
+  /** The whole program for the sections' values (in `kinds` order), for holes to be checked against the compiler. */
+  compose: (values: Map<string, string>[]) => string = (_values: Map<string, string>[]): string => ''
+}
+
+export class BlockFill {
+  /** Each section's slot, content and hole values, in `kinds` order. */
+  values: Map<string, string>[] = []
+  /** One line for the trace. */
+  note: string = ''
+  /** Why the sections cannot be served (real data asked for and no search), '' when they can. */
+  failed: string = ''
+  /** -1 when no search was made. */
+  searchMs: number = -1
+  contentMs: number = 0
+  holesMs: number = 0
+}
+
+/** The catalogue's defaults for every section: what a host with no model to ask gives. */
+export async function defaultBlockFill(request: BlockRequest): Promise<BlockFill> {
+  let fill = new BlockFill()
+  for (let kind of request.kinds) { fill.values.push(blockDefaults(kind)) }
+  fill.note = 'content=default'
+  return fill
+}
+
+/**
+ * What one hole was and how it ended, for the record (AgentHost.onHole): holes that recur across requests are what the
+ * catalogue should grow -- a need written over and over is a block waiting to be made.
+ */
+export class HoleRecord {
+  prompt: string = ''
+  /** 'sketch' or 'layout': the plan the hole was in. */
+  origin: string = ''
+  /** The whole screen as the hole. */
+  whole: boolean = false
+  needs: string[] = []
+  /** For each need: something the phone or another app does. */
+  phone: boolean[] = []
+  /** written: did every need; partial: served, missing some; reported: a notice in its place; known: refused by an earlier hole. */
+  outcome: string = ''
+  attempts: number = 0
+  thought: boolean = false
+  ms: number = 0
+  missed: string[] = []
+  /** The writer's sentence when it said it cannot, or why it failed. */
+  why: string = ''
+  /** The section as written: fields, functions and view. */
+  code: string = ''
+  /** The phone functions the writer was shown for the phone needs (the lookups' answers), '' for none. */
+  lookup: string = ''
+}
+
+export class AgentHost {
+  /** The plan: DeepSeek with no thinking, one JSON object. */
+  askPlan: SketchAsk = async (_system: string, _user: string, _onText: (soFar: string) => void, _think: boolean): Promise<string | null> => null
+  /** Jev's choices for a plan. */
+  askJev: JevAsk = async (_body: string): Promise<string> => ''
+  /** One line for the person: what the agent is doing now. */
+  status: (text: string) => void = (_text: string): void => {}
+  /** A compiled picture of the screen while it is being made. */
+  preview: (vbc2: string) => void = (_vbc2: string): void => {}
+  /** The content, real data and holes of the sections the plan asked for. */
+  fillBlocks: (request: BlockRequest) => Promise<BlockFill> = defaultBlockFill
+  /** The model that writes a custom section, null when there is none to ask: then a need nothing does refuses the screen. */
+  askCode: CodeAsk | null = null
+  /**
+   * The phone's functions for something the phone or another app is to do: what find_intent_function and find_sdk_function
+   * answer for the need, as text with each result's call; '' when nothing can be looked up (then nothing is called).
+   */
+  lookup: (need: string) => Promise<string> = async (_need: string): Promise<string> => ''
+  /** The language as generation is shown it (the skill prompt with the UI catalogue), for the custom section. */
+  language: string = ''
+  /** Asks the person a blocking question: the answer's index, or null for the default (the default host never asks). */
+  ask: (question: AgentQuestion) => Promise<number | null> = async (_question: AgentQuestion): Promise<number | null> => null
+  /**
+   * What this request's holes already learned, so a later, wider hole does not repeat it: each phone need a writer said
+   * it cannot do, with its sentence for the person, and each lookup made.
+   */
+  cannot: Map<string, string> = new Map<string, string>()
+  looked: Map<string, string> = new Map<string, string>()
+  /** Every written hole and how it ended, for the record (the app's trace, the host runner's log). */
+  onHole: (record: HoleRecord) => void = (_record: HoleRecord): void => {}
+  /** True once the person has asked to stop. */
+  cancelled: () => boolean = (): boolean => false
+}

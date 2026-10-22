@@ -378,7 +378,7 @@ export class ListFieldSpec {
   numericColumns: number[]
   /**
    * Per column, a value check applied before splicing: '' none, 'lat' and 'lon' (a decimal within the range of a
-   * latitude / longitude, else the cell becomes empty), 'minutes' (a whole number 5 to 600, else 60).
+   * latitude / longitude, else the cell becomes empty), 'minutes' (a whole number 5 to 600, else 60), 'seconds' (a whole number 5 to 86400, else 60).
    */
   columnChecks: string[]
   constructor(token: string, key: string, hint: string, columnHints: string[], columnMax: number[], rowTemplate: string,
@@ -421,8 +421,12 @@ export class HoleSpec {
   when: string
   /** false for a hole the host fills from data it checked (the intent panel's rows): the model is never asked for it. */
   byModel: boolean
+  /** True when the body may call the phone through sdk.call: the model is then shown the SDK functions found for the request. */
+  usesSdk: boolean
+  /** A slot token of this fragment that must have come out 'true' for the model to be asked ('' asks whatever the slots say). */
+  slot: string
   constructor(key: string, token: string, signature: string, purpose: string, defaultBody: string, when: string = '',
-      byModel: boolean = true) {
+      byModel: boolean = true, usesSdk: boolean = false, slot: string = '') {
     this.key = key
     this.token = token
     this.signature = signature
@@ -430,6 +434,8 @@ export class HoleSpec {
     this.defaultBody = defaultBody
     this.when = when
     this.byModel = byModel
+    this.usesSdk = usesSdk
+    this.slot = slot
   }
 }
 
@@ -519,6 +525,11 @@ export class FragmentSpec {
    * wanted them.
    */
   coversIf: string[]
+  /**
+   * False for a block made for one request (VeraCompose.ets's parts): its names are already unique and its text
+   * holds the person's words, so "IDX" in it is not renamed.
+   */
+  indexed: boolean = true
   constructor(kind: string, criteria: string, supportClass: string, stateFields: StateFieldSpec[],
       initStatements: string, initEntries: string, functions: string, viewBlock: string,
       slots: SlotSpec[], contentFields: ContentFieldSpec[], imports: string[] = [], listFields: ListFieldSpec[] = [],
@@ -671,45 +682,339 @@ function resetIDX(state: AppState, ignored: number): AppState {
 }
 
 /**
- * No device capability at all -- ui.Ticker/onTick is a pure in-app clock (VeraPreview.ets drives
- * it with a real setInterval), the same safety class as checklist/metrics. Target duration is a
- * fixed 25 minutes rather than a content-filled or slot-chosen value, kept deliberately simple for
- * this first version (see the plan's non-goals).
+ * A countdown. ui.Ticker/onTick is a pure in-app clock (VeraPreview.ets drives it with a real setInterval). The duration is one
+ * fixed time or a short list of named presets (soft / medium / hard, tea strengths, work and rest); with several presets a chooser
+ * appears and picking one resets the clock. When the countdown reaches zero the `whenFinished` hole runs once: the default does
+ * nothing, and when the request asks for the phone to do something then (vibrate, notify, make a sound) the model writes the
+ * body, which may call a phone function through sdk.call. The SDK functions it may use are the ones found for the request, and
+ * the compiler rejects a target that does not exist. Answers follow docs/intent-call-contract.md: only "declined..." and
+ * "error..." are failures.
  */
 function timerFragment(): FragmentSpec {
   return new FragmentSpec(
     'timer',
-    'A countdown or stopwatch that ticks by itself, with a start/pause toggle and a reset',
-    '',
-    [new StateFieldSpec('elapsedMsIDX', 'number'), new StateFieldSpec('runningIDX', 'boolean')],
-    '',
-    `elapsedMsIDX: 0, runningIDX: true`,
-    `function onTickIDX(state: AppState, elapsedMs: number): AppState {
-  return {elapsedMsIDX: state.elapsedMsIDX + elapsedMs, runningIDX: state.runningIDX__PASSTHROUGH__};
+    'A countdown or stopwatch that ticks by itself, with a start/pause toggle and a reset; the duration is one fixed time or a short list of named presets, and the phone can vibrate or notify when it ends',
+    `@jsonable
+class TimerPreset {
+  name: string;
+  seconds: number;
+}`,
+    [new StateFieldSpec('presetsIDX', 'TimerPreset[]'), new StateFieldSpec('pickIDX', 'number'),
+     new StateFieldSpec('elapsedMsIDX', 'number'), new StateFieldSpec('runningIDX', 'boolean'), new StateFieldSpec('timerNoteIDX', 'string')],
+    `  let presetsIDX: TimerPreset[] = [__PRESETS_IDX__];`,
+    `presetsIDX: presetsIDX, pickIDX: 0, elapsedMsIDX: 0, runningIDX: false, timerNoteIDX: ""`,
+    `function rebuildTimerIDX(state: AppState, pick: number, elapsedMs: number, running: boolean, note: string): AppState {
+  return {presetsIDX: state.presetsIDX, pickIDX: pick, elapsedMsIDX: elapsedMs, runningIDX: running, timerNoteIDX: note__PASSTHROUGH__};
+}
+
+function limitMsIDX(state: AppState): number {
+  let at: number = state.pickIDX;
+  if (at < 0 || at >= state.presetsIDX.length()) { at = 0; }
+  return state.presetsIDX[at].seconds * 1000;
+}
+
+function whenFinishedIDX(pick: number): number {
+__HOLE_WHENFINISHED_IDX__
+}
+
+function onTickIDX(state: AppState, elapsedMs: number): AppState {
+  if (!state.runningIDX) { return state; }
+  let limit: number = limitMsIDX(state);
+  let next: number = state.elapsedMsIDX + elapsedMs;
+  if (next >= limit) {
+    let ignored: number = whenFinishedIDX(state.pickIDX);
+    return rebuildTimerIDX(state, state.pickIDX, limit, false, state.timerNoteIDX);
+  }
+  return rebuildTimerIDX(state, state.pickIDX, next, true, state.timerNoteIDX);
 }
 
 function toggleRunningIDX(state: AppState, value: boolean): AppState {
-  return {elapsedMsIDX: state.elapsedMsIDX, runningIDX: value__PASSTHROUGH__};
+  if (value && state.elapsedMsIDX >= limitMsIDX(state)) { return rebuildTimerIDX(state, state.pickIDX, 0, true, ""); }
+  return rebuildTimerIDX(state, state.pickIDX, state.elapsedMsIDX, value, state.timerNoteIDX);
 }
 
 function resetTimerIDX(state: AppState, ignored: number): AppState {
-  return {elapsedMsIDX: 0, runningIDX: state.runningIDX__PASSTHROUGH__};
+  return rebuildTimerIDX(state, state.pickIDX, 0, false, "");
+}
+
+function choosePresetIDX(state: AppState, index: number): AppState {
+  return rebuildTimerIDX(state, index, 0, false, "");
+}
+
+function onFinishedAnswerIDX(state: AppState, value: string): AppState {
+  let note: string = "";
+  if (strings.startsWith(value, "declined") || strings.startsWith(value, "error")) { note = value; }
+  return rebuildTimerIDX(state, state.pickIDX, state.elapsedMsIDX, state.runningIDX, note);
 }`,
     `{
-    let remainingMs: number = 1500000 - state.elapsedMsIDX;
-    if (remainingMs < 0) { remainingMs = 0; }
-    let remainingSec: number = remainingMs / 1000;
-    sections.push(ui.Section("content", "", "", [
-      ui.Ticker("default", "timerIDX", 1000, state.runningIDX, "onTickIDX"),
-      ui.NumberText("display", remainingSec, "", "s left", 1),
-      ui.Toggle("default", "__TIMER_LABEL_IDX__", state.runningIDX, "toggleRunningIDX"),
-      ui.ActionBar("spread", [
-        ui.Button("secondary", "Reset", "resetTimerIDX", 0, true)
-      ])
+    let limitSec: number = limitMsIDX(state) / 1000;
+    let elapsedSec: number = state.elapsedMsIDX / 1000;
+    let remainingSec: number = limitSec - elapsedSec;
+    if (remainingSec < 0) { remainingSec = 0; }
+    let presetNames: string[] = [];
+    for (let p: TimerPreset of state.presetsIDX) { presetNames.push(p.name); }
+    let chosen: string = "";
+    if (state.pickIDX >= 0 && state.pickIDX < presetNames.length()) { chosen = presetNames[state.pickIDX]; }
+    let clock: ui.View[] = [];
+    clock.push(ui.Ticker("default", "timerIDX", 1000, state.runningIDX, "onTickIDX"));
+    clock.push(ui.NumberText("display", remainingSec, "", "s left", 1));
+    clock.push(ui.Progress("accent", chosen, elapsedSec, limitSec));
+    clock.push(ui.When(remainingSec <= 0, ui.InsetBanner("success", "Time is up", "The countdown has finished.", "", "", "check")));
+    sections.push(ui.Section("content", "", "", clock));
+    let controls: ui.View[] = [];
+    if (presetNames.length() > 1) {
+      controls.push(ui.Select("default", "__PRESET_LABEL_IDX__", presetNames, state.pickIDX, "choosePresetIDX"));
+    }
+    controls.push(ui.Toggle("default", "__TIMER_LABEL_IDX__", state.runningIDX, "toggleRunningIDX"));
+    controls.push(ui.ActionBar("spread", [
+      ui.Button("secondary", "Reset", "resetTimerIDX", 0, true)
+    ]));
+    sections.push(ui.Section("content", "", "", controls));
+    sections.push(ui.Section("supporting", "", "", [
+      ui.When(state.timerNoteIDX !== "", ui.InsetBanner("danger", "The phone said no", state.timerNoteIDX, "", "", "info"))
     ]));
   }`,
+    [new SlotSpec('__FINISH_ACTION_IDX__', ['false', 'true'], 'noul',
+      'Does the request ask for the phone to do something when the countdown ends, such as vibrate, play a sound or show a notification?',
+      timerFinishCriteria(), 0.6)],
+    [
+      new ContentFieldSpec('__TIMER_LABEL_IDX__', 'timer_label', 'Running', 'Label of the start/pause switch (1-3 words, such as Running or Start the timer)', 24),
+      new ContentFieldSpec('__PRESET_LABEL_IDX__', 'preset_label', 'Preset', 'Label of the choice of preset (1-3 words, e.g. Doneness)', 20)
+    ],
+    ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"'],
+    [new ListFieldSpec('__PRESETS_IDX__', 'presets',
+      'The durations to choose from (1 to 6): a short name and its length in seconds. One row when the request names one duration or none (use 1500 seconds then).',
+      ['name of the preset (1-3 words)', 'length in seconds, a whole number'], [20, 6],
+      '{name: "{0}", seconds: {1}}', ',\n    ', 1, 6,
+      [['Timer', '1500']], [1], ['', 'seconds'])],
     [],
-    [new ContentFieldSpec('__TIMER_LABEL_IDX__', 'timer_label', 'Running', 'Short label for what is being timed (1-3 words)', 24)]
+    [new HoleSpec('whenFinished', '__HOLE_WHENFINISHED_IDX__',
+      'whenFinished(pick: number): number',
+      'Runs once when the countdown reaches zero; pick is the index of the chosen preset (0 for the first). Do what the request asks to happen ' +
+      'at that moment by calling the phone: sdk.call("<target>", ["<name>", "<value>", ...], "onFinishedAnswerIDX"), where <target> is one of the ' +
+      'SDK functions listed below and the parameter names and values come from its description. Then return 0. Do nothing else.',
+      '  return 0;', '', true, true, '__FINISH_ACTION_IDX__')],
+    [],
+    ['needs_integration=__FINISH_ACTION_IDX__']
+  )
+}
+
+function timerFinishCriteria(): Map<string, string> {
+  let m: Map<string, string> = new Map<string, string>()
+  m.set('true', 'yes, something happens on the phone when it ends')
+  m.set('false', 'no, the countdown only shows that time is up')
+  return m
+}
+
+/**
+ * A list the person builds one entry at a time: a title, a time of day (hour and minute) and whether it repeats every day. With the
+ * calendar slot on, every new entry goes into the phone calendar through the one verified call
+ * ("CalendarKit.Calendar.addEvent", with a reminder at the start time and a daily repeat when asked), each row shows what the
+ * calendar answered, and removing a row removes its event. Answers follow docs/intent-call-contract.md: the answer to addEvent is
+ * the event id, only "declined..." and "error..." are failures. The block is the multi-field form, so it covers
+ * needs_search_or_form, and with the calendar on it covers needs_integration. Publishes how many entries are scheduled (done) and
+ * how many there are (total) for the readers that take those ports.
+ */
+function remindersFragment(): FragmentSpec {
+  let calendar: Map<string, string> = new Map<string, string>()
+  calendar.set('true', 'yes, each entry goes into the phone calendar with a reminder')
+  calendar.set('false', 'no, the entries are only a list in the app')
+  return new FragmentSpec(
+    'reminders',
+    'A list the person builds one entry at a time, each with a title, a time of day (hour and minute) and whether it repeats every day; ' +
+    'entries can be put into the phone calendar with a reminder and removed, and the list shows what is scheduled and what the ' +
+    'calendar answered. For medicines, habits, appointments, daily reminders; not a day plan made of places',
+    `@jsonable
+class Reminder {
+  title: string;
+  hour: number;
+  minute: number;
+  daily: boolean;
+  eventId: string;
+  status: string;
+}`,
+    [new StateFieldSpec('remindersIDX', 'Reminder[]'), new StateFieldSpec('draftTitleIDX', 'string'),
+     new StateFieldSpec('draftHourIDX', 'number'), new StateFieldSpec('draftMinuteIDX', 'number'),
+     new StateFieldSpec('draftDailyIDX', 'boolean'), new StateFieldSpec('pendingIDX', 'number'), new StateFieldSpec('reminderNoteIDX', 'string')],
+    `  let remindersIDX: Reminder[] = [];`,
+    `remindersIDX: remindersIDX, draftTitleIDX: "", draftHourIDX: 8, draftMinuteIDX: 0, draftDailyIDX: true, pendingIDX: -1, reminderNoteIDX: ""`,
+    `function withDraftIDX(state: AppState, title: string, hour: number, minute: number, daily: boolean): AppState {
+  return {remindersIDX: state.remindersIDX, draftTitleIDX: title, draftHourIDX: hour, draftMinuteIDX: minute, draftDailyIDX: daily, pendingIDX: state.pendingIDX, reminderNoteIDX: state.reminderNoteIDX__PASSTHROUGH__};
+}
+
+function withListIDX(state: AppState, list: Reminder[], pending: number, note: string, title: string): AppState {
+  return {remindersIDX: list, draftTitleIDX: title, draftHourIDX: state.draftHourIDX, draftMinuteIDX: state.draftMinuteIDX, draftDailyIDX: state.draftDailyIDX, pendingIDX: pending, reminderNoteIDX: note__PASSTHROUGH__};
+}
+
+function failedIDX(value: string): boolean {
+  return strings.startsWith(value, "declined") || strings.startsWith(value, "error");
+}
+
+function scheduledCountIDX(state: AppState): number {
+  let n: number = 0;
+  for (let r: Reminder of state.remindersIDX) { if (r.status === "ok") { n = n + 1; } }
+  return n;
+}
+
+function setTitleIDX(state: AppState, value: string): AppState {
+  return withDraftIDX(state, value, state.draftHourIDX, state.draftMinuteIDX, state.draftDailyIDX);
+}
+
+function setHourIDX(state: AppState, value: number): AppState {
+  let hour: number = math.floor(value);
+  if (hour < 0) { hour = 0; }
+  if (hour > 23) { hour = 23; }
+  return withDraftIDX(state, state.draftTitleIDX, hour, state.draftMinuteIDX, state.draftDailyIDX);
+}
+
+function setMinuteIDX(state: AppState, value: number): AppState {
+  let minute: number = math.floor(value);
+  if (minute < 0) { minute = 0; }
+  if (minute > 59) { minute = 59; }
+  return withDraftIDX(state, state.draftTitleIDX, state.draftHourIDX, minute, state.draftDailyIDX);
+}
+
+function setDailyIDX(state: AppState, value: boolean): AppState {
+  return withDraftIDX(state, state.draftTitleIDX, state.draftHourIDX, state.draftMinuteIDX, value);
+}
+
+function addReminderIDX(state: AppState, ignored: number): AppState {
+  let title: string = strings.trim(state.draftTitleIDX);
+  if (title.length() === 0) { return state; }
+  let useCalendar: boolean = __CALENDAR_IDX__;
+  let status: string = "";
+  let pending: number = -1;
+  if (useCalendar) {
+    status = "pending";
+    pending = state.remindersIDX.length();
+  }
+  let out: Reminder[] = [];
+  for (let r: Reminder of state.remindersIDX) { out.push(r); }
+  out.push({title: title, hour: state.draftHourIDX, minute: state.draftMinuteIDX, daily: state.draftDailyIDX, eventId: "", status: status});
+  if (useCalendar) {
+    let repeat: string = "once";
+    if (state.draftDailyIDX) { repeat = "daily"; }
+    sdk.call("CalendarKit.Calendar.addEvent",
+      ["title", "__EVENT_PREFIX_IDX__" + title, "hour", ui.numberToString(state.draftHourIDX), "minute", ui.numberToString(state.draftMinuteIDX),
+       "durationMinutes", "15", "remindBefore", "0", "repeat", repeat, "description", "__EVENT_NOTE_IDX__"], "onAddedIDX");
+  }
+  return withListIDX(state, out, pending, "", "");
+}
+
+function onAddedIDX(state: AppState, value: string): AppState {
+  if (state.pendingIDX < 0 || state.pendingIDX >= state.remindersIDX.length()) { return state; }
+  let out: Reminder[] = [];
+  let i: number = 0;
+  while (i < state.remindersIDX.length()) {
+    let r: Reminder = state.remindersIDX[i];
+    if (i === state.pendingIDX) {
+      if (failedIDX(value)) {
+        out.push({title: r.title, hour: r.hour, minute: r.minute, daily: r.daily, eventId: "", status: value});
+      } else {
+        out.push({title: r.title, hour: r.hour, minute: r.minute, daily: r.daily, eventId: value, status: "ok"});
+      }
+    } else {
+      out.push(r);
+    }
+    i = i + 1;
+  }
+  let note: string = "";
+  if (failedIDX(value)) { note = value; }
+  return withListIDX(state, out, -1, note, state.draftTitleIDX);
+}
+
+function removeReminderIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.remindersIDX.length()) { return state; }
+  let gone: Reminder = state.remindersIDX[index];
+  let out: Reminder[] = [];
+  let i: number = 0;
+  while (i < state.remindersIDX.length()) {
+    if (i !== index) { out.push(state.remindersIDX[i]); }
+    i = i + 1;
+  }
+  let pending: number = state.pendingIDX;
+  if (pending === index) { pending = -1; }
+  if (pending > index) { pending = pending - 1; }
+  if (gone.eventId !== "") { sdk.call("CalendarKit.Calendar.deleteEvents", ["ids", gone.eventId], "onRemovedIDX"); }
+  return withListIDX(state, out, pending, "", state.draftTitleIDX);
+}
+
+function onRemovedIDX(state: AppState, value: string): AppState {
+  if (failedIDX(value)) { return withListIDX(state, state.remindersIDX, state.pendingIDX, value, state.draftTitleIDX); }
+  return state;
+}
+
+function openCalendarIDX(state: AppState, ignored: number): AppState {
+  sdk.call("com.huawei.hmos.calendar/phone/MainAbility", [], "onOpenedIDX");
+  return state;
+}
+
+function onOpenedIDX(state: AppState, value: string): AppState {
+  if (failedIDX(value)) { return withListIDX(state, state.remindersIDX, state.pendingIDX, value, state.draftTitleIDX); }
+  return state;
+}`,
+    `{
+    let useCalendar: boolean = __CALENDAR_IDX__;
+    let count: number = state.remindersIDX.length();
+    let canAdd: boolean = strings.trim(state.draftTitleIDX).length() > 0;
+    sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
+      ui.TextField("default", "__TITLE_LABEL_IDX__", state.draftTitleIDX, "setTitleIDX"),
+      ui.NumberField("default", "Hour (0-23)", state.draftHourIDX, 0, 23, "setHourIDX"),
+      ui.NumberField("default", "Minute (0-59)", state.draftMinuteIDX, 0, 59, "setMinuteIDX"),
+      ui.Toggle("default", "__REPEAT_LABEL_IDX__", state.draftDailyIDX, "setDailyIDX"),
+      ui.ActionBar("end", [
+        ui.Button("primary", "Add", "addReminderIDX", 0, canAdd)
+      ])
+    ]));
+    let rows: ui.View[] = [];
+    let j: number = 0;
+    while (j < count) {
+      let r: Reminder = state.remindersIDX[j];
+      let when: string = ui.clockToString(r.hour * 60 + r.minute);
+      if (r.daily) { when = when + " - every day"; }
+      let shown: string = "";
+      let icon: string = "list";
+      if (useCalendar) {
+        if (r.status === "pending") { shown = "sending..."; icon = "clock"; }
+        else if (r.status === "ok") { shown = "in calendar"; icon = "check"; }
+        else if (r.status !== "") { shown = "not added"; icon = "info"; }
+      }
+      rows.push(ui.ListItem("default", r.title, when, shown, "", 0, false, icon));
+      if (useCalendar && r.status !== "ok" && r.status !== "pending" && r.status !== "") {
+        rows.push(ui.InsetBanner("warning", "The calendar said no", r.status, "", "", "info"));
+      }
+      rows.push(ui.ActionBar("end", [ui.Button("secondary", "Remove", "removeReminderIDX", j, true)]));
+      j = j + 1;
+    }
+    sections.push(ui.Section("content", "", "", [
+      ui.When(count === 0, ui.EmptyState("default", "Nothing yet", "Add the first one above.", "", "", "list")),
+      ui.When(count > 0, ui.ListGroup("default", "", rows))
+    ]));
+    let notes: ui.View[] = [];
+    if (state.reminderNoteIDX !== "") {
+      notes.push(ui.InsetBanner("warning", "Last action", state.reminderNoteIDX, "", "", "info"));
+    }
+    if (useCalendar) {
+      notes.push(ui.ActionBar("spread", [ui.Button("secondary", "Open calendar", "openCalendarIDX", 0, true)]));
+    }
+    if (notes.length() > 0) { sections.push(ui.Section("supporting", "", "", notes)); }
+  }`,
+    [new SlotSpec('__CALENDAR_IDX__', ['false', 'true'], 'noul',
+      'Should each entry be put into the phone calendar with a reminder, with a button to open the calendar?', calendar, 0.6)],
+    [
+      new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add a reminder', 'Heading of the form (2-4 words)', 24),
+      new ContentFieldSpec('__TITLE_LABEL_IDX__', 'title_label', 'Name', 'Label of the title field (1-3 words, such as Medicine or Habit)', 20),
+      new ContentFieldSpec('__REPEAT_LABEL_IDX__', 'repeat_label', 'Repeats every day', 'Label of the switch for a daily repeat (2-4 words)', 28),
+      new ContentFieldSpec('__EVENT_PREFIX_IDX__', 'event_prefix', '', 'Words put before the title in the calendar event, such as "Take " for medicines, or an empty string', 12),
+      new ContentFieldSpec('__EVENT_NOTE_IDX__', 'event_note', 'Reminder', 'A short note for the calendar event (2-6 words, no quotes)', 40)
+    ],
+    ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"'],
+    [],
+    [new PortSpec('writes', 'done', 'number', 'scheduledCountIDX(state)', '', true),
+     new PortSpec('writes', 'total', 'number', 'state.remindersIDX.length()', '', true)],
+    [],
+    ['needs_search_or_form'],
+    ['needs_integration=__CALENDAR_IDX__']
   )
 }
 
@@ -921,13 +1226,13 @@ function trendChartFragment(): FragmentSpec {
     [
       new ContentFieldSpec('__CHART_LABEL_IDX__', 'chart_label', 'Value', 'Short label for what the chart plots (2-4 words, e.g. "Average height (cm)")', 24),
       new ContentFieldSpec('__Y1_IDX__', 'point1_label', 'Point 1', 'Short label for data point 1 (e.g. a year, "1950")', 12),
-      new ContentFieldSpec('__V1_IDX__', 'point1_value', '0', 'Numeric value for data point 1, digits only, no units or commas', 6, true),
+      new ContentFieldSpec('__V1_IDX__', 'point1_value', '0', 'Numeric value for data point 1, digits only, no units or commas', 15, true),
       new ContentFieldSpec('__Y2_IDX__', 'point2_label', 'Point 2', 'Short label for data point 2', 12),
-      new ContentFieldSpec('__V2_IDX__', 'point2_value', '0', 'Numeric value for data point 2, digits only, no units or commas', 6, true),
+      new ContentFieldSpec('__V2_IDX__', 'point2_value', '0', 'Numeric value for data point 2, digits only, no units or commas', 15, true),
       new ContentFieldSpec('__Y3_IDX__', 'point3_label', 'Point 3', 'Short label for data point 3', 12),
-      new ContentFieldSpec('__V3_IDX__', 'point3_value', '0', 'Numeric value for data point 3, digits only, no units or commas', 6, true),
+      new ContentFieldSpec('__V3_IDX__', 'point3_value', '0', 'Numeric value for data point 3, digits only, no units or commas', 15, true),
       new ContentFieldSpec('__Y4_IDX__', 'point4_label', 'Point 4', 'Short label for data point 4', 12),
-      new ContentFieldSpec('__V4_IDX__', 'point4_value', '0', 'Numeric value for data point 4, digits only, no units or commas', 6, true)
+      new ContentFieldSpec('__V4_IDX__', 'point4_value', '0', 'Numeric value for data point 4, digits only, no units or commas', 15, true)
     ]
   )
 }
@@ -1235,7 +1540,8 @@ function recordLogFragment(): FragmentSpec {
     'record_log',
     'A form where the person adds records one at a time, each tagged with one of several named people or categories ' +
     'and an amount (with cents), plus a note; the records are listed newest first and can be removed or cleared. ' +
-    'The source of figures worked out per person or category: totals, an average, who is above or below it',
+    'The source of figures worked out per person or category: totals, an average, who is above or below it. ' +
+    'Also fits one plain running list with a single total and no named people or categories (a note and an amount per entry)',
     TALLY_CLASS,
     [new StateFieldSpec('labelsIDX', 'string[]'), new StateFieldSpec('recordsIDX', 'Tally[]'),
      new StateFieldSpec('draftWhoIDX', 'number'), new StateFieldSpec('draftAmountIDX', 'string'),
@@ -1331,19 +1637,40 @@ function balancesIDX(state: AppState): number[] {
 }`,
     `{
     let n: number = state.recordsIDX.length();
+    let plain: boolean = state.labelsIDX.length() <= 1;
     let rows: ui.View[] = [];
     let k: number = n - 1;
     while (k >= 0) {
       let r: Tally = state.recordsIDX[k];
       let who: string = "?";
       if (r.who >= 0 && r.who < state.labelsIDX.length()) { who = state.labelsIDX[r.who]; }
-      rows.push(ui.ListItem("default", who, r.note, state.currencyIDX + ui.formatNumber(r.amount, 2), "", k, false, "list"));
+      let shown: string = state.currencyIDX + ui.formatNumber(r.amount, 2);
+      if (state.currencyIDX.length() === 0) { shown = ui.numberToString(r.amount); }
+      if (plain) {
+        let title: string = r.note;
+        if (title.length() === 0) { title = "Entry"; }
+        rows.push(ui.ListItem("default", title, "", shown, "", k, false, "list"));
+      } else {
+        rows.push(ui.ListItem("default", who, r.note, shown, "", k, false, "list"));
+      }
       k = k - 1;
     }
     let typed: number = strings.toNumber(state.draftAmountIDX, 0);
+    if (plain) {
+      let sumText: string = state.currencyIDX + ui.formatNumber(totalSumIDX(state), 2);
+      if (state.currencyIDX.length() === 0) { sumText = ui.numberToString(totalSumIDX(state)); }
+      sections.push(ui.Section("summary", "", "", [
+        ui.MetricGroup("default", 2, [
+          ui.Stat("accent", "Total", sumText, "all entries", "chart"),
+          ui.Stat("default", "Entries", ui.numberToString(n), "logged", "list")
+        ])
+      ]));
+    }
+    let formRows: ui.View[] = [];
+    if (!plain) { formRows.push(ui.Select("default", "__WHO_LABEL_IDX__", state.labelsIDX, state.draftWhoIDX, "setWhoIDX")); }
+    formRows.push(ui.TextField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, "setAmountIDX", "number"));
     sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
-      ui.Select("default", "__WHO_LABEL_IDX__", state.labelsIDX, state.draftWhoIDX, "setWhoIDX"),
-      ui.TextField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, "setAmountIDX", "number"),
+      ui.Column("default", formRows),
       ui.TextField("default", "Note", state.draftNoteIDX, "setNoteIDX"),
       ui.ActionBar("end", [
         ui.Button("danger", "Start over", "clearRecordsIDX", 0, n > 0),
@@ -1361,12 +1688,13 @@ function balancesIDX(state: AppState): number[] {
       new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add a record', 'Heading of the form (2-4 words)', 24),
       new ContentFieldSpec('__WHO_LABEL_IDX__', 'who_label', 'Who', 'Label of the choice of person or category (1-2 words, e.g. Paid by)', 16),
       new ContentFieldSpec('__AMOUNT_LABEL_IDX__', 'amount_label', 'Amount', 'Label of the amount field (1-3 words)', 20),
-      new ContentFieldSpec('__CURRENCY_IDX__', 'currency', '$', 'Currency symbol shown before amounts, or an empty string when the amounts are not money', 3)
+      new ContentFieldSpec('__CURRENCY_IDX__', 'currency', '', 'Currency symbol shown before amounts, only when the amounts are money; leave it blank for counts, minutes, quantities or scores', 3)
     ],
     ['import * as strings from "std/strings"'],
     [new ListFieldSpec('__LABELS_IDX__', 'labels',
-      'The named people or categories a record can be tagged with, taken from the request (2 to 8)',
-      ['name of the person or category (1-2 words)'], [16], '"{0}"', ', ', 2, 8,
+      'The named people or categories a record can be tagged with, taken from the request (2 to 8); exactly one entry when the ' +
+      'records are one plain running list not tied to people or categories',
+      ['name of the person or category (1-2 words)'], [16], '"{0}"', ', ', 1, 8,
       [['Person 1'], ['Person 2'], ['Person 3']])],
     [new PortSpec('writes', 'labels', 'string[]', 'labelsIDX'),
      new PortSpec('writes', 'totals', 'number[]', 'totalsIDX(state)', '', true),
@@ -1839,7 +2167,7 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     [new PortSpec('writes', 'done', 'number', 'reachedCountIDX(state)', '', true),
      new PortSpec('writes', 'total', 'number', 'state.stopsIDX.length()', '', true)],
     [],
-    ['needs_logic'],
+    ['needs_logic', 'needs_search_or_form'],
     ['needs_integration=__NAVIGATE_IDX__|__CALENDAR_IDX__']
   )
 }
@@ -2074,7 +2402,7 @@ function barChartFragment(): FragmentSpec {
     [],
     [new ListFieldSpec('__BARS_IDX__', 'bars',
       'The categories to compare, as many as the request needs (3 to 8), each with one whole number',
-      ['name of the category (1-2 words)', 'its value as a whole number, no units'], [14, 6],
+      ['name of the category (1-2 words)', 'its value as a whole number, no units, in full (8500000, not 8.5M)'], [14, 15],
       'names.push("{0}"); vals.push({1});', '\n    ', 3, 8,
       [['A', '3'], ['B', '5'], ['C', '2']], [1])]
   )
@@ -2087,86 +2415,6 @@ function barChartFragment(): FragmentSpec {
  * Amounts are whole units on purpose: money with cents is a request for the model to write the
  * program (needs_logic), not something a fixed fragment can promise.
  */
-function logEntriesFragment(): FragmentSpec {
-  return new FragmentSpec(
-    'log_entries',
-    'A form where the person adds entries one at a time, each with a short note and a whole-number amount, listed newest first with a running total and a button to remove the last one; one running list with one total, not tied to named people or categories',
-    `@jsonable
-class LogEntry {
-  note: string;
-  amount: number;
-}`,
-    [new StateFieldSpec('logIDX', 'LogEntry[]'), new StateFieldSpec('draftNoteIDX', 'string'), new StateFieldSpec('draftAmountIDX', 'number')],
-    `  let logIDX: LogEntry[] = [];`,
-    `logIDX: logIDX, draftNoteIDX: "", draftAmountIDX: 0`,
-    `function setNoteIDX(state: AppState, value: string): AppState {
-  return {logIDX: state.logIDX, draftNoteIDX: value, draftAmountIDX: state.draftAmountIDX__PASSTHROUGH__};
-}
-
-function setAmountIDX(state: AppState, value: number): AppState {
-  return {logIDX: state.logIDX, draftNoteIDX: state.draftNoteIDX, draftAmountIDX: value__PASSTHROUGH__};
-}
-
-function addEntryIDX(state: AppState, ignored: number): AppState {
-  let out: LogEntry[] = [];
-  let i: number = 0;
-  while (i < state.logIDX.length()) {
-    out.push(state.logIDX[i]);
-    i = i + 1;
-  }
-  let label: string = state.draftNoteIDX;
-  if (label.length() === 0) { label = "Entry"; }
-  out.push({note: label, amount: state.draftAmountIDX});
-  return {logIDX: out, draftNoteIDX: "", draftAmountIDX: 0__PASSTHROUGH__};
-}
-
-function removeLastIDX(state: AppState, ignored: number): AppState {
-  let out: LogEntry[] = [];
-  let i: number = 0;
-  while (i < state.logIDX.length() - 1) {
-    out.push(state.logIDX[i]);
-    i = i + 1;
-  }
-  return {logIDX: out, draftNoteIDX: state.draftNoteIDX, draftAmountIDX: state.draftAmountIDX__PASSTHROUGH__};
-}`,
-    `{
-    let n: number = state.logIDX.length();
-    let total: number = 0;
-    let rows: ui.View[] = [];
-    let k: number = n - 1;
-    while (k >= 0) {
-      let e: LogEntry = state.logIDX[k];
-      total = total + e.amount;
-      rows.push(ui.ListItem("default", e.note, "", ui.numberToString(e.amount), "", k, false, "list"));
-      k = k - 1;
-    }
-    sections.push(ui.Section("summary", "", "", [
-      ui.MetricGroup("default", 2, [
-        ui.Stat("accent", "Total", ui.numberToString(total), "all entries", "chart"),
-        ui.Stat("default", "Entries", ui.numberToString(n), "logged", "list")
-      ])
-    ]));
-    sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
-      ui.TextField("default", "Note", state.draftNoteIDX, "setNoteIDX"),
-      ui.NumberField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, 0, 100000, "setAmountIDX"),
-      ui.ActionBar("end", [
-        ui.Button("secondary", "Remove last", "removeLastIDX", 0, n > 0),
-        ui.Button("primary", "Add", "addEntryIDX", 0, state.draftAmountIDX > 0)
-      ])
-    ]));
-    sections.push(ui.Section("content", "", "", [
-      ui.When(n === 0, ui.EmptyState("default", "Nothing yet", "Add the first entry above.", "", "", "list")),
-      ui.When(n > 0, ui.ListGroup("default", "", rows))
-    ]));
-  }`,
-    [],
-    [
-      new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add an entry', 'Heading of the form (2-4 words)', 24),
-      new ContentFieldSpec('__AMOUNT_LABEL_IDX__', 'amount_label', 'Amount', 'Label of the amount field (1-2 words)', 16)
-    ]
-  )
-}
-
 /**
  * The palette VeraSectionCompose.ets picks from, one per section slot. `checklist`/`metrics`
  * reproduce today's two flat templates exactly (as single-fragment compositions); `timer` and
@@ -2180,10 +2428,10 @@ export function fragments(): FragmentSpec[] {
     actionsFragment(), progressGoalFragment(), keyFactsFragment(), trendChartFragment(),
     noteFragment(), ratingFragment(), spotlightFragment(),
     searchListFragment(), dataTableFragment(), timelineFragment(),
-    barChartFragment(), logEntriesFragment(),
+    barChartFragment(),
     masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
     recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
-    itineraryFragment(), progressLineFragment(), intentPanelFragment()
+    itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment()
   ]
 }
 

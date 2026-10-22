@@ -178,6 +178,9 @@ run('Parser recovery: every syntax error in one compile, without cascades',()=>{
   const pipeline=load(path.join(base,'VeraTemplatePipeline.ets'));
   // The template pipeline and the trace are swapped per check: tpl.build answers buildFromTemplates, traces collects trace().
   const tpl={build:async()=>{throw Error('No template build set')}},traces=[];
+  // The page reaches the blocks through the route (agent/VeraBuildRoute.ets), which calls the pipeline's export.
+  pipeline.buildFromTemplates=(...a)=>tpl.build(...a);
+  const route=load(path.join(base,'agent','VeraBuildRoute.ets')),agent=load(path.join(base,'agent','VeraAgent.ets')),agentHost=load(path.join(base,'agent','AgentHost.ets'));
   // side.selectUi answers selectUiForPrompt and side.edit answers editComposition.
   const side={selectUi:async()=>null,edit:async()=>{throw Error('No structural edit set')}};
   function templateBuild(action,fields){return Object.assign(new pipeline.TemplateBuild(),{action,source:'TEMPLATE',vbc2:'["VBC2"]',kinds:['list'],composition:'{"blocks":1}',status:action},fields);}
@@ -185,13 +188,15 @@ run('Parser recovery: every syntax error in one compile, without cascades',()=>{
   function page(){
     const src=read('entry/src/main/ets/pages/GeneratePage.ets');
     const prefix=src.slice(0,src.indexOf('@Entry')).replace(/^import .*$/gm,'');
-    const code=prefix+'\nclass Controller { '+['hostContext','callModel','runAttempt','doRefine','traceEnd','doGenerate','tryTemplateSelect','startAttemptOne','tryStructuralEdit','fallBackToTemplate','refineWithModel','stopGeneration','originLabel'].map(n=>method(src,n)).join('\n')+' } module.exports=Controller;';
+    const code=prefix+'\nclass Controller { '+['hostContext','callModel','runAttempt','doRefine','traceEnd','doGenerate','tryRoute','traceAgent','showAgent','noteBlocks','showTemplate','settleQuestion','askPerson','startAttemptOne','tryStructuralEdit','fallBackToTemplate','refineWithModel','stopGeneration','originLabel'].map(n=>method(src,n)).join('\n')+' } module.exports=Controller;';
     const compiled=ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020},reportDiagnostics:true});
     assert.equal((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).length,0,'Extracted generation controller syntax');
     const globals={ensureCapabilities:async()=>{},logStep:()=>{},logMark:()=>{},trace:(name,fields)=>{traces.push({name,fields});},
-      templateSelectEnabled:()=>true,buildFromTemplates:(...a)=>tpl.build(...a),BUILD_CANCELLED:pipeline.BUILD_CANCELLED,BUILD_SCRATCH:pipeline.BUILD_SCRATCH,BUILD_COMPLETE:pipeline.BUILD_COMPLETE,traceCompile:()=>{},UI_SELECT_FULL:selection.UI_SELECT_FULL,UI_SELECT_PROMPT:selection.UI_SELECT_PROMPT,settings,deepseek:deep.deepseek,DEEPSEEK_GENERATION_MAX_TOKENS:deep.DEEPSEEK_GENERATION_MAX_TOKENS,
+      composeEnabled:()=>false,composePlanEnabled:()=>false,templateSelectEnabled:()=>true,BUILD_TEMPLATE:pipeline.BUILD_TEMPLATE,BUILD_COMPLETE:pipeline.BUILD_COMPLETE,
+      buildScreen:route.buildScreen,RouteRequest:route.RouteRequest,OUTCOME_AGENT:route.OUTCOME_AGENT,OUTCOME_TEMPLATE:route.OUTCOME_TEMPLATE,OUTCOME_COMPLETE:route.OUTCOME_COMPLETE,OUTCOME_CANCELLED:route.OUTCOME_CANCELLED,
+      AgentRequest:agent.AgentRequest,appAgentHost:(status,preview,cancelled)=>Object.assign(new agentHost.AgentHost(),{status,preview,cancelled}),traceCompile:()=>{},UI_SELECT_FULL:selection.UI_SELECT_FULL,UI_SELECT_PROMPT:selection.UI_SELECT_PROMPT,settings,deepseek:deep.deepseek,DEEPSEEK_GENERATION_MAX_TOKENS:deep.DEEPSEEK_GENERATION_MAX_TOKENS,
       GenerateRequest:llama.GenerateRequest,GenerateResult:llama.GenerateResult,compileVeraSource:compiler.compileVeraSource,CompileError:compiler.CompileError,
-      repairPrompt:repairMod.repairPrompt,applyRepair:repairMod.applyRepair,
+      repairPrompt:repairMod.repairPrompt,applyRepair:repairMod.applyRepair,smokeRun:load(path.join(base,'VeraSmoke.ets')).smokeRun,
       selectUiForPrompt:(...a)=>side.selectUi(...a),describeCatalogForPrompt:()=>'',UI_TOOL_NOTE:'',
       compositionFromJson:j=>j.length>0?{}:null,compositionToJson:()=>'EDITED-RECORD',editComposition:(...a)=>side.edit(...a),selectEdit:()=>null,
       engine:{stop(){},generate(request){return {text:example,inputTokens:1,outputTokens:1,request}}}};
@@ -199,7 +204,7 @@ run('Parser recovery: every syntax error in one compile, without cascades',()=>{
     const c=new mod.exports();
     const host={filesDir:'/fixture',resourceManager:{}};
     c.getUIContext=()=>({getHostContext:()=>host});
-    Object.assign(c,{mode:'deepseek',attempt:1,systemPrompt:skill,uiSelected:[],grammar:'',previousSource:'',failedSource:'',
+    Object.assign(c,{questionText:'',questionOptions:[],questionFallback:0,answerQuestion:null,mode:'deepseek',attempt:1,systemPrompt:skill,uiSelected:[],grammar:'',previousSource:'',failedSource:'',
       attempts:[],compiledVbc2:'',cancelRequested:false,completionBase:'',completionBaseVbc2:'',completionComposition:'',compositionJson:'',templateKinds:[],modelWrote:false,runId:0,prompt:'',refinePrompt:'',repairByEdit:true,genStartTime:Date.now(),generatedSource:'',generating:true});
     c.addToProgram=()=>{};c.currentRun=()=>null;c.startRun=()=>{};
     c.startAttemptOne=ask=>{c.pending=c.runAttempt(ask,'');};

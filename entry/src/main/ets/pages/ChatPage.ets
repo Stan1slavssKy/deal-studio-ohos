@@ -10,12 +10,16 @@ import { ensureCapabilities } from '../vera/VeraCapabilities'
 import { modelSupportNote } from '../vera/VeraEmbeddings'
 import { WidgetBuildContext, WidgetReference, recentWidgetConversation } from '../vera/VeraWidgetContext'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
-import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp } from '../vera/VeraChat'
+import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp, chatAgentRequest, recordChatAgent } from '../vera/VeraChat'
 import { AttemptStat, ReplyStats, costOf, formatUsd, formatMs, speedOf } from '../vera/VeraChatStats'
 import { chats, StoredChat, StoredMessage } from '../vera/ChatStore'
 import { store } from '../vera/ProjectStore'
 import { compileVeraSource } from '../vera/VeraCompiler'
-import { buildFromTemplates, TemplateBuild, BUILD_SCRATCH, BUILD_COMPLETE, BUILD_CANCELLED } from '../vera/VeraTemplatePipeline'
+import { TemplateBuild, BUILD_COMPLETE, BUILD_TEMPLATE } from '../vera/VeraTemplatePipeline'
+import { appAgentHost } from '../vera/agent/AgentAppHost'
+import { AgentQuestion } from '../vera/agent/AgentQuestions'
+import { QuestionCard } from '../components/QuestionCard'
+import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE, OUTCOME_NOT_BUILT } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 
 const APP_NONE: string = 'none'
@@ -45,6 +49,12 @@ class ChatMessage {
   previewVbc2: string = ''
   /** While building: what the builder is doing, shown in the bubble. Never saved. */
   buildStatus: string = ''
+  /** While building: a blocking question from the agent (agent/AgentQuestions.ets), its answers and the suggested one. Never saved. */
+  question: string = ''
+  questionOptions: string[] = []
+  questionFallback: number = 0
+  /** Answers the open question: an index, or null for its default. Never saved. */
+  answerQuestion: ((index: number | null) => void) | null = null
   /** Added under the streamed text by this page, so the next streamed piece does not wipe it. */
   beforeNote: string = ''
   source: string = ''
@@ -65,7 +75,7 @@ class ChatMessage {
   searchMs: number = 0
   widgetMs: number = 0
   attempts: AttemptStat[] = []
-  /** Experiment only (experiment/jev-template-select branch): see tryTemplateSelectForChat. */
+  /** Experiment only (experiment/jev-template-select branch): see noteBlocks. */
   templatePick: string = ''
 }
 
@@ -286,7 +296,18 @@ struct MessageBubble {
           .padding(12)
           .backgroundColor('#FFFFFF')
           .borderRadius(14)
-      } else if (this.msg.appState === APP_BUILDING && this.msg.previewVbc2.length === 0) {
+      }
+      if (this.msg.appState === APP_BUILDING && this.msg.question.length > 0) {
+        QuestionCard({ question: this.msg.question, options: this.msg.questionOptions, fallback: this.msg.questionFallback,
+          onPick: (index: number): void => {
+            let answer = this.msg.answerQuestion
+            this.msg.answerQuestion = null
+            this.msg.question = ''
+            if (answer !== null) { answer(index) }
+          } })
+          .constraintSize({ maxWidth: '92%' })
+      }
+      if (this.msg.appState === APP_BUILDING && this.msg.previewVbc2.length === 0) {
         Row({ space: 8 }) {
           LoadingProgress().width(18).height(18)
           Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Building a widget...')
@@ -343,7 +364,7 @@ struct MessageBubble {
       }
       // Experiment only (experiment/jev-template-select branch): survives
       // hilog's ring buffer getting overwritten by a busy widget's own
-      // logging -- see ChatMessage.templatePick and tryTemplateSelectForChat.
+      // logging -- see ChatMessage.templatePick and noteBlocks.
       if (this.showStats && this.msg.templatePick.length > 0) {
         Text('Jev: ' + this.msg.templatePick)
           .fontSize(11)
@@ -707,6 +728,7 @@ struct ChatPage {
   private startWidget(reply: ChatMessage, parsed: ParsedReply, references: WidgetReference[],
       context: WidgetBuildContext): void {
     context.brief = parsed.appDescription
+    context.request = parsed.appRequest
     if (parsed.mode === 'refine' || parsed.update) {
       let target: WidgetReference | undefined = parsed.update ? references[references.length - 1] :
         references.find((ref: WidgetReference): boolean => ref.messageId === parsed.targetMessageId)
@@ -742,22 +764,83 @@ struct ChatPage {
       try {
         await this.loadResources()
         logStep('load-resources', startedAt)
-        // The Jev template path (on by default, see VeraTemplateSelectFlag.ets). Never attempted on a
-        // refine (context.source non-empty): a revision asked for a change to an existing widget, not
-        // a generic replacement.
+        // The route (agent/VeraBuildRoute.ets): the agent, from the marker's request, and the blocks, from the
+        // description, in the route's order. What neither builds is reported in the bubble, not generated; only a
+        // refine of an existing widget, which the route does not take, goes to the model. The blocks are never attempted on a refine
+        // (context.source non-empty): a revision asked for a change to an existing widget, not a generic replacement.
         this.chatFallback = null
-        if (templateSelectEnabled() && settings.hasSelectorKey() && context.source.length > 0) {
-          msg.templatePick = 'skipped (refine)'
-        }
-        if (templateSelectEnabled() && settings.hasSelectorKey() && context.source.length === 0) {
-          let handled = await this.tryTemplateSelectForChat(msg, context)
-          if (handled === 'done') {
-            msg.widgetMs = Date.now() - startedAt
-            this.status = ''
-            this.scrollDown(true)
-            this.persist()
-            return
+        let route = new RouteRequest()
+        route.agent = chatAgentRequest(context)
+        if (templateSelectEnabled() && settings.hasSelectorKey()) {
+          if (context.source.length > 0) {
+            msg.templatePick = 'skipped (refine)'
+          } else {
+            route.blocksPrompt = context.brief.length > 0 ? context.brief : context.currentRequest
           }
+        }
+        context.composeTried = true
+        let host = appAgentHost((s: string): void => {
+          if (msg.buildStatus !== s) { msg.buildStatus = s }
+        }, (vbc2: string): void => {
+          if (msg.appState !== APP_BUILDING) { return }
+          if (!sawPreview) { sawPreview = true; logMark('widget-preview') }
+          msg.previewVbc2 = vbc2
+          this.scrollDown(true)
+        }, (): boolean => false, this.skillPrompt)
+        // A blocking question goes in the bubble of the widget it is for; an invalidated widget takes the default.
+        host.ask = (question: AgentQuestion): Promise<number | null> => new Promise<number | null>((resolve: (index: number | null) => void) => {
+          if (msg.appState !== APP_BUILDING) { resolve(null); return }
+          msg.questionOptions = question.options
+          msg.questionFallback = question.fallback
+          msg.answerQuestion = resolve
+          msg.question = question.text
+          this.scrollDown(true)
+        })
+        let outcome: RouteOutcome = await buildScreen(route, host)
+        msg.question = ''
+        msg.answerQuestion = null
+        let composed = new MiniApp()
+        if (outcome.agent !== null) { recordChatAgent(outcome.agent!, context, composed) }
+        if (outcome.blocks !== null) { this.noteBlocks(msg, context, outcome.blocks!, route.blocksPrompt) }
+        if (outcome.kind === OUTCOME_AGENT && msg.appState !== APP_FAILED) {
+          msg.attempts = composed.stats
+          msg.vbc2 = composed.vbc2
+          msg.source = composed.source
+          msg.originalRequest = context.originalRequest
+          msg.parentMessageId = context.parentMessageId
+          msg.appState = APP_READY
+          logMark('widget-ready')
+          msg.widgetMs = Date.now() - startedAt
+          msg.previewVbc2 = ''
+          msg.buildStatus = ''
+          this.scrollDown(true)
+          this.persist()
+          return
+        }
+        if (outcome.kind === OUTCOME_TEMPLATE) {
+          let build: TemplateBuild = outcome.blocks!
+          msg.vbc2 = build.vbc2
+          msg.source = build.source
+          msg.originalRequest = context.originalRequest
+          msg.parentMessageId = context.parentMessageId
+          msg.appState = APP_READY
+          logMark('widget-ready')
+          msg.attempts = []
+          msg.widgetMs = Date.now() - startedAt
+          this.status = ''
+          this.scrollDown(true)
+          this.persist()
+          return
+        }
+        if (outcome.kind === OUTCOME_NOT_BUILT && context.source.length === 0 && (route.agent !== null || route.blocksPrompt.length > 0)) {
+          msg.error = 'Not built: ' + outcome.reason
+          msg.appState = APP_FAILED
+          msg.widgetMs = Date.now() - startedAt
+          msg.previewVbc2 = ''
+          msg.buildStatus = ''
+          this.scrollDown(true)
+          this.persist()
+          return
         }
         let app: MiniApp = await buildMiniApp(this.skillPrompt, context, (s: string): void => {
           if (msg.buildStatus !== s) { msg.buildStatus = s }
@@ -804,20 +887,11 @@ struct ChatPage {
   }
 
   /**
-   * The Jev template path for a widget request (VeraTemplatePipeline.ets). Answers 'done' when a
-   * composed screen that compiles, runs and covers the request became the widget (msg is already
-   * filled in), 'complete' when the composition is the right base but the model has to finish it
-   * (context.source now holds it, and chatFallback keeps it for when the model cannot), and 'none'
-   * when the widget has to be built from scratch, with msg and context untouched.
+   * What the blocks (VeraTemplatePipeline.ets) answered for a widget, in msg.templatePick. A composition that
+   * is the right base but not enough becomes the program the model finishes (context.source), and chatFallback
+   * keeps it for when the model cannot.
    */
-  private async tryTemplateSelectForChat(msg: ChatMessage, context: WidgetBuildContext): Promise<string> {
-    let prompt = context.brief.length > 0 ? context.brief : context.currentRequest
-    let build: TemplateBuild = await buildFromTemplates(prompt, 'deepseek', (s: string): void => { this.status = s },
-      (): boolean => false)
-    if (build.action === BUILD_SCRATCH || build.action === BUILD_CANCELLED) {
-      msg.templatePick = build.note + ' (generated normally)'
-      return 'none'
-    }
+  private noteBlocks(msg: ChatMessage, context: WidgetBuildContext, build: TemplateBuild, prompt: string): void {
     if (build.action === BUILD_COMPLETE) {
       msg.templatePick = build.note + ' (completing)'
       context.source = build.source
@@ -825,17 +899,12 @@ struct ChatPage {
         'theme, and edit it so that everything the request asks for works.'
       this.chatFallback = build
       this.status = build.status
-      return 'complete'
+    } else if (build.action === BUILD_TEMPLATE) {
+      msg.templatePick = 'composed: ' + build.note
+      this.status = build.status
+    } else {
+      msg.templatePick = build.note + ' (generated normally)'
     }
-    msg.templatePick = 'composed: ' + build.note
-    msg.vbc2 = build.vbc2
-    msg.source = build.source
-    msg.originalRequest = context.originalRequest
-    msg.parentMessageId = context.parentMessageId
-    msg.appState = APP_READY
-    msg.attempts = []
-    this.status = build.status
-    return 'done'
   }
 
   build() {
