@@ -389,7 +389,21 @@ async function curatedSdkAlso(need: string): Promise<SdkEntry[]> {
   return out
 }
 
-export async function discoveryToolResult(name: string, need: string, round: number = 0): Promise<string> {
+/** The embedding ranking, then what the keyword ranking adds that it does not have (by call): both, for `both`. */
+function mergedIntents(embedded: IntentEntry[] | null, token: IntentEntry[], both: boolean): IntentEntry[] {
+  if (embedded === null) { return token }
+  if (!both) { return embedded }
+  let out: IntentEntry[] = embedded.slice()
+  for (let e of token) { if (!out.some((o: IntentEntry): boolean => o.callHint === e.callHint)) { out.push(e) } }
+  return out
+}
+
+/**
+ * `both` shows what the keyword ranking finds beside the embedding one (the agent's lookups, agent/AgentAppHost.ets): the
+ * embedding ranking alone once left out MeeTime's SendTextMessage, which the keywords had first, for "sends a text message
+ * to the partner's number".
+ */
+export async function discoveryToolResult(name: string, need: string, round: number = 0, both: boolean = false): Promise<string> {
   let startedAt = Date.now()
   if (name === INTENT_TOOL_NAME) {
     let tokenResults = findIntentFunction(need, INTENT_SEARCH_LIMIT)
@@ -399,7 +413,7 @@ export async function discoveryToolResult(name: string, need: string, round: num
     let embedMs = Date.now() - embedStartedAt
     console.info('VERA-INTENT-EMBED-CMP need="' + need + '" token=' + intentKeysList(tokenResults) +
       ' embedding=' + (embedResults === null ? 'n/a' : intentKeysList(embedResults)))
-    let results = embedResults !== null ? embedResults : tokenResults
+    let results = mergedIntents(embedResults, tokenResults, both)
     console.info('VERA-INTENT-TOOL round=' + round.toString() + ' need="' + need +
       '" found=' + results.length.toString() + ' via=' + (embedResults !== null ? 'embedding' : 'token') +
       (results.length > 0 ? ' top=' + results[0].kind + ':' + results[0].name : ''))

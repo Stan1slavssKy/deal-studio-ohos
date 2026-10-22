@@ -4,7 +4,8 @@
 //
 //   node tools/vera-harness/agent-run.js [-o OUTDIR] [-p PROMPTS.tsv] [-w] [-r] [-j JOBS] [label ...]
 //
-// -w builds each as a chat widget. -r runs the whole route (agent/VeraBuildRoute.ets): the agent, then the blocks
+// Each written hole goes to OUTDIR/<label>/holes.jsonl, which tools/vera-harness/hole-report.py groups. -w builds each as a
+// chat widget. -r runs the whole route (agent/VeraBuildRoute.ets): the agent, then the blocks
 // (VeraTemplatePipeline.ets, with Jev's section pick and the content call made here), then a section written for what
 // the blocks' layout lacks; result.json then says which way it went (route). Prompts come from tools/vera-bench/prompts.tsv unless -p names another
 // label<TAB>prompt file. Each run writes sketch.json, jev-answer.json (when Jev was asked), program.vera and
@@ -96,6 +97,8 @@ function host(log) {
   calls.hole = (system, user) => deepseek(system, user, 500, false)
   h.fillBlocks = request => fillBlocksWith(request, calls)
   h.language = language
+  // Every written hole and how it ended (agent/AgentHole.ets), for tools/vera-harness/hole-report.py.
+  h.onHole = r => (log.holes = log.holes || []).push(Object.assign({}, r))
   // AGENT_ANSWER=other picks an answer other than the suggested one, to exercise drawing the plan again; else the default.
   h.ask = async q => process.env.AGENT_ANSWER === 'other' ? (q.fallback === 0 ? 1 : 0) : null
   h.askCode = async (system, user, budget, think) => { const reply = await deepseek(system, user, budget, false, think); (log.code = log.code || []).push(reply); return reply }
@@ -122,6 +125,7 @@ async function one([label, prompt]) {
   if (c.sketch) fs.writeFileSync(path.join(dir, 'sketch.json'), c.sketch)
   if (log.jevAnswer) fs.writeFileSync(path.join(dir, 'jev-answer.json'), log.jevAnswer)
   if (log.code) fs.writeFileSync(path.join(dir, 'custom-replies.txt'), log.code.join('\n\n======== next attempt ========\n\n'))
+  fs.writeFileSync(path.join(dir, 'holes.jsonl'), (log.holes || []).map(h => JSON.stringify(Object.assign({label}, h)) + '\n').join(''))
   fs.writeFileSync(path.join(dir, 'program.vera'), c.source || '')
   const fill = r.blockFill
   const result = {label, prompt, widget, served: r.vbc2.length > 0, note: r.note, errors: r.errors, blocks: r.blocks,

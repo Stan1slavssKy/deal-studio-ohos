@@ -3354,9 +3354,14 @@ export async function askJev(body: string, apiKey: string): Promise<string> {
       connectTimeout: 5000,
       readTimeout: 15000
     })
-    if ((response.responseCode as number) !== 200) { return '' }
+    if ((response.responseCode as number) !== 200) {
+      console.warn('VERA-JEV http ' + (response.responseCode as number).toString() + ' bytes=' + body.length.toString() + ' ' +
+        String(response.result).substring(0, 300))
+      return ''
+    }
     return response.result as string
-  } catch (_e) {
+  } catch (e) {
+    console.warn('VERA-JEV failed bytes=' + body.length.toString() + ': ' + (e as Error).message)
     return ''
   } finally {
     client.destroy()

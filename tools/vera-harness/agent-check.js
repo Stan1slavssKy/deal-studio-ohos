@@ -466,6 +466,8 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     let writes = 0, lookups = 0
     host.askCode = async () => { writes++; return '<cannot>This phone does not let apps set alarms.</cannot>' }
     host.lookup = async () => { lookups++; return JSON.stringify({results: []}) }
+    const recorded = []
+    host.onHole = r => recorded.push(r)
     const plan = () => {
       const p = new P.ScreenPlan()
       p.components.push(new P.PlanComponent(P.FILL_PART, null, new Map()))
@@ -485,6 +487,11 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     whole.addToWrite('a', 'set an alarm (the person taps Set)', true)
     assert.match((await writeHole(whole, 'alarm', [], host)).failed, /known from an earlier hole/)
     assert.equal(writes, 1)
+    // Each hole is recorded with how it ended, for the report of what recurs (hole-report.py).
+    assert.deepEqual(recorded.map(r => r.outcome), ['reported', 'known'])
+    assert.deepEqual(recorded[0].needs, ['set an alarm (the person taps Set)'])
+    assert.deepEqual(recorded[0].phone, [true])
+    assert.equal(recorded[0].why, 'This phone does not let apps set alarms.')
   }
   // Jev's pick of sections starts with the agent's plan, not after it, and the blocks use that pick, not a second one.
   {

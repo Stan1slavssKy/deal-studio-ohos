@@ -4,13 +4,38 @@
  * that fills them. Whichever way the plan was made -- the agent's sketch or the blocks' layout -- it is filled the same way.
  */
 
-import { AgentHost } from './AgentHost'
+import { AgentHost, HoleRecord } from './AgentHost'
 import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
-import { FragmentSpec } from '../VeraTemplates'
+import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED } from '../ScreenPlan'
 
+const OUTCOME_WRITTEN: string = 'written'
+const OUTCOME_PARTIAL: string = 'partial'
+const OUTCOME_REPORTED: string = 'reported'
+const OUTCOME_KNOWN: string = 'known'
+
+function recordOf(plan: ScreenPlan, prompt: string, slots: PlanSlot[], written: CustomResult, outcome: string): HoleRecord {
+  let r = new HoleRecord()
+  r.prompt = prompt
+  r.origin = plan.origin
+  r.needs = slots.map((s: PlanSlot): string => s.need)
+  r.phone = slots.map((s: PlanSlot): boolean => s.phone)
+  r.outcome = outcome
+  r.attempts = written.attempts
+  r.thought = written.thought
+  r.ms = written.ms
+  r.missed = written.missed
+  r.why = written.cannot.length > 0 ? written.cannot : written.failed
+  let s = written.section
+  if (s !== null) {
+    r.code = s.supportClass + '\n' + s.stateFields.map((f: StateFieldSpec): string => f.name + ': ' + f.type).join('\n') +
+      '\n' + s.functions + '\n' + s.viewBlock
+  }
+  return r
+}
+
 /** How much of each lookup's answer the writer is shown. */
-const LOOKUP_CHARS: number = 4000
+const LOOKUP_CHARS: number = 8000
 
 /** Text as it goes between the quotes of a VERA string literal: no quotes, backslashes or line breaks. */
 function literal(text: string): string {
@@ -66,6 +91,7 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
       let reported = new CustomResult()
       reported.cannot = why
       reported.failed = 'custom section cannot: ' + why + ' (known from an earlier hole)'
+      host.onHole(recordOf(plan, prompt, known, reported, OUTCOME_KNOWN))
       return reported
     }
   }
@@ -92,8 +118,13 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
     if (text.length > 0) { found.push('For "' + s.need + '":\n' + text.substring(0, LOOKUP_CHARS)) }
   }
   asked.phone = found.join('\n\n')
+  let whole = asked.whole
   let written = await writeSection(asked, host.language, host.askCode!)
   if (written.cannot.length > 0) { for (let s of slots) { if (s.phone) { host.cannot.set(s.need, written.cannot) } } }
+  let record = recordOf(plan, prompt, slots, written, written.section === null ? OUTCOME_REPORTED :
+    (written.missed.length > 0 ? OUTCOME_PARTIAL : OUTCOME_WRITTEN))
+  record.whole = whole
+  host.onHole(record)
   if (written.section !== null) {
     plan.components.push(new PlanComponent(FILL_HOLE, written.section, new Map<string, string>()))
     let at = plan.components.length - 1

@@ -43,6 +43,31 @@ export async function defaultBlockFill(request: BlockRequest): Promise<BlockFill
   return fill
 }
 
+/**
+ * What one hole was and how it ended, for the record (AgentHost.onHole): holes that recur across requests are what the
+ * catalogue should grow -- a need written over and over is a block waiting to be made.
+ */
+export class HoleRecord {
+  prompt: string = ''
+  /** 'sketch' or 'layout': the plan the hole was in. */
+  origin: string = ''
+  /** The whole screen as the hole. */
+  whole: boolean = false
+  needs: string[] = []
+  /** For each need: something the phone or another app does. */
+  phone: boolean[] = []
+  /** written: did every need; partial: served, missing some; reported: a notice in its place; known: refused by an earlier hole. */
+  outcome: string = ''
+  attempts: number = 0
+  thought: boolean = false
+  ms: number = 0
+  missed: string[] = []
+  /** The writer's sentence when it said it cannot, or why it failed. */
+  why: string = ''
+  /** The section as written: fields, functions and view. */
+  code: string = ''
+}
+
 export class AgentHost {
   /** The plan: DeepSeek with no thinking, one JSON object. */
   askPlan: SketchAsk = async (_system: string, _user: string, _onText: (soFar: string) => void, _think: boolean): Promise<string | null> => null
@@ -71,6 +96,8 @@ export class AgentHost {
    */
   cannot: Map<string, string> = new Map<string, string>()
   looked: Map<string, string> = new Map<string, string>()
+  /** Every written hole and how it ended, for the record (the app's trace, the host runner's log). */
+  onHole: (record: HoleRecord) => void = (_record: HoleRecord): void => {}
   /** True once the person has asked to stop. */
   cancelled: () => boolean = (): boolean => false
 }
