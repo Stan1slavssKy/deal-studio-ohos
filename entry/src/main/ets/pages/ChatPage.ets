@@ -19,7 +19,7 @@ import { TemplateBuild, BUILD_COMPLETE, BUILD_TEMPLATE } from '../vera/VeraTempl
 import { appAgentHost } from '../vera/agent/AgentAppHost'
 import { AgentQuestion } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
-import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE } from '../vera/agent/VeraBuildRoute'
+import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE, OUTCOME_NOT_BUILT } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 
 const APP_NONE: string = 'none'
@@ -756,7 +756,8 @@ struct ChatPage {
         await this.loadResources()
         logStep('load-resources', startedAt)
         // The route (agent/VeraBuildRoute.ets): the agent, from the marker's request, and the blocks, from the
-        // description, in the route's order; then generation. The blocks are never attempted on a refine
+        // description, in the route's order. What neither builds is reported in the bubble, not generated; only a
+        // refine of an existing widget, which the route does not take, goes to the model. The blocks are never attempted on a refine
         // (context.source non-empty): a revision asked for a change to an existing widget, not a generic replacement.
         this.chatFallback = null
         let route = new RouteRequest()
@@ -818,6 +819,16 @@ struct ChatPage {
           msg.attempts = []
           msg.widgetMs = Date.now() - startedAt
           this.status = ''
+          this.scrollDown(true)
+          this.persist()
+          return
+        }
+        if (outcome.kind === OUTCOME_NOT_BUILT && context.source.length === 0 && (route.agent !== null || route.blocksPrompt.length > 0)) {
+          msg.error = 'Not built: ' + outcome.reason
+          msg.appState = APP_FAILED
+          msg.widgetMs = Date.now() - startedAt
+          msg.previewVbc2 = ''
+          msg.buildStatus = ''
           this.scrollDown(true)
           this.persist()
           return

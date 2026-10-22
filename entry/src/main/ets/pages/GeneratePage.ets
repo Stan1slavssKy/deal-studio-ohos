@@ -581,7 +581,7 @@ struct GeneratePage {
     // JevSelector.ets is unchanged and still callable; nothing here calls it.
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
     // A new screen goes through the route (agent/VeraBuildRoute.ets): the agent and the blocks in the route's
-    // order, and generation only for what neither serves -- with the agent's plan when it made one.
+    // order; what neither builds is reported as not built, not generated.
     // Not on top of a saved program: with previousSource set this is a change to it (the model edits it).
     let route = new RouteRequest()
     route.mode = this.mode
@@ -628,11 +628,12 @@ struct GeneratePage {
       this.startAttemptOne(userPrompt, 'Completing template')
       return
     }
-    // The preview stays up while the program is generated; with the plan, the finished program keeps the
-    // inputs and values the preview showed.
-    if (outcome.blocks !== null && outcome.blocks!.status.length > 0) { this.status = outcome.blocks!.status }
-    if (this.previewVbc2.length > 0) { this.previewNote = 'Preview from the sketch — writing the app...' }
-    this.startAttemptOne(userPrompt, 'Generating', outcome.plan)
+    // Nothing built it: no generation from scratch, the reason is shown, to be seen and fixed.
+    this.totalMs = Date.now() - this.genStartTime
+    this.generating = false
+    this.status = 'Not built (' + (this.totalMs / 1000).toFixed(1) + ' s): ' + outcome.reason
+    if (this.previewVbc2.length > 0) { this.previewNote = 'Preview from the sketch only — the app was not built' }
+    this.traceEnd('not built: ' + outcome.reason)
   }
 
   private traceAgent(result: AgentResult): void {

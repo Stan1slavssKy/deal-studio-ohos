@@ -1,7 +1,7 @@
 /**
  * Which builder makes a new screen, the same for the Generate screen and the chat: the blocks
- * (VeraTemplatePipeline.ets) and the agent (VeraAgent.ets), in the order set below, and generation only when
- * neither serves. The caller turns the outcome into its own state; this file decides nothing about pages.
+ * (VeraTemplatePipeline.ets) and the agent (VeraAgent.ets), in the order set below. When neither serves, the
+ * screen is not built and the outcome says why: there is no generation from scratch after the route. The caller turns the outcome into its own state; this file decides nothing about pages.
  *
  * A composition the blocks hand on to be completed -- the right sections, but the request needs more than they do -- is
  * kept until the agent has had its turn, so the agent is always tried first. Then its layout stays and what it lacks is
@@ -31,8 +31,11 @@ export const OUTCOME_AGENT: string = 'agent'
 export const OUTCOME_TEMPLATE: string = 'template'
 /** The blocks' program is the base for the model to finish (`blocks.source`), and the fallback if it cannot. */
 export const OUTCOME_COMPLETE: string = 'complete'
-/** Neither served: generate, with `plan` when there is one. */
-export const OUTCOME_SCRATCH: string = 'scratch'
+/**
+ * Nothing served: the screen is not built, and `reason` says why. There is no generation from scratch after the route:
+ * what the agent cannot build is shown as an error, to be seen and fixed.
+ */
+export const OUTCOME_NOT_BUILT: string = 'not-built'
 export const OUTCOME_CANCELLED: string = 'cancelled'
 
 export const ORDER_AGENT_FIRST: string = 'agent-first'
@@ -58,13 +61,13 @@ export class RouteRequest {
 }
 
 export class RouteOutcome {
-  kind: string = OUTCOME_SCRATCH
+  kind: string = OUTCOME_NOT_BUILT
   /** The agent's answer when it ran, served or not. */
   agent: AgentResult | null = null
   /** The blocks' answer when they ran, served or not. */
   blocks: TemplateBuild | null = null
-  /** The agent's plan for a generation to keep to; '' when there is none. */
-  plan: string = ''
+  /** Why nothing was built, for the person to see: what the agent and the blocks said; '' when something was. */
+  reason: string = ''
   /** What writing the blocks' missing part did, when the blocks asked for one; null otherwise. */
   hole: CustomResult | null = null
 }
@@ -173,7 +176,6 @@ export async function buildScreen(request: RouteRequest, host: AgentHost): Promi
     if (step === 'agent' && request.agent !== null) {
       let result = await runAgent(request.agent!, host)
       outcome.agent = result
-      outcome.plan = result.plan
       if (host.cancelled()) { outcome.kind = OUTCOME_CANCELLED; return outcome }
       if (result.vbc2.length > 0) { outcome.kind = OUTCOME_AGENT; return outcome }
     }
@@ -199,6 +201,19 @@ export async function buildScreen(request: RouteRequest, host: AgentHost): Promi
     return outcome
   }
   if (host.cancelled()) { outcome.kind = OUTCOME_CANCELLED; return outcome }
-  outcome.kind = outcome.blocks !== null && outcome.blocks!.action === BUILD_COMPLETE ? OUTCOME_COMPLETE : OUTCOME_SCRATCH
+  if (outcome.blocks !== null && outcome.blocks!.action === BUILD_COMPLETE) {
+    outcome.kind = OUTCOME_COMPLETE
+    return outcome
+  }
+  outcome.kind = OUTCOME_NOT_BUILT
+  outcome.reason = notBuiltReason(outcome)
   return outcome
+}
+
+/** What the agent and the blocks said, for a screen neither built. */
+function notBuiltReason(outcome: RouteOutcome): string {
+  let parts: string[] = []
+  if (outcome.agent !== null) { parts.push('agent: ' + (outcome.agent!.note.length > 0 ? outcome.agent!.note : 'no answer')) }
+  if (outcome.blocks !== null) { parts.push('blocks: ' + (outcome.blocks!.note.length > 0 ? outcome.blocks!.note : outcome.blocks!.action)) }
+  return parts.length > 0 ? parts.join(' | ') : 'nothing was tried'
 }

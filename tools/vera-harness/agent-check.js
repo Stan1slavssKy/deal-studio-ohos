@@ -199,13 +199,13 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(o.kind, route.OUTCOME_AGENT)
     assert.equal(o.blocks, null)
   }
-  // The agent refuses: the blocks run next, and with neither serving it is scratch with the agent's plan.
+  // The agent refuses: the blocks run next, and with neither serving the screen is not built, with what each said.
   {
     const {host} = replayHost('tip', {jev: ''})
     const o = await route.buildScreen(routeRequest('tip calculator', true), host)
-    assert.equal(o.kind, route.OUTCOME_SCRATCH)
+    assert.equal(o.kind, route.OUTCOME_NOT_BUILT)
     assert.notEqual(o.blocks, null)
-    assert.match(o.plan, /^A sketch of this app/)
+    assert.match(o.reason, /^agent: .*\| blocks: /)
   }
   // The blocks hand on the right sections for a request that needs more than they do: the layout stays, and what it
   // lacks is written into it as one section the model writes and Jev reads against the need, before any generation.
@@ -377,16 +377,16 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.match(asks[0].user, /your section is the whole screen/)
     assert.ok(o.agent.screen.slots.length > 1 && o.agent.screen.slots.every(s => s.fill === 'hole'))
     assert.match(o.agent.source, /ui\.Header\(/)
-    // Jev does not read it as doing what the sketch says: generation, as before.
+    // Jev does not read it as doing what the sketch says: not built.
     ;({host} = wholeHost(0.2))
     o = await route.buildScreen(routeRequest('tip calculator', false), host)
-    assert.equal(o.kind, route.OUTCOME_SCRATCH)
+    assert.equal(o.kind, route.OUTCOME_NOT_BUILT)
     assert.match(o.agent.note, /whole screen: custom section does not do/)
-    // Switched off: straight to generation.
+    // Switched off: not built, without asking the writer.
     route.setWholeScreenEnabled(false)
     ;({host, asks} = wholeHost(0.9))
     o = await route.buildScreen(routeRequest('tip calculator', false), host)
-    assert.equal(o.kind, route.OUTCOME_SCRATCH)
+    assert.equal(o.kind, route.OUTCOME_NOT_BUILT)
     assert.equal(asks.length, 0)
     route.setWholeScreenEnabled(true)
   }
@@ -405,7 +405,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
   {
     const {host, seen} = replayHost('tip')
     const o = await route.buildScreen(new route.RouteRequest(), host)
-    assert.equal(o.kind, route.OUTCOME_SCRATCH)
+    assert.equal(o.kind, route.OUTCOME_NOT_BUILT)
     assert.equal(seen.plans, 0)
   }
   // Cancelled before it starts: nothing is asked.

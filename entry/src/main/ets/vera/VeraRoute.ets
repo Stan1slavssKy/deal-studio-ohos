@@ -88,14 +88,15 @@ export function vetoWords(tag: string): string {
 export function routeLabel(info: RouteInfo): string {
   if (info.route === ROUTE_BLOCKS) { return info.searched ? 'Blocks: web search + the model fills in text' : 'Blocks: the model only fills in text' }
   if (info.route === ROUTE_BLOCKS_MODEL) { return 'Blocks, then the model finishes it' }
-  return 'From scratch: the model writes it'
+  // The blocks did not build it: the agent did, or nothing did (there is no generation from scratch after the route).
+  return 'Not from blocks'
 }
 
 /** The route in one or two words, for a metrics tile. */
 export function routeShort(info: RouteInfo): string {
   if (info.route === ROUTE_BLOCKS) { return 'Blocks' }
   if (info.route === ROUTE_BLOCKS_MODEL) { return 'Blocks + model' }
-  return 'Scratch'
+  return 'No blocks'
 }
 
 /** The second look in one or two words, for a metrics tile. */
