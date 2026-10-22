@@ -45,8 +45,7 @@ const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE 
 
 /** What <cannot> holds: it is shown to the person on the screen, in place of what could not be built. */
 const CANNOT_FORM: string = 'one short sentence for the person using the app, in plain words about their phone and its apps: ' +
-  'what this app cannot do, and why (for example: This phone does not let apps set alarms in the Clock app.). Never mention ' +
-  'the language, the section, sdk.call or code'
+  'what this app cannot do, and why. Never mention the language, the section, sdk.call or code'
 
 /** The rule for phone calls: none, or only the targets the phone's lookups found. */
 function phoneRule(phone: string): string {
@@ -60,6 +59,8 @@ function phoneRule(phone: string): string {
     'Its answer handler shows what came back: an answer starting with "declined" or "error" is a failure, anything else succeeded.\n' +
     '- A function that opens another app with the action ready for the person to confirm (a message filled in, a contact ' +
     'form, a route) does the job: use it, and say on the screen that the person confirms it there.\n' +
+    '- Before answering <cannot>, go through the phone functions found for each need: when one does it -- even by parts, ' +
+    'such as audio samples written to a renderer, or the flashlight switched on and off -- write the section with it.\n' +
     '- If none of the phone functions found does what is needed, or it needs something the phone cannot give a program ' +
     '(a camera, a live feed, the person\'s location), answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it, never pretend a call happened, ' +
     'never call a target that is not listed.\n'
