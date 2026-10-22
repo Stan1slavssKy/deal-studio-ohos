@@ -12,6 +12,7 @@
 
 import resourceManager from '@ohos.resourceManager'
 import fs from '@ohos.file.fs'
+import util from '@ohos.util'
 import nativeLlama from 'libllama.so'
 
 export class LlamaConfig {
@@ -211,14 +212,14 @@ export class LlamaEngine {
   }
 }
 
+/**
+ * A bundled text file, decoded as the UTF-8 it is. It used to be read a byte per character, which turned every character
+ * outside ASCII into two or three of Latin-1: the Chinese parameter descriptions of 444 of the 682 Celia intents reached
+ * the model as mojibake ("èç³»äººid" for 联系人id).
+ */
 export async function loadRawfileText(mgr: resourceManager.ResourceManager, name: string): Promise<string> {
   let data = await mgr.getRawFileContent(name)
-  let arr = new Uint8Array(data)
-  let result = ''
-  for (let i = 0; i < arr.length; i++) {
-    result += String.fromCharCode(arr[i])
-  }
-  return result
+  return util.TextDecoder.create('utf-8').decodeToString(new Uint8Array(data))
 }
 
 export const engine: LlamaEngine = new LlamaEngine()

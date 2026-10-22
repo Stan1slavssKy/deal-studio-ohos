@@ -58,6 +58,8 @@ function phoneRule(phone: string): string {
   return '- What the phone or another app must do, the section does with sdk.call from a handler, calling ONLY targets from ' +
     '"Phone functions found" in the request, copied exactly, with the parameters they show, values from the screen\'s state. ' +
     'Its answer handler shows what came back: an answer starting with "declined" or "error" is a failure, anything else succeeded.\n' +
+    '- A function that opens another app with the action ready for the person to confirm (a message filled in, a contact ' +
+    'form, a route) does the job: use it, and say on the screen that the person confirms it there.\n' +
     '- If none of the phone functions found does what is needed, or it needs something the phone cannot give a program ' +
     '(a camera, a live feed, the person\'s location), answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it, never pretend a call happened, ' +
     'never call a target that is not listed.\n'

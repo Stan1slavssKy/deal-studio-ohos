@@ -66,6 +66,8 @@ export class HoleRecord {
   why: string = ''
   /** The section as written: fields, functions and view. */
   code: string = ''
+  /** The phone functions the writer was shown for the phone needs (the lookups' answers), '' for none. */
+  lookup: string = ''
 }
 
 export class AgentHost {

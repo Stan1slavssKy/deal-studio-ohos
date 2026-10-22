@@ -42,6 +42,7 @@ export function appAgentHost(status: (text: string) => void, preview: (vbc2: str
     fields['missed'] = r.missed
     fields['why'] = r.why
     fields['code'] = r.code
+    fields['lookup'] = r.lookup
     trace('hole', fields)
   }
   host.status = status

@@ -124,6 +124,7 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   let record = recordOf(plan, prompt, slots, written, written.section === null ? OUTCOME_REPORTED :
     (written.missed.length > 0 ? OUTCOME_PARTIAL : OUTCOME_WRITTEN))
   record.whole = whole
+  record.lookup = asked.phone
   host.onHole(record)
   if (written.section !== null) {
     plan.components.push(new PlanComponent(FILL_HOLE, written.section, new Map<string, string>()))
