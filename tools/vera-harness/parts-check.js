@@ -64,6 +64,50 @@ for (const label of fs.readdirSync(path.join(__dirname, 'compose'))) {
   }
 }
 
+// Parts publish what they hold as ports (name and type, as a catalogue block's do), so a section that reads a name finds it
+// without being told: what the person sets and the list's entries and count always; the figures only when a section on the
+// screen reads a port, as functions of the state (they are locals of view() otherwise).
+{
+  const tip = compositionOf('tip')
+  const published = comp => c.compositionParts(comp).flatMap(p => p.ports.map(x => [p.kind, x.dir, x.name, x.type]))
+  assert.deepEqual(published(tip).map(x => x.join(':')), ['inputs:writes:tipPercent:number', 'inputs:writes:people:number'])
+  assert.ok(!/function port_/.test(c.assembleProgram(tip)), 'no section reads: no figure functions')
+  assert.deepEqual(published(compositionOf('expenses')).map(x => x.join(':')),
+    ['list:writes:entries:LogEntry[]', 'list:writes:count:number'])
+  assert.ok(published(compositionOf('pill')).some(x => x.join(':') === 'inputs:writes:repeatsDaily:boolean'))
+  // A choice is its option's index and typed digits are text: neither is published as a number under the input's name.
+  assert.ok(!published(compositionOf('bmi')).some(x => x[2] === 'heightSquared'))
+
+  // A value named like a port number_strip reads: the section is bound to the part's figure, and the program runs.
+  const rename = text => text.split('perPerson').join('average')
+  const sketch = c.parseSketch(rename(fixture('tip', 'sketch.json')))
+  const comp = c.readComposition(rename(fixture('tip', 'jev-answer.json')), sketch, false)
+  comp.blocks.push('number_strip')
+  const source = c.assembleProgram(comp)
+  assert.match(source, /function port_average\(state: AppState\): number \{/)
+  assert.match(source, /ui\.NumberStat\("default", "Average", port_average\(state\), cur,/)
+  // A name nothing publishes keeps the section's own fallback.
+  assert.match(source, /ui\.NumberStat\("accent", "Total", 0, cur,/)
+  runs(source)
+  const plan = c.screenPlan(comp)
+  assert.ok(plan.components.some(x => x.spec && x.spec.kind === 'figures' && x.spec.ports.some(q => q.name === 'average')))
+}
+
+// A total of minutes over the list's entries is a number with its unit, not a time: 150 min, not 2:30:00 (nor 0:00 when empty).
+{
+  const sketch = JSON.parse(fixture('expenses', 'sketch.json'))
+  sketch.values[0].format = 'minutes'; sketch.values[0].unit = ''; sketch.list.measure = 'minutes'; sketch.list.unit = ''
+  const comp = c.readComposition(fixture('expenses', 'jev-answer.json'), c.parseSketch(JSON.stringify(sketch)))
+  const source = c.assembleProgram(comp)
+  assert.match(source, /ui\.NumberStat\("default", "[^"]*", totalSpent, "", " min", 1, "", "chart", 0\)/)
+  assert.doesNotMatch(source, /durationToString/)
+  assert.match(source, /ui\.formatNumber\(e\.amount, 0\) \+ " min"/, 'the entries too: 30 min, not 30:00')
+  runs(source)
+  // The same number from a countdown stays a time: it is on a clock.
+  const egg = compositionOf('egg')
+  assert.match(c.assembleProgram(egg), /durationToString/)
+}
+
 // Next to catalogue blocks: a composed screen with each block in one program, then with a checklist and a note, each
 // keeping its own state -- their names and ours never meet: our view is one block, as each of theirs is.
 {

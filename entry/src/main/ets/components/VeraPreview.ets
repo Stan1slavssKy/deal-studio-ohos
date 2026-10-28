@@ -2308,6 +2308,8 @@ export struct VeraPreview {
               // Two lines of fixed size and a fixed box, so every figure in a row sits on one baseline
               // and neighbouring labels are the same size; a longer label is cut, not shrunk.
               .maxLines(2)
+              // Words are not torn apart in a narrow column ("Compoundin|g factor"): a long one is cut with an ellipsis.
+              .wordBreak(WordBreak.NORMAL)
               .height(Math.round(this.t().sizeCaption * 2.6))
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }

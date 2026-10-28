@@ -41,7 +41,11 @@ const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE 
   'for every other field of the state kept as it is: return {c_count: state.c_count + 1__PASSTHROUGH__};\n' +
   '- The view statements run inside view(state): they may read any state field, but the local variables of the program\'s ' +
   'other sections are not visible there.\n' +
-  '- Do not repeat, change or restyle anything the program already has. Do what the section must do, completely.\n'
+  '- Do not repeat, change or restyle anything the program already has. Do what the section must do, completely.\n' +
+  '- If the program already has a clock (Start, Stop, Reset buttons, a time shown) or a list of entries with its own Add button, ' +
+  'the section draws no clock, no Start/Stop/Reset buttons and no second list of the same entries: it works with that state and shows only what is new.\n' +
+  '- A message about an empty or wrong field (such as "Enter a task name") is shown only after the person has tried to add it, never while the field is still untouched.\n' +
+  '- Show each piece of information once: no heading and caption that say the same thing, and no second view (a table, "splits") of entries the program already lists in rows.\n'
 
 /** What <cannot> holds: it is shown to the person on the screen, in place of what could not be built. */
 const CANNOT_FORM: string = 'one short sentence for the person using the app, in plain words about their phone and its apps: ' +
@@ -116,6 +120,11 @@ export class CustomRequest {
   compose: (section: FragmentSpec | null) => string = (_section: FragmentSpec | null): string => ''
   /** Other things the writer is told: the fixed numbers the plan names. */
   facts: string[] = []
+  /** What the screen's own parts already hold, in words: the section uses it and makes none of its own. */
+  parts: string[] = []
+  /** The screen has a clock / a list of entries of its own: a section that makes another is asked again. */
+  ownsClock: boolean = false
+  ownsList: boolean = false
   /** The phone's functions found for the needs that are something the phone does (the lookups' answers); '' for none. */
   phone: string = ''
   /** Jev, to read a section that compiles and runs against the needs; null serves it unread. */
@@ -125,7 +134,7 @@ export class CustomRequest {
 }
 
 /** Jev reads the section against each need: a section that only says it cannot, or does something else, does not count. */
-const DOES_ABOVE: number = 0.5
+export const DOES_ABOVE: number = 0.5
 
 /** The Jev request: does the section, as written, do each need. */
 export function verifyRequest(request: CustomRequest, reply: string): string {
@@ -207,6 +216,26 @@ export function declinedNeeds(reply: string, needs: string[]): Map<string, strin
   return out
 }
 
+/**
+ * What the section makes again that the screen's parts already hold: its own clock or its own list of entries. '' when it makes
+ * neither. Such a section is asked for again, told to use the parts' state: two clocks or two lists on one screen are one too many.
+ */
+export function repeats(section: FragmentSpec, request: CustomRequest): string {
+  let text = section.viewBlock + '\n' + section.functions
+  if (request.ownsClock) {
+    let own = section.stateFields.some((f: StateFieldSpec): boolean => f.name.toLowerCase().indexOf('elapsed') >= 0 || f.name.toLowerCase().indexOf('running') >= 0)
+    if (own || text.indexOf('ui.Ticker(') >= 0) {
+      return 'The program already has a clock (state.elapsedMs, state.running) with its own Start, Stop and Reset buttons and Ticker. ' +
+        'Do not draw another clock, Ticker or Start/Stop/Reset buttons and do not keep elapsed or running state of your own: read state.elapsedMs.'
+    }
+  }
+  if (request.ownsList && section.stateFields.some((f: StateFieldSpec): boolean => f.type.endsWith('[]'))) {
+    return 'The program already has a list of entries, state.entries (LogEntry[]), with its own form, Add and Remove buttons and rows. ' +
+      'Do not keep a list of your own for the same entries: add to state.entries (copy it, push a LogEntry, return {entries: copy __PASSTHROUGH__}) and draw only what is new.'
+  }
+  return ''
+}
+
 /** The reply as a block, or null when it is not in the form asked for. */
 export function parseSection(reply: string): FragmentSpec | null {
   let functions = between(reply, 'functions')
@@ -276,6 +305,7 @@ export async function writeSection(request: CustomRequest, language: string, ask
   let asked = 'Request: ' + request.prompt + '\n\nThe section must do:\n- ' + request.needs.join('\n- ') +
     (request.inputs.length > 0 ? '\n\nThe person sets these on the screen and nothing else uses them yet; the section uses them:\n- ' +
       request.inputs.join('\n- ') : '') +
+    (request.parts.length > 0 ? '\n\nThe program already has these: use them, do not make your own:\n- ' + request.parts.join('\n- ') : '') +
     (request.facts.length > 0 ? '\n\nFixed numbers the app uses:\n- ' + request.facts.join('\n- ') : '') +
     (phone.length > 0 ? '\n\nPhone functions found (the only targets the section may call):\n' + phone : '') +
     (request.whole ? '\n\nThe program has nothing yet but its header: your section is the whole screen, everything the request ' +
@@ -298,8 +328,10 @@ export async function writeSection(request: CustomRequest, language: string, ask
     let section = parseSection(reply)
     // A phone call the section makes up compiles and does nothing: its targets are not checked until the phone answers.
     let calls = section === null ? '' : callProblem(reply, found)
+    // Asked for twice at most: a section that still makes its own clock or list is better than none, so it is then taken as it is.
+    let again = section === null || attempt >= 2 ? '' : repeats(section, request)
     let problem = section === null ? 'The answer was not in the form asked for: <classes>, <fields>, <functions> and <view>.' :
-      (calls.length > 0 ? calls : check(request.compose(section)))
+      (calls.length > 0 ? calls : (again.length > 0 ? again : check(request.compose(section))))
     if (problem.length === 0) {
       // It compiles and runs; whether it does what it is for is Jev's reading. One it reads as not doing a need is asked
       // for again, saying which.

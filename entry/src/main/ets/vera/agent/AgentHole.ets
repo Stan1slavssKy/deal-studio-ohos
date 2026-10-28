@@ -8,6 +8,7 @@ import { AgentHost, HoleRecord } from './AgentHost'
 import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED } from '../ScreenPlan'
+import { PartsContract } from '../VeraCompose'
 
 const OUTCOME_WRITTEN: string = 'written'
 const OUTCOME_PARTIAL: string = 'partial'
@@ -42,14 +43,25 @@ function literal(text: string): string {
   return text.split('\\').join('/').split('"').join("'").split('\n').join(' ').trim()
 }
 
+/** The first sentence of `text`, at most 140 characters. */
+function firstSentence(text: string): string {
+  let t = text.trim()
+  let at = t.search(/[.!?](\s|$)/)
+  if (at > 0) { t = t.substring(0, at + 1) }
+  return t.length > 140 ? t.substring(0, 137).trim() + '...' : t
+}
+
 /**
  * A warning in place of what could not be built. The plan's needs are its own wording, not the person's, so the title is
  * fixed and `why` -- the writer's own sentence for the person when it said it cannot -- carries the rest.
  */
 export function noticeBlock(cannot: boolean, why: string): FragmentSpec {
-  let title = cannot ? 'Not available on this phone' : (why.startsWith('It may not do') ? 'Not checked' : 'Part of this app could not be built')
+  let unchecked = !cannot && why.startsWith('It may not do')
+  let title = cannot ? 'Not available on this phone' : (unchecked ? 'Not checked' : 'Part of this app could not be built')
+  // The person sees one short sentence: the plan's needs and the writer's failure are its own wording and stay in the trace.
+  let body = cannot ? firstSentence(why) : (unchecked ? 'This part may not work exactly as described.' : 'Try asking for it again, or describe it differently.')
   let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("warning", "' + literal(title) + '", "' +
-    literal(why) + '", "", "", "warning")]));\n}'
+    literal(body) + '", "", "", "warning")]));\n}'
   let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
   spec.indexed = false
   return spec
@@ -78,7 +90,7 @@ function withSection(plan: ScreenPlan, section: FragmentSpec | null): string {
  * screen (inputs nothing else reads, and where they are in the state).
  */
 export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[], host: AgentHost,
-    facts: string[] = []): Promise<CustomResult | null> {
+    facts: string[] = [], contract: PartsContract | null = null): Promise<CustomResult | null> {
   let slots: PlanSlot[] = plan.toWrite()
   if (slots.length === 0) { return null }
   // Phone needs an earlier hole of this request already found nothing can do are reported as it said, not asked again.
@@ -114,6 +126,7 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   asked.prompt = prompt
   asked.inputs = hints
   asked.facts = facts
+  if (contract !== null) { asked.parts = contract.lines; asked.ownsClock = contract.clock; asked.ownsList = contract.list }
   // A plan with nothing in it yet is the whole screen as one hole.
   asked.whole = plan.components.length === 0
   asked.compose = (section: FragmentSpec | null): string => withSection(plan, section)
@@ -142,6 +155,7 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
       one.prompt = prompt
       one.inputs = hints
       one.facts = facts
+      if (contract !== null) { one.parts = contract.lines; one.ownsClock = contract.clock; one.ownsList = contract.list }
       one.compose = asked.compose
       one.verify = host.askJev
       one.phone = texts[i].length > 0 ? 'For "' + slots[i].need + '":\n' + texts[i].substring(0, LOOKUP_CHARS) : ''

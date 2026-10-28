@@ -348,7 +348,7 @@ function checklistFragment(): FragmentSpec {
   listStyle.set('comfortable', 'looser spacing')
   return new FragmentSpec(
     'checklist',
-    'A browsable list of items the person can check off or mark one at a time',
+    'A browsable list of items the person can check off or mark one at a time; it is not a deck of cards to flip, a quiz or a game',
     `@jsonable
 class Item {
   label: string;
@@ -391,10 +391,9 @@ function doneCountIDX(state: AppState): number {
     let j: number = 0;
     while (j < count) {
       let it: Item = state.itemsIDX[j];
-      let icon: string = "pin";
-      let subtitle: string = "not done";
-      if (it.done) { icon = "check"; subtitle = "done"; }
-      if (it.detail.length() > 0) { subtitle = it.detail + " - " + subtitle; }
+      let icon: string = "list";
+      let subtitle: string = it.detail;
+      if (it.done) { icon = "check"; subtitle = "done"; if (it.detail.length() > 0) { subtitle = it.detail + " - done"; } }
       rows.push(ui.ListItem("default", it.label, subtitle, "", "toggleIDX", j, true, icon));
       j = j + 1;
     }
@@ -2080,7 +2079,6 @@ function onOpenedIDX(state: AppState, value: string): AppState {
       let icon: string = "pin";
       if (s.done) { icon = "check"; }
       let subtitle: string = ui.clockToString(at) + " - " + ui.clockToString(at + s.minutes) + " | " + ui.numberToString(s.minutes) + " min";
-      if (s.latitude !== "" && s.longitude !== "") { subtitle = subtitle + " | " + s.latitude + ", " + s.longitude; }
       rows.push(ui.ListItem("default", s.name, subtitle, "", "toggleStopIDX", j, true, icon));
       let buttons: ui.View[] = [];
       if (showCal) {

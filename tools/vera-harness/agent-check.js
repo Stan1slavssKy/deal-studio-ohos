@@ -251,93 +251,26 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal((await runAgent(request('tip calculator'), replayHost('tip').host)).waitedMs(), 0)
   }
 
-  // The route, agent first (the default): a served agent ends it and the blocks never run.
-  const routeRequest = (prompt, blocks) => Object.assign(new route.RouteRequest(), {agent: request(prompt), blocksPrompt: blocks ? prompt : ''})
-  assert.equal(route.routeOrder(), route.ORDER_AGENT_FIRST)
+  // The route: a served agent ends it.
+  const routeRequest = prompt => Object.assign(new route.RouteRequest(), {agent: request(prompt)})
   {
     const {host} = replayHost('tip')
-    const o = await route.buildScreen(routeRequest('tip calculator', true), host)
+    const o = await route.buildScreen(routeRequest('tip calculator'), host)
     assert.equal(o.kind, route.OUTCOME_AGENT)
-    assert.equal(o.blocks, null)
   }
-  // The agent refuses: the blocks run next, and with neither serving the screen is not built, with what each said.
+  // The agent refuses and there is no model to write the whole screen: the screen is not built, with what the agent said.
   {
     const {host} = replayHost('tip', {jev: ''})
-    const o = await route.buildScreen(routeRequest('tip calculator', true), host)
+    const o = await route.buildScreen(routeRequest('tip calculator'), host)
     assert.equal(o.kind, route.OUTCOME_NOT_BUILT)
-    assert.notEqual(o.blocks, null)
-    assert.match(o.reason, /^agent: .*\| blocks: /)
+    assert.match(o.reason, /^agent: /)
   }
-  // The blocks hand on the right sections for a request that needs more than they do: the layout stays, and what it
-  // lacks is written into it as one section the model writes and Jev reads against the need, before any generation.
   {
-    const compose = loadVera('VeraSectionCompose')
     const {deepseek} = loadVera('DeepSeekEngine')
     const {settings} = loadVera('SettingsStore')
     settings.getSelectorKey = () => 'test-key'
     settings.hasExaKey = () => false
-    const savedPick = compose.selectSections, savedContent = deepseek.extractTemplateContent
-    deepseek.extractTemplateContent = async () => JSON.stringify({title: 'Party'})
-    const answers = {section1: {choice: 'metrics', confidence: 0.9}}
-    for (const k of ['needs_integration', 'needs_real_data', 'needs_search_or_form', 'needs_live_ticking', 'needs_multiple_counters', 'needs_multiple_series', 'needs_logic'])
-      answers['veto.' + k] = {noul: k === 'needs_logic' ? 0.95 : 0}
-    compose.selectSections = async () => compose.readSectionPick(JSON.stringify({answers}))
-    const section = '<classes>\n</classes>\n<fields>\nc_people: number = 4\n</fields>\n<functions>\n' +
-      'function c_more(state: AppState, v: number): AppState {\n  return {c_people: state.c_people + 1__PASSTHROUGH__};\n}\n</functions>\n' +
-      '<view>\nsections.push(ui.Section("content", "", "", [ui.Text("body", "Slices each: " + ui.numberToString(16 / state.c_people)), ' +
-      'ui.Button("secondary", "One more", "c_more", 0, true)]));\n</view>'
-    const finishing = (jevDoes, reply = section) => {
-      const {host, seen} = replayHost('tip', {jev: ''})
-      host.language = 'VERA-L'
-      const asked = []
-      host.askCode = async (system, user) => { asked.push(user); return reply }
-      host.askJev = async body => {
-        seen.jev++
-        const q = JSON.parse(body).questions
-        if (q['does.0']) return JSON.stringify({answers: {'does.0': {probabilities: {yes: jevDoes, no: 1 - jevDoes}}}})
-        return ''
-      }
-      return {host, asked}
-    }
-    let {host, asked} = finishing(0.9)
-    let o = await route.buildScreen(routeRequest('pizza slices per person', true), host)
-    assert.equal(o.kind, route.OUTCOME_TEMPLATE, o.blocks && o.blocks.note)
-    assert.equal(o.blocks.action, 'template')
-    assert.match(o.blocks.source, /c_people/)
-    assert.ok(o.blocks.vbc2.length > 0)
-    // The record carries the written section as it is, and rebuilds exactly the program that is served.
-    {
-      const record = loadVera('VeraComposition').compositionFromJson(o.blocks.composition)
-      assert.notEqual(record, null)
-      assert.deepEqual(record.kinds(), ['metrics', 'custom'])
-      assert.equal(record.blocks[1].literal.kind, 'custom')
-      assert.match(record.blocks[1].literal.criteria, /^a part written for this request that does: works out/)
-      assert.equal(loadVera('VeraComposition').composeFrom(record), o.blocks.source)
-      assert.deepEqual(record.targetKinds(), ['metrics', 'custom'])
-    }
-    assert.equal(o.hole.attempts, 1)
-    assert.match(asked[0], /works out what the request asks to be calculated/)
-    assert.ok(o.blocks.plan.slots.some(s => s.id === 'missing.needs_logic' && s.fill === 'hole'))
-    // Jev does not read the section as doing its one need, through the repairs and the thinking try: the layout is served
-    // with a notice in place of what it lacks, not handed to the model.
-    ;({host, asked} = finishing(0.1))
-    o = await route.buildScreen(routeRequest('pizza slices per person', true), host)
-    assert.equal(o.kind, route.OUTCOME_TEMPLATE)
-    assert.equal(asked.length, 4)
-    assert.doesNotMatch(o.blocks.source, /c_people/)
-    assert.match(o.blocks.source, /ui\.InsetBanner\("warning", "Part of this app could not be built", "Not built: works out what the request asks/)
-    assert.ok(o.blocks.plan.slots.some(s => s.id === 'missing.needs_logic' && s.fill === 'reported'))
-    // The writer says it cannot: its own sentence is the notice, and it is not asked again.
-    ;({host, asked} = finishing(0.9, '<cannot>This app cannot use the camera.</cannot>'))
-    o = await route.buildScreen(routeRequest('pizza slices per person', true), host)
-    assert.equal(o.kind, route.OUTCOME_TEMPLATE)
-    assert.equal(asked.length, 1)
-    assert.match(o.blocks.source, /"This app cannot use the camera\."/)
-    // Another generation mode finishes the program its own way.
-    ;({host, asked} = finishing(0.9))
-    o = await route.buildScreen(Object.assign(routeRequest('pizza slices per person', true), {mode: 'local'}), host)
-    assert.equal(o.kind, route.OUTCOME_COMPLETE)
-    assert.equal(asked.length, 0)
+    let o
     // Something the phone does that nothing here can: the agent serves the rest of its screen with the writer's own
     // sentence as a notice in its place; the blocks are not needed.
     const egg = JSON.parse(fixture('egg', 'jev-answer.json'))
@@ -348,16 +281,13 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       host.language = 'VERA-L'
       const asked = []
       host.askCode = async (system, user) => { asked.push(user); return '<cannot>This phone gives apps no way to vibrate here.</cannot>' }
-      o = await route.buildScreen(routeRequest('egg timer that vibrates', true), host)
+      o = await route.buildScreen(routeRequest('egg timer that vibrates'), host)
       assert.equal(o.kind, route.OUTCOME_AGENT, o.agent.note)
-      assert.equal(o.blocks, null)
       assert.equal(asked.length, 1)
       assert.match(o.agent.source, /ui\.InsetBanner\("warning", "Not available on this phone", "This phone gives apps no way to vibrate here\."/)
       assert.match(o.agent.note, /reported on the screen/)
       assert.ok(o.agent.screen.slots.some(s => s.phone && s.fill === 'reported'))
     }
-    compose.selectSections = savedPick
-    deepseek.extractTemplateContent = savedContent
   }
   // Something the phone does that no effect is: the agent leaves it to its section, shown the phone's functions found
   // for it; the section may call only those, and a target it makes up is sent back for a repair.
@@ -602,39 +532,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.deepEqual(recorded[0].phone, [true])
     assert.equal(recorded[0].why, 'This phone does not let apps set alarms.')
   }
-  // The blocks' Jev pick is made only if the blocks are reached: not at all when the agent serves, and once, after the plan, when it does not.
-  {
-    const compose = loadVera('VeraSectionCompose')
-    const saved = compose.selectSections
-    const order = []
-    compose.selectSections = async () => { order.push('pick'); return new compose.SectionPickOutcome(null, new Map(), 'none') }
-    const run = async (label, opts) => {
-      order.length = 0
-      const {host} = replayHost(label, opts)
-      const plan = host.askPlan
-      host.askPlan = async (...a) => { order.push('plan'); return plan(...a) }
-      return route.buildScreen(routeRequest('tip calculator', true), host)
-    }
-    let o = await run('tip', {})
-    assert.equal(o.kind, route.OUTCOME_AGENT)
-    assert.deepEqual(order, ['plan'], 'the agent served: the pick of sections was never asked for')
-    o = await run('tip', {jev: ''})
-    assert.equal(o.kind, route.OUTCOME_NOT_BUILT)
-    assert.deepEqual(order, ['plan', 'pick'], 'the agent did not: the blocks ask once, after the plan')
-    compose.selectSections = saved
-  }
-  // Blocks first: the blocks run before the agent, and the agent still serves what they do not.
-  route.setRouteOrder(route.ORDER_BLOCKS_FIRST)
-  {
-    const {host, seen} = replayHost('tip')
-    const o = await route.buildScreen(routeRequest('tip calculator', true), host)
-    assert.equal(o.kind, route.OUTCOME_AGENT)
-    assert.notEqual(o.blocks, null)
-    assert.equal(seen.plans, 1)
-  }
-  route.setRouteOrder('anything else')
-  assert.equal(route.routeOrder(), route.ORDER_AGENT_FIRST)
-  // Neither builder asked for: not built, no model call; the caller decides what to do with that.
+  // Nothing asked for: not built, no model call; the caller decides what to do with that.
   {
     const {host, seen} = replayHost('tip')
     const o = await route.buildScreen(new route.RouteRequest(), host)
@@ -644,7 +542,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
   // Cancelled before it starts: nothing is asked.
   {
     const {host, seen} = replayHost('tip', {cancelled: () => true})
-    const o = await route.buildScreen(routeRequest('tip calculator', true), host)
+    const o = await route.buildScreen(routeRequest('tip calculator'), host)
     assert.equal(o.kind, route.OUTCOME_CANCELLED)
     assert.equal(seen.plans, 0)
   }

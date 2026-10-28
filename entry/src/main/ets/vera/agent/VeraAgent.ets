@@ -14,14 +14,14 @@ import { BlockRequest, BlockFill } from '../SectionFill'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
-import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, dropProvided, ComposeResult, Composition, Sketch } from '../VeraCompose'
-import { ScreenPlan, assemblePlan } from '../ScreenPlan'
+import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, partsContract, dropProvided, ComposeResult, Composition, Sketch } from '../VeraCompose'
+import { ScreenPlan, PlanSlot, PlanComponent, assemblePlan, FILL_BLOCK, FILL_PART } from '../ScreenPlan'
 import { compileVeraSource } from '../VeraCompiler'
 import { Repaired, settleProgram } from './AgentRepair'
 import { FragmentSpec } from '../VeraTemplates'
 import { buildSlotRequest, readSlotValues, specsOf } from '../VeraSectionCompose'
-import { claimsUndone, putBack } from './AgentClaims'
-import { AlignResult, alignIsEnabled, alignLeftovers } from './AgentAlign'
+import { claimsDone, claimsUndone, putBack } from './AgentClaims'
+import { AlignResult, alignCandidates, alignIsEnabled, alignLeftovers } from './AgentAlign'
 import { Composition as ScreenRecord, compositionFromPlan, rebuilds } from '../VeraComposition'
 import { holeBodiesBySlot } from '../VeraHoles'
 
@@ -125,7 +125,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
   result.note = composed.note
   result.plan = composed.parsed !== null && composePlanEnabled() ? sketchPlan(composed.parsed!) : ''
   // What the composition leaves to be written is first offered to the catalogue: a section may do exactly that.
-  if (composed.composition !== null && alignIsEnabled() && !host.cancelled()) {
+  if (composed.composition !== null && alignIsEnabled() && !host.cancelled() && alignCandidates(composed.composition!).length > 0) {
     host.status('Looking for ready-made parts...')
     let aligned = await alignLeftovers(composed.composition!, request.prompt, host.askJev)
     if (aligned.asked.length > 0 || aligned.note.length > 0) {
@@ -181,9 +181,23 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
         result.note += '; not done by the sections said to do it: ' + missing.join('; ')
       }
     }
+    // What is left to write, read against the screen the sections make: a detail of how a section works or looks (how entries are
+    // labelled, what a chart is drawn from) is the section's own, and is not written again.
+    if (ready && plan.toWrite().length > 0 && !host.cancelled()) {
+      // The screen's own parts count as much as the catalogue's sections: a lap list or a clock they draw is not written again.
+      let own = plan.components.findIndex((c: PlanComponent): boolean => c.fill === FILL_BLOCK)
+      let byPart = own < 0
+      if (byPart) { own = plan.components.findIndex((c: PlanComponent): boolean => c.fill === FILL_PART) }
+      let open = plan.toWrite().filter((s: PlanSlot): boolean => !s.phone && s.id.startsWith('custom.') && !s.need.startsWith('the figure "'))
+      let done = own < 0 || open.length === 0 ? [] : await claimsDone(open.map((s: PlanSlot): string => s.need), request.prompt, assemblePlan(plan, true), host.askJev)
+      if (done.length > 0) {
+        for (let slot of open) { if (done.indexOf(slot.need) >= 0) { plan.fillWith(slot, byPart ? FILL_PART : FILL_BLOCK, own, 'already on the screen') } }
+        result.note += '; already on the screen: ' + done.join('; ')
+      }
+    }
     if (ready && plan.toWrite().length > 0 && !host.cancelled()) {
       host.status('Writing the rest...')
-      let written = await writeHole(plan, request.prompt, customInputs(comp), host)
+      let written = await writeHole(plan, request.prompt, customInputs(comp), host, [], partsContract(comp))
       result.custom = written
       ready = plan.toWrite().length === 0
       if (written !== null) {

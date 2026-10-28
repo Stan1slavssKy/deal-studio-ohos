@@ -25,7 +25,7 @@
  */
 
 import http from '@ohos.net.http'
-import { FragmentSpec, StateFieldSpec, VetoSpec, fragments, vetoes } from './VeraTemplates'
+import { FragmentSpec, StateFieldSpec, PortSpec, VetoSpec, fragments, vetoes } from './VeraTemplates'
 import { composeFragments } from './VeraSectionCompose'
 import { blockDefaults } from './VeraTemplateContent'
 import { ScreenPlan, PlanSlot, PlanComponent, StateItem, assemblePlan, FILL_PART, FILL_BLOCK, FILL_EFFECT, FILL_HOLE, FILL_OPEN,
@@ -45,6 +45,15 @@ export function composeEnabled(): boolean { return enabled }
 let customEnabled: boolean = true
 export function setCustomSectionsEnabled(on: boolean): void { customEnabled = on }
 export function customSectionsEnabled(): boolean { return customEnabled }
+
+/**
+ * Whether a countdown or stopwatch, and a list the person fills in, may be a section of the catalogue (`timer`, `record_log`,
+ * `reminders`) instead of the composer's own part, by one question each with the part among the options; `--ps veraUnified 0`
+ * keeps the parts always.
+ */
+let unifiedChoice: boolean = true
+export function setUnifiedChoice(on: boolean): void { unifiedChoice = on }
+export function unifiedChoiceEnabled(): boolean { return unifiedChoice }
 
 /** Whether a request the composer cannot serve is generated with its sketch as a plan; `--ps veraComposePlan 0` turns that off. */
 let planEnabled: boolean = true
@@ -348,6 +357,9 @@ export function parseSketch(text: string): Sketch | null {
         }
       }
       if (input.kind === 'choice' && input.options.length === 0) { continue }
+      // Options labelled "25 minutes" whose values are 1500: the values are seconds, whatever the measure says.
+      if (input.kind === 'choice' && input.measure === 'minutes' && input.options.every((o: SketchOption): boolean => leadingNumber(o.label) > 0 &&
+        o.label.toLowerCase().indexOf('min') >= 0 && o.value === leadingNumber(o.label) * 60)) { input.measure = 'seconds' }
       if (input.kind === 'choice') {
         // The starting choice is an option index; a model sometimes gives the option's value instead.
         let at = input.options.findIndex((o: SketchOption): boolean => o.value === input.value)
@@ -438,6 +450,7 @@ export function parseSketch(text: string): Sketch | null {
       l.fields.push(field)
     }
     sketch.list = l
+    ensureLapFields(sketch)
   }
   let values = o['values']
   if (Array.isArray(values)) {
@@ -1222,6 +1235,87 @@ function describeList(l: SketchList): string {
     'shows what the phone answered when the phone does something as it is added, and can be removed'
 }
 
+/** A number field's label with what it counts in, when the label does not say: "Timer length" is in seconds, so "Timer length (seconds)". */
+function labelWithUnit(input: SketchInput): string {
+  let unit = input.measure === 'seconds' || input.measure === 'minutes' ? input.measure : input.unit.trim()
+  if (unit.length === 0 || input.label.toLowerCase().indexOf(unit.toLowerCase()) >= 0) { return input.label }
+  return input.label + ' (' + unit + ')'
+}
+
+/** The whole number a label starts with ("25 minutes" is 25); 0 when it does not start with one. */
+function leadingNumber(label: string): number {
+  let digits = ''
+  for (let i = 0; i < label.length; i++) {
+    let c = label.charCodeAt(i)
+    if (c >= 48 && c <= 57) { digits += label.charAt(i) } else if (digits.length > 0 || c !== 32) { break }
+  }
+  return digits.length > 0 ? parseInt(digits) : 0
+}
+
+/** Whether a stopwatch's list is its laps: the list or the stopwatch is named for laps, splits or rounds. */
+function isLapList(sketch: Sketch): boolean {
+  if (!sketch.hasStopwatch || sketch.list === null) { return false }
+  // Whole words: "Elapsed time" is no lap.
+  let words = (sketch.list!.label + ' ' + sketch.stopwatch).toLowerCase().split(' ')
+  return words.some((w: string): boolean => ['lap', 'laps', 'split', 'splits', 'round', 'rounds'].indexOf(w.trim()) >= 0)
+}
+
+/** A laps list has words ("Lap 3") and the time passed to hold, whatever fields the sketch gave it. */
+function ensureLapFields(sketch: Sketch): void {
+  if (!isLapList(sketch)) { return }
+  let list = sketch.list!
+  if (firstField(list, 'text') === null) {
+    let f = new ListField()
+    f.id = 'lap'; f.label = 'Lap'; f.kind = 'text'
+    list.fields.unshift(f)
+  }
+  // The first number is the time passed when the lap was taken, the second what that lap took.
+  let numbers = list.fields.filter((f: ListField): boolean => f.kind === 'number')
+  if (numbers.length === 0) {
+    let f = new ListField()
+    f.id = 'seconds'; f.label = 'Total'; f.kind = 'number'; f.measure = 'seconds'
+    list.fields.push(f)
+  }
+  if (numbers.length < 2 && list.fields.length < MAX_FIELDS) {
+    let f = new ListField()
+    f.id = 'split'; f.label = 'Split'; f.kind = 'number'; f.measure = 'seconds'
+    list.fields.push(f)
+  }
+}
+
+/**
+ * Whether the stopwatch records laps into the list: its Lap button adds an entry with the time passed, and the list has no form to type
+ * one in. Not when an event answers an entry (that is the list's own use of its entries).
+ */
+function hasLaps(comp: Composition): boolean {
+  return isLapList(comp.sketch) && entryAnswerEvent(comp).length === 0
+}
+
+/**
+ * Whether an input nothing else reads stays for the section the model writes. When a section of the catalogue took the list, its own form
+ * is where entries are made: an input the sketch had beside the list only repeats it, unless a need of the section's own names it. The
+ * needs "shows ..." are what the section left behind and read no input.
+ */
+function keptForCustom(comp: Composition, input: SketchInput): boolean {
+  let label = input.label.toLowerCase()
+  let named = comp.custom.some((need: string): boolean => !need.startsWith('shows ') && need.toLowerCase().indexOf(label) >= 0)
+  if (named) { return true }
+  // Beside a list part, an input that shares a word with one of the list's own fields ("Mood scale" and "Mood") is that field again.
+  // A choice or a number is a number field again; a switch, a time or words are not.
+  if (comp.sketch.list !== null && (input.kind === 'choice' || isNumeric(input.kind))) {
+    let words = wordsOf(input.label)
+    for (let f of comp.sketch.list!.fields) {
+      if (f.kind === 'number' && wordsOf(f.label).some((w: string): boolean => words.indexOf(w) >= 0)) { return false }
+    }
+  }
+  return comp.replaced.every((r: Replaced): boolean => LIST_SECTIONS.indexOf(r.kind) < 0)
+}
+
+/** The lower-case words of three letters or more in a label. */
+function wordsOf(text: string): string[] {
+  return text.toLowerCase().split(' ').map((w: string): string => w.trim()).filter((w: string): boolean => w.length >= 3)
+}
+
 function isTime(measure: string): boolean { return measure === 'seconds' || measure === 'minutes' }
 
 const TIME_UNITS: Map<string, string> = new Map<string, string>([['seconds', 'a number of seconds'], ['minutes', 'a number of minutes'],
@@ -1375,6 +1469,41 @@ function detailQuestion(item: string): Record<string, Object> {
 }
 
 /** The Jev request: one independent choice per requirement in the sketch. */
+/** The sections of the catalogue a countdown or stopwatch may be, and the part, as the options of one question; null for neither. */
+function clockOptions(sketch: Sketch): Map<string, string> | null {
+  // The section counts down from one of a few set times; it has no stopwatch.
+  if (!sketch.hasCountdown) { return null }
+  let out: Map<string, string> = new Map<string, string>()
+  out.set(PART, 'the app builds its own countdown from the numbers on the screen: start, stop and reset, a length that follows what ' +
+    'the person sets, and phone actions at its end')
+  for (let f of fragments()) { if (f.kind === 'timer') { out.set(f.kind, f.criteria) } }
+  return out.size > 1 ? out : null
+}
+
+/** The sections a list the person fills in may be, and the part, as the options of one question; null when there is no list. */
+function listOptions(sketch: Sketch): Map<string, string> | null {
+  if (sketch.list === null) { return null }
+  let out: Map<string, string> = new Map<string, string>()
+  out.set(PART, 'the app\'s own plain list: ' + describeList(sketch.list!) + '. The only figures it gives are how many entries there are ' +
+    'and the sum of one number field; it has no total for each person or category, no chart of them and no settling up of who owes whom')
+  for (let f of fragments()) {
+    if (LIST_SECTIONS.indexOf(f.kind) < 0) { continue }
+    // The readers of the catalogue show what the log publishes: the question says so, as the part's own limits are said.
+    out.set(f.kind, f.kind === 'record_log' ? f.criteria + '. Readers of the catalogue add to it figures for each person or category ' +
+      '(totals, an average, a balance), a bar chart of them and who should pay whom' : f.criteria)
+  }
+  return out.size > 1 ? out : null
+}
+
+/** What the screen is to show besides the list, in words, for the question about the list: the plan's values and other needs. */
+function listNeeds(sketch: Sketch): string {
+  let needs: string[] = []
+  for (let v of sketch.values) { needs.push(v.label + (v.means.length > 0 ? ' (' + v.means + ')' : '')) }
+  for (let o of sketch.other) { needs.push(o) }
+  for (let r of sketch.ready) { needs.push(r) }
+  return needs.length === 0 ? '' : ' The screen also has to show or do: ' + needs.slice(0, 8).join('; ') + '.'
+}
+
 export function buildComposeRequest(prompt: string, sketch: Sketch, widget: boolean = false): string {
   let questions: Record<string, Object> = {}
 
@@ -1491,6 +1620,14 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
     }
   }
 
+  // A need the composer's own part and a section of the catalogue can both do is asked once, with the part among the options.
+  if (unifiedChoice) {
+    let clock = clockOptions(sketch)
+    if (clock !== null) { questions['clock.part'] = choice('The app needs the countdown "' + sketch.countdown + '". Which of these does exactly that?', clock!) }
+    let entries = listOptions(sketch)
+    if (entries !== null) { questions['list.part'] = choice('The person keeps ' + sketch.list!.label + '.' + listNeeds(sketch) + ' Which of these does exactly that?', entries!) }
+  }
+
   let parts = partsOf(sketch)
   for (let i = 0; i < sketch.other.length; i++) {
     let options: Map<string, string> = copyOf(parts)
@@ -1570,6 +1707,16 @@ export class Binding {
   scale: string = ''
 }
 
+/** A section of the catalogue chosen in place of a part. */
+export class Replaced {
+  kind: string
+  need: string
+  constructor(kind: string, need: string) {
+    this.kind = kind
+    this.need = need
+  }
+}
+
 export class Composition {
   sketch: Sketch
   theme: string = 'clean'
@@ -1623,6 +1770,8 @@ export class Composition {
    * decide whether it does, so the finished screen is read against these (agent/AgentClaims.ets).
    */
   claimed: string[] = []
+  /** Sections that took the place of a part the plan called for (a countdown, a list), with the need they were chosen for. */
+  replaced: Replaced[] = []
   constructor(sketch: Sketch) { this.sketch = sketch }
 }
 
@@ -1690,6 +1839,143 @@ function answerOf(answers: Record<string, Object>, key: string, allowed: string[
   log.push(key + '=' + picked + '@' + confidence.toFixed(2))
   if (allowed.indexOf(picked) < 0 || confidence < above) { return '' }
   return picked
+}
+
+/** Whether any value's formula reads one of `names`. */
+function readsAny(comp: Composition, names: string[]): boolean {
+  let found = false
+  comp.bindings.forEach((b: Binding) => {
+    for (let name of [b.a, b.b].concat(b.reads)) { if (names.indexOf(name) >= 0) { found = true } }
+  })
+  return found
+}
+
+/** The sketch without its countdown or stopwatch: a section does it. */
+function withoutClock(sketch: Sketch): Sketch {
+  let out = withList(sketch, sketch.list)
+  out.inputs = sketch.inputs
+  out.countdown = ''
+  out.hasCountdown = false
+  out.stopwatch = ''
+  out.hasStopwatch = false
+  return out
+}
+
+/**
+ * Whether the `timer` section may take the countdown's place: the length is one fixed time of the plan's (a person who sets it
+ * needs the part, which follows the input), and nothing else on the screen is wired to the clock -- an event at its end, a value
+ * that reads the time left or passed.
+ */
+export function canReplaceClock(comp: Composition): boolean {
+  let sketch = comp.sketch
+  if (!sketch.hasCountdown || comp.blocks.indexOf('timer') >= 0) { return false }
+  if (!sketch.constants.some((k: SketchConstant): boolean => k.id === comp.countdownFrom)) { return false }
+  let atEnd = false
+  comp.moments.forEach((moment: string) => { if (moment === 'countdown_end') { atEnd = true } })
+  return !atEnd && !readsAny(comp, CLOCK_OPERANDS)
+}
+
+export function replaceClock(comp: Composition): void {
+  let need = comp.sketch.countdown
+  comp.sketch = withoutClock(comp.sketch)
+  comp.countdownFrom = ''
+  comp.blocks.push('timer')
+  comp.replaced.push(new Replaced('timer', need))
+  comp.claimed.push(need)
+  comp.dropped.push('"' + need + '": a section does it, not a part')
+}
+
+/**
+ * A total of minutes or seconds over the list's entries (the minutes logged, the hours worked) is a quantity, not a time on a
+ * clock: shown with its unit ("150 min"), not as 2:30:00, which reads as a time of day and as 0:00 before anything is entered.
+ */
+function showEntryTotalsAsNumbers(comp: Composition): void {
+  let shown: SketchValue[] = []
+  for (let v of comp.sketch.values) {
+    if (!isTime(v.format) || !comp.bindings.has(v.id) || !dependsOn(comp, v.id).some((n: string): boolean => ENTRY_OPERANDS.indexOf(n) >= 0)) {
+      shown.push(v)
+      continue
+    }
+    let plain = new SketchValue()
+    plain.id = v.id
+    plain.label = v.label
+    plain.means = v.means
+    plain.format = 'plain'
+    plain.unit = v.format === 'minutes' ? 'min' : 's'
+    plain.decimals = v.decimals >= 0 ? v.decimals : 0
+    plain.formula = v.formula
+    plain.given = v.given
+    plain.result = v.result
+    shown.push(plain)
+  }
+  comp.sketch.values = shown
+}
+
+/** What a value over the entries reads. */
+const ENTRY_OPERANDS: string[] = ['entryCount', 'entryTotal']
+
+/** The values that work from the list's entries, directly or through other values. */
+function valuesOverEntries(comp: Composition): string[] {
+  let out: string[] = []
+  for (let v of comp.sketch.values) {
+    if (comp.bindings.has(v.id) && dependsOn(comp, v.id).some((n: string): boolean => ENTRY_OPERANDS.indexOf(n) >= 0)) { out.push(v.id) }
+  }
+  return out
+}
+
+/**
+ * Whether `kind` (a section that keeps the person's entries) may take the list part's place: no event is wired to the part (when
+ * an entry is added or tapped, an argument taken from an entry). Values over the entries -- a total, a count -- keep the part,
+ * except for `record_log`: it publishes totals, averages, balances and counts for the readers of the catalogue to show, so those
+ * values go to them (replaceList).
+ */
+export function canReplaceList(comp: Composition, kind: string): boolean {
+  if (comp.sketch.list === null || LIST_SECTIONS.indexOf(kind) < 0 || comp.blocks.indexOf(kind) >= 0) { return false }
+  let onEntry = false
+  comp.moments.forEach((moment: string) => { if (moment === 'entry_added' || moment === 'row_button') { onEntry = true } })
+  comp.args.forEach((given: Map<string, string>) => {
+    given.forEach((source: string) => { if (source.startsWith('entry.')) { onEntry = true } })
+  })
+  return !onEntry && (kind === 'record_log' || valuesOverEntries(comp).length === 0)
+}
+
+/**
+ * The section takes the list part's place. The values over the entries leave the plan as needs the catalogue is asked about
+ * (AgentAlign.ets offers the readers of what the section publishes first), and a written section otherwise.
+ */
+export function replaceList(comp: Composition, kind: string): void {
+  let need = comp.sketch.list!.label
+  let leaving = valuesOverEntries(comp)
+  let gone: SketchValue[] = comp.sketch.values.filter((v: SketchValue): boolean => leaving.indexOf(v.id) >= 0)
+  comp.sketch = withList(comp.sketch, null)
+  comp.sketch.values = comp.sketch.values.filter((v: SketchValue): boolean => leaving.indexOf(v.id) < 0)
+  for (let v of gone) {
+    comp.bindings.delete(v.id)
+    let shown = 'shows ' + v.label + (v.means.length > 0 ? ': ' + v.means : '')
+    if (customEnabled) { comp.custom.push(shown) } else { comp.unbound.push(shown) }
+    comp.dropped.push('value "' + v.label + '": left to what the section that keeps the entries publishes')
+  }
+  comp.blocks.push(kind)
+  comp.replaced.push(new Replaced(kind, need))
+  // Not a claim for the finished screen to be read against: the pick was a question about this very list, and reading the screen
+  // for "keeps expenses" asks the same thing again (and wrote a section for what the log already does).
+  comp.dropped.push('"' + need + '": a section does it, not a part')
+}
+
+/**
+ * A countdown or a list the plan calls for may be a section of the catalogue instead of the part, when Jev says so with the
+ * confidence of any other pick and nothing else on the screen needs what the part has (canReplaceClock, canReplaceList). The
+ * section takes the part's place in the plan; what the person sets for it is the section's own.
+ */
+function chooseSections(comp: Composition, answers: Record<string, Object>): void {
+  if (!unifiedChoice) { return }
+  if (comp.sketch.hasCountdown && answerOf(answers, 'clock.part', ['timer'], comp.answers, READY_ABOVE) === 'timer' && canReplaceClock(comp)) {
+    replaceClock(comp)
+  }
+  if (comp.sketch.list !== null) {
+    let kind = answerOf(answers, 'list.part', LIST_SECTIONS, comp.answers, READY_ABOVE)
+    if (kind.length > 0 && canReplaceList(comp, kind)) { replaceList(comp, kind) }
+  }
 }
 
 export function readComposition(body: string, sketch: Sketch, widget: boolean = false): Composition {
@@ -1881,6 +2167,8 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     }
   }
 
+  chooseSections(comp, answers)
+
   // An item of "other" may still be something a part does; only Jev's confident "this part" covers it.
   let partIds: string[] = []
   partsOf(sketch).forEach((_d: string, key: string) => { partIds.push(key) })
@@ -1907,7 +2195,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   }
   // A field of the list that the request did not ask for and nothing reads -- not an argument, not the title
   // (the first words), not the total (the first number) -- is left out, as an input is.
-  let list = sketch.list
+  let list = comp.sketch.list
   if (list !== null) {
     let used: string[] = []
     comp.args.forEach((given: Map<string, string>) => {
@@ -1924,7 +2212,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       let trimmed = new SketchList()
       trimmed.label = list.label
       trimmed.fields = kept
-      comp.sketch = withList(sketch, trimmed)
+      comp.sketch = withList(comp.sketch, trimmed)
     }
   }
   dropValues(comp, answers, failed, served)
@@ -1949,13 +2237,14 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       if (sectionInputs.indexOf(input.id) < 0) { comp.claimed.push('the person sets ' + input.label) }
     }
     // What the custom section does may well read it (the dice to roll): it stays, and the section is told it is there.
-    else if (comp.custom.length > 0) {
+    else if (comp.custom.length > 0 && keptForCustom(comp, input)) {
       comp.inputs.push(input)
       comp.customReads.push(input.id)
     }
     // Nothing on the screen would use it: left out, and the person is told, rather than the screen refused.
     else { comp.dropped.push('input "' + input.label + '": nothing on the screen uses it') }
   }
+  showEntryTotalsAsNumbers(comp)
   // Inputs that nothing reads make a form that does nothing: the sketch has lost what they were for.
   if (sketch.values.length === 0 && !sketch.hasCountdown && !sketch.hasStopwatch && sketch.list === null && comp.events.length === 0 &&
       comp.blocks.length === 0 && comp.custom.length === 0) {
@@ -2202,6 +2491,10 @@ const OTHER_ADDED_ABOVE: number = 0.7
 
 /** A section is a whole part of the screen, so it takes the bar a block takes in the blocks' own pick (SECTION_PICK_ABOVE). Not tuned. */
 const READY_ABOVE: number = 0.5
+/** The option that is the composer's own part, in the questions that put a part and sections side by side. */
+const PART: string = 'part'
+/** Sections that keep what the person enters, one entry at a time: the ones a list part may be replaced by. */
+export const LIST_SECTIONS: string[] = ['record_log', 'reminders']
 /** The bar the catalogue gives its own needs_real_data question (VeraTemplates.vetoes). */
 const REAL_DATA_ABOVE: number = 0.35
 /** Made-up records in place of the person's own mislead; any lean toward "own" refuses the section. Not tuned. */
@@ -2266,7 +2559,7 @@ function effectFields(comp: Composition): Field[] {
 }
 
 /** A countdown or a stopwatch: both run on a Ticker with start, stop and reset. */
-function hasClock(sketch: Sketch): boolean { return sketch.hasCountdown || sketch.hasStopwatch }
+export function hasClock(sketch: Sketch): boolean { return sketch.hasCountdown || sketch.hasStopwatch }
 
 /** The state field holding what the form has for `f` before the entry is added. */
 function draftOf(f: ListField): string { return 'draft_' + f.id }
@@ -2423,6 +2716,8 @@ function effectCallsAt(comp: Composition, moment: string, only: string = ''): st
  */
 function decimalsFor(measure: string, asked: number): number {
   if (asked >= 0 && (measure === 'number' || measure === 'plain' || measure === 'count')) { return asked }
+  // A fraction (0.0054, a monthly rate) is shown with enough digits to say something; one digit would read as 0.0.
+  if (measure === 'fraction') { return asked >= 0 ? asked : 4 }
   return measure === 'money' ? 2 : (measure === 'count' ? 0 : 1)
 }
 
@@ -2502,6 +2797,17 @@ function bareExpr(b: Binding): string {
 }
 
 /** A time as m:ss (or h:mm:ss), from seconds or minutes. */
+/**
+ * What a number of an entry reads as in its row. A length of time the person logs (30 minutes of a workout) is a quantity with its
+ * unit, "30 min", not 30:00, which reads as a time of day.
+ */
+function entryAmountText(f: ListField): string {
+  if (isTime(f.measure)) {
+    return 'ui.formatNumber(e.' + f.id + ', ' + (f.decimals >= 0 ? f.decimals : 0).toString() + ') + ' + quote(f.measure === 'minutes' ? ' min' : ' s')
+  }
+  return amountText(f.measure, f.unit, 'e.' + f.id, f.decimals)
+}
+
 function durationText(measure: string, expr: string): string {
   return 'ui.durationToString(math.ceil(' + expr + (measure === 'minutes' ? ' * 60' : '') + '))'
 }
@@ -2567,6 +2873,18 @@ class Figures {
   clockButtons: string = ''
 }
 
+/** Whether value `v` is an average over the list's entries: it divides by their count, and says "average" or "mean". */
+function isEntryAverage(sketch: Sketch, v: SketchValue, b: Binding): boolean {
+  if (sketch.list === null || (b.b !== 'entryCount' && b.reads.indexOf('entryCount') < 0)) { return false }
+  let words = (v.label + ' ' + v.means).toLowerCase()
+  return words.indexOf('average') >= 0 || words.indexOf('mean') >= 0 || words.indexOf('avg') >= 0
+}
+
+/** How many figures a row of stats shows at once: an average that is a dash until there are entries takes two places in the list, one on screen. */
+function statColumns(stats: string[]): number {
+  return stats.filter((st: string): boolean => st.indexOf('ui.When(entryCount === 0,') !== 0).length
+}
+
 function figuresOf(comp: Composition): Figures {
   let sketch = comp.sketch
   let out = new Figures()
@@ -2578,6 +2896,11 @@ function figuresOf(comp: Composition): Figures {
     else if (b.show === 'hero') { out.heroes.push(v.id) }
     else if (b.show === 'progress') { out.bars.push('ui.Progress("accent", ' + quote(v.label) + ', math.round(math.min(math.max(' + v.id + ', 0), 1) * 1000), 1000)') }
     else if (comp.provisional && b.formula.length === 0) { stats.push('ui.Stat("default", ' + quote(v.label) + ', "—", "", "chart")') }
+    else if (isEntryAverage(sketch, v, b)) {
+      // An average of no entries is not 0.0: until there is one, the figure is a dash.
+      stats.push('ui.When(entryCount > 0, ' + statFor(v, v.id) + ')')
+      stats.push('ui.When(entryCount === 0, ui.Stat("default", ' + quote(v.label) + ', "—", "", "chart"))')
+    }
     else { stats.push(statFor(v, v.id)) }
   }
   stats = leading.concat(stats)
@@ -2625,7 +2948,9 @@ function figuresOf(comp: Composition): Figures {
   // Time left rounds up (it reads 0:00 only at the end), time passed rounds down.
   out.clockShown = 'ui.durationToString(' + (sketch.hasCountdown ? 'math.ceil(remaining)' : 'math.floor(elapsed)') + ')'
   out.clockButtons = 'ui.ActionBar("spread", [ui.Button("primary", "Start", "onStart", 0, !state.running), ' +
-    'ui.Button("secondary", "Stop", "onStop", 0, state.running), ui.Button("secondary", "Reset", "onReset", 0, true)])'
+    'ui.Button("secondary", "Stop", "onStop", 0, state.running), ' +
+    (hasLaps(comp) ? 'ui.Button("secondary", "Lap", "lapEntry", 0, state.running), ' : '') +
+    'ui.Button("secondary", "Reset", "onReset", 0, true)])'
   return out
 }
 
@@ -2692,14 +3017,13 @@ function clockPart(comp: Composition, fields: Field[]): FragmentSpec {
  * The numbers every other part draws from, as locals at the top of the view: each input, the clock's time, the
  * list's count and total, and every value in sketch order. Its view is not a block of its own, so they stay in scope.
  */
-function figuresPart(comp: Composition): FragmentSpec {
+/**
+ * The locals the figures are worked out from, as lines of a function body: the inputs and constants, the clock's time, the
+ * list's count and total, then one `let` for each value up to and including value `upto` (all when -1).
+ */
+function figureLocals(comp: Composition, upto: number = -1): string[] {
   let sketch = comp.sketch
   let list = sketch.list
-  let functions: string[] = [fn(['function share(a: number, b: number): number {', '  if (b === 0) { return 0; }', '  return a / b;', '}'])]
-  // A written formula's comparison, as 1 or 0; only a program that has one carries it.
-  let compares = false
-  comp.bindings.forEach((b: Binding) => { if (b.expr.indexOf('whether(') >= 0) { compares = true } })
-  if (compares) { functions.push(fn(['function whether(holds: boolean): number {', '  if (holds) { return 1; }', '  return 0;', '}'])) }
   let view: string[] = inputLocals(comp)
   if (sketch.hasCountdown) {
     view.push('  let duration: number = countdownSeconds(state);')
@@ -2714,10 +3038,31 @@ function figuresPart(comp: Composition): FragmentSpec {
     let totalField = firstField(list, 'number')
     if (totalField !== null) { view.push('  for (let e: LogEntry of state.entries) { entryTotal = entryTotal + e.' + totalField.id + '; }') }
   }
-  for (let v of sketch.values) {
+  for (let i = 0; i < sketch.values.length; i++) {
+    if (upto >= 0 && i > upto) { break }
+    let v = sketch.values[i]
     let b = comp.bindings.get(v.id)!
     view.push('  let ' + v.id + ': number = ' + formulaExpr(b) + ';')
   }
+  return view
+}
+
+/** The name of the function that works out value `id` from the state alone, for a section that reads it through a port. */
+function portFunction(id: string): string { return 'port_' + id }
+
+/** Whether a section of the catalogue on this screen reads a value through a port: only then are the values published. */
+function sectionsRead(comp: Composition): boolean {
+  return compositionBlocks(comp).some((spec: FragmentSpec): boolean => spec.ports.some((p: PortSpec): boolean => p.dir === 'reads'))
+}
+
+function figuresPart(comp: Composition): FragmentSpec {
+  let sketch = comp.sketch
+  let functions: string[] = [fn(['function share(a: number, b: number): number {', '  if (b === 0) { return 0; }', '  return a / b;', '}'])]
+  // A written formula's comparison, as 1 or 0; only a program that has one carries it.
+  let compares = false
+  comp.bindings.forEach((b: Binding) => { if (b.expr.indexOf('whether(') >= 0) { compares = true } })
+  if (compares) { functions.push(fn(['function whether(holds: boolean): number {', '  if (holds) { return 1; }', '  return 0;', '}'])) }
+  let view: string[] = figureLocals(comp)
   if (hasBanner(comp)) {
     view.push('  let effectNote: string = "Phone: " + state.effectStatus;')
     view.push('  if (state.effectStatus === "pending") { effectNote = "Asking the phone..."; }')
@@ -2727,7 +3072,20 @@ function figuresPart(comp: Composition): FragmentSpec {
     view.push('  let shows: ui.View[] = [];')
     view.push('  let sets: ui.View[] = [];')
   }
-  return part('figures', [], functions, view)
+  let spec = part('figures', [], functions, view)
+  // Each value as a function of the state, published under the value's id, when a section of the catalogue reads one.
+  if (sectionsRead(comp)) {
+    for (let i = 0; i < sketch.values.length; i++) {
+      let v = sketch.values[i]
+      if (!comp.bindings.has(v.id)) { continue }
+      let body: string[] = ['function ' + portFunction(v.id) + '(state: AppState): number {'].concat(figureLocals(comp, i))
+      body.push('  return ' + v.id + ';')
+      body.push('}')
+      spec.functions += '\n\n' + fn(body)
+      spec.ports.push(new PortSpec('writes', v.id, 'number', portFunction(v.id) + '(state)', '', true))
+    }
+  }
+  return spec
 }
 
 /** The hero: the first hero value or the clock, with the progress bars and the clock's buttons; a widget's first section instead. */
@@ -2741,7 +3099,7 @@ function heroPart(comp: Composition, figs: Figures): FragmentSpec {
     if (hasClock(sketch) && sketch.values.every((v: SketchValue): boolean => comp.bindings.get(v.id)!.show !== 'hero')) {
       view.push('shows.push(ui.Stat("default", ' + quote(figs.clockLabel) + ', ' + figs.clockShown + ', "", "clock"));')
     }
-    if (figs.stats.length > 0) { view.push('shows.push(ui.MetricGroup("default", ' + Math.min(figs.stats.length, 2).toString() + ', [' + figs.stats.join(', ') + ']));') }
+    if (figs.stats.length > 0) { view.push('shows.push(ui.MetricGroup("default", ' + Math.min(statColumns(figs.stats), 2).toString() + ', [' + figs.stats.join(', ') + ']));') }
     if (figs.table.length > 0) { view.push('shows.push(' + figs.table + ');') }
     if (hasClock(sketch)) { view.push('shows.push(' + figs.clockButtons + ');') }
   } else if (figs.heroes.length > 0) {
@@ -2787,12 +3145,12 @@ function inputsPart(comp: Composition, fields: Field[]): FragmentSpec {
     } else if (widget === 'switch') {
       controls.push('ui.Toggle("default", ' + quote(input.label) + ', state.' + input.id + ', ' + handler + ')')
     } else if (widget === 'typed_number') {
-      controls.push('ui.TextField("default", ' + quote(input.label) + ', state.' + input.id + 'Text, ' + handler + ', "number")')
+      controls.push('ui.TextField("default", ' + quote(labelWithUnit(input)) + ', state.' + input.id + 'Text, ' + handler + ', "number")')
     } else if (widget === 'slider') {
       let label = input.kind === 'percent' ? quote(input.label + ' ') + ' + ui.numberToString(state.' + input.id + ') + "%"' : quote(input.label)
       controls.push('ui.Slider("accent", ' + label + ', state.' + input.id + ', ' + numberLiteral(input.min) + ', ' + numberLiteral(input.max) + ', ' + handler + ')')
     } else {
-      controls.push('ui.NumberField("default", ' + quote(input.label) + ', state.' + input.id + ', ' + numberLiteral(input.min) + ', ' + numberLiteral(input.max) + ', ' + handler + ')')
+      controls.push('ui.NumberField("default", ' + quote(labelWithUnit(input)) + ', state.' + input.id + ', ' + numberLiteral(input.min) + ', ' + numberLiteral(input.max) + ', ' + handler + ')')
     }
   }
   let view: string[] = []
@@ -2801,7 +3159,15 @@ function inputsPart(comp: Composition, fields: Field[]): FragmentSpec {
   } else if (controls.length > 0) {
     view.push('sections.push(ui.Section("content", "", "", [' + controls.join(', ') + ']));')
   }
-  return part('inputs', inputFields(comp), functions, view)
+  let spec = part('inputs', inputFields(comp), functions, view)
+  // What the person sets, under the input's id, for a section that reads it: a switch, typed words, a number. A choice is its
+  // option's index, and typed digits are text, so neither is a number under that name.
+  for (let input of comp.inputs) {
+    let widget = comp.widgets.get(input.id) ?? ''
+    if (input.kind === 'choice' || widget === 'typed_number') { continue }
+    spec.ports.push(new PortSpec('writes', input.id, inputType(input), input.id))
+  }
+  return spec
 }
 
 /** A screen's figures under its controls: the table, then the metric group. A widget shows them in its first section. */
@@ -2810,7 +3176,7 @@ function summaryPart(comp: Composition, figs: Figures): FragmentSpec {
   if (!comp.widget) {
     if (figs.table.length > 0) { view.push('sections.push(ui.Section("summary", "", "", [' + figs.table + ']));') }
     if (figs.stats.length > 0) {
-      view.push('sections.push(ui.Section("summary", "", "", [ui.MetricGroup("default", ' + Math.min(figs.stats.length, 3).toString() + ', [' + figs.stats.join(', ') + '])]));')
+      view.push('sections.push(ui.Section("summary", "", "", [ui.MetricGroup("default", ' + Math.min(statColumns(figs.stats), 3).toString() + ', [' + figs.stats.join(', ') + '])]));')
     }
   }
   return part('summary', [], [], view)
@@ -2858,6 +3224,32 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   add.push('  return ' + changed(fields, added) + ';')
   add.push('}')
   functions.push(fn(add))
+  if (hasLaps(comp)) {
+    // A lap is an entry the stopwatch makes: "Lap N" for its words, the time passed for its number.
+    let lapMembers: string[] = []
+    let worded = false
+    let numbered = false
+    let timed = false
+    let total = firstField(list, 'number')
+    for (let f of list.fields) {
+      if (f.kind === 'text' && !worded) { lapMembers.push(f.id + ': "Lap " + ui.numberToString(state.entries.length() + 1)'); worded = true }
+      else if (f.kind === 'number' && !numbered) { lapMembers.push(f.id + ': math.round(state.elapsedMs / 1000)'); numbered = true }
+      else if (f.kind === 'number' && !timed) { lapMembers.push(f.id + ': math.round(state.elapsedMs / 1000) - before'); timed = true }
+      else { lapMembers.push(f.id + ': ' + (f.kind === 'text' ? '""' : (f.kind === 'toggle' ? 'false' : '0'))) }
+    }
+    lapMembers.push('minute: time.hourOfDay() * 60 + time.minuteOfHour()')
+    let lapped: Map<string, string> = new Map<string, string>()
+    lapped.set('entries', 'out')
+    functions.push(fn(['function lapEntry(state: AppState, ignored: number): AppState {',
+      '  let before: number = 0;',
+      '  if (state.entries.length() > 0) { before = state.entries[state.entries.length() - 1].' + total!.id + '; }',
+      '  let lap: LogEntry = {' + lapMembers.join(', ') + '};',
+      '  let out: LogEntry[] = [];',
+      '  for (let e: LogEntry of state.entries) { out.push(e); }',
+      '  out.push(lap);',
+      '  return ' + changed(fields, lapped) + ';',
+      '}']))
+  }
   if (answering.length > 0) {
     // Answers come back in the order the calls went out: each goes to the oldest entry still waiting.
     let copied: string[] = []
@@ -2906,6 +3298,9 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     else { form.push('ui.Toggle("default", ' + quote(f.label) + ', ' + at + ')') }
   }
   form.push('ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, true)])')
+  // Laps are made by the stopwatch's Lap button: there is no form to type one in.
+  let laps = hasLaps(comp)
+  if (laps) { form = [] }
   // Newest first, at most 20 rows (a container holds 20 children), 4 in a chat bubble. A tap on a row removes it --
   // unless the row has buttons of its own (row_button events): then it is followed by a bar with them and Remove,
   // two children a row, so at most 10 rows.
@@ -2921,7 +3316,7 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   let titleField = textField ?? numberField
   let trailingField = textField !== null && numberField !== null ? numberField : firstField(list, 'time')
   let shown = (f: ListField): string => f.kind === 'text' ? 'e.' + f.id :
-    (f.kind === 'time' ? 'ui.clockToString(e.' + f.id + ')' : amountText(f.measure, f.unit, 'e.' + f.id, f.decimals))
+    (f.kind === 'time' ? 'ui.clockToString(e.' + f.id + ')' : entryAmountText(f))
   let title = titleField !== null ? shown(titleField) : '"#" + ui.numberToString(i + 1)'
   let trailing = trailingField !== null ? shown(trailingField) : '""'
   let pieces: string[] = []
@@ -2955,15 +3350,18 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   view.push('}')
   let listNodes: string[] = ['ui.SectionHeader("default", ' + quote(list.label) + ', "Newest first", ui.numberToString(entryCount))',
     'ui.When(entryCount === 0, ui.EmptyState("default", "Nothing added yet", ' +
-    quote(form.length > 1 ? 'Fill in the fields above and tap Add.' : 'Tap Add to add one.') + ', "", "", "list"))',
+    quote(laps ? 'Start the stopwatch and tap Lap.' : (form.length > 1 ? 'Fill in the fields above and tap Add.' : 'Tap Add to add one.')) + ', "", "", "list"))',
     'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))']
   if (comp.widget) {
     for (let node of form.concat(listNodes)) { view.push('sets.push(' + node + ');') }
   } else {
-    view.push('sections.push(ui.Section("content", "", "", [' + form.join(', ') + ']));')
+    if (form.length > 0) { view.push('sections.push(ui.Section("content", "", "", [' + form.join(', ') + ']));') }
     view.push('sections.push(ui.Section("content", "", "", [' + listNodes.join(', ') + ']));')
   }
-  return part('list', entryFields(list), functions, view, fn(entryClass), '  let emptyEntries: LogEntry[] = [];')
+  let spec = part('list', entryFields(list), functions, view, fn(entryClass), '  let emptyEntries: LogEntry[] = [];')
+  spec.ports.push(new PortSpec('writes', 'entries', 'LogEntry[]', 'entries'))
+  spec.ports.push(new PortSpec('writes', 'count', 'number', 'state.entries.length()', '', true))
+  return spec
 }
 
 /** What the phone is asked to do outside this screen: the buttons that ask it, their answers, and the banner with the last one. */
@@ -3076,6 +3474,37 @@ function inQuotes(s: string): string {
 }
 
 /** The inputs left for the custom section, as it finds them in the state: "Dice" is state.dice, a typed number its text. */
+/** What the screen's own parts already hold, for a section the model writes: to use, not to make again. */
+export class PartsContract {
+  /** The state the parts own, one entry each, in words and field names. */
+  lines: string[] = []
+  clock: boolean = false
+  list: boolean = false
+}
+
+export function partsContract(comp: Composition): PartsContract {
+  let out = new PartsContract()
+  let sketch = comp.sketch
+  if (hasClock(sketch)) {
+    out.clock = true
+    out.lines.push('a clock (' + (sketch.hasCountdown ? 'a countdown' : 'a stopwatch') + '): state.elapsedMs is the milliseconds passed, state.running whether it runs, ' +
+      'state.finished whether it ended. Its Start, Stop and Reset buttons and its Ticker are already on the screen and drive it: ' +
+      'the section draws no timer, no Start/Stop/Reset buttons and no Ticker of its own, and keeps no clock state of its own; ' +
+      'it reads state.elapsedMs' + (sketch.hasCountdown ? ' and countdownSeconds(state), the length in seconds' : '') + '.')
+  }
+  if (sketch.list !== null) {
+    out.list = true
+    let fields: string[] = []
+    for (let f of sketch.list!.fields) { fields.push(f.id + ': ' + entryType(f)) }
+    fields.push('minute: number')
+    let answering = entryAnswerEvent(comp).length > 0
+    out.lines.push('a list of entries: state.entries is LogEntry[] with the fields {' + fields.join(', ') + (answering ? ', status: string' : '') + '}. ' +
+      'Its form, its Add and Remove buttons and its rows are already on the screen. The section makes no list of its own for the same entries; ' +
+      'to add one it copies state.entries into a new array, pushes a LogEntry (minute: time.hourOfDay() * 60 + time.minuteOfHour()) and returns {entries: thatArray __PASSTHROUGH__}.')
+  }
+  return out
+}
+
 export function customInputs(comp: Composition): string[] {
   let out: string[] = []
   for (let input of comp.inputs) {
@@ -3128,7 +3557,7 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
   plan.globals.set('__TITLE__', inQuotes(sketch.title))
   plan.globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
   plan.globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
-  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : 'chart'))
+  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : ''))
 
   for (let input of comp.inputs) { plan.state.push(new StateItem(input.id, 'input', inputType(input), input.label)) }
   for (let k of sketch.constants) { plan.state.push(new StateItem(k.id, 'constant', 'number', k.label)) }
@@ -3200,6 +3629,12 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
     slot.accepts = READY_KINDS.slice()
     add(slot, FILL_BLOCK, block++)
   }
+  // A section that took a part's place: a slot of its own, filled by it.
+  for (let r of comp.replaced) {
+    let slot = new PlanSlot('section.' + r.kind, r.need)
+    slot.accepts = [r.kind]
+    add(slot, FILL_BLOCK, block++)
+  }
   for (let i = 0; i < comp.custom.length; i++) {
     let slot = new PlanSlot('custom.' + i.toString(), comp.custom[i])
     slot.reads = comp.customReads.slice()
@@ -3225,7 +3660,7 @@ export function wholeScreenPlan(sketch: Sketch, widget: boolean): ScreenPlan {
   plan.globals.set('__TITLE__', inQuotes(sketch.title))
   plan.globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
   plan.globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
-  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : 'chart'))
+  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : ''))
   let n = 0
   let add = (need: string, phone: boolean = false): void => { plan.addToWrite('screen.' + (n++).toString(), need, phone) }
   for (let input of sketch.inputs) {

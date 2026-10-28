@@ -28,12 +28,11 @@ import { uiAbRequested, runUiAb } from '../vera/VeraUiAb'
 import { selectUiForPrompt, UI_SELECT_FULL, UI_SELECT_PROMPT, UI_TOOL_NOTE } from '../vera/VeraUiSelect'
 import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 import { composeEnabled, ComposeResult } from '../vera/VeraCompose'
-import { TemplateBuild, BUILD_COMPLETE, BUILD_TEMPLATE } from '../vera/VeraTemplatePipeline'
 import { AgentRequest, AgentResult } from '../vera/agent/VeraAgent'
 import { appAgentHost } from '../vera/agent/AgentAppHost'
 import { AgentQuestion } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
-import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE, OUTCOME_COMPLETE, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
+import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { RouteInfo, routeLabel, routeShort, jevLabel, checkLabel, checkShort, routeWhy, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED, CHECK_NONE } from '../vera/VeraRoute'
 import { LastRun, describeLastRun, loadLastRun, saveLastRun } from '../vera/LastRun'
@@ -796,8 +795,8 @@ struct GeneratePage {
     // itself, mid-generation, the first time either is worth calling.
     // JevSelector.ets is unchanged and still callable; nothing here calls it.
     this.status = 'Generating (attempt 1/' + MAX_RETRIES + ')...'
-    // A new screen goes through the route (agent/VeraBuildRoute.ets): the agent and the blocks in the route's
-    // order; what neither builds comes back as not built, and the model then writes the whole program.
+    // A new screen goes through the route (agent/VeraBuildRoute.ets): the agent, then the whole screen as one hole; what
+    // neither builds comes back as not built, and the model then writes the whole program.
     // Not on top of a saved program: with previousSource set this is a change to it (the model edits it).
     let route = new RouteRequest()
     route.mode = this.mode
@@ -806,9 +805,8 @@ struct GeneratePage {
         route.agent = new AgentRequest()
         route.agent.prompt = this.prompt.trim()
       }
-      if (templateSelectEnabled()) { route.blocksPrompt = this.prompt.trim() }
     }
-    if (route.agent !== null || route.blocksPrompt.length > 0) {
+    if (route.agent !== null) {
       this.tryRoute(this.prompt.trim(), route)
       return
     }
@@ -832,23 +830,8 @@ struct GeneratePage {
       return
     }
     if (outcome.agent !== null) { this.traceAgent(outcome.agent!) }
-    if (outcome.blocks !== null) { this.noteBlocks(outcome.blocks!) }
     if (outcome.kind === OUTCOME_AGENT) {
       this.showAgent(outcome.agent!)
-      return
-    }
-    if (outcome.kind === OUTCOME_TEMPLATE) {
-      this.showTemplate(outcome.blocks!)
-      return
-    }
-    if (outcome.kind === OUTCOME_COMPLETE) {
-      let build: TemplateBuild = outcome.blocks!
-      this.completionBase = build.source
-      this.completionBaseVbc2 = build.vbc2
-      this.completionComposition = build.composition
-      this.completionSearch = build.searchText
-      this.status = build.status
-      this.startAttemptOne(userPrompt, 'Completing template')
       return
     }
     // Nothing built it: no generation from scratch, the reason is shown, to be seen and fixed.
@@ -921,51 +904,6 @@ struct GeneratePage {
     }
     run.attempts = result.custom !== null ? result.custom!.attempts : 0
     run.note = result.note
-    this.rememberRun(run)
-  }
-
-  /** What the blocks (VeraTemplatePipeline.ets) answered, for the route rows and the Metrics tab, whichever way the request went. */
-  private noteBlocks(build: TemplateBuild): void {
-    this.fastJevMs = build.jevMs
-    this.fastPathRan = true
-    this.fastSearchMs = build.searchMs
-    this.fastContentMs = build.contentMs
-    this.routeInfo = build.route
-    animateTo({ duration: 250, curve: Curve.EaseInOut }, () => { this.routeKnown = true })
-    this.routeVerifyMs = build.verifyMs
-    this.sideCalls = deepseek.getSideCalls()
-    this.lastTemplatePick = build.note
-    if (build.action === BUILD_COMPLETE || build.action === BUILD_TEMPLATE) { this.templateKinds = build.kinds }
-  }
-
-  /** A screen composed from blocks that compiles, runs and is judged to cover the request: the result as it is. */
-  private showTemplate(build: TemplateBuild): void {
-    this.generatedSource = build.source
-    this.compiledVbc2 = build.vbc2
-    this.compiledSource = build.source
-    this.compositionJson = build.composition
-    this.acceptRequest()
-    animateTo({ duration: 250, curve: Curve.EaseInOut }, () => { this.composerOpen = false })
-    this.tab = TAB_PREVIEW
-    this.compiled = true
-    this.compileErrors = ''
-    this.generating = false
-    this.totalMs = Date.now() - this.genStartTime
-    this.status = build.status
-    // The trace's closing event for a screen composed from blocks with no model call; tools/vera-bench waits for it.
-    let templateEnd: Record<string, Object> = {}
-    templateEnd['ok'] = true
-    templateEnd['attempt'] = 0
-    templateEnd['totalMs'] = this.totalMs
-    templateEnd['outcome'] = 'template'
-    trace('gen-end', templateEnd)
-    let run = new LastRun()
-    run.via = 'template'
-    run.jevMs = build.jevMs
-    run.searchMs = build.searchMs
-    run.contentMs = build.contentMs
-    run.kinds = build.kinds
-    run.note = build.note
     this.rememberRun(run)
   }
 

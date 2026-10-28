@@ -15,9 +15,9 @@ import { requestBenchmark } from '../vera/VeraSearchBenchmark'
 import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
-import { setComposeEnabled, setComposePlanEnabled, setCustomSectionsEnabled } from '../vera/VeraCompose'
-import { setRouteOrder, routeOrder, setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
-import { setAlignEnabled } from '../vera/agent/AgentAlign'
+import { setComposeEnabled, setComposePlanEnabled, setCustomSectionsEnabled, setUnifiedChoice } from '../vera/VeraCompose'
+import { setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
+import { setAlignEnabled, setAlignWide } from '../vera/agent/AgentAlign'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
@@ -343,16 +343,18 @@ export default class EntryAbility extends UIAbility {
       setCustomSectionsEnabled(!(text === '0' || text === 'false' || text === 'off'))
       hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE custom sections ' + text + ' from launch parameter')
     }
-    let order = params['veraOrder']
-    if (order !== null && order !== undefined) {
-      setRouteOrder(String(order).trim())
-      hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE order ' + routeOrder() + ' from launch parameter')
-    }
     let align = params['veraAlign']
     if (align !== null && align !== undefined) {
       let text = String(align).trim()
       setAlignEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      setAlignWide(text === 'wide')
       hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE align ' + text + ' from launch parameter')
+    }
+    let unified = params['veraUnified']
+    if (unified !== null && unified !== undefined) {
+      let text = String(unified).trim()
+      setUnifiedChoice(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE unified choice ' + text + ' from launch parameter')
     }
     let whole = params['veraWhole']
     if (whole !== null && whole !== undefined) {
