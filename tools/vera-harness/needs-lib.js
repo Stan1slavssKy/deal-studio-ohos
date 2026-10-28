@@ -18,8 +18,8 @@ function needsOf(old) {
   if (old.countdown) out.needs.push({type: 'countdown', ...old.countdown})
   if (old.stopwatch) out.needs.push({type: 'stopwatch', ...old.stopwatch})
   if (old.list) out.needs.push({type: 'entries', ...old.list})
-  for (const r of old.ready || []) out.needs.push({type: 'content', what: typeof r === 'string' ? r : Object.values(r).join('. ')})
-  for (const e of old.events || []) out.needs.push({type: 'action', ...e, on: /\bends?\b|zero/.test(e.when) ? 'countdown_end' : /added/.test(e.when) ? 'entry_added' : /\btap/.test(e.when) ? 'row_tap' : 'other'})
+  for (const r of old.ready || []) { const what = typeof r === 'string' ? r : Object.values(r).join('. '); out.needs.push({type: 'content', what, from: what}) }
+  for (const e of old.events || []) out.needs.push({type: 'action', ...e, from: e.when + ' ' + e.what, on: /\bends?\b|zero/.test(e.when) ? 'countdown_end' : /added/.test(e.when) ? 'entry_added' : /\btap/.test(e.when) ? 'row_tap' : 'other'})
   for (const o of old.other || []) out.needs.push({type: 'other', what: o})
   return out
 }

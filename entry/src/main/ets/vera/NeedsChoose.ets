@@ -9,9 +9,9 @@
  * Jev does not give leaves the part, as before. `--ps veraNeeds 1` turns this on.
  */
 
-import { Sketch, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
+import { Sketch, SketchInput, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
   listNeeds, clockOptions, listOptions, choice, askReady, LIST_SECTIONS, PART } from './VeraCompose'
-import { NeedsPlan, Need, NEEDS_PROMPT, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
+import { NeedsPlan, Need, NEEDS_PROMPT, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
   needOf } from './NeedsPlan'
 
 let needsOn: boolean = false
@@ -110,6 +110,45 @@ export function readChoices(body: string): Record<string, Object> | null {
   return null
 }
 
+/** Every length of time the request names, in seconds, each once: "10 minute", "2 hours", "90 s". */
+export function requestedSeconds(prompt: string): number[] {
+  let found: number[] = []
+  let pattern = /(\d+(?:\.\d+)?)[ -]?(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b/gi
+  let m = pattern.exec(prompt)
+  while (m !== null) {
+    let unit = m[2].toLowerCase()
+    let each = unit.startsWith('h') ? 3600 : (unit.startsWith('m') ? 60 : 1)
+    let seconds = Math.round(parseFloat(m[1]) * each)
+    if (seconds > 0 && found.indexOf(seconds) < 0) { found.push(seconds) }
+    m = pattern.exec(prompt)
+  }
+  return found
+}
+
+/**
+ * A request that names one length of time ("a 10 minute timer") starts the one input that holds a length on it, when the plan
+ * has the length among its options (or within its range) and starts elsewhere. Returns what was changed, in words; '' when nothing.
+ */
+export function startOnRequested(sketch: Sketch, prompt: string): string {
+  let wanted = requestedSeconds(prompt)
+  if (wanted.length !== 1) { return '' }
+  let lengths = sketch.inputs.filter((i: SketchInput): boolean => i.measure === 'seconds' || i.measure === 'minutes')
+  if (lengths.length !== 1) { return '' }
+  let input = lengths[0]
+  let unit = input.measure === 'minutes' ? 60 : 1
+  if (input.kind === 'choice') {
+    let at = input.options.findIndex((o: SketchOption): boolean => Math.round(o.value * unit) === wanted[0])
+    if (at < 0 || input.value === at) { return '' }
+    input.value = at
+    return input.label + ' starts on ' + input.options[at].label
+  }
+  let value = wanted[0] / unit
+  if (input.kind !== 'amount' && input.kind !== 'count') { return '' }
+  if (input.value === value || value < input.min || value > input.max) { return '' }
+  input.value = value
+  return input.label + ' starts at ' + value.toString()
+}
+
 class DrawnPlan {
   text: string = ''
   plan: NeedsPlan | null = null
@@ -190,6 +229,13 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     text = redrawn.text
   }
   result.sketch = text
+  // What the model added that the request does not ask for (a note, a reminder nobody named) is not built.
+  let unasked = dropUnasked(plan, prompt)
+  if (unasked.length > 0) {
+    let redone = sketchFrom(plan)
+    if (redone !== null) { redone!.questions = sketch.questions; sketch = redone! }
+  }
+  let startedOn = startOnRequested(sketch, prompt)
   let choose = buildChooseRequest(prompt, plan, sketch)
   let answers: Record<string, Object> | null = null
   let skipped: string[] = choose.settled
@@ -202,5 +248,11 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     // Without the choices the composer asks them itself, as it did before there was a plan of needs.
     if (answers === null) { skipped = [] }
   }
-  return composeFromSketch(result, prompt, sketch, askChoices, widget, answers, skipped)
+  let composed = await composeFromSketch(result, prompt, sketch, askChoices, widget, answers, skipped)
+  if (startedOn.length > 0) { composed.note += '; ' + startedOn + ', as the request says' }
+  if (unasked.length > 0) {
+    composed.note += '; not in the request, so not built: ' + unasked.join('; ')
+    for (let words of unasked) { composed.dropped.push('not in the request: ' + words) }
+  }
+  return composed
 }

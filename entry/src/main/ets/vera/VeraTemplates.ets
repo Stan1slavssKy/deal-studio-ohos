@@ -2109,7 +2109,8 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     }
     if (notes.length() > 0) { sections.push(ui.Section("supporting", "", "", notes)); }
   }`,
-    [new SlotSpec('__NAVIGATE_IDX__', ['false', 'true'], 'noul', 'Should each stop have a button that opens it in the maps app for directions?', navigate, 0.6),
+    [new SlotSpec('__NAVIGATE_IDX__', ['false', 'true'], 'noul', 'Should each stop have a button that opens it in the maps app for directions?', navigate, 0.6,
+      ['navigate']),
      new SlotSpec('__CALENDAR_IDX__', ['false', 'true'], 'noul', 'Should each stop be addable to the phone calendar, with buttons to open the calendar and to remove the events this app added?', calendar, 0.6,
       ['calendar_add', 'calendar_open', 'calendar_clear'])],
     [

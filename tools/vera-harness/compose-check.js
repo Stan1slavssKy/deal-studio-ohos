@@ -443,7 +443,8 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   // An action a chosen section does itself is not also kept as a part: the same button would be on the screen twice.
   {
     const comp = {events: [{id: 'a', what: 'opens the calendar'}, {id: 'b', what: 'vibrates'}], effects: new Map([['a', 'calendar_open'], ['b', 'vibrate']]),
-      args: new Map([['a', new Map()], ['b', new Map()]]), moments: new Map([['a', 'button'], ['b', 'button']]), dropped: []}
+      args: new Map([['a', new Map()], ['b', new Map()]]), moments: new Map([['a', 'button'], ['b', 'button']]), dropped: [],
+      customEffects: new Map(), custom: [], phoneNeeds: [], unboundNeeds: []}
     assert.deepEqual(c.dropProvided(comp, ['calendar_add', 'calendar_open']), ['opens the calendar'])
     assert.deepEqual(comp.events.map(e => e.id), ['b'])
     assert.ok(!comp.effects.has('a') && comp.effects.has('b') && !comp.moments.has('a') && !comp.args.has('a'))
@@ -637,7 +638,8 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   const comp = c.readComposition(answers, sketch)
   c.setCustomSectionsEnabled(false)
   assert.deepEqual(comp.unbound, [])
-  assert.deepEqual(comp.custom, ['the figure "Total": the sum of the dice rolled'])
+  // The plan's own formula and worked example go with the need, for the one who writes it.
+  assert.deepEqual(comp.custom, ['the figure "Total": the sum of the dice rolled (the plan works it out as dice * 3.5; for dice = 2 that is 7)'])
   assert.deepEqual(comp.inputs.map(i => i.id), ['dice'])
   assert.equal(comp.sketch.values.length, 0)
 }

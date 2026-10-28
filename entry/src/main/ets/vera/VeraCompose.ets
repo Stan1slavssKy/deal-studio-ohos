@@ -190,6 +190,8 @@ export class SketchValue {
   /** The sketch's worked example for the formula: sample numbers for what it reads, and what it gives for them. */
   given: Map<string, number> = new Map<string, number>()
   result: number = NaN
+  /** A step toward another figure that the request does not ask to see: worked out, not shown. */
+  hidden: boolean = false
 }
 
 export class SketchEvent {
@@ -468,6 +470,7 @@ export function parseSketch(text: string): Sketch | null {
       value.unit = value.format === 'money' ? currencySign(str(r, 'unit', '')) : str(r, 'unit', '')
       value.decimals = decimalsOf(r)
       value.formula = str(r, 'formula', '').trim()
+      value.hidden = r['shown'] === false
       let example = r['example']
       if (example !== null && example !== undefined && typeof example === 'object') {
         let ex = example as Record<string, Object>
@@ -1730,10 +1733,21 @@ export class Binding {
 export class Replaced {
   kind: string
   need: string
-  constructor(kind: string, need: string) {
+  /** What the section is to do that the plan fixed and the section's own defaults would not (a countdown's length), in words; '' when nothing. */
+  detail: string
+  constructor(kind: string, need: string, detail: string = '') {
     this.kind = kind
     this.need = need
+    this.detail = detail
   }
+}
+
+/** A length of time in words: "2 hours", "15 minutes", "90 seconds". */
+export function lengthWords(seconds: number): string {
+  let plural = (n: number, unit: string): string => n.toString() + ' ' + unit + (n === 1 ? '' : 's')
+  if (seconds >= 3600 && seconds % 3600 === 0) { return plural(seconds / 3600, 'hour') }
+  if (seconds >= 60 && seconds % 60 === 0) { return plural(seconds / 60, 'minute') }
+  return plural(Math.round(seconds), 'second')
 }
 
 export class Composition {
@@ -1785,6 +1799,11 @@ export class Composition {
   /** The needs of `custom` that are something the phone or another app does: the section is shown the phone's functions for them. */
   phoneNeeds: string[] = []
   /**
+   * For such a need, the effect Jev named for it before something it needs (a place, a title) could not be given: a section of
+   * the catalogue that does that effect does the need too (dropProvided).
+   */
+  customEffects: Map<string, string> = new Map<string, string>()
+  /**
    * What was left out of the plan because a section of the catalogue is said to do it, in words: the section's own options
    * decide whether it does, so the finished screen is read against these (agent/AgentClaims.ets).
    */
@@ -1812,6 +1831,18 @@ export function dropProvided(comp: Composition, provided: string[]): string[] {
     out.push(e.what)
     return false
   })
+  // An event whose effect was named but could not be given what it needs (the place of a stop: the section's stops are the section's)
+  // went to the section the model writes; a section that does that effect does it, so it is not written as well.
+  let done: string[] = []
+  comp.customEffects.forEach((fx: string, need: string) => { if (provided.indexOf(fx) >= 0) { done.push(need) } })
+  for (let need of done) {
+    comp.customEffects.delete(need)
+    comp.custom = comp.custom.filter((c: string): boolean => c !== need)
+    comp.phoneNeeds = comp.phoneNeeds.filter((c: string): boolean => c !== need)
+    comp.unboundNeeds = comp.unboundNeeds.filter((c: string): boolean => c !== need)
+    comp.dropped.push('event "' + need + '": a section does it')
+    out.push(need)
+  }
   return out
 }
 
@@ -1834,6 +1865,35 @@ function withList(sketch: Sketch, list: SketchList | null): Sketch {
   out.ready = sketch.ready
   out.other = sketch.other
   return out
+}
+
+/**
+ * How a figure the model writes is to be shown, in words: a time of day held as minutes since midnight shown as the raw number
+ * ("960" for 16:00) is not a time.
+ */
+function figureForm(v: SketchValue): string {
+  return figureShown(v) + planWorked(v)
+}
+
+/** What the plan itself says about working the figure out: its formula and the worked example, for the one who writes it. */
+function planWorked(v: SketchValue): string {
+  if (v.formula.length === 0) { return '' }
+  let said = ' (the plan works it out as ' + v.formula
+  if (!Number.isNaN(v.result)) {
+    let given: string[] = []
+    v.given.forEach((n: number, name: string) => { given.push(name + ' = ' + numberLiteral(n)) })
+    said += '; for ' + (given.length > 0 ? given.join(', ') : 'its example') + ' that is ' + numberLiteral(v.result)
+  }
+  return said + ')'
+}
+
+function figureShown(v: SketchValue): string {
+  if (v.format === 'clock') { return ' (a time of day: show it as hh:mm, never as the number of minutes since midnight)' }
+  if (v.format === 'minutes') { return ' (a length of time in minutes: show it as minutes, or as hours and minutes)' }
+  if (v.format === 'seconds') { return ' (a length of time in seconds: show it as m:ss)' }
+  if (v.format === 'money') { return ' (money: show it with its currency sign' + (v.unit.length > 0 ? ' ' + v.unit : '') + ')' }
+  if (v.format === 'percent') { return ' (a percent: show it with the % sign)' }
+  return ''
 }
 
 /**
@@ -1896,11 +1956,15 @@ export function canReplaceClock(comp: Composition): boolean {
 
 export function replaceClock(comp: Composition): void {
   let need = comp.sketch.countdown
+  // The length the plan fixed goes with the need: the section writes its own presets, and a countdown of two hours that the
+  // section shows as fifteen minutes is not the countdown the request asked for.
+  let source = comp.sketch.constants.find((k: SketchConstant): boolean => k.id === comp.countdownFrom)
+  let length = source === undefined ? '' : lengthWords(source.measure === 'minutes' ? source.value * 60 : source.value)
   comp.sketch = withoutClock(comp.sketch)
   comp.countdownFrom = ''
   comp.blocks.push('timer')
-  comp.replaced.push(new Replaced('timer', need))
-  comp.claimed.push(need)
+  comp.replaced.push(new Replaced('timer', need, length.length > 0 ? 'counts down ' + length + ' (its first preset)' : ''))
+  comp.claimed.push(length.length > 0 ? need + ', counting down ' + length : need)
   comp.dropped.push('"' + need + '": a section does it, not a part')
 }
 
@@ -1923,6 +1987,7 @@ function showEntryTotalsAsNumbers(comp: Composition): void {
     plain.unit = v.format === 'minutes' ? 'min' : 's'
     plain.decimals = v.decimals >= 0 ? v.decimals : 0
     plain.formula = v.formula
+    plain.hidden = v.hidden
     plain.given = v.given
     plain.result = v.result
     shown.push(plain)
@@ -2177,6 +2242,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       comp.custom.push(need)
       comp.phoneNeeds.push(need)
       comp.unboundNeeds.push(need)
+      if (picked.length > 0) { comp.customEffects.set(need, picked) }
     } else if (e.asked) {
       comp.unbound.push('event "' + e.what + '": ' + missing)
       comp.unboundNeeds.push(e.what + ' (' + e.when + ')')
@@ -2337,7 +2403,7 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
         written.push(id)
         return
       }
-      comp.custom.push('the figure "' + v.label + '": ' + v.means)
+      comp.custom.push('the figure "' + v.label + '": ' + v.means + figureForm(v))
       for (let input of sketch.inputs) { if (new RegExp('\\b' + input.id + '\\b').test(v.formula)) { comp.customReads.push(input.id) } }
       leaving.push(id)
       written.push(id)
@@ -2911,6 +2977,8 @@ function figuresOf(comp: Composition): Figures {
   let leading: string[] = []
   for (let v of sketch.values) {
     let b = comp.bindings.get(v.id)!
+    // A step toward another figure is worked out with the rest and shown nowhere.
+    if (v.hidden) { continue }
     if (b.show === 'hero' && comp.widget) { leading.push(statFor(v, v.id)) }
     else if (b.show === 'hero') { out.heroes.push(v.id) }
     else if (b.show === 'progress') { out.bars.push('ui.Progress("accent", ' + quote(v.label) + ', math.round(math.min(math.max(' + v.id + ', 0), 1) * 1000), 1000)') }
@@ -2951,7 +3019,7 @@ function figuresOf(comp: Composition): Figures {
     for (let g of givens) { figureRows.push(figureRow(g, g.id)) }
     for (let v of sketch.values) {
       let b = comp.bindings.get(v.id)!
-      if (b.show === 'progress' || out.heroes.indexOf(v.id) >= 0) { continue }
+      if (v.hidden || b.show === 'progress' || out.heroes.indexOf(v.id) >= 0) { continue }
       figureRows.push(figureRow(v, v.id))
     }
     stats = []

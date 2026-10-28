@@ -14,7 +14,7 @@ import { BlockRequest, BlockFill } from '../SectionFill'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
-import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, partsContract, dropProvided, ComposeResult, Composition, Sketch } from '../VeraCompose'
+import { composeWith, Replaced, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, partsContract, dropProvided, ComposeResult, Composition, Sketch } from '../VeraCompose'
 import { ScreenPlan, PlanSlot, PlanComponent, assemblePlan, FILL_BLOCK, FILL_PART } from '../ScreenPlan'
 import { compileVeraSource } from '../VeraCompiler'
 import { Repaired, settleProgram } from './AgentRepair'
@@ -146,7 +146,12 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       host.status(comp.realData ? 'Looking up real data...' : 'Filling in the sections...')
       let blocks = new BlockRequest()
       blocks.kinds = comp.blocks
-      blocks.prompt = request.prompt
+      // What the plan fixed for a section that took a part's place (a countdown's length) is told to the section's writer.
+      let fixed: string[] = comp.replaced.filter((r: Replaced): boolean => r.detail.length > 0).map((r: Replaced): string => r.need + ': ' + r.detail)
+      // The plan's own words for what each section is to hold: the section is written from them, not from the request alone, so
+      // that it does not add what the plan did not (a timer's length, another list's worth of items).
+      let said: string = needsEnabled() && comp.sketch.ready.length > 0 ? '\n\nThe plan says the sections are for: ' + comp.sketch.ready.join(' | ') : ''
+      blocks.prompt = (fixed.length > 0 ? request.prompt + '\n\nThe plan fixes: ' + fixed.join('; ') : request.prompt) + said
       blocks.realData = comp.realData
       blocks.offset = partCount(comp)
       blocks.compose = (filled: Map<string, string>[], _globals: Map<string, string>): string => assembleProgram(comp, filled)

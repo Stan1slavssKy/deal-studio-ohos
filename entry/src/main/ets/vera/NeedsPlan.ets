@@ -47,6 +47,8 @@ export class Need {
   reads: string[] = []
   /** For a countdown: the id the plan says sets its length. */
   length: string = ''
+  /** For content and an action: the words of the request that ask for it, as the model quoted them. */
+  from: string = ''
 }
 
 export class NeedsPlan {
@@ -71,6 +73,7 @@ export const NEEDS_PROMPT: string =
   '   {"type": "figure", "id": camelCase, "label": shown label, "means": what the number is, in plain words,\n' +
   '    "format": "money" | "percent" | "count" | "seconds" | "minutes" | "time_of_day" | "fraction" | "plain", "unit": as for inputs,\n' +
   '    "decimals": for a plain number, how many digits after the point to show, 0 to 6, only when one digit would lose what matters,\n' +
+  '    "shown": false for every figure that only feeds another figure and is not what the request names, however informative it looks; otherwise leave it out,\n' +
   '    "formula": how it is worked out, as an expression over the ids of inputs, constants, the figures before it and the quantities below,\n' +
   '    with numbers, + - * / %, parentheses and floor, ceil, round, abs, min, max, pow, sqrt,\n' +
   '    "example": {"given": {each id or quantity the formula needs, directly or through the figures before it: a sample number},\n' +
@@ -80,9 +83,11 @@ export const NEEDS_PROMPT: string =
   '   {"type": "entries", "label": what the entries are, "fields": what each entry holds, up to 4: [{"id": camelCase, "label": shown label,\n' +
   '    "kind": "text" | "number" | "time" | "toggle", "measure": for a number, as for inputs, "unit": as for inputs, "value": starting value,\n' +
   '    "decimals": for a plain number, as for a figure}] (no fields when adding an entry takes only a tap)},\n' +
-  '   {"type": "content", "what": in plain words everything the need involves: what it lists or shows, what the person does with it, what the phone does},\n' +
+  '   {"type": "content", "what": in plain words everything the need involves: what it lists or shows, what the person does with it, what the phone does,\n' +
+  '    "from": the words of the request that ask for it, copied exactly},\n' +
   '   {"type": "action", "id": camelCase, "when": the moment, "what": what the phone does, "asked": true if the request asks for it, false if you add it,\n' +
-  '    "on": "countdown_end" | "entry_added" | "row_tap" | "button" | "time" | "other"},\n' +
+  '    "on": "countdown_end" | "entry_added" | "row_tap" | "button" | "time" | "other",\n' +
+  '    "from": the words of the request that ask for it, copied exactly},\n' +
   '   {"type": "other", "what": a few words}],\n' +
   ' "questions": [at most 2, usually none: {"id": camelCase, "ask": a short question for the person, "options": 2 to 4 short answers,\n' +
   '   "default": the index of the answer this plan assumes}]}\n' +
@@ -113,6 +118,19 @@ export const NEEDS_PROMPT: string =
   'it needs, such as when it starts, is a time input or a time field, even when the request does not name it. ' +
   'other lists everything the request asks for that no type above covers; it is empty only when nothing is left out. Leaving a requested feature out of the plan is wrong. ' +
   'Keep to what the request asks for: no inputs, figures or actions it does not need. ' +
+  'Where the request gives a number for something the person sets (a length of time, an amount, a count), that input starts at it, ' +
+  'and a choice among several values has that one among its options and starts on it. ' +
+  'A countdown or a stopwatch is for a length of time the person starts and watches run: a reminder, an alarm or a notification is an action ' +
+  'the phone does at its time, never a countdown, and the time left until it is not shown unless the request asks for it. ' +
+  'entries are only records the person keeps and adds to; items the request names for the person to tick off or read are content, ' +
+  'never also entries. What is written for the request (content) shows its own progress and counts: no figure counts its items, ' +
+  'and entries.count and entries.total are only for entries the person adds. ' +
+  'A need that only helps fill in another need, such as a list of choices for a field, belongs to that need and is not a need of its own. ' +
+  'Labels are short: three words at most. ' +
+  'A number of hours or days is measure number with its unit written in unit (hours, days): measure seconds or minutes is only for a number counted in seconds or minutes. ' +
+  'The screen shows what the request names; the steps worked out on the way to it are shown: false. ' +
+  'A content or action need is written only when the request itself asks for it, in words you can quote: a note, a tip, an example, ' +
+  'a reminder or a notification the request does not name is not written, however useful it would be. ' +
   'Use the numbers the request gives; where it gives none, pick sensible ones. ' +
   'questions are only for what the request leaves out and no sensible choice can stand in for, because the answer changes ' +
   'what the app is (which two units a converter is between, which kind of thing a tracker keeps); never for a number, a ' +
@@ -171,8 +189,10 @@ export function parseNeedsPlan(reply: string): NeedsPlan | null {
     } else if (type === NEED_ACTION) {
       need.words = text(raw, 'when') + ': ' + text(raw, 'what')
       need.on = ON_MOMENTS.indexOf(text(raw, 'on')) >= 0 ? text(raw, 'on') : 'other'
+      need.from = text(raw, 'from')
     } else {
       need.words = text(raw, 'what')
+      if (type === NEED_CONTENT) { need.from = text(raw, 'from') }
     }
     plan.needs.push(need)
   }
@@ -237,4 +257,50 @@ export function sketchFrom(plan: NeedsPlan): Sketch | null {
   o['ready'] = ready
   o['other'] = other
   return parseSketch(JSON.stringify(o))
+}
+
+const STOP_WORDS: string[] = ['the', 'and', 'for', 'with', 'that', 'this', 'when', 'from', 'your', 'you', 'are', 'its', 'has', 'have', 'will',
+  'all', 'any', 'can', 'each', 'every', 'into', 'then', 'than', 'what', 'who', 'how', 'out', 'one', 'new', 'get', 'set', 'per']
+
+/** The words of a sentence that carry its meaning: lower case, three letters or more, not one of the small ones. */
+function meaningWords(sentence: string): string[] {
+  let found: string[] = []
+  for (let w of sentence.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (w.length >= 3 && STOP_WORDS.indexOf(w) < 0 && found.indexOf(w) < 0) { found.push(w) }
+  }
+  return found
+}
+
+/**
+ * Whether the words a need quotes from the request are in it: at least half of the quote's meaning words are the request's own (a
+ * plural or a longer form of one counts). A quote that is missing, or that is not from the request, is a need the model made up.
+ */
+export function asksFor(request: string, quote: string): boolean {
+  let words = meaningWords(quote)
+  if (words.length === 0) { return false }
+  let have = meaningWords(request)
+  let same = (a: string, b: string): boolean => a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a)))
+  let found = words.filter((w: string): boolean => have.some((h: string): boolean => same(w, h))).length
+  return found * 2 >= words.length
+}
+
+/**
+ * The needs the request does not ask for, taken out of the plan: a content or action need whose quote is not the request's (one with no
+ * quote stays). The
+ * inputs and figures such an action needed are left with nothing that reads them, and the composer leaves them out.
+ * Returns the words of each need dropped.
+ */
+export function dropUnasked(plan: NeedsPlan, request: string): string[] {
+  let dropped: string[] = []
+  let kept: Need[] = []
+  for (let n of plan.needs) {
+    // A need with no quote at all cannot be judged and stays: the check is for what the model made up and signed with words not the request's.
+    if ((n.type === NEED_CONTENT || n.type === NEED_ACTION) && n.from.length > 0 && !asksFor(request, n.from)) {
+      dropped.push(n.words.length > 60 ? n.words.substring(0, 60) + '...' : n.words)
+    } else {
+      kept.push(n)
+    }
+  }
+  plan.needs = kept
+  return dropped
 }

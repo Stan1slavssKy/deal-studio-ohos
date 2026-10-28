@@ -226,10 +226,26 @@ export function expandListRows(raw: Object | undefined, spec: ListFieldSpec): Li
  * which the caller already treats as "generated normally" -- this exists to
  * protect the fast path's hit rate, not as a safety boundary.
  */
+/**
+ * `s` cut to `maxLength`, at the end of a word and not through one ("Nanjing Road Pedestrian Stre" is not a name), without a
+ * small word left hanging at the end ("Lujiazui skyline and"). A text with no space in its first half is cut where it is.
+ */
+export function cutAtWord(s: string, maxLength: number): string {
+  let cut = s.substring(0, maxLength)
+  if (s.charAt(maxLength) !== ' ') {
+    let at = cut.lastIndexOf(' ')
+    if (at >= Math.floor(maxLength / 2)) { cut = cut.substring(0, at) }
+  }
+  cut = cut.trim()
+  let hanging = /\s+(and|or|of|the|a|an|to|in|on|at|for|with|by)$/i
+  while (hanging.test(cut) && cut.length > 4) { cut = cut.replace(hanging, '') }
+  return cut
+}
+
 export function escapeForVeraString(raw: string, maxLength: number): string {
   let s = raw.replace(/[\r\n]+/g, ' ').trim()
   s = s.replace(/_{2,}/g, '_')
-  if (s.length > maxLength) { s = s.substring(0, maxLength).trim() }
+  if (s.length > maxLength) { s = cutAtWord(s, maxLength) }
   s = s.split('\\').join('\\\\').split('"').join('\\"')
   return s
 }

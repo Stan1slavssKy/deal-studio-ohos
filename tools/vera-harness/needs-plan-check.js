@@ -34,6 +34,11 @@ console.log('needs-plan: ' + labels.length + ' recorded sketches survive the rou
 for (const word of ['READY', 'ready-made', 'section', 'catalogue', 'entryCount', 'entryTotal', 'part ']) {
   assert.ok(!np.NEEDS_PROMPT.includes(word), 'the needs prompt does not say "' + word + '"')
 }
+// What the prompt asks for where the first phone run went wrong: a number the request gives is the starting value, a reminder is
+// not a countdown, what is written for the request keeps its own counts, labels are short.
+for (const rule of [/shown": false for every figure that only feeds another figure/, /steps worked out on the way to it are shown: false/, /that input starts at it/, /never a countdown/, /no figure counts its items/, /three words at most/, /measure seconds or minutes is only for a number counted in seconds or minutes/]) {
+  assert.match(np.NEEDS_PROMPT, rule)
+}
 assert.ok(np.NEEDS_PROMPT.includes('entries.count') && np.NEEDS_PROMPT.includes('clock.remaining'))
 
 // A figure's quantities are found, and an action keeps its moment.
@@ -64,3 +69,65 @@ assert.ok(np.NEEDS_PROMPT.includes('entries.count') && np.NEEDS_PROMPT.includes(
 assert.equal(np.parseNeedsPlan('no json'), null)
 assert.equal(np.parseNeedsPlan('{"title": '), null)
 console.log('needs-plan-check ok')
+// A length of time in words, for what a section is told.
+{
+  const {lengthWords} = loadVera('VeraCompose')
+  assert.equal(lengthWords(7200), '2 hours'); assert.equal(lengthWords(3600), '1 hour'); assert.equal(lengthWords(900), '15 minutes')
+  assert.equal(lengthWords(60), '1 minute'); assert.equal(lengthWords(90), '90 seconds'); assert.equal(lengthWords(45), '45 seconds')
+}
+console.log('needs-plan lengths ok')
+
+// What the request asks for: a quote counts when half its meaning words are the request's.
+{
+  assert.equal(np.asksFor('10 minute meditation timer with a bell at the end', 'a bell at the end'), true)
+  assert.equal(np.asksFor('10 minute meditation timer with a bell at the end', 'plays a bell when time is up'), true, 'a paraphrase that keeps the bell')
+  assert.equal(np.asksFor('mood diary', 'sends a daily reminder to log the mood'), false, 'a reminder nobody named')
+  assert.equal(np.asksFor('daily medicine reminders', 'reminders every day'), true, 'plural and word order')
+  assert.equal(np.asksFor('packing checklist', ''), false, 'an empty quote is not the request\'s')
+  const plan = np.parseNeedsPlan(JSON.stringify({title: 'T', needs: [
+    {type: 'content', what: 'a short note', from: 'a short note about doctors'},
+    {type: 'content', what: 'items to pack', from: 'packing checklist'},
+    {type: 'action', id: 'a', when: 'each day', what: 'sends a reminder', from: ''},
+    {type: 'figure', id: 'f', label: 'F', formula: '1'}]}))
+  const dropped = np.dropUnasked(plan, 'beach packing checklist')
+  assert.equal(dropped.length, 1)
+  assert.deepEqual(plan.needs.map(n => n.type), ['content', 'action', 'figure'], 'a need with no quote cannot be judged and stays')
+  assert.equal(plan.needs[0].words, 'items to pack')
+}
+// A figure that is a step is worked out and not shown.
+{
+  const comp = (() => {
+    const sketchJson = JSON.parse(fs.readFileSync(path.join(dir, 'mortgage', 'sketch.json'), 'utf8'))
+    const body = fs.readFileSync(path.join(dir, 'mortgage', 'jev-answer.json'), 'utf8')
+    const sketch = c.parseSketch(JSON.stringify(sketchJson))
+    return c.readComposition(body, sketch, false)
+  })()
+  const step = comp.sketch.values.find(v => comp.bindings.has(v.id))
+  const label = step.label
+  assert.ok(c.assembleProgram(comp).includes('"' + label + '"'), 'shown by default')
+  step.hidden = true
+  const source = c.assembleProgram(comp)
+  assert.ok(!source.includes('"' + label + '"'), 'a hidden figure is not shown')
+  assert.equal(np.parseNeedsPlan(JSON.stringify({title: 'T', needs: [{type: 'figure', id: 'x', label: 'X', shown: false, formula: '1'}]})) && np.sketchFrom(np.parseNeedsPlan(JSON.stringify({title: 'T', needs: [{type: 'figure', id: 'x', label: 'X', shown: false, formula: '1'}]}))).values[0].hidden, true)
+}
+console.log('needs-plan quotes and hidden figures ok')
+
+// A text cut to its limit is cut at the end of a word, and no small word is left hanging.
+{
+  const {cutAtWord, escapeForVeraString} = loadVera('VeraTemplateContent')
+  assert.equal(cutAtWord('Nanjing Road Pedestrian Street', 28), 'Nanjing Road Pedestrian')
+  assert.equal(cutAtWord('Lujiazui skyline and Shanghai', 28), 'Lujiazui skyline')
+  assert.equal(cutAtWord('Yu Garden', 28), 'Yu Garden', 'short enough: as it is')
+  assert.equal(cutAtWord('Pneumonoultramicroscopicsilicovolcanoconiosis', 28), 'Pneumonoultramicroscopicsili', 'one long word: cut where it is')
+  assert.equal(cutAtWord('Old Town and the Harbour Quarter walk', 20), 'Old Town', 'the small words left at the cut go too')
+  assert.equal(escapeForVeraString('A "very" long place name that goes on', 12), 'A \\"very\\"')
+}
+// What the model is told of a figure it writes: a time of day is not a number.
+{
+  const comp = c.readComposition(fs.readFileSync(path.join(dir, 'mortgage', 'jev-answer.json'), 'utf8'), c.parseSketch(JSON.stringify({title: 'T',
+    inputs: [{id: 'a', label: 'A', kind: 'count', min: 0, max: 9, value: 1}],
+    values: [{id: 'leave', label: 'Leave', means: 'when to leave', format: 'time_of_day', formula: 'a * 2', example: {given: {a: 1}, result: 2}}]})), false)
+  assert.ok(comp.custom.some(t => /^the figure "Leave": when to leave \(a time of day: show it as hh:mm/.test(t)), comp.custom.join(' / '))
+  assert.ok(comp.custom.some(t => /\(the plan works it out as a \* 2; for a = 1 that is 2\)$/.test(t)), 'the plan\'s own formula goes with it: ' + comp.custom.join(' / '))
+}
+console.log('needs-plan words and forms ok')
