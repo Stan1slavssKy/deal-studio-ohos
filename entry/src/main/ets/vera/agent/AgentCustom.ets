@@ -47,20 +47,27 @@ const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE 
 const CANNOT_FORM: string = 'one short sentence for the person using the app, in plain words about their phone and its apps: ' +
   'what this app cannot do, and why. Never mention the language, the section, sdk.call or code'
 
+/** A need that cannot be done is declined on its own; the others are still written. */
+const DECLINE_RULE: string = '- When some of the needs cannot be done but others can, write the section for the ones that can and add, for each one ' +
+  'that cannot, <cannot need="the need, copied exactly">' + CANNOT_FORM + '</cannot> beside it. Answer a bare <cannot> only when none can be done.\n'
+
 /** The rule for phone calls: none, or only the targets the phone's lookups found. */
 function phoneRule(phone: string): string {
   if (phone.length === 0) {
-    return '- The section never calls sdk.call: what the phone does is not its job.\n' +
+    return DECLINE_RULE + '- The section never calls sdk.call: what the phone does is not its job.\n' +
       '- If the section cannot really do it with this language and these components -- it needs a camera, a live feed, ' +
       'the person\'s location or data the phone does not hold -- answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it with made-up data.\n'
   }
-  return '- What the phone or another app must do, the section does with sdk.call from a handler, calling ONLY targets from ' +
+  return DECLINE_RULE + '- What the phone or another app must do, the section does with sdk.call from a handler, calling ONLY targets from ' +
     '"Phone functions found" in the request, copied exactly, with the parameters they show, values from the screen\'s state. ' +
     'Its answer handler shows what came back: an answer starting with "declined" or "error" is a failure, anything else succeeded.\n' +
     '- A function that opens another app with the action ready for the person to confirm (a message filled in, a contact ' +
     'form, a route) does the job: use it, and say on the screen that the person confirms it there.\n' +
     '- Before answering <cannot>, go through the phone functions found for each need: when one does it -- even by parts, ' +
     'such as audio samples written to a renderer, or the flashlight switched on and off -- write the section with it.\n' +
+    '- A need worded as something to do inside this app that the app cannot do (it has no such component) is not refused ' +
+    'if a function found does the nearest useful thing for the person -- shows or opens the same thing in the app made for it: ' +
+    'write the section with that function, and say in a line on the screen what it does instead.\n' +
     '- If none of the phone functions found does what is needed, or it needs something the phone cannot give a program ' +
     '(a camera, a live feed, the person\'s location), answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it, never pretend a call happened, ' +
     'never call a target that is not listed.\n'
@@ -84,14 +91,14 @@ export function foundTargets(phone: string): string[] {
 function callProblem(reply: string, found: string[]): string {
   let calls = reply.split('sdk.call(').length - 1
   if (calls === 0) { return '' }
-  if (found.length === 0) { return 'The section calls sdk.call, which it never may: write it without phone calls, or answer <cannot>.' }
+  if (found.length === 0) { return 'The section calls sdk.call, which it never may: write it without phone calls.' }
   let literal = new RegExp('sdk\\.call\\(\\s*"([^"]+)"', 'g')
   let named = 0
   let m: RegExpExecArray | null = literal.exec(reply)
   while (m !== null) {
     named++
     if (found.indexOf(m[1]) < 0) {
-      return 'The section calls "' + m[1] + '", which is not one of the phone functions found. Call only those, copied exactly, or answer <cannot>.'
+      return 'The section calls "' + m[1] + '", which is not one of the phone functions found. Call only those, copied exactly:\n' + found.join('\n')
     }
     m = literal.exec(reply)
   }
@@ -164,6 +171,8 @@ export class CustomResult {
   section: FragmentSpec | null = null
   /** The writer's own sentence for the person when it answered that it cannot do it; '' otherwise. */
   cannot: string = ''
+  /** Needs the writer declined one by one while writing the section for the rest, with its sentence for each. */
+  declined: Map<string, string> = new Map<string, string>()
   /** The last try was made with thinking on. */
   thought: boolean = false
   /**
@@ -183,6 +192,19 @@ function between(text: string, tag: string): string | null {
   let close = text.indexOf('</' + tag + '>')
   if (open < 0 || close < open) { return null }
   return text.substring(open + tag.length + 2, close).trim()
+}
+
+/** The needs the reply declines one by one: <cannot need="...">sentence</cannot>, only those that name a need asked. */
+export function declinedNeeds(reply: string, needs: string[]): Map<string, string> {
+  let out = new Map<string, string>()
+  let tag = new RegExp('<cannot\\s+need\\s*=\\s*"([^"]*)"\\s*>([\\s\\S]*?)</cannot>', 'g')
+  let m: RegExpExecArray | null = tag.exec(reply)
+  while (m !== null) {
+    let need = needs.find((n: string): boolean => n === m![1].trim())
+    if (need !== undefined && m[2].trim().length > 0) { out.set(need, m[2].trim()) }
+    m = tag.exec(reply)
+  }
+  return out
 }
 
 /** The reply as a block, or null when it is not in the form asked for. */
@@ -281,10 +303,23 @@ export async function writeSection(request: CustomRequest, language: string, ask
     if (problem.length === 0) {
       // It compiles and runs; whether it does what it is for is Jev's reading. One it reads as not doing a need is asked
       // for again, saying which.
-      let missed: string[] = request.verify !== null ? undone(request, await request.verify!(verifyRequest(request, reply))) : []
-      if (missed.length === 0) {
+      // A need it declined is not read against the section and not asked for again: it is reported as it said.
+      let declined = declinedNeeds(reply, request.needs)
+      let doing = request.needs.filter((n: string): boolean => !declined.has(n))
+      let unread: string[] = []
+      if (request.verify !== null && doing.length > 0) {
+        let part = new CustomRequest()
+        part.prompt = request.prompt
+        part.needs = doing
+        unread = undone(part, await request.verify!(verifyRequest(part, reply)))
+      }
+      let missed: string[] = unread.concat(request.needs.filter((n: string): boolean => declined.has(n)))
+      if (unread.length === 0) {
         result.section = section
         result.failed = ''
+        result.declined = declined
+        result.missed = missed
+        if (missed.length > 0) { result.failed = 'custom section does not do: ' + missed.join('; ') }
         break
       }
       result.failed = 'custom section does not do: ' + missed.join('; ')

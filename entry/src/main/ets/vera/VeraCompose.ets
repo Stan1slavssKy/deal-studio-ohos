@@ -68,10 +68,12 @@ const SKETCH_BASE: string =
   '   when the app counts a length of time down to zero,\n' +
   ' "stopwatch": null, or {"label": what is being timed} when the app counts time up from zero,\n' +
   ' "list": null, or {"label": what the entries are, "fields": what each entry holds, up to 4: [{"id": camelCase, "label": shown label,\n' +
-  '   "kind": "text" | "number" | "time" | "toggle", "measure": for a number, as for inputs, "unit": as for inputs, "value": starting value}]\n' +
+  '   "kind": "text" | "number" | "time" | "toggle", "measure": for a number, as for inputs, "unit": as for inputs, "value": starting value,\n' +
+  '   "decimals": for a plain number, how many digits after the point to show, 0 to 6, only when one digit would lose what matters}]\n' +
   '   (no fields when adding an entry takes only a tap)} when the person keeps adding entries to a list,\n' +
   ' "values": [{"id": camelCase, "label": shown label, "means": what the number is, in plain words,\n' +
   '   "format": "money" | "percent" | "count" | "seconds" | "minutes" | "time_of_day" | "fraction" | "plain", "unit": as for inputs,\n' +
+  '   "decimals": for a plain number, as for a list\'s fields,\n' +
   '   "formula": how it is worked out, as an expression over the ids of inputs, constants, the values before it and the parts\' numbers,\n' +
   '   with numbers, + - * / %, parentheses and floor, ceil, round, abs, min, max, pow, sqrt,\n' +
   '   "example": {"given": {each input id or part number the formula needs, directly or through the values before it: a sample number},\n' +
@@ -172,6 +174,8 @@ export class SketchValue {
   means: string = ''
   format: string = 'plain'
   unit: string = ''
+  /** For a plain number, how many digits after the point it is shown with; -1 for the usual one. */
+  decimals: number = -1
   /** The sketch's own expression for it, used only where no formula of the vocabulary is chosen; '' when none. */
   formula: string = ''
   /** The sketch's worked example for the formula: sample numbers for what it reads, and what it gives for them. */
@@ -202,6 +206,8 @@ export class ListField {
   /** For a number, what it measures, as for inputs. */
   measure: string = 'number'
   unit: string = ''
+  /** For a plain number, how many digits after the point it is shown with; -1 for the usual one. */
+  decimals: number = -1
   /** The form's starting value: minutes since midnight for a time, 1 for an on/off that starts on. */
   value: number = 0
 }
@@ -259,6 +265,12 @@ function str(o: Record<string, Object>, key: string, fallback: string): string {
 function num(o: Record<string, Object>, key: string, fallback: number): number {
   let v = o[key]
   return typeof v === 'number' && isFinite(v as number) ? v as number : fallback
+}
+
+/** The digits after the point the sketch asks for, 0 to 6, whole; -1 when it asks for none or nonsense. */
+function decimalsOf(o: Record<string, Object>): number {
+  let n = num(o, 'decimals', -1)
+  return n >= 0 && n <= 6 && Math.floor(n) === n ? n : -1
 }
 
 function isIdentifier(s: string): boolean {
@@ -416,6 +428,7 @@ export function parseSketch(text: string): Sketch | null {
       field.measure = str(rf, 'measure', 'number')
       if (MEASURES.indexOf(field.measure) < 0 || field.measure === 'clock') { field.measure = 'number' }
       field.unit = field.measure === 'money' ? currencySign(str(rf, 'unit', '')) : str(rf, 'unit', '')
+      field.decimals = decimalsOf(rf)
       field.value = num(rf, 'value', field.kind === 'time' ? 480 : 0)
       if (field.kind === 'time') {
         field.measure = 'clock'
@@ -440,6 +453,7 @@ export function parseSketch(text: string): Sketch | null {
       if (value.format === 'time_of_day') { value.format = 'clock' }
       else if (value.format === 'clock' || VALUE_FORMATS.indexOf(value.format) < 0) { value.format = 'plain' }
       value.unit = value.format === 'money' ? currencySign(str(r, 'unit', '')) : str(r, 'unit', '')
+      value.decimals = decimalsOf(r)
       value.formula = str(r, 'formula', '').trim()
       let example = r['example']
       if (example !== null && example !== undefined && typeof example === 'object') {
@@ -1180,6 +1194,13 @@ function copyOf(m: Map<string, string>): Map<string, string> {
   return out
 }
 
+/** The plan's own questions to the person, as one sentence for a question to Jev; '' when it asked none. */
+function planQuestions(sketch: Sketch): string {
+  if (sketch.questions.length === 0) { return '' }
+  return ' The plan also asked the person: ' + sketch.questions.map((q: SketchQuestion): string =>
+    '"' + q.ask + '" (' + q.options.join(' / ') + ')').join('; ') + '.'
+}
+
 function choice(instructions: string, criteria: Map<string, string>): Record<string, Object> {
   let c: Record<string, Object> = {}
   criteria.forEach((describe: string, key: string) => { c[key] = describe })
@@ -1379,7 +1400,7 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
       let asked: Map<string, string> = new Map<string, string>()
       asked.set('asked', 'the request asks for it or clearly needs it')
       asked.set('added', 'the request neither asks for it nor needs it')
-      questions['asked.' + input.id] = choice('Does the request ask for the person to set "' + input.label + '"?', asked)
+      questions['asked.' + input.id] = choice('Does the request ask for the person to set "' + input.label + '"?' + planQuestions(sketch), asked)
     }
   }
 
@@ -1389,7 +1410,7 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
     let asked: Map<string, string> = new Map<string, string>()
     asked.set('asked', 'the request asks for it or clearly needs it')
     asked.set('added', 'the request neither asks for it nor needs it')
-    questions['asked.value.' + v.id] = choice('Does the request ask to see "' + v.label + '" (' + v.means + ')?', asked)
+    questions['asked.value.' + v.id] = choice('Does the request ask to see "' + v.label + '" (' + v.means + ')?' + planQuestions(sketch), asked)
     // The sketch's own formula, in words, for when the vocabulary has none: Jev reads it against the request.
     let written = parseFormula(v.formula, formulaNames(sketch, i))
     if (written.node !== null) {
@@ -1445,7 +1466,7 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
       asked.set('asked', 'the request asks for it or clearly needs it')
       asked.set('added', 'the request neither asks for it nor needs it')
       questions['asked.field.' + f.id] = choice('Does the request ask the person to fill in "' + f.label + '" for each entry of ' +
-        sketch.list.label + '?', asked)
+        sketch.list.label + '?' + planQuestions(sketch), asked)
     }
   }
 
@@ -1477,10 +1498,13 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
     questions['covers.' + i.toString()] = choice('The request also asks for "' + sketch.other[i] +
       '". Is that exactly what one of these parts of the app already does?', options)
     // As for inputs and values: an item the sketch added on its own is left out rather than refused.
+    // Whether it is the person's or the plan's own: it is the person's when the request is about what it does or shows, and
+    // when a question the plan itself put to the person concerns it -- a plan that asks how something should be done cannot
+    // then call it unasked.
     let asked: Map<string, string> = new Map<string, string>()
-    asked.set('asked', 'the request asks for it or clearly needs it')
-    asked.set('added', 'the request neither asks for it nor needs it')
-    questions['asked.other.' + i.toString()] = choice('Does the request ask for this: "' + sketch.other[i] + '"?', asked)
+    asked.set('asked', 'the request names it, or is about what it does or shows, or clearly needs it, or one of the plan\'s questions to the person concerns it')
+    asked.set('added', 'the plan\'s own addition: the request is not about it and no question to the person concerns it')
+    questions['asked.other.' + i.toString()] = choice('Is "' + sketch.other[i] + '" something the person wants?' + planQuestions(sketch), asked)
     // A chat widget's description is written as a spec, down to labels and buttons; a detail of how the widget
     // looks or is worked is left out rather than refused, as long as what it works out or does is all there.
     if (widget) { questions['detail.' + i.toString()] = detailQuestion(sketch.other[i]) }
@@ -1594,10 +1618,34 @@ export class Composition {
   customReads: string[] = []
   /** The needs of `custom` that are something the phone or another app does: the section is shown the phone's functions for them. */
   phoneNeeds: string[] = []
+  /**
+   * What was left out of the plan because a section of the catalogue is said to do it, in words: the section's own options
+   * decide whether it does, so the finished screen is read against these (agent/AgentClaims.ets).
+   */
+  claimed: string[] = []
   constructor(sketch: Sketch) { this.sketch = sketch }
 }
 
 const PICK_ABOVE: number = 0.25
+
+/**
+ * Leaves out the events whose effect a chosen section already does (SlotSpec.provides, for the slots Jev turned on): the
+ * section's button and the part's would be the same button twice. Returns what was left out, in words.
+ */
+export function dropProvided(comp: Composition, provided: string[]): string[] {
+  let out: string[] = []
+  comp.events = comp.events.filter((e: SketchEvent): boolean => {
+    let fx = comp.effects.get(e.id)
+    if (fx === undefined || provided.indexOf(fx) < 0) { return true }
+    comp.effects.delete(e.id)
+    comp.args.delete(e.id)
+    comp.moments.delete(e.id)
+    comp.dropped.push('event "' + e.what + '": a section does it')
+    out.push(e.what)
+    return false
+  })
+  return out
+}
 
 /** The sketch with another list, for a composition that leaves some of the list's fields out. */
 function withList(sketch: Sketch, list: SketchList | null): Sketch {
@@ -1774,6 +1822,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     let within = answerOf(answers, 'within.event.' + e.id, served, comp.answers, COVERED_ABOVE)
     if (within.length > 0) {
       comp.dropped.push('event "' + e.what + '": the section for "' + sketch.ready[Number(within.substring(6))] + '" does it')
+      comp.claimed.push(e.what + ' (' + e.when + ')')
       let fx = effectOf(answerOf(answers, 'effect.' + e.id, effectIds, []))
       if (fx !== undefined) {
         for (let prm of fx.params) {
@@ -1837,7 +1886,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   partsOf(sketch).forEach((_d: string, key: string) => { partIds.push(key) })
   for (let i = 0; i < sketch.other.length; i++) {
     let within = answerOf(answers, 'within.other.' + i.toString(), served, comp.answers, COVERED_ABOVE)
-    if (within.length > 0) { continue }
+    if (within.length > 0) { comp.claimed.push(sketch.other[i]); continue }
     let covered = answerOf(answers, 'covers.' + i.toString(), partIds, comp.answers)
     let a = answers['covers.' + i.toString()] as Record<string, Object>
     let confidence = a !== null && a !== undefined && typeof a['confidence'] === 'number' ? a['confidence'] as number : 0
@@ -1897,6 +1946,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     if (extra) { comp.dropped.push('input "' + input.label + '": not asked for, and nothing reads it') }
     else if (sectionInputs.indexOf(input.id) >= 0 || answerOf(answers, 'within.input.' + input.id, served, comp.answers, COVERED_ABOVE).length > 0) {
       comp.dropped.push('input "' + input.label + '": a section does it')
+      if (sectionInputs.indexOf(input.id) < 0) { comp.claimed.push('the person sets ' + input.label) }
     }
     // What the custom section does may well read it (the dice to roll): it stays, and the section is told it is there.
     else if (comp.custom.length > 0) {
@@ -1989,7 +2039,10 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     let label = labelOf(sketch, id)
     if (written.indexOf(id) >= 0) { return }
     if (leaving.indexOf(id) < 0) { comp.unbound.push('"' + label + '": ' + why) }
-    else if (sections.indexOf(id) >= 0) { comp.dropped.push('value "' + label + '": a section shows it') }
+    else if (sections.indexOf(id) >= 0) {
+      comp.dropped.push('value "' + label + '": a section shows it')
+      comp.claimed.push('shows ' + label)
+    }
     else { comp.dropped.push('value "' + label + '": not asked for, and ' + why) }
   })
   if (leaving.length === 0) { return }
@@ -2364,12 +2417,21 @@ function effectCallsAt(comp: Composition, moment: string, only: string = ''): st
   return calls
 }
 
-function amountText(measure: string, unit: string, expr: string): string {
+/**
+ * The digits after the point a number is shown with: what the sketch asks for a plain number or a count (a measurement that
+ * loses its meaning rounded to one digit), else the measure's own -- cents for money, whole for a count, one otherwise.
+ */
+function decimalsFor(measure: string, asked: number): number {
+  if (asked >= 0 && (measure === 'number' || measure === 'plain' || measure === 'count')) { return asked }
+  return measure === 'money' ? 2 : (measure === 'count' ? 0 : 1)
+}
+
+function amountText(measure: string, unit: string, expr: string, asked: number = -1): string {
   if (measure === 'money') { return quote(unit) + ' + ui.formatNumber(' + expr + ', 2)' }
   if (measure === 'percent') { return 'ui.formatNumber(' + expr + ', 1) + "%"' }
   if (isTime(measure)) { return durationText(measure, expr) }
   if (measure === 'clock') { return 'ui.clockToString(math.round((' + expr + ') - math.floor((' + expr + ') / 1440) * 1440))' }
-  return 'ui.formatNumber(' + expr + ', ' + (measure === 'count' ? '0' : '1') + ')'
+  return 'ui.formatNumber(' + expr + ', ' + decimalsFor(measure, asked).toString() + ')'
 }
 
 /**
@@ -2450,7 +2512,7 @@ function statFor(v: SketchValue, expr: string): string {
   }
   let prefix = v.format === 'money' ? v.unit : ''
   let suffix = v.format === 'percent' ? '%' : (v.format !== 'money' && v.unit.length > 0 ? ' ' + v.unit : '')
-  let decimals = v.format === 'money' ? 2 : (v.format === 'count' ? 0 : 1)
+  let decimals = decimalsFor(v.format, v.decimals)
   return 'ui.NumberStat("default", ' + quote(v.label) + ', ' + expr + ', ' + quote(prefix) + ', ' + quote(suffix) + ', 1, "", "chart", ' + decimals.toString() + ')'
 }
 
@@ -2461,7 +2523,7 @@ function figureRow(v: SketchValue, expr: string): string {
   }
   let prefix = v.format === 'money' ? v.unit : ''
   let suffix = v.format === 'percent' ? '%' : (v.format !== 'money' && v.unit.length > 0 ? ' ' + v.unit : '')
-  let decimals = v.format === 'money' ? 2 : (v.format === 'count' ? 0 : 1)
+  let decimals = decimalsFor(v.format, v.decimals)
   return 'ui.NumberListItem("default", ' + quote(v.label) + ', "", ' + expr + ', ' + quote(prefix) + ', ' + quote(suffix) +
     ', 1, "", 0, false, "", ' + decimals.toString() + ')'
 }
@@ -2470,7 +2532,7 @@ function heroText(v: SketchValue, expr: string): string {
   if (isTime(v.format) || v.format === 'clock') { return amountText(v.format, v.unit, expr) }
   if (v.format === 'money') { return quote(v.unit) + ' + ui.formatNumber(' + expr + ', 2)' }
   if (v.format === 'percent') { return 'ui.formatNumber(' + expr + ', 1) + "%"' }
-  return 'ui.formatNumber(' + expr + ', ' + (v.format === 'count' ? '0' : '1') + ')'
+  return 'ui.formatNumber(' + expr + ', ' + decimalsFor(v.format, v.decimals).toString() + ')'
 }
 
 /** A block made for this request, for the blocks' composer (composeFragments): its names are its own, never renamed. */
@@ -2859,7 +2921,7 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   let titleField = textField ?? numberField
   let trailingField = textField !== null && numberField !== null ? numberField : firstField(list, 'time')
   let shown = (f: ListField): string => f.kind === 'text' ? 'e.' + f.id :
-    (f.kind === 'time' ? 'ui.clockToString(e.' + f.id + ')' : amountText(f.measure, f.unit, 'e.' + f.id))
+    (f.kind === 'time' ? 'ui.clockToString(e.' + f.id + ')' : amountText(f.measure, f.unit, 'e.' + f.id, f.decimals))
   let title = titleField !== null ? shown(titleField) : '"#" + ui.numberToString(i + 1)'
   let trailing = trailingField !== null ? shown(trailingField) : '""'
   let pieces: string[] = []

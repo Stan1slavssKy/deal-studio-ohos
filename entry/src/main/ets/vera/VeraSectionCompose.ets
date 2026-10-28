@@ -285,6 +285,55 @@ export function buildSectionRequest(prompt: string): string {
   return JSON.stringify(body)
 }
 
+/**
+ * The slot questions alone, for sections already chosen: what each one is to show or offer (a button for each item, a
+ * calendar, a style), read against the request. Whoever chose the sections without this call (the agent's composer) gets
+ * the catalogue's defaults, which leave out everything optional the request asks for.
+ */
+export function buildSlotRequest(prompt: string, kinds: string[]): string {
+  let specs = fragments()
+  let questions: Record<string, Object> = {}
+  for (let i = 0; i < kinds.length; i++) {
+    let spec = findFragment(specs, kinds[i])
+    if (spec === null) { continue }
+    for (let slot of spec.slots) {
+      let slotQuestion: Record<string, Object> = {}
+      slotQuestion['type'] = slot.kind
+      slotQuestion['instructions'] = slot.instructions
+      slotQuestion['criteria'] = criteriaRecord(slot.criteria)
+      questions['section' + (i + 1).toString() + '.' + spec.kind + '.' + slotKey(slot.token)] = slotQuestion
+    }
+  }
+  let body: Record<string, Object> = {}
+  body['model'] = MODEL
+  body['state'] = prompt
+  body['questions'] = questions
+  return JSON.stringify(body)
+}
+
+/** Each chosen section's slot values (token to value, `kinds` order) from the answer to buildSlotRequest; defaults when unreadable. */
+export function readSlotValues(body: string, kinds: string[]): Map<string, string>[] {
+  let specs = fragments()
+  let answers: Record<string, Object> = {}
+  try {
+    let parsed = JSON.parse(body) as Record<string, Object>
+    let raw = parsed['answers']
+    if (raw !== null && raw !== undefined) { answers = raw as Record<string, Object> }
+  } catch (_e) {
+    answers = {}
+  }
+  let out: Map<string, string>[] = []
+  for (let i = 0; i < kinds.length; i++) {
+    let values: Map<string, string> = new Map<string, string>()
+    let spec = findFragment(specs, kinds[i])
+    if (spec !== null) {
+      for (let slot of spec.slots) { values.set(slot.token, readSlotValue(answers, i + 1, kinds[i], slot)) }
+    }
+    out.push(values)
+  }
+  return out
+}
+
 function findFragment(specs: FragmentSpec[], kind: string): FragmentSpec | null {
   for (let spec of specs) { if (spec.kind === kind) { return spec } }
   return null

@@ -14,10 +14,13 @@ import { BlockRequest, BlockFill } from '../SectionFill'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
-import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, ComposeResult, Composition, Sketch } from '../VeraCompose'
+import { composeWith, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, dropProvided, ComposeResult, Composition, Sketch } from '../VeraCompose'
 import { ScreenPlan, assemblePlan } from '../ScreenPlan'
 import { compileVeraSource } from '../VeraCompiler'
 import { Repaired, settleProgram } from './AgentRepair'
+import { FragmentSpec } from '../VeraTemplates'
+import { buildSlotRequest, readSlotValues, specsOf } from '../VeraSectionCompose'
+import { claimsUndone, putBack } from './AgentClaims'
 import { AlignResult, alignIsEnabled, alignLeftovers } from './AgentAlign'
 import { Composition as ScreenRecord, compositionFromPlan, rebuilds } from '../VeraComposition'
 import { holeBodiesBySlot } from '../VeraHoles'
@@ -63,6 +66,13 @@ export class AgentResult {
   previews: number = 0
   checkMs: number = 0
   ms: number = 0
+
+  /** Time the person spent answering the plan's questions: part of `ms`, and theirs, not the app's. */
+  waitedMs(): number {
+    let n = 0
+    for (let a of this.asked) { n += a.waitedMs }
+    return n
+  }
 }
 
 /**
@@ -137,6 +147,22 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       blocks.realData = comp.realData
       blocks.offset = partCount(comp)
       blocks.compose = (filled: Map<string, string>[], _globals: Map<string, string>): string => assembleProgram(comp, filled)
+      // What each section is to offer (a button for each item, a calendar) is read from the request, as the blocks' own route
+      // does: the composer counts on the section for what it left out of the plan, and the defaults leave it off.
+      if (specsOf(comp.blocks).some((sp: FragmentSpec | null): boolean => sp !== null && sp.slots.length > 0)) {
+        blocks.slotValues = readSlotValues(await host.askJev(buildSlotRequest(request.prompt, comp.blocks)), comp.blocks)
+        let specs = specsOf(comp.blocks)
+        let provided: string[] = []
+        for (let i = 0; i < specs.length; i++) {
+          let spec = specs[i]
+          if (spec === null) { continue }
+          for (let slot of spec.slots) {
+            if (blocks.slotValues[i].get(slot.token) === slot.values[1]) { provided = provided.concat(slot.provides) }
+          }
+        }
+        let gone = dropProvided(comp, provided)
+        if (gone.length > 0) { result.note += '; done by the sections: ' + gone.join('; ') }
+      }
       let fill = await host.fillBlocks(blocks)
       result.blocks = comp.blocks
       result.blockFill = fill
@@ -147,6 +173,14 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
     // The plan, and what nothing ready does in it: one section the model writes into the program the rest makes.
     let plan = screenPlan(comp, values)
     result.screen = plan
+    // What was left out because a section is said to do it is checked against the screen the sections make.
+    if (ready && comp.claimed.length > 0 && !host.cancelled()) {
+      let missing = await claimsUndone(comp.claimed, request.prompt, assemblePlan(plan, true), host.askJev)
+      if (missing.length > 0) {
+        putBack(plan, missing)
+        result.note += '; not done by the sections said to do it: ' + missing.join('; ')
+      }
+    }
     if (ready && plan.toWrite().length > 0 && !host.cancelled()) {
       host.status('Writing the rest...')
       let written = await writeHole(plan, request.prompt, customInputs(comp), host)

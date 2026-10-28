@@ -35,13 +35,20 @@ export class SlotSpec {
    * 0.3 to "show the balances instead of the totals" for a request that only mentioned both.
    */
   above: number
-  constructor(token: string, values: string[], kind: string, instructions: string, criteria: Map<string, string>, above: number = -1) {
+  /**
+   * The phone actions (the composer's effect ids) the block does itself once this slot takes its second value: a screen that
+   * also keeps a part for one of them would show the same button twice.
+   */
+  provides: string[]
+  constructor(token: string, values: string[], kind: string, instructions: string, criteria: Map<string, string>, above: number = -1,
+      provides: string[] = []) {
     this.token = token
     this.values = values
     this.kind = kind
     this.instructions = instructions
     this.criteria = criteria
     this.above = above
+    this.provides = provides
   }
 }
 
@@ -781,7 +788,8 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     if (notes.length() > 0) { sections.push(ui.Section("supporting", "", "", notes)); }
   }`,
     [new SlotSpec('__CALENDAR_IDX__', ['false', 'true'], 'noul',
-      'Should each entry be put into the phone calendar with a reminder, with a button to open the calendar?', calendar, 0.6)],
+      'Should each entry be put into the phone calendar with a reminder, with a button to open the calendar?', calendar, 0.6,
+      ['calendar_add', 'calendar_open'])],
     [
       new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add a reminder', 'Heading of the form (2-4 words)', 24),
       new ContentFieldSpec('__TITLE_LABEL_IDX__', 'title_label', 'Name', 'Label of the title field (1-3 words, such as Medicine or Habit)', 20),
@@ -2104,7 +2112,8 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     if (notes.length() > 0) { sections.push(ui.Section("supporting", "", "", notes)); }
   }`,
     [new SlotSpec('__NAVIGATE_IDX__', ['false', 'true'], 'noul', 'Should each stop have a button that opens it in the maps app for directions?', navigate, 0.6),
-     new SlotSpec('__CALENDAR_IDX__', ['false', 'true'], 'noul', 'Should each stop be addable to the phone calendar, with buttons to open the calendar and to remove the events this app added?', calendar, 0.6)],
+     new SlotSpec('__CALENDAR_IDX__', ['false', 'true'], 'noul', 'Should each stop be addable to the phone calendar, with buttons to open the calendar and to remove the events this app added?', calendar, 0.6,
+      ['calendar_add', 'calendar_open', 'calendar_clear'])],
     [
       new ContentFieldSpec('__START_TIME_IDX__', 'start_time', '540', 'When the first stop starts, as minutes after midnight (09:00 is 540)', 6, true),
       new ContentFieldSpec('__GAP_IDX__', 'gap_minutes', '15', 'Minutes of travel or slack between two stops (0 to 180)', 4, true),

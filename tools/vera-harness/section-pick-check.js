@@ -204,4 +204,16 @@ assert.equal(low('filter_box', 0.35, {needs_search_or_form: 0.95}).sections, nul
     assert.match(second.note, /not asked again for a minute/)
   })().catch(e => { console.error(e); process.exit(1) })
 }
+// The slots of sections chosen elsewhere are asked on their own and read the same way; unreadable answers are the defaults.
+{
+  const {buildSlotRequest, readSlotValues} = loadVera('VeraSectionCompose')
+  const body = JSON.parse(buildSlotRequest('a layover with directions', ['itinerary']))
+  const keys = Object.keys(body.questions)
+  assert.ok(keys.includes('section1.itinerary.navigate') && keys.includes('section1.itinerary.calendar'), keys.join(' '))
+  assert.equal(body.state, 'a layover with directions')
+  const yes = {answers: {'section1.itinerary.navigate': {noul: 0.9}, 'section1.itinerary.calendar': {noul: 0.2}}}
+  const read = readSlotValues(JSON.stringify(yes), ['itinerary'])[0]
+  assert.equal(read.get('__NAVIGATE_IDX__'), 'true'); assert.equal(read.get('__CALENDAR_IDX__'), 'false')
+  assert.equal(readSlotValues('not json', ['itinerary'])[0].get('__NAVIGATE_IDX__'), 'false')
+}
 console.log('section-pick-check: ok')

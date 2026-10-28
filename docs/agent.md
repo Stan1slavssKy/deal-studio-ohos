@@ -49,15 +49,24 @@ the more of it the model writes, down to the whole screen.
    filled, by the one fill both the agent and the blocks use (`SectionFill.ets`): a trend chart or a live-facts block is
    always grounded in a search whatever the plan said (the chart with the longer results), a live-facts block shows only
    the figures and the source that search contains, and with no search the sections are refused.
+4b. **Slots and claims.** What each chosen section offers (a button for each item, a calendar, a style) is read from the
+   request by one Jev call (`buildSlotRequest`); without it the catalogue's defaults leave out what the request asks for.
+   What the composer left out because a section is said to do it (`comp.claimed`) is then read against the assembled
+   screen (`agent/AgentClaims.ets`); a claim the screen does not meet goes back to the plan as a slot to write, and the
+   hole that follows writes it or reports it. The plan's own questions to the person are part of every "did the request
+   ask for this" question to Jev (inputs, figures, fields and items of "other" alike).
 5. **Section hole.** One section is written for the open slots (`writeHole`, `writeSection`):
-   - for each phone slot the app's own lookups run first (`find_intent_function`, keyword and embedding rankings
+   - for every need the app's own lookups run first (in parallel; the plan's `phone` flag no longer decides whether to look) (`find_intent_function`, keyword and embedding rankings
      together; `find_sdk_function`), and the section may call only targets they returned -- every `sdk.call` target is
      checked before serving;
    - it is compiled and run once with every handler tapped; failures are quoted back for a repair, at most twice;
    - Jev reads it against each need; a need it reads as not done is asked for again;
    - after the quick tries, one more with thinking on;
    - still failing: the best try that works and does part of it is served with a notice for what it misses; none, a
-     notice in its place; `<cannot>` (nothing on this phone does it) is reported as the writer says and not retried.
+     notice in its place; `<cannot>` (nothing on this phone does it) is reported as the writer says and not retried;
+   - needs are decided one by one: the writer may decline a need with `<cannot need="...">` and write the section for the
+     rest (the declined need gets its own notice, in the writer's words); a bare `<cannot>` for a hole of several needs
+     is not taken for the answer to each -- every need is then written on its own with only the functions found for it.
 6. **Check.** The assembled program is compiled, started, drawn and run with every handler tapped (`VeraSmoke.ets`); one
    that fails, or draws an empty screen, is repaired with SEARCH/REPLACE edits, at most twice (`settleProgram`). Every
    program served goes through it, whoever assembled it: the agent, the blocks, a written section or the whole screen.
@@ -74,7 +83,22 @@ the more of it the model writes, down to the whole screen.
 9. **Not built**, with what the agent and the blocks each said.
 
 A request's holes share what they learned: a phone need one hole found nothing can do is reported by the next as it
-said, and each lookup is made once.
+said, and each lookup is made once. A refusal of several needs together is not remembered for any of them.
+
+## What a screen says about itself
+
+- A notice (something could not be built, or is not available on this phone) removes the screen's subtitle: the plan wrote it
+  before anything was built, and a subtitle that promises what the notice denies contradicts it (`quietSubtitle`,
+  `AgentHole.ets`).
+- The plan may say how many digits a plain number is shown with (`decimals`, 0 to 6; list fields and values), because one digit
+  rounds a measurement into nonsense; money, percent and counts keep their own.
+- The section writer is told that a need worded as something to do inside the app that the app cannot do (it has no such
+  component) is not refused when a function found does the nearest useful thing in the app made for it, and to say on the screen
+  what it does instead (`phoneRule`, `AgentCustom.ets`).
+- The time the person takes to answer a question of the plan is measured apart (`Asked.waitedMs`) and said apart ("Composed in
+  5.6 s (and 6.6 s waiting for your answer)"): it is theirs, not the app's.
+- The Metrics tab shows the last run of the previous session when this session has run nothing (`LastRun.ets`,
+  `{filesDir}/vera/last-run.json`).
 
 ## Results
 

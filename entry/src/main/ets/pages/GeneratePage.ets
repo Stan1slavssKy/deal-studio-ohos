@@ -36,6 +36,7 @@ import { QuestionCard } from '../components/QuestionCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE, OUTCOME_COMPLETE, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { RouteInfo, routeLabel, routeShort, jevLabel, checkLabel, checkShort, routeWhy, ROUTE_BLOCKS, ROUTE_BLOCKS_MODEL, CHECK_CONFIRMED, CHECK_REJECTED, CHECK_FAILED, CHECK_NONE } from '../vera/VeraRoute'
+import { LastRun, describeLastRun, loadLastRun, saveLastRun } from '../vera/LastRun'
 import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
 
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
@@ -221,6 +222,8 @@ struct GeneratePage {
   @State baseVersionNumber: number = 0
   @State nextVersionNumber: number = 1
   @State baseError: string = ''
+  /** The Metrics tab's lines for the run before this session, until this session has a run of its own (LastRun.ets). */
+  @State lastRunLines: string[] = []
   @State generatedSource: string = ''
   @State status: string = ''
   @State generating: boolean = false
@@ -525,6 +528,9 @@ struct GeneratePage {
     }
     settings.init(context.filesDir)
     initTrace(context.filesDir)
+    // After the settings have the app's folder: the record is kept in it (LastRun.ets), and before it there is none to read.
+    let earlier: LastRun | null = loadLastRun()
+    if (earlier !== null) { this.lastRunLines = describeLastRun(earlier!) }
     // Shrink the page for the keyboard instead of panning it: panning slides
     // the preview up under the title bar, and with the refine field pinned at
     // the bottom the page has to give up height, not move.
@@ -888,15 +894,34 @@ struct GeneratePage {
     this.tab = TAB_PREVIEW
     this.generating = false
     this.totalMs = Date.now() - this.genStartTime
-    this.status = 'Composed in ' + (this.totalMs / 1000).toFixed(1) + ' s (sketch ' + (composed.sketchMs / 1000).toFixed(1) +
-      ' s, Jev ' + (composed.jevMs / 1000).toFixed(1) + ' s), no generation' +
+    // The time the person took to answer a question of the plan is theirs: said apart, not counted as the app's.
+    let waited = result.waitedMs()
+    this.status = 'Composed in ' + ((this.totalMs - waited) / 1000).toFixed(1) + ' s' +
+      (waited > 0 ? ' (and ' + (waited / 1000).toFixed(1) + ' s waiting for your answer)' : '') + ' (sketch ' +
+      (composed.sketchMs / 1000).toFixed(1) + ' s, Jev ' + (composed.jevMs / 1000).toFixed(1) + ' s), no generation' +
       (composed.dropped.length > 0 ? '. Left out: ' + composed.dropped.join('; ') : '')
     let endFields: Record<string, Object> = {}
     endFields['ok'] = true
     endFields['attempt'] = 0
     endFields['totalMs'] = this.totalMs
+    endFields['waitedMs'] = waited
     endFields['via'] = 'compose'
     trace('gen-end', endFields)
+    let run = new LastRun()
+    run.via = 'agent'
+    run.waitedMs = waited
+    run.sketchMs = composed.sketchMs
+    run.jevMs = composed.jevMs
+    run.checkMs = result.checkMs
+    run.kinds = result.blocks
+    if (result.blockFill !== null) {
+      run.searchMs = result.blockFill!.searchMs
+      run.contentMs = result.blockFill!.contentMs
+      run.holesMs = result.blockFill!.holesMs
+    }
+    run.attempts = result.custom !== null ? result.custom!.attempts : 0
+    run.note = result.note
+    this.rememberRun(run)
   }
 
   /** What the blocks (VeraTemplatePipeline.ets) answered, for the route rows and the Metrics tab, whichever way the request went. */
@@ -934,6 +959,14 @@ struct GeneratePage {
     templateEnd['totalMs'] = this.totalMs
     templateEnd['outcome'] = 'template'
     trace('gen-end', templateEnd)
+    let run = new LastRun()
+    run.via = 'template'
+    run.jevMs = build.jevMs
+    run.searchMs = build.searchMs
+    run.contentMs = build.contentMs
+    run.kinds = build.kinds
+    run.note = build.note
+    this.rememberRun(run)
   }
 
   /**
@@ -1311,6 +1344,11 @@ struct GeneratePage {
       endFields['attempt'] = this.attempt
       endFields['totalMs'] = this.totalMs
       trace('gen-end', endFields)
+      let run = new LastRun()
+      run.via = 'model'
+      run.attempts = this.attempt
+      run.note = this.status
+      this.rememberRun(run)
       this.generating = false
       return
     }
@@ -1372,6 +1410,19 @@ struct GeneratePage {
     fields['attempt'] = this.attempt
     fields['failure'] = failure
     trace('gen-end', fields)
+    let run = new LastRun()
+    run.via = 'failed'
+    run.attempts = this.attempt
+    run.note = failure
+    this.rememberRun(run)
+  }
+
+  /** Keeps this run for the Metrics tab of the next session (LastRun.ets); what the run itself knows is filled by the caller. */
+  private rememberRun(run: LastRun): void {
+    run.at = Date.now()
+    run.prompt = this.lastRequest.length > 0 ? this.lastRequest : this.prompt.trim()
+    run.ms = this.totalMs > 0 ? this.totalMs : Date.now() - this.genStartTime
+    saveLastRun(run)
   }
 
   private addToProgram(metrics: AttemptMetrics): void {
@@ -2275,7 +2326,13 @@ struct GeneratePage {
                 }
               }
               if (this.attempts.length === 0 && !this.fastPathRan) {
-                Text('No run yet').fontSize(13).fontColor('#BBBBBB').width('100%')
+                if (this.lastRunLines.length === 0) {
+                  Text('No run yet').fontSize(13).fontColor('#BBBBBB').width('100%')
+                } else {
+                  ForEach(this.lastRunLines, (line: string, index: number) => {
+                    Text(line).fontSize(index === 0 ? 12 : 13).fontColor(index === 0 ? '#888888' : '#444444').width('100%')
+                  }, (line: string, index: number) => index.toString() + line)
+                }
               } else if (this.attempts.length > 0) {
                 this.stageHeader(this.routeKnown ? '3' : '1', 'Model writes the program', 'DeepSeek', '#C77700')
                 ForEach(this.sideCallsOf('3'), (call: SideCall) => { this.callRow(call) })

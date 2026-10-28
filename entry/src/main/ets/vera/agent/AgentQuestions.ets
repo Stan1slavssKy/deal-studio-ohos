@@ -65,6 +65,8 @@ export class Asked {
   answer: string = ''
   /** The person chose an answer other than the default the plan was drawn for. */
   changed: boolean = false
+  /** How long the person took to answer: time that is theirs, not the app's. */
+  waitedMs: number = 0
 }
 
 /**
@@ -80,12 +82,15 @@ export async function askBlocking(prompt: string, questions: SketchQuestion[], a
     shown.text = q.ask
     shown.options = q.options
     shown.fallback = q.fallback
+    let waitStart = Date.now()
     let picked = await ask(shown)
+    let waited = Date.now() - waitStart
     let index = picked === null || picked < 0 || picked >= q.options.length ? q.fallback : picked
     let entry = new Asked()
     entry.question = q.ask
     entry.answer = q.options[index] + (picked === null ? ' (default)' : '')
     entry.changed = index !== q.fallback
+    entry.waitedMs = waited
     log.push(entry)
     if (entry.changed) { lines.push(q.ask + ' ' + q.options[index]) }
   }

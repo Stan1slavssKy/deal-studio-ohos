@@ -175,6 +175,15 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       assert.ok(second.section !== null)
       assert.equal(second.attempts, 2)
     }
+    // A need declined on its own is reported as the writer said and not asked for again; the section serves the others.
+    {
+      const request = Object.assign(new CustomRequest(), {needs: ['a counter', 'a photo'], prompt: 'p', compose: s => c.assembleProgram(comp, [], s)})
+      let n = 0
+      const part = await writeSection(request, 'L', async () => { n++; return good + '\n<cannot need="a photo">This phone gives apps no camera here.</cannot>' })
+      assert.ok(part.section !== null); assert.equal(n, 1)
+      assert.deepEqual(part.missed, ['a photo'])
+      assert.equal(part.declined.get('a photo'), 'This phone gives apps no camera here.')
+    }
     r = await run(['<cannot>it needs the camera</cannot>'])
     assert.equal(r.section, null)
     assert.equal(r.cannot, 'it needs the camera')
@@ -227,13 +236,19 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     }
     const askJev = host.askJev
     host.askJev = async b => JSON.parse(b).questions['blocking.0'] ? jev(0.9, 0)() : askJev(b)
-    host.ask = async () => 1
+    host.ask = async () => { await new Promise(resolve => setTimeout(resolve, 60)); return 1 }
     const r = await runAgent(request('tip calculator'), host)
     assert.equal(plans.length, 2)
     assert.match(plans[1], /The person was asked, and answered:\n- Split it\? no/)
     assert.equal(r.composed.replanned, true)
     assert.ok(r.vbc2.length > 0, r.note)
     assert.equal(r.asked.length, 1)
+    // The time the person took to answer is theirs: measured apart, to be said apart from what the app took.
+    assert.ok(r.asked[0].waitedMs >= 50, 'waited ' + r.asked[0].waitedMs)
+    assert.equal(r.waitedMs(), r.asked[0].waitedMs)
+    assert.ok(r.waitedMs() <= r.ms, 'the wait is part of the run')
+    // No question: no wait.
+    assert.equal((await runAgent(request('tip calculator'), replayHost('tip').host)).waitedMs(), 0)
   }
 
   // The route, agent first (the default): a served agent ends it and the blocks never run.
@@ -375,6 +390,10 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(seen.lookups.length, 1)
     assert.match(seen.users[0], /Phone functions found/)
     assert.match(seen.systems[0], /calling ONLY targets from/)
+    // A need worded as something to do inside the app that the app cannot do is not refused when a function found does the nearest thing.
+    assert.match(seen.systems[0], /is not refused if a function found does the nearest useful thing/)
+    assert.match(seen.systems[0], /say in a line on the screen what it does instead/)
+    assert.doesNotMatch(seen.systems[0], /\bmap\b/i, 'the rule names no request of the test sets')
     assert.ok(r.screen.slots.some(s => s.phone && s.fill === 'hole'), require('util').inspect(r.screen.slots.map(s => s.id + ':' + s.fill + (s.phone ? ':phone' : ''))))
     // A made-up target is sent back, named; the repair that calls the one found is served.
     ;({host, seen} = phoneHost([calling('com.example/clock/Main/SetAlarm'), calling(alarm)], found))
@@ -387,6 +406,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     ;({host, seen} = phoneHost([calling(alarm)], JSON.stringify({results: []})))
     r = await runAgent(request('egg timer that sets an alarm'), host)
     assert.match(seen.systems[0], /never calls sdk\.call/)
+    assert.doesNotMatch(seen.systems[0], /nearest useful thing/, 'with no phone function found there is nothing to fall back on')
     assert.doesNotMatch(seen.users[0], /Phone functions found/)
     assert.match(r.note, /calls sdk\.call, which it never may/)
     assert.doesNotMatch(r.source, new RegExp(alarm))
@@ -427,6 +447,9 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.match(o.agent.source, /ui\.Header\(/)
     // The screen is one written section, and the record says so: a section can be added beside it.
     assert.deepEqual(o.agent.record.kinds(), ['custom'])
+    // Written whole, with no notice: the plan's subtitle stays.
+    assert.notEqual(o.agent.screen.globals.get('__SUPPORTING__'), '')
+    assert.equal(o.agent.screen.globals.get('__SUPPORTING__'), JSON.parse(fixture('tip', 'sketch.json')).subtitle)
     assert.equal(loadVera('VeraComposition').composeFrom(o.agent.record), o.agent.source)
     // Jev does not read it as doing what the sketch says: not built.
     ;({host} = wholeHost(0.2))
@@ -499,6 +522,21 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.match(r.errors, /drew an empty screen/); assert.equal(r.vbc2, '')
     assert.equal(loadVera('VeraSmoke').smokeRun(loadVera('VeraCompiler').compileVeraSource(empty), false), '')
   }
+  // What a section is said to do is read against the screen: a claim it does not meet goes back to the plan to be written.
+  {
+    const {claimsUndone, putBack} = loadVera('agent/AgentClaims')
+    const P = loadVera('ScreenPlan')
+    const said = (...yes) => JSON.stringify({answers: Object.fromEntries(yes.map((y, i) => ['does.' + i, {probabilities: {yes: y, no: 1 - y}}]))})
+    let body = null
+    const missing = await claimsUndone(['calendar button', 'a map'], 'prompt', 'SOURCE', async b => { body = JSON.parse(b); return said(0.9, 0.1) })
+    assert.deepEqual(missing, ['a map'])
+    assert.match(body.state, /SOURCE/); assert.deepEqual(Object.keys(body.questions), ['does.0', 'does.1'])
+    assert.deepEqual(await claimsUndone([], 'p', 's', async () => { throw new Error('asked for nothing') }), [])
+    assert.deepEqual(await claimsUndone(['x'], 'p', 's', async () => ''), [])
+    const plan = new P.ScreenPlan()
+    putBack(plan, ['a map'])
+    assert.deepEqual(plan.toWrite().map(x => x.need), ['a map'])
+  }
   // What one hole of a request learned is not asked again by the next: a phone need it said it cannot do is reported as
   // it said, and a lookup is made once.
   {
@@ -515,13 +553,17 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       const p = new P.ScreenPlan()
       p.components.push(new P.PlanComponent(P.FILL_PART, null, new Map()))
       p.addToWrite('a', 'set an alarm (the person taps Set)', true)
+      p.globals.set('__SUPPORTING__', 'Set an alarm that rings every day')
       return p
     }
     const first = plan()
     await writeHole(first, 'alarm', [], host)
     assert.equal(writes, 1)
+    // A notice says it cannot be done: the subtitle that promised it is gone, whether the writer said so or an earlier hole had.
+    assert.equal(first.globals.get('__SUPPORTING__'), '')
     const second = plan()
     const r = await writeHole(second, 'alarm', [], host)
+    assert.equal(second.globals.get('__SUPPORTING__'), '')
     assert.equal(writes, 1)
     assert.equal(lookups, 1)
     assert.equal(r.cannot, 'This phone does not let apps set alarms.')
@@ -530,6 +572,30 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     whole.addToWrite('a', 'set an alarm (the person taps Set)', true)
     assert.match((await writeHole(whole, 'alarm', [], host)).failed, /known from an earlier hole/)
     assert.equal(writes, 1)
+    // Several needs refused together are written apart: the one that can be done is not lost with the one that cannot, and the
+    // refusal of the group is not remembered as the refusal of each.
+    {
+      const section = '<classes>\n</classes>\n<fields>\nc_n: number = 0\n</fields>\n<functions>\nfunction c_go(state: AppState, v: number): AppState {\n  return {c_n: state.c_n + 1__PASSTHROUGH__};\n}\n</functions>\n<view>\nsections.push(ui.Section("content", "", "", [ui.Button("primary", "Go", "c_go", 0, true)]));\n</view>'
+      const h = new (loadVera('agent/AgentHost').AgentHost)()
+      h.language = 'VERA-L'
+      const sawNeeds = []
+      h.askCode = async (system, user) => {
+        const needs = user.split('The section must do:\n- ')[1].split('\n\n')[0].split('\n- ')
+        sawNeeds.push(needs.length)
+        return needs.length > 1 ? '<cannot>cannot do all of it</cannot>' : (needs[0] === 'doable' ? section : '<cannot>not on this phone</cannot>')
+      }
+      h.lookup = async () => JSON.stringify({results: []})
+      const p = new P.ScreenPlan()
+      p.components.push(new P.PlanComponent(P.FILL_PART, null, new Map()))
+      p.addToWrite('a', 'doable', true)
+      p.addToWrite('b', 'not doable', true)
+      await writeHole(p, 'x', [], h)
+      assert.deepEqual(sawNeeds, [2, 1, 1])
+      assert.equal(p.slots[0].fill, P.FILL_HOLE)
+      assert.equal(p.slots[1].fill, P.FILL_REPORTED)
+      assert.equal(h.cannot.has('doable'), false)
+      assert.equal(h.cannot.get('not doable'), 'not on this phone')
+    }
     // Each hole is recorded with how it ended, for the report of what recurs (hole-report.py).
     assert.deepEqual(recorded.map(r => r.outcome), ['reported', 'known'])
     assert.deepEqual(recorded[0].needs, ['set an alarm (the person taps Set)'])
