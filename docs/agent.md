@@ -2,8 +2,8 @@
 
 A new screen (the Generate screen, or a widget in the chat) is built by the **route**
 (`agent/VeraBuildRoute.ets`): the **agent** first, the **blocks** after it, then the **whole screen as one hole**.
-What none of them builds is reported as *not built*, with the reason; there is no generation from scratch after
-the route. A change to an existing program still goes to the model (refine), as before.
+What none of them builds is handed to the model to write from scratch on the Generate screen (the chat reports it as
+*not built*, with the reason). A change to an existing program goes to the model (refine), as before.
 
 The idea: planning and building each have a fast path, where Jev picks something ready, and a slow path, where the
 model writes it. A simple request is built from Jev's picks alone; the more a request asks that nothing ready does,
