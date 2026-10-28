@@ -65,7 +65,7 @@ const NEED_BAR = 0.5
 function standaloneKinds() {
   const {fragments} = loadVera('VeraTemplates')
   // filter_box publishes a query but is only useful beside a list.
-  return fragments().filter(f => f.ports.every(p => p.dir === 'writes') && f.kind !== 'filter_box').map(f => ({kind: f.kind, criteria: f.criteria}))
+  return fragments().filter(f => f.ports.every(p => p.dir === 'writes' || p.optional) && f.kind !== 'filter_box').map(f => ({kind: f.kind, criteria: f.criteria}))
 }
 
 /**

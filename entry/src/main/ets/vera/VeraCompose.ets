@@ -1511,6 +1511,23 @@ export function listNeeds(sketch: Sketch): string {
  * The questions about the plan's ready needs: which section of the catalogue does each, whose data it shows, and whether the
  * sections' content has to come from a search. Nothing when the plan has none. (The needs plan asks them first, NeedsChoose.ets.)
  */
+/**
+ * Whether a time-of-day figure ends the plan's list of places or steps -- a flight to catch, a closing time. Asked for each when the
+ * plan has content for a section; a section that reads "deadline" shows only what fits before it.
+ */
+export function askDeadline(sketch: Sketch, questions: Record<string, Object>): void {
+  if (sketch.ready.length === 0) { return }
+  // One yes or no for each: a pick among several is near chance when none of them is plainly the one.
+  let verdict: Map<string, string> = new Map<string, string>()
+  verdict.set('yes', 'yes: the places or steps have to be over by this time')
+  verdict.set('no', 'no: it is some other time')
+  for (let v of sketch.values) {
+    if (v.format !== 'clock') { continue }
+    questions['deadline.' + v.id] = choice('Is "' + v.label + '" (' + v.means + ') the time of day by which the list of places or steps ' +
+      'has to be over (the latest time that a flight, a train or a closing time allows)?', verdict)
+  }
+}
+
 export function askReady(sketch: Sketch, questions: Record<string, Object>): void {
   if (sketch.ready.length === 0) { return }
   let sections: Map<string, string> = new Map<string, string>()
@@ -1677,6 +1694,7 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
   }
   // Which ready-made section handles each need the plan gave one, by the catalogue's own words for each.
   askReady(sketch, questions)
+  askDeadline(sketch, questions)
   if (sketch.ready.length > 0) {
     // A plan names a section's own buttons and lists again as events and items of other: what a section does is left
     // to it, by Jev's reading rather than the plan's.
@@ -1752,6 +1770,11 @@ export function lengthWords(seconds: number): string {
 
 export class Composition {
   sketch: Sketch
+  /**
+   * The figure (a time of day) Jev named as the time by which the list of places or steps has to be over: it is published under
+   * the name "deadline", for a section that reads it (the itinerary hides the stops that would run past it). '' when none.
+   */
+  deadline: string = ''
   theme: string = 'clean'
   widgets: Map<string, string> = new Map<string, string>()
   bindings: Map<string, Binding> = new Map<string, Binding>()
@@ -2330,6 +2353,16 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     else { comp.dropped.push('input "' + input.label + '": nothing on the screen uses it') }
   }
   showEntryTotalsAsNumbers(comp)
+  // The time of day that ends the plan's list of places or steps, when one of the figures worked out is it.
+  let sure: number = 0
+  for (let v of comp.sketch.values) {
+    if (v.format !== 'clock' || !comp.bindings.has(v.id)) { continue }
+    if (answerOf(answers, 'deadline.' + v.id, ['yes'], comp.answers, DEADLINE_ABOVE) !== 'yes') { continue }
+    let a = answers['deadline.' + v.id] as Record<string, Object>
+    let confidence = typeof a['confidence'] === 'number' ? a['confidence'] as number : 1
+    // Two that say yes: the surer one.
+    if (confidence > sure) { sure = confidence; comp.deadline = v.id }
+  }
   // Inputs that nothing reads make a form that does nothing: the sketch has lost what they were for.
   if (sketch.values.length === 0 && !sketch.hasCountdown && !sketch.hasStopwatch && sketch.list === null && comp.events.length === 0 &&
       comp.blocks.length === 0 && comp.custom.length === 0) {
@@ -2458,6 +2491,11 @@ function strayNumber(sketch: Sketch, v: SketchValue, formula: string): string {
  * worked example, and Jev reads it as right for the request.
  */
 const WRITTEN_ABOVE: number = 0.5
+/**
+ * How sure Jev must be that a figure is the time that ends the plan's list for the sections that read it to hide what runs past it.
+ * Not tuned: the one right case seen on a phone came at 0.46 (and 0.34 as one of three); what is hidden is said in a banner.
+ */
+const DEADLINE_ABOVE: number = 0.4
 
 /**
  * Binds value number `index` to the sketch's written formula, or says why not. The worked example is run
@@ -3170,6 +3208,7 @@ function figuresPart(comp: Composition): FragmentSpec {
       body.push('}')
       spec.functions += '\n\n' + fn(body)
       spec.ports.push(new PortSpec('writes', v.id, 'number', portFunction(v.id) + '(state)', '', true))
+      if (v.id === comp.deadline) { spec.ports.push(new PortSpec('writes', 'deadline', 'number', portFunction(v.id) + '(state)', '', true)) }
     }
   }
   return spec

@@ -43,7 +43,7 @@ export function alignIsWide(): boolean { return alignWide }
 
 /** A block that takes no value from another block: it makes sense on its own. */
 function standsAlone(spec: FragmentSpec): boolean {
-  for (let port of spec.ports) { if (port.dir === 'reads') { return false } }
+  for (let port of spec.ports) { if (port.dir === 'reads' && !port.optional) { return false } }
   return true
 }
 
@@ -273,7 +273,7 @@ export function readerKinds(comp: Composition): string[] {
   for (let spec of fragments()) {
     if (standsAlone(spec) || comp.blocks.indexOf(spec.kind) >= 0 || NOT_OFFERED.indexOf(spec.kind) >= 0) { continue }
     let fed = true
-    for (let port of spec.ports) { if (port.dir === 'reads' && published.indexOf(port.name + ':' + port.type) < 0) { fed = false } }
+    for (let port of spec.ports) { if (port.dir === 'reads' && !port.optional && published.indexOf(port.name + ':' + port.type) < 0) { fed = false } }
     if (fed) { out.push(spec.kind) }
   }
   return out

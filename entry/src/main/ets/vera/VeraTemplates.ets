@@ -252,13 +252,20 @@ export class PortSpec {
    * a value derived from the fragment's state, such as how many rows are done.
    */
   computed: boolean
-  constructor(dir: string, name: string, type: string, ref: string, fallback: string = '', computed: boolean = false) {
+  /**
+   * reads only: the fragment makes sense without it (its fallback stands in), so it still stands alone and is not a reader of
+   * another block; a value the screen's own figures may give it, such as the time by which a list of stops must be over.
+   */
+  optional: boolean
+  constructor(dir: string, name: string, type: string, ref: string, fallback: string = '', computed: boolean = false,
+      optional: boolean = false) {
     this.dir = dir
     this.name = name
     this.type = type
     this.ref = ref
     this.fallback = fallback
     this.computed = computed
+    this.optional = optional
   }
 }
 
@@ -1942,6 +1949,20 @@ function reachedCountIDX(state: AppState): number {
   return n;
 }
 
+function visibleStopsIDX(state: AppState): number {
+  let limit: number = __PORT_deadline__;
+  if (limit < 0) { return state.stopsIDX.length(); }
+  let at: number = state.startMinIDX;
+  let n: number = 0;
+  let i: number = 0;
+  while (i < state.stopsIDX.length()) {
+    if (at + state.stopsIDX[i].minutes <= limit) { n = n + 1; }
+    at = at + state.stopsIDX[i].minutes + state.gapIDX;
+    i = i + 1;
+  }
+  return n;
+}
+
 function toggleStopIDX(state: AppState, index: number): AppState {
   let out: Stop[] = [];
   let last: number = state.lastIDX;
@@ -2071,31 +2092,41 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     let count: number = state.stopsIDX.length();
     let showNav: boolean = __NAVIGATE_IDX__;
     let showCal: boolean = __CALENDAR_IDX__;
+    let limit: number = __PORT_deadline__;
     let rows: ui.View[] = [];
     let at: number = state.startMinIDX;
+    let shown: number = 0;
     let j: number = 0;
     while (j < count) {
       let s: Stop = state.stopsIDX[j];
-      let icon: string = "pin";
-      if (s.done) { icon = "check"; }
-      let subtitle: string = ui.clockToString(at) + " - " + ui.clockToString(at + s.minutes) + " | " + ui.numberToString(s.minutes) + " min";
-      rows.push(ui.ListItem("default", s.name, subtitle, "", "toggleStopIDX", j, true, icon));
-      let buttons: ui.View[] = [];
-      if (showCal) {
-        let calText: string = "Add to calendar";
-        if (s.eventId !== "") { calText = "In calendar"; }
-        buttons.push(ui.Button("secondary", calText, "addEventIDX", j, s.eventId === ""));
+      if (limit < 0 || at + s.minutes <= limit) {
+        let icon: string = "pin";
+        if (s.done) { icon = "check"; }
+        let subtitle: string = ui.clockToString(at) + " - " + ui.clockToString(at + s.minutes) + " | " + ui.numberToString(s.minutes) + " min";
+        rows.push(ui.ListItem("default", s.name, subtitle, "", "toggleStopIDX", j, true, icon));
+        let buttons: ui.View[] = [];
+        if (showCal) {
+          let calText: string = "Add to calendar";
+          if (s.eventId !== "") { calText = "In calendar"; }
+          buttons.push(ui.Button("secondary", calText, "addEventIDX", j, s.eventId === ""));
+        }
+        if (showNav) { buttons.push(ui.Button("primary", "Navigate", "navigateIDX", j, true)); }
+        if (buttons.length() > 0) { rows.push(ui.ActionBar("end", buttons)); }
+        shown = shown + 1;
       }
-      if (showNav) { buttons.push(ui.Button("primary", "Navigate", "navigateIDX", j, true)); }
-      if (buttons.length() > 0) { rows.push(ui.ActionBar("end", buttons)); }
       at = at + s.minutes + state.gapIDX;
       j = j + 1;
     }
+    let emptyText: string = "Nothing is planned yet.";
+    if (limit >= 0 && count > 0) { emptyText = "Nothing fits before " + ui.clockToString(limit) + "."; }
     sections.push(ui.Section("content", "", "", [
-      ui.When(count === 0, ui.EmptyState("default", "No stops", "Nothing is planned yet.", "", "", "pin")),
-      ui.When(count > 0, ui.ListGroup("default", "", rows))
+      ui.When(shown === 0, ui.EmptyState("default", "No stops", emptyText, "", "", "pin")),
+      ui.When(shown > 0, ui.ListGroup("default", "", rows))
     ]));
     let notes: ui.View[] = [];
+    if (limit >= 0 && shown < count) {
+      notes.push(ui.InsetBanner("default", "Left out", ui.numberToString(count - shown) + " more would run past " + ui.clockToString(limit), "", "", "info"));
+    }
     if (state.resultIDX !== "") {
       let tone: string = "default";
       if (failedIDX(state.resultIDX)) { tone = "warning"; }
@@ -2129,7 +2160,9 @@ function onOpenedIDX(state: AppState, value: string): AppState {
       [['Stop 1', '60', '', ''], ['Stop 2', '60', '', ''], ['Stop 3', '60', '', ''], ['Stop 4', '60', '', ''], ['Stop 5', '60', '', '']],
       [1], ['', 'minutes', 'lat', 'lon'])],
     [new PortSpec('writes', 'done', 'number', 'reachedCountIDX(state)', '', true),
-     new PortSpec('writes', 'total', 'number', 'state.stopsIDX.length()', '', true)],
+     new PortSpec('writes', 'total', 'number', 'visibleStopsIDX(state)', '', true),
+     // The time of day by which the stops must be over (a flight to catch); -1: no such time, every stop is shown.
+     new PortSpec('reads', 'deadline', 'number', '__PORT_deadline__', '-1', false, true)],
     [],
     ['needs_logic', 'needs_search_or_form'],
     ['needs_integration=__NAVIGATE_IDX__|__CALENDAR_IDX__']

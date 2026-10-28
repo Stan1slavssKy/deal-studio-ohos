@@ -369,7 +369,7 @@ function wantProbability(answers: Record<string, Object>, kind: string): number 
 
 /** A block that makes sense on its own: it takes no value from another block. */
 function standsAlone(spec: FragmentSpec): boolean {
-  for (let port of spec.ports) { if (port.dir === 'reads') { return false } }
+  for (let port of spec.ports) { if (port.dir === 'reads' && !port.optional) { return false } }
   return true
 }
 
