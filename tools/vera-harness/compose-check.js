@@ -675,3 +675,14 @@ console.log('compose-check: ok')
   assert.doesNotMatch(asked(new Map([['ready.0', 'checklist']])), /the section already has/, 'a block with no `owns` adds nothing')
 }
 console.log('compose: a chosen section says what it holds')
+
+// An input the plan calls a time is a time of day only when it is minutes after midnight (0 to 1439); a length of time is a number.
+{
+  const kindOf = (measure, min, max, value) => c.parseSketch(JSON.stringify({title: 'T', inputs: [{id: 'x', label: 'X', kind: 'time', measure, min, max, value}]})).inputs[0]
+  const start = kindOf('minutes', 0, 1439, 540)
+  assert.equal(start.kind, 'time', 'start time, 0 to 1439 minutes: a time of day'); assert.equal(start.measure, 'clock')
+  assert.equal(kindOf('seconds', 0, 3600, 10).kind, 'count', 'a rest of 0 to 3600 seconds is a length')
+  assert.equal(kindOf('minutes', 15, 240, 60).kind, 'count', 'a stop of 15 to 240 minutes is a length')
+  assert.equal(kindOf('minutes', 0, 600, 60).kind, 'count', 'a length that does not span the day is a length')
+}
+console.log('compose: a time of day is minutes after midnight, a length is a number')
