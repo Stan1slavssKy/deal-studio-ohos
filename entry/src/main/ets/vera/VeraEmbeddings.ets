@@ -72,7 +72,7 @@ async function doLoad(filesDir: string): Promise<boolean> {
   config['n_threads'] = 4
   let startedAt = Date.now()
   try {
-    let ok = nativeEmbedInit(JSON.stringify(config))
+    let ok = await nativeEmbedInit(JSON.stringify(config))
     loaded = ok
     hilog.info(DOMAIN, 'VERA', 'VERA-EMBED native model load ok=' + ok.toString() +
       ' in ' + (Date.now() - startedAt).toString() + 'ms')
@@ -105,41 +105,22 @@ export function loadEmbeddingModel(filesDir: string): Promise<boolean> {
 export function embeddingModelReady(): boolean { return loaded }
 
 /**
- * A real yield to the event loop -- confirmed the hard way this session
- * that `setTimeout(fn, 0)` is NOT one here. First attempt used a 0ms delay;
- * HarmonyOS's watchdog still logged THREAD_BLOCK_3S/6S and killed the
- * process (appfreeze-...-20261001175908...log), and the freeze dump's own
- * main-handler history shows why: a single "uvLoopTask" dispatch ran
- * continuously for ~8 seconds, several chunks deep, with no completed
- * event in between. A due-immediately timer is apparently drained inline
- * as part of the same dispatch rather than requiring the thread to actually
- * return to the native poll/wait phase -- which is the one place pending
- * input, rendering and the watchdog's own heartbeat message actually get
- * serviced. A real (nonzero) delay forces a genuine wait there.
- */
-function yieldToEventLoop(): Promise<void> {
-  return new Promise<void>((resolve: () => void) => { setTimeout(resolve, 50) })
-}
-
-/**
  * One L2-normalized vector per input text, in the same order, or null if the
  * model isn't loaded or the native call itself failed outright (as opposed
  * to one text within the batch failing -- that comes back as an empty
- * sub-array, not a null batch; see napi_llama.cpp's LlamaEmbedBatch). Always
- * yields to the event loop afterward (see yieldToEventLoop) -- callers that
- * loop over many chunks (the two corpus caches) get a breathing room point
- * for free, and a single live query during generation pays one harmless
- * extra tick for it.
+ * sub-array, not a null batch; see napi_llama.cpp's LlamaEmbedBatch). The
+ * model runs on a worker thread, so the UI thread is free while it works: a
+ * corpus build in chunks no longer has to pause between them, and a long live
+ * query cannot freeze the app (it once did, THREAD_BLOCK_6S, run on the UI thread).
  */
 export async function embedBatch(texts: string[]): Promise<number[][] | null> {
   if (texts.length === 0) { return [] }
   if (!loaded) { return null }
   try {
     let startedAt = Date.now()
-    let vecs = nativeEmbedBatch(texts)
+    let vecs = await nativeEmbedBatch(texts)
     hilog.info(DOMAIN, 'VERA', 'VERA-EMBED batch(' + texts.length.toString() + ') ' +
       (Date.now() - startedAt).toString() + 'ms')
-    await yieldToEventLoop()
     return vecs
   } catch (e) {
     hilog.warn(DOMAIN, 'VERA', 'VERA-EMBED batch failed: ' + (e as Error).message)

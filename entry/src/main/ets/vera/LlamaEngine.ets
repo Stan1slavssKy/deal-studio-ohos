@@ -59,11 +59,13 @@ export class GenerateResult {
  * file -- handing the reference itself to another file comes back
  * undefined). One import, one place; everything else calls through here.
  */
-export function nativeEmbedInit(configJson: string): boolean {
+/** Loads the embedding model on a worker thread; the promise says whether it loaded. */
+export function nativeEmbedInit(configJson: string): Promise<boolean> {
   return nativeLlama.llamaEmbedInit(configJson)
 }
 
-export function nativeEmbedBatch(texts: string[]): number[][] {
+/** Embeds the texts on a worker thread, never on the UI thread (napi_llama.cpp's LlamaEmbedBatch). */
+export function nativeEmbedBatch(texts: string[]): Promise<number[][]> {
   return nativeLlama.llamaEmbedBatch(texts)
 }
 
