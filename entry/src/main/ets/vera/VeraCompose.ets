@@ -221,7 +221,7 @@ const RESERVED_IDS: string[] = ['state', 'value', 'elapsedMs', 'running', 'finis
   'elapsed', 'duration', 'view', 'init', 'ui', 'math', 'strings', 'sdk', 'time', 'entries', 'entryCount', 'entryTotal',
   'draftText', 'draftNumberText', 'entry', 'out', 'rows', 'i', 'e', 'emptyEntries', 'total', 'next', 'startAt',
   'effectNote', 'share', 'countdownSeconds', 'addEntry', 'removeEntry', 'ignored', 'onEntryAnswer', 'answered', 'marked',
-  'note', 'sub']
+  'note', 'sub', 'undoRemove', 'removedEntries', 'removedAt', 'gone', 'none']
 
 /** The sketch from the model's reply, or null when it is not one. Ids that cannot be names are dropped. */
 export function parseSketch(text: string): Sketch | null {
@@ -2112,6 +2112,10 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     if (why.length > 0) {
       let fault = useWritten(comp, answers, i, binding)
       if (fault.length > 0) { failed.set(v.id, why + '; ' + fault) }
+    } else if (writtenSaysMore(v, binding.formula)) {
+      // The plan's own formula bounds or rounds what the vocabulary's cannot ("max(0, a - b)" is not
+      // "subtract"): it wins when it holds up. When it does not, the vocabulary's stays, unchanged.
+      useWritten(comp, answers, i, binding)
     }
     comp.bindings.set(v.id, binding)
   }
@@ -2476,6 +2480,17 @@ function useWritten(comp: Composition, answers: Record<string, Object>, index: n
 }
 
 /**
+ * Whether value `v`'s written formula does something formula `formulaId` of the vocabulary cannot: bounds it (max, min),
+ * takes its size (abs), rounds it or raises it. A ceil is what divide_up and round_up already do.
+ */
+export function writtenSaysMore(v: SketchValue, formulaId: string): boolean {
+  let calls = v.formula.match(/\b(max|min|abs|floor|ceil|round|pow|sqrt)\s*\(/g)
+  if (calls === null) { return false }
+  let rounding = formulaId === 'divide_up' || formulaId === 'round_up'
+  return calls.some((c: string): boolean => !(rounding && c.indexOf('ceil') === 0))
+}
+
+/**
  * The numbers the worked example of value number `index` runs on: the example's own, then the inputs' starting
  * numbers and the constants, then each value before it as bound so far.
  */
@@ -2615,6 +2630,9 @@ function clockFields(): Field[] {
 function entryFields(list: SketchList): Field[] {
   let fields: Field[] = [new Field('entries', 'LogEntry[]', 'emptyEntries')]
   for (let f of list.fields) { fields.push(new Field(draftOf(f), draftType(f), draftInit(f))) }
+  // The entry removed last and where it stood, so one tap can put it back (none, or exactly one).
+  fields.push(new Field('removedEntries', 'LogEntry[]', 'emptyEntries'))
+  fields.push(new Field('removedAt', 'number', '-1'))
   return fields
 }
 
@@ -2952,6 +2970,16 @@ function statColumns(stats: string[]): number {
   return stats.filter((st: string): boolean => st.indexOf('ui.When(entryCount === 0,') !== 0).length
 }
 
+/**
+ * How full a bar for value `v` is, as a share of one: a fraction already is one, a percent is a hundredth of itself.
+ * Empty for any other value -- a count or an amount has no "full", so it is shown as a figure instead of a bar.
+ */
+export function barFraction(v: SketchValue): string {
+  if (v.format === 'fraction') { return v.id }
+  if (v.format === 'percent') { return '(' + v.id + ' / 100)' }
+  return ''
+}
+
 function figuresOf(comp: Composition): Figures {
   let sketch = comp.sketch
   let out = new Figures()
@@ -2963,7 +2991,9 @@ function figuresOf(comp: Composition): Figures {
     if (v.hidden) { continue }
     if (b.show === 'hero' && comp.widget) { leading.push(statFor(v, v.id)) }
     else if (b.show === 'hero') { out.heroes.push(v.id) }
-    else if (b.show === 'progress') { out.bars.push('ui.Progress("accent", ' + quote(v.label) + ', math.round(math.min(math.max(' + v.id + ', 0), 1) * 1000), 1000)') }
+    else if (b.show === 'progress' && barFraction(v).length > 0) {
+      out.bars.push('ui.Progress("accent", ' + quote(v.label) + ', math.round(math.min(math.max(' + barFraction(v) + ', 0), 1) * 1000), 1000)')
+    }
     else if (comp.provisional && b.formula.length === 0) { stats.push('ui.Stat("default", ' + quote(v.label) + ', "—", "", "chart")') }
     else if (isEntryAverage(sketch, v, b)) {
       // An average of no entries is not 0.0: until there is one, the figure is a dash.
@@ -3001,7 +3031,7 @@ function figuresOf(comp: Composition): Figures {
     for (let g of givens) { figureRows.push(figureRow(g, g.id)) }
     for (let v of sketch.values) {
       let b = comp.bindings.get(v.id)!
-      if (v.hidden || b.show === 'progress' || out.heroes.indexOf(v.id) >= 0) { continue }
+      if (v.hidden || (b.show === 'progress' && barFraction(v).length > 0) || out.heroes.indexOf(v.id) >= 0) { continue }
       figureRows.push(figureRow(v, v.id))
     }
     stats = []
@@ -3271,6 +3301,8 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   }
   let added: Map<string, string> = new Map<string, string>()
   added.set('entries', 'out')
+  // Adding is the next thing done: a removal can no longer be undone.
+  added.set('removedEntries', 'none')
   // Typed fields empty for the next entry; a time and an on/off keep what was set.
   for (let f of list.fields) { if (draftType(f) === 'string') { added.set(draftOf(f), '""') } }
   let calls = effectCallsAt(comp, 'entry_added')
@@ -3286,6 +3318,7 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   for (let f of list.fields) { members.push(f.id + ': ' + draftValue(f)) }
   members.push('minute: time.hourOfDay() * 60 + time.minuteOfHour()')
   if (answering.length > 0) { members.push('status: "pending"') }
+  add.push('  let none: LogEntry[] = [];')
   add.push('  let entry: LogEntry = {' + members.join(', ') + '};')
   add.push('  let out: LogEntry[] = [];')
   add.push('  for (let e: LogEntry of state.entries) { out.push(e); }')
@@ -3349,14 +3382,35 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   }
   let removed: Map<string, string> = new Map<string, string>()
   removed.set('entries', 'out')
+  removed.set('removedEntries', 'gone')
+  removed.set('removedAt', 'value')
   functions.push(fn(['function removeEntry(state: AppState, value: number): AppState {',
     '  let out: LogEntry[] = [];',
+    '  let gone: LogEntry[] = [];',
     '  let i: number = 0;',
     '  while (i < state.entries.length()) {',
-    '    if (i !== value) { out.push(state.entries[i]); }',
+    '    if (i !== value) { out.push(state.entries[i]); } else { gone.push(state.entries[i]); }',
     '    i = i + 1;',
     '  }',
     '  return ' + changed(fields, removed) + ';',
+    '}']))
+  // Undo puts the removed entry back where it stood.
+  let restored: Map<string, string> = new Map<string, string>()
+  restored.set('entries', 'out')
+  restored.set('removedEntries', 'none')
+  restored.set('removedAt', '-1')
+  functions.push(fn(['function undoRemove(state: AppState, ignored: number): AppState {',
+    '  if (state.removedEntries.length() === 0) { return state; }',
+    '  let out: LogEntry[] = [];',
+    '  let none: LogEntry[] = [];',
+    '  let i: number = 0;',
+    '  while (i < state.entries.length()) {',
+    '    if (i === state.removedAt) { out.push(state.removedEntries[0]); }',
+    '    out.push(state.entries[i]);',
+    '    i = i + 1;',
+    '  }',
+    '  if (state.removedAt >= state.entries.length()) { out.push(state.removedEntries[0]); }',
+    '  return ' + changed(fields, restored) + ';',
     '}']))
 
   let form: string[] = []
@@ -3367,7 +3421,9 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     else if (f.kind === 'time') { form.push('ui.TimeField("default", ' + quote(f.label) + ', ' + at + ')') }
     else { form.push('ui.Toggle("default", ' + quote(f.label) + ', ' + at + ')') }
   }
-  form.push('ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, true)])')
+  // Add is off until the entry has what addEntry needs, so the tap is never silently ignored.
+  let canAdd = required !== null ? 'strings.trim(state.' + draftOf(required) + ') !== ""' : 'true'
+  form.push('ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, ' + canAdd + ')])')
   // Laps are made by the stopwatch's Lap button: there is no form to type one in.
   let laps = hasLaps(comp)
   if (laps) { form = [] }
@@ -3414,14 +3470,17 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     view.push('  rows.push(ui.ListItem("default", ' + title + ', sub, ' + trailing + ', "", 0, false, ""));')
     view.push('  rows.push(ui.ActionBar("end", [' + rowButtons.join(', ') + ', ui.Button("secondary", "Remove", "removeEntry", i, true)]));')
   } else {
-    view.push('  rows.push(ui.ListItem("default", ' + title + ', sub + " · tap to remove", ' + trailing + ', "removeEntry", i, true, ""));')
+    // A row and an action bar with one button are drawn as one row with the button at its end.
+    view.push('  rows.push(ui.ListItem("default", ' + title + ', sub, ' + trailing + ', "", 0, false, ""));')
+    view.push('  rows.push(ui.ActionBar("end", [ui.Button("secondary", "Remove", "removeEntry", i, true)]));')
   }
   view.push('  i = i - 1;')
   view.push('}')
   let listNodes: string[] = ['ui.SectionHeader("default", ' + quote(list.label) + ', "Newest first", ui.numberToString(entryCount))',
     'ui.When(entryCount === 0, ui.EmptyState("default", "Nothing added yet", ' +
     quote(laps ? 'Start the stopwatch and tap Lap.' : (form.length > 1 ? 'Fill in the fields above and tap Add.' : 'Tap Add to add one.')) + ', "", "", "list"))',
-    'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))']
+    'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))',
+    'ui.When(state.removedEntries.length() > 0, ui.Snackbar("default", "Removed", "Undo", "undoRemove"))']
   if (comp.widget) {
     for (let node of form.concat(listNodes)) { view.push('sets.push(' + node + ');') }
   } else {
@@ -3647,7 +3706,8 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
   plan.globals.set('__TITLE__', inQuotes(sketch.title))
   plan.globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
   plan.globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
-  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : ''))
+  // A clock says what a timed screen is about; a list icon says nothing about the subject, so a screen with only a list gets none.
+  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : '')
 
   for (let input of comp.inputs) { plan.state.push(new StateItem(input.id, 'input', inputType(input), input.label)) }
   for (let k of sketch.constants) { plan.state.push(new StateItem(k.id, 'constant', 'number', k.label)) }
@@ -3750,7 +3810,8 @@ export function wholeScreenPlan(sketch: Sketch, widget: boolean): ScreenPlan {
   plan.globals.set('__TITLE__', inQuotes(sketch.title))
   plan.globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
   plan.globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
-  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : ''))
+  // A clock says what a timed screen is about; a list icon says nothing about the subject, so a screen with only a list gets none.
+  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : '')
   let n = 0
   let add = (need: string, phone: boolean = false): void => { plan.addToWrite('screen.' + (n++).toString(), need, phone) }
   for (let input of sketch.inputs) {

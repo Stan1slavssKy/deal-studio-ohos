@@ -98,6 +98,32 @@ export function formatVeraNumber(n: number, decimals: number, minimumDigits: num
 }
 
 /**
+ * The unit after a shown number, as it reads after that number: " days" after 1 is " day", and the space
+ * before a unit does not break, so "38 °C" never ends a line at "38". Only a unit that is one plain English word
+ * in the plural is made singular; a symbol, an abbreviation or several words is left as the program wrote it.
+ */
+export function unitAfter(n: number, suffix: string): string {
+  let text = suffix
+  if (Math.abs(n) === 1) {
+    let m = /^(\s*)([A-Za-z]+)$/.exec(text)
+    if (m !== null && m[2].length > 2) {
+      let word = m[2]
+      let lower = word.toLowerCase()
+      // "-ies" loses only its s: calories, cookies and minutes outnumber berries in what a tracker counts.
+      if (/(ss|sh|ch|x|z)es$/.test(lower)) { word = word.substring(0, word.length - 2) }
+      else if (/[^su]s$/.test(lower)) { word = word.substring(0, word.length - 1) }
+      text = m[1] + word
+    }
+  }
+  return text.length > 0 && text.charAt(0) === ' ' ? ' ' + text.substring(1) : text
+}
+
+/** Text with the space between a number and a degree or percent sign made unbreakable: "38 °C", never "38" then "°C". */
+export function keepUnits(text: string): string {
+  return text.replace(/(\d) (?=[°%])/g, '$1\u00A0')
+}
+
+/**
  * Minutes since midnight as HH:MM, wrapped into one day; what ui.ClockText
  * draws and ui.clockToString returns, so a time reads the same in both.
  */

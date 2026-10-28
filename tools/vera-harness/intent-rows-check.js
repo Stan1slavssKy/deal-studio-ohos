@@ -78,5 +78,19 @@ const number = (name) => { const m = new RegExp('^(\\d+)\\. ' + name + '\\b', 'm
   fill = await fillIntentRows('zzqx', ['intent_panel'], async () => { asked = true; return '' })
   assert.equal(asked, false); assert.match(fill.note, /intents=none\(no candidates\)/)
 
+  // The map's search answers "ok" and ignores the query: it is never offered, from the catalogue or the registry.
+  {
+    const {ignoredIntent} = loadVera('VeraIntentCatalog')
+    const {allEntries} = loadVera('VeraIntentIndex')
+    assert.equal(ignoredIntent('com.huawei.hmos.maps.app', 'ViewSearchPageLocal'), true)
+    assert.equal(ignoredIntent('com.huawei.hmos.maps.app', 'StartNavigate'), false)
+    REGISTRY.push(entry('com.huawei.hmos.maps.app', 'ViewSearchPageLocal', 'foreground', ['query']))
+    const names = allEntries().map(e => e.name + ' ' + (e.target || ''))
+    assert.ok(!names.some(n => /searchOnMap|maps\.app.*ViewSearchPageLocal/.test(n)), names.join('\n'))
+    assert.ok(names.some(n => /navigateTo/.test(n)), 'navigation to a place is still offered')
+    assert.ok(names.some(n => /CreateNote/.test(n)), 'registry rows are read, so the map row was really filtered')
+    REGISTRY.pop()
+  }
+
   console.log('intent-rows-check: ok')
 })().catch(e => { console.error(e); process.exit(1) })

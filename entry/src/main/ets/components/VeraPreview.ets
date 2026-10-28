@@ -12,7 +12,7 @@
 
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraNumberValue, VeraStringValue,
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
-import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock } from '../vera/VeraUi'
+import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock, unitAfter, keepUnits } from '../vera/VeraUi'
 import { runRawIntent } from '../vera/VeraIntents'
 import { runSdkAdapter } from '../vera/VeraSdkBackend'
 import { LengthMetrics } from '@ohos.arkui.node'
@@ -1348,7 +1348,7 @@ export struct VeraPreview {
 
   /** A number, as the program asked for it to be shown: see formatVeraNumber. */
   private formatNumber(node: LiveNode): string {
-    return node.prefix + formatVeraNumber(node.numberValue, node.decimals, node.minimumDigits) + node.suffix
+    return node.prefix + formatVeraNumber(node.numberValue, node.decimals, node.minimumDigits) + unitAfter(node.numberValue, node.suffix)
   }
 
   /**
@@ -1928,7 +1928,7 @@ export struct VeraPreview {
       .translate({ x: this.motionPoseOf(node).dx, y: this.motionPoseOf(node).dy })
       .opacity(this.motionPoseOf(node).opacity)
     } else if (node.kind === 'text') {
-      Text(node.text)
+      Text(keepUnits(node.text))
         .fontSize(this.renderTextSize(node.style))
         .fontFamily(this.textFamily(node.style))
         .fontWeight(textWeight(this.t(), node.style))
@@ -2401,7 +2401,7 @@ export struct VeraPreview {
         .flexShrink(1)
         .padding({ top: 2, bottom: 2 })
     } else if (node.kind === 'clocktext') {
-      Text(node.prefix + this.formatMinutes(node.numberValue) + node.suffix)
+      Text(node.prefix + this.formatMinutes(node.numberValue) + unitAfter(node.numberValue, node.suffix))
         .fontSize(this.renderTextSize(node.style))
         .fontFamily(this.textFamily(node.style))
         .fontWeight(textWeight(this.t(), node.style))

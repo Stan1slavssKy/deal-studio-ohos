@@ -2244,7 +2244,8 @@ struct GeneratePage {
             Button(this.generating ? 'Stop' : (this.baseVersionId.length > 0 || this.hasResult() ? 'Refine' : 'Generate'))
               .type(ButtonType.Normal)
               .layoutWeight(1)
-              .enabled(this.canGenerate() || this.generating)
+              // Off with nothing typed, as Update below is: a tap that does nothing reads as broken.
+              .enabled(this.generating || (this.prompt.trim().length > 0 && this.canGenerate()))
               .onClick(() => {
                 if (this.generating) {
                   this.stopGeneration()

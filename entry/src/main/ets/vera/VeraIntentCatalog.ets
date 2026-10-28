@@ -360,7 +360,7 @@ export const INTENT_CATALOG: IntentSpec[] = [
     'com.huawei.hmos.maps.app', 'entry', 'EntryAbility', 'ViewSearchPageLocal',
     [new IntentParam('query', 'string', 'query', [], new Map<string, string>(),
       'what to look for')],
-    'opens the map search page for a place', 'catalog', 'foreground', 'intent',
+    'opens the map search page for a place', 'ignored', 'foreground', 'intent',
     new Map<string, string>(), 'navigate', 'maps', 'Search the map', ''),
 
   // The same standard intent, implemented by a second app -- which is the point
@@ -442,6 +442,7 @@ export function describeIntentsForPrompt(domains: string[] = []): string {
     if (domains.length > 0 && spec.domain.length > 0 && domains.indexOf(spec.domain) < 0) {
       continue
     }
+    if (spec.tier === 'ignored') { continue }
     let fields: string[] = []
     for (let p of spec.params) { fields.push(p.name) }
     lines.push('  intent.' + spec.name + '({ ' + fields.join(', ') + ' }, result)  -- ' + spec.summary)
@@ -462,6 +463,18 @@ export function describeIntentsForPrompt(domains: string[] = []): string {
 const UNREACHABLE_BUNDLES: string[] = ['com.huawei.hmos.clock']
 
 /** Whether `target` (bundle, or bundle/module/ability[/IntentName]) is one of those apps. */
+/**
+ * Whether `bundle`/`intentName` is a target known to answer "ok" and do nothing it was asked: tier 'ignored'
+ * in the catalogue above. It is never offered to the model, from the catalogue, the device's own descriptions or
+ * the registry, so no program promises a search that the map then does not run.
+ */
+export function ignoredIntent(bundle: string, intentName: string): boolean {
+  for (let spec of INTENT_CATALOG) {
+    if (spec.tier === 'ignored' && spec.bundle === bundle && spec.intentName === intentName) { return true }
+  }
+  return false
+}
+
 export function unreachableTarget(target: string): boolean {
   return UNREACHABLE_BUNDLES.indexOf(target.split('/')[0].trim()) >= 0
 }

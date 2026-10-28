@@ -216,12 +216,12 @@ struct StatsPanel {
           StatCell({ label: 'Web search', value: this.tally.searches.toString() + ' calls',
             note: formatMs(this.tally.searchMs) + ' in all' }).layoutWeight(1)
           StatCell({ label: 'Widgets', value: this.tally.widgets.toString(),
-            note: this.tally.attempts.toString() + ' build attempts' }).layoutWeight(1)
+            note: this.tally.attempts.toString() + (this.tally.attempts === 1 ? ' build attempt' : ' build attempts') }).layoutWeight(1)
         }.width('100%')
       } else if (this.tally.attempts > 0) {
         Row({ space: 8 }) {
           StatCell({ label: 'Widgets', value: this.tally.widgets.toString(),
-            note: this.tally.attempts.toString() + ' build attempts' }).layoutWeight(1)
+            note: this.tally.attempts.toString() + (this.tally.attempts === 1 ? ' build attempt' : ' build attempts') }).layoutWeight(1)
         }.width('100%')
       }
       ForEach(this.attempts, (a: AttemptStat) => {
