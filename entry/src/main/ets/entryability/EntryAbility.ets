@@ -67,6 +67,9 @@ export default class EntryAbility extends UIAbility {
     } catch (e) {
       hilog.error(DOMAIN, 'VERA', 'Configure resume launch handling failed: ' + (e as Error).message)
     }
+    // Widget launches can reach ProjectPage and refreshForms (onForeground) before Index
+    // initialises storage. Both must read the real project directory.
+    store.init(this.context.filesDir)
     // Before anything can be generated or compiled: the vocabulary a program is
     // allowed to use must not change underneath a program that is being written.
     loadCatalogFile(this.context.filesDir)
@@ -380,7 +383,10 @@ export default class EntryAbility extends UIAbility {
       let params = want.parameters as Record<string, Object>
       let id = params['projectId']
       if (typeof id === 'string' && id.trim().length > 0) {
-        this.queueRoute(params['launchMode'] === 'runLatest' ? 'shortcut' : 'project', id.trim())
+        // A home-screen shortcut runs the project on its own; a widget row (veraRun=1) opens the project and runs its latest
+        // version on top of it, or leaves the project open when no version can run.
+        let kind = params['launchMode'] === 'runLatest' ? 'shortcut' : (params['veraRun'] === '1' ? 'run' : 'project')
+        this.queueRoute(kind, id.trim())
         hilog.info(DOMAIN, 'VERA', 'Launch with projectId: ' + id.trim())
         return
       }
@@ -502,7 +508,7 @@ export default class EntryAbility extends UIAbility {
         let router = ui.getRouter()
         let options: routerApi.RouterOptions = { url: 'pages/Index' }
         let isolated = request.kind === 'shortcut'
-        let replaceRoot = request.kind !== 'project' || this.isolatedRoot || this.rootNeedsReset
+        let replaceRoot = (request.kind !== 'project' && request.kind !== 'run') || this.isolatedRoot || this.rootNeedsReset
         let missingProject = false
         if (request.kind !== 'home') {
           store.init(this.context.filesDir)
@@ -541,6 +547,18 @@ export default class EntryAbility extends UIAbility {
         } else {
           await router.pushUrl(options, routerApi.RouterMode.Standard)
           if (!this.routeIsCurrent(generation, request.revision)) { continue }
+        }
+        if (request.kind === 'run' && !missingProject) {
+          // Match ProjectPage's Run button: only the latest version that compiled is run.
+          let version = store.getLatestRunnableVersion(request.projectId)
+          if (version !== null) {
+            let run = new RunProjectNavParams()
+            run.projectId = request.projectId
+            run.versionId = version.id
+            run.vbc2 = version.vbc2
+            await router.pushUrl({ url: 'pages/RunnerPage', params: run }, routerApi.RouterMode.Standard)
+            if (!this.routeIsCurrent(generation, request.revision)) { continue }
+          }
         }
         await this.applyWindowMode(mainWindow, isolated, generation, request.revision)
         if (!this.routeIsCurrent(generation, request.revision)) { continue }
