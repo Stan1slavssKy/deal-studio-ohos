@@ -31,6 +31,7 @@
  * disqualifying once this lands and is verified (see the plan), not before.
  */
 
+import { noteService, httpFailure, SERVICE_JEV } from './ServiceHealth'
 import http from '@ohos.net.http'
 import hilog from '@ohos.hilog'
 import { BusinessError } from '@ohos.base'
@@ -1049,8 +1050,10 @@ export async function selectSections(prompt: string, apiKey: string): Promise<Se
     if (code !== 200) {
       hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS http ' + code.toString())
       failedAt = Date.now()
+      noteService(SERVICE_JEV, false, httpFailure(code, String(response.result)))
       return new SectionPickOutcome(null, emptyGlobals, 'none (selector answered ' + code.toString() + ')')
     }
+    noteService(SERVICE_JEV, true)
     let outcome = readSectionPick(response.result as string)
     outcome.rawBody = response.result as string
     hilog.info(DOMAIN, 'VERA', 'VERA-SECTIONS ms=' + (Date.now() - started).toString() + ' picked=' + outcome.note)
@@ -1060,6 +1063,7 @@ export async function selectSections(prompt: string, apiKey: string): Promise<Se
     let err = e as BusinessError
     hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS failed: ' + err.message + ' code=' + String(err.code) + ' after=' + (Date.now() - failStart).toString() + 'ms')
     failedAt = Date.now()
+    noteService(SERVICE_JEV, false, err.message)
     return new SectionPickOutcome(null, emptyGlobals, 'none (selector unreachable)')
   } finally {
     client.destroy()

@@ -1,6 +1,5 @@
 /**
- * Filling the catalogue's sections for a screen, the one way for both builders (the blocks path, VeraTemplatePipeline.ets,
- * and the agent, agent/VeraAgent.ets): a search when the content has to be real, the content call, the checks on what the
+ * Filling the catalogue's sections for a screen, the one way the agent (agent/VeraAgent.ets) and the host harness do it: a search when the content has to be real, the content call, the checks on what the
  * search said, then the holes, settled against the whole program.
  *
  * The network calls come from the caller (BlockCalls), so the app and the host harness fill sections the same way.

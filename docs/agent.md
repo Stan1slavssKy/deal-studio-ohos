@@ -7,7 +7,7 @@ reports it as *not built*, with the reason). A change to an existing program goe
 The idea: planning and building each have a fast path, where Jev picks something ready, and a slow path, where the model writes it. A simple
 request is built from Jev's picks alone; the more a request asks that nothing ready does, the more of it the model writes, down to the whole
 screen. **The composer's parts and the catalogue's sections are chosen together**, by the same Jev call, so there is no second planner: a
-separate pick of sections and a layout from the request alone (`VeraTemplatePipeline.ets`, "the blocks") used to follow the agent, and was
+separate pick of sections and a layout from the request alone (`VeraTemplatePipeline.ets`, "the blocks", since deleted) used to follow the agent, and was
 removed from the route because it never served -- none of the 121 prompts of the table below, none of 22 more on the merged choice.
 
 ## Terms
@@ -22,7 +22,7 @@ removed from the route because it never served -- none of the 121 prompts of the
 | **ScreenPlan** | the one plan format both paths give: the screen's *state* (named values), its *slots* (each thing it does, with what it reads and writes, and whether it is a phone action) and the *components* that fill them. A slot is *open* until something fills it; a plan with an open slot is not served | `ScreenPlan.ets` |
 | **effect** | one of six phone actions the composer wires itself: vibrate, beep, add to calendar, navigate, clear calendar, open calendar | `EFFECTS` in `VeraCompose.ets` |
 | **hole** | what the model writes for slots nothing ready fills. A *catalogue hole* is one function body inside a section; a **section hole** is a whole section for the open slots; the **whole-screen hole** is the screen as one section | `VeraHoles.ets`, `agent/AgentHole.ets`, `agent/AgentCustom.ets` |
-| ~~blocks~~ (removed) | Jev's pick of a layout and sections straight from the request, without a sketch; `VeraTemplatePipeline.ets` stays in the tree for the harness (`align-lib.js`) and as a reference, the route no longer calls it | |
+| ~~blocks~~ (removed) | Jev's pick of a layout and sections straight from the request, without a sketch; `VeraTemplatePipeline.ets` and the request rewrite it used (`VeraRequestExpand.ets`) are deleted; the alignment harness (`align-lib.js`) asks Jev for the pick itself | |
 | **notice** | a warning banner in place of what could not be built: "Not available on this phone" with the writer's own sentence, or "Part of this app could not be built" | `noticeBlock` in `agent/AgentHole.ets` |
 
 ## The algorithm
@@ -122,8 +122,9 @@ said, and each lookup is made once. A refusal of several needs together is not r
   what it does instead (`phoneRule`, `AgentCustom.ets`).
 - The time the person takes to answer a question of the plan is measured apart (`Asked.waitedMs`) and said apart ("Composed in
   5.6 s (and 6.6 s waiting for your answer)"): it is theirs, not the app's.
-- The Metrics tab shows the last run of the previous session when this session has run nothing (`LastRun.ets`,
-  `{filesDir}/vera/last-run.json`).
+- The Metrics tab shows this run only: where the time went stage by stage (`RunStages.ets`), the model calls with their tokens,
+  speed and cost, the lookups the app's own tools made (`ToolLog.ets`) and which of Jev, Exa and DeepSeek answered
+  (`ServiceHealth.ets`). Nothing is kept for the next session.
 
 ## Results
 

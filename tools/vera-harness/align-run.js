@@ -59,7 +59,7 @@ async function jev(body) {
   return text
 }
 
-/** The section pick for `text`, as the blocks path asks for it. null when Jev did not answer. */
+/** The section pick for `text`, as the removed blocks path asked for it. null when Jev did not answer. */
 async function sectionPick(text) {
   try {
     const body = await jev(sections.buildSectionRequest(text))

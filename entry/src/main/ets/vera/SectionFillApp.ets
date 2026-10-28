@@ -1,6 +1,6 @@
 /**
  * The app's calls for filling sections (SectionFill.ets): DeepSeek for the content and the hole bodies, Exa for the search,
- * the phone's own lookup for a hole that may call the phone. The blocks path and the agent make them the same way.
+ * the phone's own lookup for a hole that may call the phone. The agent makes them.
  */
 
 import { BlockCalls } from './SectionFill'

@@ -25,6 +25,8 @@ import { composeNeeds } from '../NeedsChoose'
 import { AlignResult, alignCandidates, alignIsEnabled, alignLeftovers } from './AgentAlign'
 import { Composition as ScreenRecord, compositionFromPlan, rebuilds } from '../VeraComposition'
 import { holeBodiesBySlot } from '../VeraHoles'
+import { toolCount, toolSpanSince } from '../ToolLog'
+import { Stage, addStage, WHO_MODEL, WHO_JEV, WHO_SEARCH, WHO_PHONE, WHO_YOU } from '../RunStages'
 
 export class AgentRequest {
   /** What to build, in the person's words (or the chat's request for them). */
@@ -67,6 +69,8 @@ export class AgentResult {
   previews: number = 0
   checkMs: number = 0
   ms: number = 0
+  /** Where the time went, in the order it happened (RunStages.ets); the person's waiting is a stage of its own. */
+  stages: Stage[] = []
 
   /** Time the person spent answering the plan's questions: part of `ms`, and theirs, not the app's. */
   waitedMs(): number {
@@ -148,11 +152,19 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
   })
   result.composed = composed
   result.note = composed.note
+  let planning = Date.now() - started
+  let waitedOnYou = result.waitedMs()
+  addStage(result.stages, 'Plan of needs', WHO_MODEL, composed.sketchMs, 'the request as a list of needs')
+  addStage(result.stages, 'Choosing parts and sections', WHO_JEV, composed.jevMs)
+  addStage(result.stages, 'Your answers', WHO_YOU, waitedOnYou, result.asked.length.toString() + ' question(s)')
+  addStage(result.stages, 'Planning, the rest', WHO_PHONE, planning - composed.sketchMs - composed.jevMs - waitedOnYou, 'building the sketch, checks')
   result.plan = composed.parsed !== null && composePlanEnabled() ? sketchPlan(composed.parsed!) : ''
   // What the composition leaves to be written is first offered to the catalogue: a section may do exactly that.
   if (composed.composition !== null && alignIsEnabled() && !host.cancelled() && alignCandidates(composed.composition!).length > 0) {
     host.status('Looking for ready-made parts...')
+    let alignStart = Date.now()
     let aligned = await alignLeftovers(composed.composition!, request.prompt, host.askJev)
+    addStage(result.stages, 'Looking for ready-made parts', WHO_JEV, Date.now() - alignStart)
     if (aligned.asked.length > 0 || aligned.note.length > 0) {
       result.align = aligned
       result.note += aligned.note
@@ -180,7 +192,9 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       // What each section is to offer (a button for each item, a calendar) is read from the request, as the blocks' own route
       // does: the composer counts on the section for what it left out of the plan, and the defaults leave it off.
       if (specsOf(comp.blocks).some((sp: FragmentSpec | null): boolean => sp !== null && sp.slots.length > 0)) {
+        let slotStart = Date.now()
         blocks.slotValues = readSlotValues(await host.askJev(buildSlotRequest(request.prompt, comp.blocks)), comp.blocks)
+        addStage(result.stages, 'What each section offers', WHO_JEV, Date.now() - slotStart)
         let specs = specsOf(comp.blocks)
         let provided: string[] = []
         for (let i = 0; i < specs.length; i++) {
@@ -193,7 +207,18 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
         let gone = dropProvided(comp, provided)
         if (gone.length > 0) { result.note += '; done by the sections: ' + gone.join('; ') }
       }
+      let fillStart = Date.now()
+      let fillTools = toolCount()
       let fill = await host.fillBlocks(blocks)
+      let fillMs = Date.now() - fillStart
+      let named = Math.max(0, fill.searchMs) + fill.contentMs + fill.holesMs
+      // The phone-function lookups a hole makes before the model writes it are the phone's wait, not the model's.
+      let holeLookups = Math.min(toolSpanSince(fillTools), fill.holesMs)
+      addStage(result.stages, 'Looking up real data', WHO_SEARCH, fill.searchMs)
+      addStage(result.stages, 'Text of the sections', WHO_MODEL, fill.contentMs)
+      addStage(result.stages, 'Looking up phone functions for the sections', WHO_PHONE, holeLookups)
+      addStage(result.stages, 'Functions of the sections', WHO_MODEL, fill.holesMs - holeLookups)
+      addStage(result.stages, 'Filling the sections, the rest', WHO_PHONE, fillMs - named, 'checks of what was found')
       result.blocks = comp.blocks
       result.blockFill = fill
       result.note += '; ' + (fill.failed.length > 0 ? fill.failed : fill.note)
@@ -204,6 +229,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
     let plan = screenPlan(comp, values)
     result.screen = plan
     // What was left out because a section is said to do it is checked against the screen the sections make.
+    let claimStart = Date.now()
     if (ready && comp.claimed.length > 0 && !host.cancelled()) {
       let missing = await claimsUndone(comp.claimed, request.prompt, assemblePlan(plan, true), host.askJev)
       if (missing.length > 0) {
@@ -225,10 +251,18 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
         result.note += '; already on the screen: ' + done.join('; ')
       }
     }
+    addStage(result.stages, 'Does a section do it already?', WHO_JEV, Date.now() - claimStart)
     if (ready && plan.toWrite().length > 0 && !host.cancelled()) {
       host.status('Writing the rest...')
+      let writeStart = Date.now()
+      let writeTools = toolCount()
       let written = await writeHole(plan, request.prompt, customInputs(comp), host, [], partsContract(comp))
       result.custom = written
+      let wrote = Date.now() - writeStart
+      let lookups = Math.min(toolSpanSince(writeTools), wrote)
+      addStage(result.stages, 'Looking up phone functions', WHO_PHONE, lookups, 'before the model writes')
+      addStage(result.stages, 'Model writes the rest', WHO_MODEL, wrote - lookups,
+        written !== null ? written.attempts.toString() + ' attempt(s)' : '')
       ready = plan.toWrite().length === 0
       // Nothing written, only a notice: the inputs kept for what was to be written have nothing to do and are left off.
       if (ready && written !== null && written.section === null && inputsOnlyForCustom(comp).length > 0) {
@@ -243,7 +277,10 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
     if (ready) { composed.source = assemblePlan(plan) }
   }
   if (composed.source.length > 0) {
+    let settleStart = Date.now()
     let settled = await settleProgram(composed.source, request.prompt, host)
+    addStage(result.stages, 'Compile and run once', WHO_PHONE, settled.checkMs)
+    addStage(result.stages, 'Repair by edits', WHO_MODEL, Date.now() - settleStart - settled.checkMs)
     result.checkMs = settled.checkMs
     result.repair = settled.repair
     result.errors = settled.errors

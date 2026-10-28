@@ -21,7 +21,6 @@ import { setAlignEnabled, setAlignWide } from '../vera/agent/AgentAlign'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
-import { setExpandRequests } from '../vera/VeraRequestExpand'
 
 const DOMAIN = 0x0000
 
@@ -87,7 +86,6 @@ export default class EntryAbility extends UIAbility {
     this.extractUiAb(want)
     this.extractCompose(want)
     this.extractTemplateSelect(want)
-    this.extractExpand(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -107,7 +105,6 @@ export default class EntryAbility extends UIAbility {
     this.extractUiAb(want)
     this.extractCompose(want)
     this.extractTemplateSelect(want)
-    this.extractExpand(want)
     this.navigateToProject()
   }
 
@@ -359,9 +356,9 @@ export default class EntryAbility extends UIAbility {
   }
 
   /**
-   * The Jev template path is on by default (VeraTemplateSelectFlag.ets); `--ps veraTemplateSelect 0`
-   * switches it off for this session so a generation can be compared with the plain path. It also
-   * needs the TypeSafe key (extractSelectorKey); without it generation goes straight to the model.
+   * Jev's structural edits of a composed screen are on by default (VeraTemplateSelectFlag.ets); `--ps veraTemplateSelect 0`
+   * switches them off for this session so a refine can be compared with the plain model refine. They also
+   * need the TypeSafe key (extractSelectorKey).
    */
   private extractTemplateSelect(want: Want): void {
     if (want.parameters === null || want.parameters === undefined) { return }
@@ -376,18 +373,6 @@ export default class EntryAbility extends UIAbility {
       enableTemplateSelect()
       hilog.info(DOMAIN, 'VERA', 'VERA-TEMPLATE-SELECT enabled from launch parameter')
     }
-  }
-
-  /** `--ps veraExpand 0` switches the request rewrite off for this session (VeraRequestExpand.ets); on by default. */
-  private extractExpand(want: Want): void {
-    if (want.parameters === null || want.parameters === undefined) { return }
-    let params = want.parameters as Record<string, Object>
-    let flag = params['veraExpand']
-    if (flag === null || flag === undefined) { return }
-    let text = String(flag).trim()
-    let on = !(text === '0' || text === 'false' || text === 'off')
-    setExpandRequests(on)
-    hilog.info(DOMAIN, 'VERA', 'VERA-EXPAND ' + (on ? 'enabled' : 'disabled') + ' from launch parameter')
   }
 
   private extractProjectId(want: Want): void {

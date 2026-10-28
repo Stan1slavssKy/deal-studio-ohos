@@ -1,4 +1,4 @@
-// SectionFill.ets: the one fill of the catalogue's sections that the blocks path and the agent both use, driven with canned calls
+// SectionFill.ets: the one fill of the catalogue's sections the agent uses, driven with canned calls
 // (no network): when a search is made and with what budget, what a block that shows real-world facts may show, whose choice
 // wins when the same token has three values, and what a stopped or hole-less fill leaves behind.
 'use strict'

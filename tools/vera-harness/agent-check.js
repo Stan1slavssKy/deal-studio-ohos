@@ -48,6 +48,9 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.deepEqual(seen.status, ['Composing...'])
     assert.match(r.plan, /^A sketch of this app/)
     assert.match(r.note, /^composed: /)
+    // Every stage has a party and a time, and what they add up to is no more than the run took.
+    assert.ok(r.stages.every(st => ['Model', 'Jev', 'Search', 'Phone', 'You'].includes(st.who) && st.ms >= 50 && st.name.length > 0))
+    assert.ok(r.stages.reduce((n, st) => n + st.ms, 0) <= r.ms + r.stages.length, 'stages ' + JSON.stringify(r.stages) + ' in ' + r.ms)
   }
   // A widget says so in its status and is assembled as one.
   {

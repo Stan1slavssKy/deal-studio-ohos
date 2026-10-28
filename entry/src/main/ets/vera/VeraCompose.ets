@@ -27,6 +27,7 @@
 import http from '@ohos.net.http'
 import { FragmentSpec, StateFieldSpec, PortSpec, VetoSpec, fragments, vetoes } from './VeraTemplates'
 import { composeFragments } from './VeraSectionCompose'
+import { noteService, httpFailure, SERVICE_JEV } from './ServiceHealth'
 import { blockDefaults } from './VeraTemplateContent'
 import { ScreenPlan, PlanSlot, PlanComponent, StateItem, assemblePlan, FILL_PART, FILL_BLOCK, FILL_EFFECT, FILL_HOLE, FILL_OPEN,
   PLAN_FROM_SKETCH, TO_WRITE } from './ScreenPlan'
@@ -3921,11 +3922,14 @@ export async function askJev(body: string, apiKey: string): Promise<string> {
     if ((response.responseCode as number) !== 200) {
       console.warn('VERA-JEV http ' + (response.responseCode as number).toString() + ' bytes=' + body.length.toString() + ' ' +
         String(response.result).substring(0, 300))
+      noteService(SERVICE_JEV, false, httpFailure(response.responseCode as number, String(response.result)))
       return ''
     }
+    noteService(SERVICE_JEV, true)
     return response.result as string
   } catch (e) {
     console.warn('VERA-JEV failed bytes=' + body.length.toString() + ': ' + (e as Error).message)
+    noteService(SERVICE_JEV, false, (e as Error).message)
     return ''
   } finally {
     client.destroy()

@@ -20,6 +20,7 @@
  * is none, and an edit goes to the model as it always did.
  */
 
+import { noteService, httpFailure, SERVICE_JEV } from './ServiceHealth'
 import http from '@ohos.net.http'
 import hilog from '@ohos.hilog'
 import { fragments, FragmentSpec, StateFieldSpec } from './VeraTemplates'
@@ -457,12 +458,18 @@ export async function selectEdit(request: string, c: Composition, apiKey: string
       connectTimeout: 5000,
       readTimeout: 15000
     })
-    if ((response.responseCode as number) !== 200) { none.note = 'edit=none(selector ' + (response.responseCode as number).toString() + ')'; return none }
+    if ((response.responseCode as number) !== 200) {
+      noteService(SERVICE_JEV, false, httpFailure(response.responseCode as number, String(response.result)))
+      none.note = 'edit=none(selector ' + (response.responseCode as number).toString() + ')'
+      return none
+    }
+    noteService(SERVICE_JEV, true)
     let edit = readEditAnswer(response.result as string, c)
     hilog.info(DOMAIN, 'VERA', 'VERA-EDIT ' + edit.note)
     return edit
   } catch (e) {
     hilog.warn(DOMAIN, 'VERA', 'VERA-EDIT failed: ' + (e as Error).message)
+    noteService(SERVICE_JEV, false, (e as Error).message)
     none.note = 'edit=none(selector unreachable)'
     return none
   } finally {

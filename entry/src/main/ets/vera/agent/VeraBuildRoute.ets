@@ -5,7 +5,7 @@
  * reason. The caller turns the outcome into its own state; this file decides nothing about pages.
  *
  * The agent chooses among the composer's parts and the catalogue's sections together (VeraCompose.ets's chooseSections, AgentAlign.ets),
- * so there is no second planner behind it: a separate pick of sections and a layout from the request alone (VeraTemplatePipeline.ets)
+ * so there is no second planner behind it: a separate pick of sections and a layout from the request alone (the blocks pipeline, removed)
  * used to follow the agent and was never the one that served -- none of 121 prompts, none of 22 on the merged choice.
  *
  * When no part of the screen can be built from what is ready, the hole widens to the whole screen: the model writes it
@@ -20,6 +20,8 @@ import { assemblePlan, ScreenPlan } from '../ScreenPlan'
 import { wholeScreenPlan, sketchConstants } from '../VeraCompose'
 import { settleProgram } from './AgentRepair'
 import { compositionFromPlan, rebuilds } from '../VeraComposition'
+import { addStage, WHO_MODEL, WHO_PHONE } from '../RunStages'
+import { toolCount, toolSpanSince } from '../ToolLog'
 
 /** The agent's program is the result. */
 export const OUTCOME_AGENT: string = 'agent'
@@ -72,13 +74,23 @@ async function writeWholeScreen(request: RouteRequest, host: AgentHost, outcome:
   host.status('Writing the whole screen...')
   let facts: string[] = sketch !== null ? sketchConstants(sketch!) : []
   if (plan.widget) { facts.push('This is a small widget inside a chat reply: no header of its own, at most two sections, compact') }
+  let writeStart = Date.now()
+  let writeTools = toolCount()
   let written = await writeHole(plan, prompt, [], host, facts)
+  let wrote = Date.now() - writeStart
+  let lookups = Math.min(toolSpanSince(writeTools), wrote)
+  addStage(agent!.stages, 'Looking up phone functions', WHO_PHONE, lookups, 'before the model writes')
+  addStage(agent!.stages, 'Model writes the whole screen', WHO_MODEL, wrote - lookups,
+    written !== null ? written.attempts.toString() + ' attempt(s)' : '')
   agent!.whole = written
   if (written === null || written.section === null) {
     agent!.note += '; whole screen: ' + (written !== null ? written.failed : 'nothing to write')
     return false
   }
+  let settleStart = Date.now()
   let settled = await settleProgram(assemblePlan(plan), prompt, host)
+  addStage(agent!.stages, 'Compile and run once', WHO_PHONE, settled.checkMs)
+  addStage(agent!.stages, 'Repair by edits', WHO_MODEL, Date.now() - settleStart - settled.checkMs)
   agent!.checkMs += settled.checkMs
   if (settled.repair !== null) { agent!.repair = settled.repair }
   agent!.note += settled.note

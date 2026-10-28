@@ -1,7 +1,7 @@
 // The alignment prototype, pure parts (no network): what Jev is shown when it is asked to pick blocks for a *plan*
 // rather than for the raw request, and one comparison row per prompt of the three readings that exist today --
 //
-//   raw   Jev's section pick (VeraSectionCompose.ets) for the request as typed: what the blocks path does now;
+//   raw   Jev's section pick (VeraSectionCompose.ets) for the request as typed: what the removed blocks path did;
 //   plan  the same pick for the request plus the plan DeepSeek drew (Sketch, described by describeSketch);
 //   comp  Jev's choices for the plan (VeraCompose.ets readComposition): the composer's parts, and the sections of the
 //         plan's `ready` needs: what the agent does now;
