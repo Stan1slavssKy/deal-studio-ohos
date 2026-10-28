@@ -343,6 +343,8 @@ export function parseSketch(text: string): Sketch | null {
       input.measure = str(r, 'measure', input.kind === 'percent' ? 'percent' : (input.kind === 'count' ? 'count' : 'number'))
       if (MEASURES.indexOf(input.measure) < 0 || input.measure === 'clock') { input.measure = 'number' }
       if (input.measure === 'money') { input.unit = currencySign(input.unit) }
+      // A length of time the sketch called a time ("kind": "time", "measure": "seconds") is a number of seconds or minutes, as it says.
+      if (input.kind === 'time' && isTime(input.measure)) { input.kind = 'count' }
       // A time of day is minutes since midnight, whatever measure the sketch wrote.
       if (input.kind === 'time') {
         input.measure = 'clock'
@@ -1041,6 +1043,27 @@ class Operand {
   }
 }
 
+/**
+ * The values a countdown's length is made of, found from the sketch's own formulas starting at the one it names: they are worked out
+ * before the clock runs, so none of them may read the clock (a round length taken as the countdown's duration over the rounds, for a
+ * countdown whose duration is the rounds' total).
+ */
+function lengthFeeders(sketch: Sketch): string[] {
+  let out: string[] = []
+  let todo: string[] = [sketch.countdownLength]
+  while (todo.length > 0) {
+    let id = todo.pop()!
+    let v = sketch.values.find((x: SketchValue): boolean => x.id === id)
+    if (v === undefined || out.indexOf(id) >= 0) { continue }
+    out.push(id)
+    let words: string[] = v.formula.split(/[^A-Za-z0-9_]+/)
+    for (let other of sketch.values) {
+      if (other.id !== id && words.indexOf(other.id) >= 0) { todo.push(other.id) }
+    }
+  }
+  return out
+}
+
 function operandList(sketch: Sketch, index: number): Operand[] {
   let out: Operand[] = []
   for (let input of sketch.inputs) {
@@ -1051,7 +1074,8 @@ function operandList(sketch: Sketch, index: number): Operand[] {
     let v = sketch.values[i]
     out.push(new Operand(v.id, v.label, v.format === 'plain' ? 'number' : v.format))
   }
-  if (sketch.hasCountdown) {
+  let feedsClock = index < sketch.values.length && lengthFeeders(sketch).indexOf(sketch.values[index].id) >= 0
+  if (sketch.hasCountdown && !feedsClock) {
     out.push(new Operand('remaining', 'seconds left on the countdown', 'seconds'))
     out.push(new Operand('elapsed', 'seconds passed on the countdown', 'seconds'))
     out.push(new Operand('duration', 'whole length of the countdown', 'seconds'))
@@ -3629,6 +3653,23 @@ export function partsContract(comp: Composition): PartsContract {
       'to add one it copies state.entries into a new array, pushes a LogEntry (minute: time.hourOfDay() * 60 + time.minuteOfHour()) and returns {entries: thatArray __PASSTHROUGH__}.')
   }
   return out
+}
+
+/**
+ * The inputs kept only for the section the model was to write: nothing else on the screen reads them. When that section
+ * could not be written they have nothing to do, and are left off.
+ */
+export function inputsOnlyForCustom(comp: Composition): string[] {
+  let read: string[] = [comp.countdownFrom]
+  comp.bindings.forEach((b: Binding) => {
+    read.push(b.a)
+    read.push(b.b)
+    for (let name of b.reads) { read.push(name) }
+  })
+  comp.args.forEach((given: Map<string, string>) => {
+    given.forEach((source: string) => { if (source.startsWith('input.')) { read.push(source.substring(6)) } })
+  })
+  return comp.customReads.filter((id: string): boolean => read.indexOf(id) < 0)
 }
 
 export function customInputs(comp: Composition): string[] {

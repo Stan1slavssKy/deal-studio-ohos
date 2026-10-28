@@ -127,6 +127,9 @@ export const NEEDS_PROMPT: string =
   'and entries.count and entries.total are only for entries the person adds. ' +
   'A need that only helps fill in another need, such as a list of choices for a field, belongs to that need and is not a need of its own. ' +
   'Labels are short: three words at most. ' +
+  'When the request does not say which place, person, thing or period it is about and what the app shows depends on it, that goes first in questions ' +
+  '(not units, looks or anything a default does well): the app is made for the answer, and the person is not made to type it into the app for ' +
+  'content the app has to look up. ' +
   'A number of hours or days is measure number with its unit written in unit (hours, days): measure seconds or minutes is only for a number counted in seconds or minutes. ' +
   'The screen shows what the request names; the steps worked out on the way to it are shown: false. ' +
   'A content or action need is written only when the request itself asks for it, in words you can quote: a note, a tip, an example, ' +

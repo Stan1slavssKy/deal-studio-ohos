@@ -36,7 +36,7 @@ for (const word of ['READY', 'ready-made', 'section', 'catalogue', 'entryCount',
 }
 // What the prompt asks for where the first phone run went wrong: a number the request gives is the starting value, a reminder is
 // not a countdown, what is written for the request keeps its own counts, labels are short.
-for (const rule of [/shown": false for every figure that only feeds another figure/, /steps worked out on the way to it are shown: false/, /that input starts at it/, /never a countdown/, /no figure counts its items/, /three words at most/, /measure seconds or minutes is only for a number counted in seconds or minutes/]) {
+for (const rule of [/shown": false for every figure that only feeds another figure/, /steps worked out on the way to it are shown: false/, /that input starts at it/, /never a countdown/, /no figure counts its items/, /three words at most/, /does not say which place, person, thing or period it is about/, /measure seconds or minutes is only for a number counted in seconds or minutes/]) {
   assert.match(np.NEEDS_PROMPT, rule)
 }
 assert.ok(np.NEEDS_PROMPT.includes('entries.count') && np.NEEDS_PROMPT.includes('clock.remaining'))

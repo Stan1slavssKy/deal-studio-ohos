@@ -14,8 +14,8 @@ import { BlockRequest, BlockFill } from '../SectionFill'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
-import { composeWith, Replaced, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, partsContract, dropProvided, ComposeResult, Composition, Sketch } from '../VeraCompose'
-import { ScreenPlan, PlanSlot, PlanComponent, assemblePlan, FILL_BLOCK, FILL_PART } from '../ScreenPlan'
+import { composeWith, Replaced, inputsOnlyForCustom, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, partsContract, dropProvided, ComposeResult, Composition, Sketch, SketchInput } from '../VeraCompose'
+import { ScreenPlan, PlanSlot, PlanComponent, assemblePlan, FILL_BLOCK, FILL_PART, FILL_REPORTED } from '../ScreenPlan'
 import { compileVeraSource } from '../VeraCompiler'
 import { Repaired, settleProgram } from './AgentRepair'
 import { FragmentSpec } from '../VeraTemplates'
@@ -96,6 +96,30 @@ function recordOf(result: AgentResult, comp: Composition, prompt: string): Scree
   }
   let record = compositionFromPlan(result.screen!, prompt, base, holes)
   return rebuilds(record, result.source) ? record : null
+}
+
+/**
+ * The screen again without the inputs only a section nobody could write was to read; the notices stay where the written
+ * section's slots were.
+ */
+function withoutDeadInputs(comp: Composition, values: Map<string, string>[], plan: ScreenPlan): ScreenPlan {
+  let dead = inputsOnlyForCustom(comp)
+  comp.inputs = comp.inputs.filter((i: SketchInput): boolean => dead.indexOf(i.id) < 0)
+  comp.customReads = comp.customReads.filter((id: string): boolean => dead.indexOf(id) < 0)
+  let again = screenPlan(comp, values)
+  let moved: Map<number, number> = new Map<number, number>()
+  for (let i = 0; i < plan.components.length; i++) {
+    if (plan.components[i].fill !== FILL_REPORTED) { continue }
+    again.components.push(plan.components[i])
+    moved.set(i, again.components.length - 1)
+  }
+  for (let s of again.toWrite()) {
+    let was = plan.slots.find((x: PlanSlot): boolean => x.id === s.id)
+    let at = was !== undefined && moved.has(was.by) ? moved.get(was.by)! : -1
+    if (at < 0) { return plan }
+    again.fillWith(s, FILL_REPORTED, at, was!.detail)
+  }
+  return again
 }
 
 export async function runAgent(request: AgentRequest, host: AgentHost): Promise<AgentResult> {
@@ -208,6 +232,11 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       let written = await writeHole(plan, request.prompt, customInputs(comp), host, [], partsContract(comp))
       result.custom = written
       ready = plan.toWrite().length === 0
+      // Nothing written, only a notice: the inputs kept for what was to be written have nothing to do and are left off.
+      if (ready && written !== null && written.section === null && inputsOnlyForCustom(comp).length > 0) {
+        plan = withoutDeadInputs(comp, values, plan)
+        result.screen = plan
+      }
       if (written !== null) {
         result.note += '; ' + (written.section !== null ? 'custom section in ' + written.attempts.toString() + ' attempt(s)' :
           'reported on the screen (' + written.failed + ')')
