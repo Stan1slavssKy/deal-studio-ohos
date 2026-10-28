@@ -37,7 +37,7 @@ import { MetricCard, MetricTile, MetricChip, MetricLine } from '../components/Me
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { ToolCall, ToolTotal, toolCalls, resetToolLog, toolTotals, toolMs } from '../vera/ToolLog'
-import { ServiceNote, serviceNotes, resetServiceHealth, describeService, silent } from '../vera/ServiceHealth'
+import { ServiceNote, serviceNotes, resetServiceHealth, describeService, silent, serviceTrouble } from '../vera/ServiceHealth'
 import { Stage, addStage, appMs, yourMs, byWho, WHO_MODEL, WHO_JEV, WHO_SEARCH, WHO_PHONE, WHO_YOU } from '../vera/RunStages'
 import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
 
@@ -215,6 +215,8 @@ struct GeneratePage {
   @State projectId: string = ''
   @State baseVersionId: string = ''
   @State prompt: string = ''
+  /** What a service that did not answer cost this run (ServiceHealth.ets), shown under the status. */
+  @State troubleNote: string = ''
   @State requestHistory: string = ''
   @State baseVersionNumber: number = 0
   @State nextVersionNumber: number = 1
@@ -780,6 +782,7 @@ struct GeneratePage {
     this.stages = []
     this.services = []
     resetServiceHealth()
+    this.troubleNote = ''
     this.tools = []
     resetToolLog()
     this.serverBytecode = ''
@@ -806,6 +809,7 @@ struct GeneratePage {
     this.stages = []
     this.services = []
     resetServiceHealth()
+    this.troubleNote = ''
     this.tools = []
     resetToolLog()
     let startFields: Record<string, Object> = {}
@@ -978,6 +982,7 @@ struct GeneratePage {
     this.stages = []
     this.services = []
     resetServiceHealth()
+    this.troubleNote = ''
     this.tools = []
     resetToolLog()
     this.serverBytecode = ''
@@ -1332,6 +1337,7 @@ struct GeneratePage {
     }
     this.stages = stages
     this.services = serviceNotes()
+    this.troubleNote = serviceTrouble()
     this.tools = toolCalls()
   }
 
@@ -1639,6 +1645,7 @@ struct GeneratePage {
     this.stages = []
     this.services = []
     resetServiceHealth()
+    this.troubleNote = ''
     this.tools = []
     resetToolLog()
     this.serverBytecode = ''
@@ -2265,6 +2272,13 @@ struct GeneratePage {
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 8, bottom: 4 })
+        if (this.troubleNote.length > 0) {
+          Text(this.troubleNote)
+            .fontSize(12)
+            .fontColor('#B25000')
+            .width('100%')
+            .padding({ left: 16, right: 16, bottom: 4 })
+        }
 
         if (!this.generating && this.hasResult() && this.generatedSource.trim() !== this.compiledSource.trim()) {
           Text('The last attempt was not applied. Save keeps the previous successful code and version request.')

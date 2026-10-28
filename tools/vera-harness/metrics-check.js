@@ -39,8 +39,14 @@ const {loadVera} = require('./source-loader')
   assert.equal(h.httpFailure(500, '<html>'), 'HTTP 500')
   assert.equal(h.httpFailure(401, '{"error":{"message":"bad key"}}'), 'HTTP 401 bad key')
   notes[0].failed = 99; assert.equal(h.serviceNotes()[0].failed, 2, 'the tally handed out is a copy')
+  // What a service that did not answer cost, for the person: Jev silent, Exa partly, DeepSeek answered.
+  assert.equal(h.serviceTrouble(), 'Jev did not answer (timed out): the ready-made parts were chosen without it, so the screen may be slower and plainer. ' +
+    'Exa failed 1 of 2 calls (HTTP 429): real data may be missing')
   h.resetServiceHealth()
   assert.deepEqual(h.serviceNotes(), [])
+  assert.equal(h.serviceTrouble(), '', 'every call answered: nothing to say')
+  h.noteService(h.SERVICE_JEV, true); h.noteService(h.SERVICE_DEEPSEEK, true)
+  assert.equal(h.serviceTrouble(), '')
 }
 
 // Tool calls: logged by whoever makes them, summed per tool.

@@ -1094,31 +1094,40 @@ export struct VeraPreview {
           .backgroundColor('#FFECEC')
       }
       if (this.hasRoot && this.liveRoot !== null) {
-        if (this.embedded) {
-          // No Scroll of its own and no fixed height: the card is as tall as
-          // the program, and whatever it sits in does the scrolling. A Scroll
-          // here would take a drag that began on the program and leave the
-          // page behind it unmoved.
-          Column() {
-            ForEach([this.programId], (_id: number) => {
-              this.renderNode(this.liveRoot!, 'root')
-            }, (id: number) => id.toString())
-          }.width('100%')
-        } else {
-          Scroll() {
+        // A snackbar is told to the person now, wherever they have scrolled to: it is drawn over the program, at the bottom of its
+        // window, not at the end of the content where it was written (the end of a long screen is out of sight).
+        Stack({ alignContent: Alignment.Bottom }) {
+          if (this.embedded) {
+            // No Scroll of its own and no fixed height: the card is as tall as
+            // the program, and whatever it sits in does the scrolling. A Scroll
+            // here would take a drag that began on the program and leave the
+            // page behind it unmoved.
             Column() {
               ForEach([this.programId], (_id: number) => {
                 this.renderNode(this.liveRoot!, 'root')
               }, (id: number) => id.toString())
             }.width('100%')
+          } else {
+            Scroll() {
+              Column() {
+                ForEach([this.programId], (_id: number) => {
+                  this.renderNode(this.liveRoot!, 'root')
+                }, (id: number) => id.toString())
+              }.width('100%')
+            }
+            .width('100%')
+            .height('100%')
+            // Scroll centres its content by default, which leaves a generated
+            // program floating in the middle of the box instead of starting where
+            // a real app would.
+            .align(Alignment.Top)
           }
-          .width('100%')
-          .layoutWeight(1)
-          // Scroll centres its content by default, which leaves a generated
-          // program floating in the middle of the box instead of starting where
-          // a real app would.
-          .align(Alignment.Top)
+          ForEach(this.snackbarsOf(this.liveRoot!), (bar: LiveNode) => {
+            this.snackbarBar(bar)
+          }, (bar: LiveNode, index: number) => index.toString() + ':' + bar.text)
         }
+        .width('100%')
+        .layoutWeight(this.embedded ? 0 : 1)
       }
     }
     .width('100%')
@@ -1225,6 +1234,53 @@ export struct VeraPreview {
   }
 
   /** Vertical padding belongs to the fill, so an unfilled section has none. */
+
+  /** A ui.Snackbar, drawn over the program at the bottom of its window (see programFrame). */
+  @Builder
+  snackbarBar(node: LiveNode) {
+      Row({ space: this.t().gapBase }) {
+        Text(node.text)
+          .fontSize(this.t().sizeBody)
+          .fontFamily(this.textFamily())
+          .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
+          .layoutWeight(1)
+        if (node.value.length > 0) {
+          Button(node.value)
+            .height(this.t().chipHeight)
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
+            .type(ButtonType.Capsule)
+            .backgroundColor('#00000000')
+            .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
+            .onClick(() => {
+              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
+            })
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .padding(this.t().padBase)
+      .backgroundColor(toneEdge(this.t(), node.style, this.t().inkStrong))
+      .borderRadius(this.t().radiusControl)
+      .margin({ left: this.t().padBase, right: this.t().padBase, bottom: this.t().padBase })
+  }
+
+  /** Every ui.Snackbar in the program's tree, for the window to draw. */
+  private snackbarsOf(node: LiveNode): LiveNode[] {
+    let found: LiveNode[] = []
+    if (node.kind === 'snackbar') { found.push(node) }
+    for (let child of node.children) { found = found.concat(this.snackbarsOf(child)) }
+    return found
+  }
+
+  /**
+   * A row is drawn dimmed only when it is a control that is switched off. A row with no action is information, not a control that is
+   * not available: it is read, so it is drawn as full-strength as any other text.
+   */
+  private rowOpacity(node: LiveNode): number {
+    return node.enabled || node.action.length === 0 ? 1 : 0.5
+  }
+
   private sectionPadY(style: string): number {
     return this.sectionFills(style) ? this.t().padCard : 0
   }
@@ -2462,7 +2518,7 @@ export struct VeraPreview {
         top: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1,
         bottom: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1
       })
-      .opacity(node.enabled ? 1 : 0.5)
+      .opacity(this.rowOpacity(node))
       .onClick(() => {
         if (node.action.length > 0 && node.enabled) {
           this.handleAction(node.action, node.eventValue)
@@ -2613,7 +2669,7 @@ export struct VeraPreview {
       .alignItems(HorizontalAlign.Start)
       .padding({ top: Math.round((this.timelineMarker() - this.t().sizeBody * 1.3) / 2),
                  bottom: node.style === 'compact' ? this.t().gapBase : this.t().gapLoose })
-      .opacity(node.enabled ? 1 : 0.5)
+      .opacity(this.rowOpacity(node))
       .onClick(() => {
         if (node.action.length > 0 && node.enabled) {
           this.handleAction(node.action, node.eventValue)
@@ -2779,35 +2835,8 @@ export struct VeraPreview {
       }
       .alignItems(VerticalAlign.Center)
     } else if (node.kind === 'snackbar') {
-      // message/actionText/action ride text/value/action -- the same shape
-      // ui.InsetBanner already uses, so decode needed no new case here
-      // either. Meant to come and go behind ui.When, not to persist like a
-      // banner: see the catalogue guidance.
-      Row({ space: this.t().gapBase }) {
-        Text(node.text)
-          .fontSize(this.t().sizeBody)
-          .fontFamily(this.textFamily())
-          .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
-          .layoutWeight(1)
-        if (node.value.length > 0) {
-          Button(node.value)
-            .height(this.t().chipHeight)
-            .fontSize(this.t().sizeBody)
-            .fontFamily(this.textFamily())
-            .type(ButtonType.Capsule)
-            .backgroundColor('#00000000')
-            .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
-            .onClick(() => {
-              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
-            })
-        }
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      .padding(this.t().padBase)
-      .backgroundColor(toneEdge(this.t(), node.style, this.t().inkStrong))
-      .borderRadius(this.t().radiusControl)
-      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+      // Not in the content: programFrame draws it over the window.
+      Blank().height(0).width(0)
     } else if (node.kind === 'button') {
       Button(node.text.length === 0 ? ' ' : node.text)
         .height(this.t().controlHeight)
@@ -3029,7 +3058,7 @@ export struct VeraPreview {
         top: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1,
         bottom: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1
       })
-      .opacity(node.enabled ? 1 : 0.5)
+      .opacity(this.rowOpacity(node))
       .onClick(() => {
         if (node.action.length > 0 && node.enabled) {
           this.handleAction(node.action, node.eventValue)

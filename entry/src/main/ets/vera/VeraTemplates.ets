@@ -362,11 +362,11 @@ class Item {
   detail: string;
   done: boolean;
 }`,
-    [new StateFieldSpec('itemsIDX', 'Item[]'), new StateFieldSpec('lastToggledIDX', 'number')],
+    [new StateFieldSpec('itemsIDX', 'Item[]')],
     `  let itemsIDX: Item[] = [
     __ITEMS_IDX__
   ];`,
-    `itemsIDX: itemsIDX, lastToggledIDX: -1`,
+    `itemsIDX: itemsIDX`,
     `function toggleIDX(state: AppState, index: number): AppState {
   let out: Item[] = [];
   let i: number = 0;
@@ -379,7 +379,7 @@ class Item {
     }
     i = i + 1;
   }
-  return {itemsIDX: out, lastToggledIDX: index__PASSTHROUGH__};
+  return {itemsIDX: out__PASSTHROUGH__};
 }
 
 function doneCountIDX(state: AppState): number {
