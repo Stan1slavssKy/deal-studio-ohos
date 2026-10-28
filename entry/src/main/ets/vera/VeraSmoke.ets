@@ -36,8 +36,10 @@ function runaway(e: Object): boolean {
 
 /**
  * '' when the program runs, else its runtime error as diagnostics ("line:col CODE message"), for the repair
- * prompt to quote the lines from. `requireContent` is false for a preview of a plan with slots still open, which has
- * nothing on it yet; every program that is served has.
+ * prompt to quote the lines from. A program whose view() draws fewer than two nodes is refused as empty, whoever wrote it
+ * (the agent, a written section, the Generate screen's model, the chat's): nothing served is a blank screen. Every caller in the
+ * app asks for that; `requireContent` is false only in the host checks (agent-check, parts-check, merge-check), which run a screen
+ * that has nothing drawn yet to see that it starts and answers every handler.
  */
 export function smokeRun(compiled: CompileResult, requireContent: boolean = true): string {
   let host = new UiHostEnvironment()

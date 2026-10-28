@@ -41,11 +41,28 @@ export function normalizeFigure(text: string): string {
   return text.toLowerCase().replace(/[\s   ]+/g, '').split(',').join('.')
 }
 
-/** Whether `value` is written in `text`. */
+function isDigit(c: string): boolean { return c.length === 1 && c >= '0' && c <= '9' }
+
+/**
+ * Whether `value` is written in `text` as a figure of its own: a number that begins or ends the value is not found inside a longer
+ * one ("5" is not in "2025", "1.2" is not in "11.25"). A decimal mark touching the match counts as part of the longer number only
+ * when a digit is on its far side, so "5." and "5, 6" still find the 5. Text and value are compared as normalizeFigure leaves them.
+ */
 export function foundIn(value: string, text: string): boolean {
   let v = normalizeFigure(value)
   if (v.length === 0 || v === '-') { return false }
-  return normalizeFigure(text).indexOf(v) >= 0
+  let t = normalizeFigure(text)
+  let at = t.indexOf(v)
+  while (at >= 0) {
+    let end = at + v.length
+    let before = at > 0 ? t.charAt(at - 1) : ''
+    let after = end < t.length ? t.charAt(end) : ''
+    let joinsBefore = isDigit(v.charAt(0)) && (isDigit(before) || (before === '.' && at > 1 && isDigit(t.charAt(at - 2))))
+    let joinsAfter = isDigit(v.charAt(v.length - 1)) && (isDigit(after) || (after === '.' && end + 1 < t.length && isDigit(t.charAt(end + 1))))
+    if (!joinsBefore && !joinsAfter) { return true }
+    at = t.indexOf(v, at + 1)
+  }
+  return false
 }
 
 /** "https://www.cbr.ru/currency_base/daily/" -> "cbr.ru" */
@@ -172,6 +189,22 @@ async function askModel(system: string, user: string): Promise<string | null> {
   }
 }
 
+/**
+ * A program may call Vera.Live.fetch from a ticker, a refined or model-written section or a chat widget, and each call is one search
+ * and one model request: the same query and labels asked again within LIVE_REUSE_MS get the answer already read, not another pair of calls.
+ * Only answers that were read are kept; an error is tried again.
+ */
+export const LIVE_REUSE_MS: number = 30000
+const LIVE_KEPT: number = 20
+class LiveAnswer {
+  at: number = 0
+  text: string = ''
+}
+let liveAnswers: Map<string, LiveAnswer> = new Map<string, LiveAnswer>()
+
+/** Forgets the answers kept, for the host checks. */
+export function resetLiveAnswers(): void { liveAnswers = new Map<string, LiveAnswer>() }
+
 /** The answer to one `Vera.Live.fetch` call. Never throws. */
 export async function liveFetch(params: Map<string, string>): Promise<string> {
   let started = Date.now()
@@ -188,6 +221,9 @@ export async function liveFetch(params: Map<string, string>): Promise<string> {
   if (query.length === 0 || asked.length === 0) { return 'error: nothing to look up' }
   if (!settings.hasExaKey()) { return 'error: no search key on this phone' }
   if (!settings.hasApiKey()) { return 'error: no model key on this phone' }
+  let key = query + '\n' + labels.join('|')
+  let kept = liveAnswers.get(key)
+  if (kept !== undefined && started - kept.at < LIVE_REUSE_MS) { return kept.text }
   let found: SearchHits = await webSearchHits(query)
   let searchMs = Date.now() - started
   if (found.error.length > 0) {
@@ -207,6 +243,17 @@ export async function liveFetch(params: Map<string, string>): Promise<string> {
   hilog.info(DOMAIN, 'VERA', 'VERA-LIVE query="' + query + '" hits=' + found.hits.length.toString() + ' accepted=' + reading.accepted.toString() + '/' +
     asked.length.toString() + ' rejected=' + reading.rejected.toString() + ' v1=' + reading.values[0] + ' source=' + (reading.source >= 0 ? domainOf(found.hits[reading.source].url) : '-') +
     ' searchMs=' + searchMs.toString() + ' modelMs=' + modelMs.toString())
+  if (answer.startsWith('ok')) {
+    if (liveAnswers.size >= LIVE_KEPT) {
+      let oldest = ''
+      liveAnswers.forEach((a: LiveAnswer, k: string) => { if (oldest.length === 0 || a.at < liveAnswers.get(oldest)!.at) { oldest = k } })
+      liveAnswers.delete(oldest)
+    }
+    let remembered = new LiveAnswer()
+    remembered.at = Date.now()
+    remembered.text = answer
+    liveAnswers.set(key, remembered)
+  }
   return answer
 }
 

@@ -23,6 +23,16 @@ assert.equal(live.foundIn('92.45', 'rate 92,45'), true)
 assert.equal(live.foundIn('93.00', 'rate 92.45'), false)
 assert.equal(live.foundIn('-', 'a - b'), false)
 assert.equal(live.foundIn('', 'abc'), false)
+// a figure is found as a number of its own, not inside a longer one
+assert.equal(live.foundIn('5', 'in 2025 it rose'), false, '5 is not in 2025')
+assert.equal(live.foundIn('1.2', 'it was 11.25 then'), false, '1.2 is not in 11.25')
+assert.equal(live.foundIn('1,2', 'it was 11,25 then'), false, 'with the comma as the mark too')
+assert.equal(live.foundIn('25', 'in 2025 and 25 more'), true, 'a later occurrence may be the right one')
+assert.equal(live.foundIn('5', 'one, 5, and 6'), true, 'a comma between numbers in a list is not part of a number')
+assert.equal(live.foundIn('5', 'it cost 5.'), true, 'a full stop after it is a full stop')
+assert.equal(live.foundIn('92.45', 'USD 92,45 EUR'), true)
+assert.equal(live.foundIn('92.45 RUB', 'rate 92.45 RUB.'), true)
+assert.equal(live.foundIn('$5', 'costs $5 each'), true, 'a value that begins with a sign is matched on its number end only')
 assert.equal(live.domainOf('https://www.cbr.ru/currency_base/daily/?x=1'), 'cbr.ru')
 assert.equal(live.domainOf('http://rates.example.com'), 'rates.example.com')
 assert.equal(live.domainOf('example.org/path'), 'example.org')
@@ -161,26 +171,42 @@ assert.equal(has(texts(h, st), /^Next update in/), false)
   let searches = []
   search.webSearchHits = async q => { searches.push(q); return {hits: HITS, error: ''} }
   const model = reply => { globalThis.__veraHttp = () => ({on() {}, destroy() {}, request: async () => ({responseCode: 200, result: JSON.stringify({choices: [{message: {content: reply}}]})})}) }
+  const fresh = async p => { live.resetLiveAnswers(); return live.liveFetch(p) }
   const params = new Map([['query', 'usd rub today'], ['labels', 'USD/RUB||']])
   model('1|1|92,45')
-  let answer = await live.liveFetch(params)
+  let answer = await fresh(params)
   assert.match(answer, /^ok\n92,45\n\n\nsource\tcbr\.ru\thttps:\/\/www\.cbr\.ru\/currency_base\/daily\/\nasof\t\d\d:\d\d:\d\d$/); assert.deepEqual(searches, ['usd rub today'])
   model('1|1|95,00')
-  assert.match(await live.liveFetch(params), /^error: the figures were not in the search results/)
+  assert.match(await fresh(params), /^error: the figures were not in the search results/)
   model('1|2|99.99')
-  assert.match(await live.liveFetch(params), /^ok\n99\.99\n\n\nsource\tblog\.example\.com\thttps:\/\/blog\.example\.com\/fx/, 'the source is the result the figure was found in')
+  assert.match(await fresh(params), /^ok\n99\.99\n\n\nsource\tblog\.example\.com\thttps:\/\/blog\.example\.com\/fx/, 'the source is the result the figure was found in')
   globalThis.__veraHttp = () => ({on() {}, destroy() {}, request: async () => ({responseCode: 500, result: ''})})
-  assert.equal(await live.liveFetch(params), 'error: the model did not answer')
+  assert.equal(await fresh(params), 'error: the model did not answer')
   search.webSearchHits = async () => ({hits: [], error: 'no results'})
-  assert.equal(await live.liveFetch(params), 'error: no results')
+  assert.equal(await fresh(params), 'error: no results')
   search.webSearchHits = async () => ({hits: [], error: 'search answered HTTP 401'})
-  assert.equal(await live.liveFetch(params), 'error: search answered HTTP 401')
-  assert.equal(await live.liveFetch(new Map([['query', ''], ['labels', 'A||']])), 'error: nothing to look up')
-  assert.equal(await live.liveFetch(new Map([['query', 'x'], ['labels', '||']])), 'error: nothing to look up')
+  assert.equal(await fresh(params), 'error: search answered HTTP 401')
+  assert.equal(await fresh(new Map([['query', ''], ['labels', 'A||']])), 'error: nothing to look up')
+  assert.equal(await fresh(new Map([['query', 'x'], ['labels', '||']])), 'error: nothing to look up')
   settings.hasExaKey = () => false
-  assert.match(await live.liveFetch(params), /^error: no search key/)
+  assert.match(await fresh(params), /^error: no search key/)
   settings.hasExaKey = () => true; settings.hasApiKey = () => false
-  assert.match(await live.liveFetch(params), /^error: no model key/)
+  assert.match(await fresh(params), /^error: no model key/)
+  // The same query and labels asked again within LIVE_REUSE_MS are answered from what was read: no second search, no second model call.
+  settings.hasExaKey = () => true; settings.hasApiKey = () => true
+  live.resetLiveAnswers(); searches = []
+  let modelCalls = 0
+  search.webSearchHits = async q => { searches.push(q); return {hits: HITS, error: ''} }
+  globalThis.__veraHttp = () => ({on() {}, destroy() {}, request: async () => { modelCalls++; return {responseCode: 200, result: JSON.stringify({choices: [{message: {content: '1|1|92,45'}}]})} }})
+  const first = await live.liveFetch(params); const again = await live.liveFetch(params)
+  assert.equal(again, first); assert.equal(searches.length, 1); assert.equal(modelCalls, 1, 'the second call did not search or ask the model')
+  await live.liveFetch(new Map([['query', 'usd rub today'], ['labels', 'EUR/RUB||']]))
+  assert.equal(searches.length, 2, 'other labels are another question')
+  // An error is not kept: it is tried again.
+  live.resetLiveAnswers(); searches = []
+  search.webSearchHits = async q => { searches.push(q); return {hits: [], error: 'no results'} }
+  await live.liveFetch(params); await live.liveFetch(params)
+  assert.equal(searches.length, 2, 'an error is asked again')
   delete globalThis.__veraHttp
   console.log('live-check: ok')
 })().catch(e => { console.error(e); process.exit(1) })

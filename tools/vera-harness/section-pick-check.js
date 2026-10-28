@@ -194,6 +194,12 @@ assert.equal(low('filter_box', 0.35, {needs_search_or_form: 0.95}).sections, nul
   assert.deepEqual(kinds(o), ['filter_box', 'master_list', 'detail_view'])
 }
 
+// Only an answer about the service pauses the selector: not this request's own (a 400, a 401), but a throttle, a region refusal or a server error.
+{
+  const {pausesSelector} = loadVera('VeraSectionCompose')
+  for (const code of [429, 451, 500, 502, 503]) assert.equal(pausesSelector(code), true, String(code))
+  for (const code of [400, 401, 403, 404, 422]) assert.equal(pausesSelector(code), false, String(code))
+}
 // a failed call to Jev is not repeated for a minute: the first pays the timeout, the next ones go straight on
 {
   const real = loadVera('VeraSectionCompose')

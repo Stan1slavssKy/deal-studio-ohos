@@ -1,8 +1,8 @@
 /**
  * Which builder makes a new screen, the same for the Generate screen and the chat: the agent (VeraAgent.ets), then the whole
  * screen as one hole. When neither serves, the screen is not built and the outcome says why: the route itself never generates
- * from scratch. What happens then is the caller's: the Generate screen has the model write the whole program, the chat shows the
- * reason. The caller turns the outcome into its own state; this file decides nothing about pages.
+ * from scratch, and neither does a caller: the Generate screen and the chat both show the reason. The caller turns the outcome into its
+ * own state; this file decides nothing about pages.
  *
  * The agent chooses among the composer's parts and the catalogue's sections together (VeraCompose.ets's chooseSections, AgentAlign.ets),
  * so there is no second planner behind it: a separate pick of sections and a layout from the request alone (the blocks pipeline, removed)
@@ -26,8 +26,8 @@ import { toolCount, toolSpanSince } from '../ToolLog'
 /** The agent's program is the result. */
 export const OUTCOME_AGENT: string = 'agent'
 /**
- * Nothing served: the screen is not built, and `reason` says why. The route does not generate: the chat shows the
- * reason as an error, and the Generate screen has the model write the whole program (GeneratePage.ets).
+ * Nothing served: the screen is not built, and `reason` says why. The route does not generate, and nor does the caller: the chat and
+ * the Generate screen both show the reason as an error.
  */
 export const OUTCOME_NOT_BUILT: string = 'not-built'
 export const OUTCOME_CANCELLED: string = 'cancelled'

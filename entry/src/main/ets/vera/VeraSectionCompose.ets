@@ -1020,6 +1020,15 @@ function rawAnswers(body: string): string {
 const RETRY_AFTER_FAILURE_MS: number = 60000
 let failedAt: number = 0
 
+/**
+ * Whether an HTTP answer is about the service, not this request: not available in this region (451), rate limiting (429: the service
+ * is throttling this phone, so the next requests would be too), or a server error (5xx). Timeouts and connection errors are
+ * the same (the catch below). Any other answer -- a 400 for this body, a 401 for the key -- is this request's, and the next goes on.
+ */
+export function pausesSelector(code: number): boolean {
+  return code === 451 || code === 429 || code >= 500
+}
+
 export async function selectSections(prompt: string, apiKey: string): Promise<SectionPickOutcome> {
   let emptyGlobals: Map<string, string> = new Map<string, string>()
   if (apiKey.length === 0 || prompt.trim().length === 0) { return new SectionPickOutcome(null, emptyGlobals, 'none (no key or prompt)') }
@@ -1049,9 +1058,11 @@ export async function selectSections(prompt: string, apiKey: string): Promise<Se
     let code = response.responseCode as number
     if (code !== 200) {
       hilog.warn(DOMAIN, 'VERA', 'VERA-SECTIONS http ' + code.toString())
-      failedAt = Date.now()
+      // Only an answer about the service itself pauses it: one about this request (a 400 for this body) says nothing of the next.
+      if (pausesSelector(code)) { failedAt = Date.now() }
       noteService(SERVICE_JEV, false, httpFailure(code, String(response.result)))
-      return new SectionPickOutcome(null, emptyGlobals, 'none (selector answered ' + code.toString() + ')')
+      return new SectionPickOutcome(null, emptyGlobals, 'none (selector answered ' + code.toString() + (pausesSelector(code) ?
+        ', not asked again for a minute' : '') + ')')
     }
     noteService(SERVICE_JEV, true)
     let outcome = readSectionPick(response.result as string)
