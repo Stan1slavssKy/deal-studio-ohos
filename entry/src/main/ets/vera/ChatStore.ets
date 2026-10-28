@@ -34,6 +34,8 @@ export class StoredMessage {
   chatOutput: number = 0
   searches: number = 0
   searchMs: number = 0
+  /** What web_search returned for this reply, so a widget asked for next can be built on it. */
+  searchResults: string[] = []
   widgetMs: number = 0
   attempts: AttemptStat[] = []
   /**
@@ -147,6 +149,10 @@ function parseMessage(raw: Object): StoredMessage {
   m.chatOutput = num(o, 'chatOutput')
   m.searches = num(o, 'searches')
   m.searchMs = num(o, 'searchMs')
+  let results = o['searchResults'] as Object[]
+  if (Array.isArray(results)) {
+    for (let r of results) { if (typeof r === 'string') { m.searchResults.push(r as string) } }
+  }
   m.widgetMs = num(o, 'widgetMs')
   m.templatePick = str(o, 'templatePick')
   let attempts = o['attempts'] as Object[]
