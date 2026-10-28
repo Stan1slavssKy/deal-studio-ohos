@@ -43,7 +43,7 @@ function screen(source) {
 }
 
 ;(async () => {
-  nc.setNeedsEnabled(true); align.setAlignEnabled(false)
+align.setAlignEnabled(false)
   // The default stops are five of an hour each, the first at 09:00 with 15 minutes between: they end at 10:00, 11:15, 12:30, 13:45, 15:00.
   for (const [span, shown, label] of [[800, 5, 'a day'], [270, 3, '09:00 + 270 min = 13:30'], [150, 2, '09:00 + 150 min = 11:30'], [30, 0, 'nothing fits']]) {
     const r = await build(span, Object.assign({'deadline.leaveAt': says('yes')}, base))
@@ -75,6 +75,6 @@ function screen(source) {
     assert.deepEqual(reads.map(p => [p.name, p.optional]), [['deadline', true]])
     assert.ok(align.alignKinds().includes('itinerary'))
   }
-  nc.setNeedsEnabled(false); align.setAlignEnabled(true)
+align.setAlignEnabled(true)
   console.log('deadline-check ok')
 })().catch(e => { console.error(e); process.exit(1) })

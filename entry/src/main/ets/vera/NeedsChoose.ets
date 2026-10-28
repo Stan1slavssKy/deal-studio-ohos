@@ -4,19 +4,15 @@
  * do (a countdown, entries the person keeps, content written for the request); what a section cannot stand in for is taken
  * out of the options before they are asked, from the plan's own facts, so nothing a choice gives is taken back afterwards.
  *
- * The answers go to the composer under the keys it already reads (clock.part, list.part, ready.N, whose.N, real_data), and the
+ * The answers go to the composer under the keys it reads (clock.part, list.part, ready.N, whose.N, real_data), and the
  * second call, for what only the parts can settle (widgets, formulas, effects, moments), does not ask them again. A choice
- * Jev does not give leaves the part, as before. `--ps veraNeeds 1` turns this on.
+ * Jev does not give leaves the part.
  */
 
 import { Sketch, SketchInput, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
   listNeeds, clockOptions, listOptions, choice, askReady, LIST_SECTIONS, PART } from './VeraCompose'
 import { NeedsPlan, Need, NEEDS_PROMPT, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
   needOf } from './NeedsPlan'
-
-let needsOn: boolean = false
-export function setNeedsEnabled(on: boolean): void { needsOn = on }
-export function needsEnabled(): boolean { return needsOn }
 
 /**
  * Whether the `timer` section may take the countdown's place: its length is one fixed time of the plan's (a person who sets it
@@ -199,7 +195,7 @@ async function drawPlan(askPlan: SketchAsk, prompt: string, onSketch: (partial: 
 }
 
 /**
- * What composeWith (VeraCompose.ets) does, with the plan of needs: the plan, the person's answers to what it asks, Jev's choice of
+ * The whole of composing a new screen, from the plan of needs: the plan, the person's answers to what it asks, Jev's choice of
  * a section or a part for each need, then the composer's own choices (widgets, formulas, effects, moments) over what is left.
  */
 export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoices: JevAsk,
@@ -245,7 +241,7 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     if (body.length === 0) { body = await askChoices(choose.body) }
     result.jevMs = Date.now() - asked
     answers = body.length > 0 ? readChoices(body) : null
-    // Without the choices the composer asks them itself, as it did before there was a plan of needs.
+    // Without the choices the parts stay, and the composer asks what a section is for (ready.N, whose.N, real_data) itself.
     if (answers === null) { skipped = [] }
   }
   let composed = await composeFromSketch(result, prompt, sketch, askChoices, widget, answers, skipped)

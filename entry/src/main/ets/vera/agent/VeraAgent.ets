@@ -14,14 +14,14 @@ import { BlockRequest, BlockFill } from '../SectionFill'
 import { CustomResult } from './AgentCustom'
 import { writeHole } from './AgentHole'
 import { AgentQuestion, Asked, askBlocking } from './AgentQuestions'
-import { composeWith, Replaced, inputsOnlyForCustom, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, partsContract, dropProvided, ComposeResult, Composition, Sketch, SketchInput } from '../VeraCompose'
+import { Replaced, inputsOnlyForCustom, composePlanEnabled, provisionalProgram, sketchPlan, assembleProgram, screenPlan, partCount, customInputs, partsContract, dropProvided, ComposeResult, Composition, Sketch, SketchInput } from '../VeraCompose'
 import { ScreenPlan, PlanSlot, PlanComponent, assemblePlan, FILL_BLOCK, FILL_PART, FILL_REPORTED } from '../ScreenPlan'
 import { compileVeraSource } from '../VeraCompiler'
 import { Repaired, settleProgram } from './AgentRepair'
 import { FragmentSpec } from '../VeraTemplates'
 import { buildSlotRequest, readSlotValues, specsOf } from '../VeraSectionCompose'
 import { claimsDone, claimsUndone, putBack } from './AgentClaims'
-import { composeNeeds, needsEnabled } from '../NeedsChoose'
+import { composeNeeds } from '../NeedsChoose'
 import { AlignResult, alignCandidates, alignIsEnabled, alignLeftovers } from './AgentAlign'
 import { Composition as ScreenRecord, compositionFromPlan, rebuilds } from '../VeraComposition'
 import { holeBodiesBySlot } from '../VeraHoles'
@@ -126,9 +126,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
   let result = new AgentResult()
   let started = Date.now()
   host.status(request.widget ? 'Sketching the widget...' : 'Composing...')
-  // The plan of needs (NeedsChoose.ets) or the sketch, as `--ps veraNeeds` says: both give the same result.
-  let compose = needsEnabled() ? composeNeeds : composeWith
-  let composed = await compose(request.prompt, host.askPlan, host.askJev, (partial: Sketch): void => {
+  let composed = await composeNeeds(request.prompt, host.askPlan, host.askJev, (partial: Sketch): void => {
     if (host.cancelled()) { return }
     let source = provisionalProgram(partial, request.widget)
     if (source.length === 0) { return }
@@ -174,7 +172,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       let fixed: string[] = comp.replaced.filter((r: Replaced): boolean => r.detail.length > 0).map((r: Replaced): string => r.need + ': ' + r.detail)
       // The plan's own words for what each section is to hold: the section is written from them, not from the request alone, so
       // that it does not add what the plan did not (a timer's length, another list's worth of items).
-      let said: string = needsEnabled() && comp.sketch.ready.length > 0 ? '\n\nThe plan says the sections are for: ' + comp.sketch.ready.join(' | ') : ''
+      let said: string = comp.sketch.ready.length > 0 ? '\n\nThe plan says the sections are for: ' + comp.sketch.ready.join(' | ') : ''
       blocks.prompt = (fixed.length > 0 ? request.prompt + '\n\nThe plan fixes: ' + fixed.join('; ') : request.prompt) + said
       blocks.realData = comp.realData
       blocks.offset = partCount(comp)

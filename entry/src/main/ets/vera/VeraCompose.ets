@@ -46,82 +46,10 @@ let customEnabled: boolean = true
 export function setCustomSectionsEnabled(on: boolean): void { customEnabled = on }
 export function customSectionsEnabled(): boolean { return customEnabled }
 
-/**
- * Whether a countdown or stopwatch, and a list the person fills in, may be a section of the catalogue (`timer`, `record_log`,
- * `reminders`) instead of the composer's own part, by one question each with the part among the options; `--ps veraUnified 0`
- * keeps the parts always.
- */
-let unifiedChoice: boolean = true
-export function setUnifiedChoice(on: boolean): void { unifiedChoice = on }
-export function unifiedChoiceEnabled(): boolean { return unifiedChoice }
-
 /** Whether a request the composer cannot serve is generated with its sketch as a plan; `--ps veraComposePlan 0` turns that off. */
 let planEnabled: boolean = true
 export function setComposePlanEnabled(on: boolean): void { planEnabled = on }
 export function composePlanEnabled(): boolean { return planEnabled }
-
-/**
- * The sketch prompt names the parts and what each one brings, and nothing about any particular app:
- * examples of features drawn from test requests made the sketch report those features where nobody
- * asked for them (an egg timer grew an alarm sound and "start, pause and reset" as a missing feature).
- */
-const SKETCH_BASE: string =
-  'You turn a request for a small phone app into a JSON sketch of its data. Write no code. Answer with one JSON object:\n' +
-  '{"title": short app title, "eyebrow": 1-3 word label in capitals, "subtitle": one short line,\n' +
-  ' "inputs": [{"id": camelCase, "label": shown label, "kind": "amount" | "percent" | "count" | "choice" | "toggle" | "text" | "time",\n' +
-  '   "measure": "money" | "percent" | "count" | "seconds" | "minutes" | "number", "min": number, "max": number, "value": starting number, "unit": the currency or unit the request uses, or "",\n' +
-  '   "options": only for choice: [{"label": shown text, "value": the number the option stands for, such as a length of time}];\n' +
-  '   a choice\'s own "value" is the index of the starting option}],\n' +
-  ' "constants": [{"id": camelCase, "label": what it is, "value": number, "measure": as for inputs}],\n' +
-  ' "countdown": null, or {"label": what is being timed, "length": the id of the input, constant or value that sets how long it runs}\n' +
-  '   when the app counts a length of time down to zero,\n' +
-  ' "stopwatch": null, or {"label": what is being timed} when the app counts time up from zero,\n' +
-  ' "list": null, or {"label": what the entries are, "fields": what each entry holds, up to 4: [{"id": camelCase, "label": shown label,\n' +
-  '   "kind": "text" | "number" | "time" | "toggle", "measure": for a number, as for inputs, "unit": as for inputs, "value": starting value,\n' +
-  '   "decimals": for a plain number, how many digits after the point to show, 0 to 6, only when one digit would lose what matters}]\n' +
-  '   (no fields when adding an entry takes only a tap)} when the person keeps adding entries to a list,\n' +
-  ' "values": [{"id": camelCase, "label": shown label, "means": what the number is, in plain words,\n' +
-  '   "format": "money" | "percent" | "count" | "seconds" | "minutes" | "time_of_day" | "fraction" | "plain", "unit": as for inputs,\n' +
-  '   "decimals": for a plain number, as for a list\'s fields,\n' +
-  '   "formula": how it is worked out, as an expression over the ids of inputs, constants, the values before it and the parts\' numbers,\n' +
-  '   with numbers, + - * / %, parentheses and floor, ceil, round, abs, min, max, pow, sqrt,\n' +
-  '   "example": {"given": {each input id or part number the formula needs, directly or through the values before it: a sample number},\n' +
-  '   "result": the number the formula gives for them}}],\n' +
-  ' "events": [{"id": camelCase, "when": the moment, "what": what the phone does, "asked": true if the request asks for it, false if you add it}],\n' +
-  ' "ready": [one string per need of the request that one of the ready-made sections below handles whole, saying in plain words\n' +
-  '   everything it involves: what it lists or shows, what the person does with it, what the phone does],\n' +
-  ' "other": [what else the request asks for, in a few words each],\n' +
-  ' "questions": [at most 2, usually none: {"id": camelCase, "ask": a short question for the person, "options": 2 to 4 short answers,\n' +
-  '   "default": the index of the answer this sketch assumes}]}\n' +
-  'What each part already brings: an input, its control (a count has - and + buttons); a countdown, start, stop and reset buttons and the time left; ' +
-  'a stopwatch, start, stop and reset buttons and the time passed; a list, a form with its fields, an add button, the entries ' +
-  'with their fields and the time each was added, a way to remove one, and how many entries there are and what their first ' +
-  'number adds up to; when the phone does something as an entry is added, that entry shows what the phone answered. ' +
-  'The parts\' numbers, for formulas: a list\'s entryCount and entryTotal (its first number added up); a countdown\'s remaining, ' +
-  'elapsed and duration, in seconds; a stopwatch\'s elapsed, in seconds. ' +
-  'The app keeps its state between visits.\n' +
-  'Rules: inputs are only what the person sets once for the whole screen; what each entry of a list holds goes in its fields. ' +
-  'A time of day (an input or field of kind time, a value of format time_of_day) is minutes since midnight, 07:30 being 450; ' +
-  'a length of time, such as time left or a pace, is never a time of day. constants are fixed numbers the app needs and the person does not set. ' +
-  'values are every number the request asks to show, in an order where each can be worked out from inputs, constants, ' +
-  'the parts above and the values before it, in one step: two numbers added, subtracted, multiplied or divided, a percent ' +
-  'of a number, one number as a percent of another, a number rounded up, or one number divided by another and rounded up. ' +
-  'A number that takes more steps gets a value for each step before it. A progress bar is a value with format fraction. ' +
-  'A formula gives its value in the value\'s format: seconds or minutes as the format says, minutes since midnight for time_of_day, ' +
-  '0 to 100 for percent, 0 to 1 for fraction; in a formula a choice\'s id stands for its chosen option\'s value. ' +
-  'A length of time is in seconds, option values, constants and values included (it is shown as m:ss); only a number the ' +
-  'person types in minutes is in minutes, and its measure says so. ' +
-  'events are actions on the phone outside this screen, one per action: a detail of an action, such as its reminder or ' +
-  'its repeat, belongs in that event, and showing something on this screen is never an event; every number an event needs, ' +
-  'such as how many minutes before a reminder goes off, is an input, a field or a constant (a reminder whose lead time ' +
-  'the request does not name is a constant of 0 minutes, so it goes off at the start), and every time of day it needs, ' +
-  'such as when it starts, is a time input or a time field, even when the request does not name it. other lists everything the request asks for that the parts above ' +
-  'and ready do not bring, and never repeats what they bring; it is empty only when nothing is left out. Leaving a requested feature out of the sketch is wrong. ' +
-  'Keep to what the request asks for: no inputs, values or events it does not need. ' +
-  'Use the numbers the request gives; where it gives none, pick sensible ones. ' +
-  'questions are only for what the request leaves out and no sensible choice can stand in for, because the answer changes ' +
-  'what the app is (which two units a converter is between, which kind of thing a tracker keeps); never for a number, a ' +
-  'label, a look or anything a default does well. The sketch is drawn for each question\'s default answer.'
 
 /**
  * Kinds of the catalogue the plan may ask for: the sections whose substance is content written for the request, which
@@ -132,24 +60,6 @@ const SKETCH_BASE: string =
  */
 export const READY_KINDS: string[] = ['checklist', 'key_facts', 'trend_chart', 'spotlight', 'search_list', 'data_table', 'timeline',
   'bar_chart', 'itinerary', 'live_facts']
-
-/**
- * The ready-made sections, as the plan sees them: what each brings, from the catalogue's own words (VeraTemplates.ets),
- * never which app it suits. The parts start empty or from the numbers given; a section starts with content written for
- * the request, which is what tells them apart.
- */
-function readyParagraph(): string {
-  let lines: string[] = ['Ready-made sections, each a whole part of the screen that starts with content written for the request ' +
-    '(items, places, steps, facts or figures anyone could look up or suggest), where the parts above start empty or from the ' +
-    'numbers given. The person\'s own records -- their notes, entries, contacts or messages -- are never such content: they start empty, in the parts above.']
-  for (let f of fragments()) { if (READY_KINDS.indexOf(f.kind) >= 0) { lines.push('- ' + f.criteria) } }
-  lines.push('A need one of these sections handles whole goes in ready, one need per section. Everything that section brings -- ' +
-    'its items, their buttons, what the phone does from them, its counts -- belongs to that need alone: it is never also an input, ' +
-    'a list, a value, an event or an item of other. A need the parts above bring is built from them. ready is empty when no section is needed.')
-  return lines.join('\n')
-}
-
-export const SKETCH_PROMPT: string = SKETCH_BASE + '\n' + readyParagraph()
 
 /** Something the plan cannot settle without the person: the answers, and the one the plan was drawn for. */
 export class SketchQuestion {
@@ -1690,14 +1600,6 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
     }
   }
 
-  // A need the composer's own part and a section of the catalogue can both do is asked once, with the part among the options.
-  if (unifiedChoice) {
-    let clock = clockOptions(sketch)
-    if (clock !== null) { questions['clock.part'] = choice('The app needs the countdown "' + sketch.countdown + '". Which of these does exactly that?', clock!) }
-    let entries = listOptions(sketch)
-    if (entries !== null) { questions['list.part'] = choice('The person keeps ' + sketch.list!.label + '.' + listNeeds(sketch) + ' Which of these does exactly that?', entries!) }
-  }
-
   let parts = partsOf(sketch)
   for (let i = 0; i < sketch.other.length; i++) {
     let options: Map<string, string> = copyOf(parts)
@@ -2099,7 +2001,6 @@ export function replaceList(comp: Composition, kind: string): void {
  * section takes the part's place in the plan; what the person sets for it is the section's own.
  */
 function chooseSections(comp: Composition, answers: Record<string, Object>): void {
-  if (!unifiedChoice) { return }
   if (comp.sketch.hasCountdown && answerOf(answers, 'clock.part', ['timer'], comp.answers, READY_ABOVE) === 'timer' && canReplaceClock(comp)) {
     replaceClock(comp)
   }
@@ -3993,7 +3894,7 @@ export class ComposeResult {
   unboundNeeds: string[] = []
   /** The plan was drawn again with what the person answered. */
   replanned: boolean = false
-  /** How many times the plan was asked for until one could be used (usablePlan), all drawings together. */
+  /** How many times the plan was asked for until one could be used (NeedsChoose.ets's drawPlan), all drawings together. */
   planTries: number = 0
   /**
    * The composition, whenever nothing is unbound. When it has sections of the catalogue or needs a custom section,
@@ -4036,97 +3937,11 @@ export type SketchAsk = (system: string, user: string, onText: (soFar: string) =
 /** Asks Jev: request body -> response body, '' when there was none. */
 export type JevAsk = (body: string) => Promise<string>
 
-/** Sketch, Jev, assembly, asking through the calls given. Never throws: anything that goes wrong comes back as an empty source and a note. */
-class Planned {
-  text: string | null = null
-}
-
-/** One plan, streamed: each new shape of it goes to onSketch as it arrives, and the whole one at the end. */
-async function planOnce(askSketch: SketchAsk, prompt: string, onSketch: (partial: Sketch) => void,
-    think: boolean = false): Promise<Planned> {
-  let out = new Planned()
-  let shown = ''
-  out.text = await askSketch(SKETCH_PROMPT, prompt, (soFar: string): void => {
-    let closed = closePartialJson(soFar)
-    if (closed.length === 0) { return }
-    let partial = parseSketch(closed)
-    if (partial === null) { return }
-    let signature = sketchSignature(partial)
-    if (signature === shown) { return }
-    shown = signature
-    onSketch(partial)
-  }, think)
-  if (out.text !== null) {
-    let whole = parseSketch(out.text!)
-    if (whole !== null && sketchSignature(whole) !== shown) { onSketch(whole) }
-  }
-  return out
-}
-
-/**
- * A plan that can be used, asked for until there is one: the first, then once more with what was wrong with it quoted,
- * then once with thinking on. Null text when none of the three is usable; `tries` says how many were made.
- */
-async function usablePlan(askSketch: SketchAsk, prompt: string, onSketch: (partial: Sketch) => void): Promise<UsablePlan> {
-  let out = new UsablePlan()
-  let user = prompt
-  for (let attempt = 0; attempt < 3; attempt++) {
-    out.tries = attempt + 1
-    let planned = await planOnce(askSketch, user, onSketch, attempt === 2)
-    let sketch = planned.text !== null ? parseSketch(planned.text!) : null
-    if (sketch !== null) {
-      out.text = planned.text!
-      out.sketch = sketch
-      return out
-    }
-    let wrong = planned.text === null ? 'there was no answer' : 'it was not one JSON object in the form asked for: ' +
-      planned.text!.substring(0, 200)
-    user = prompt + '\n\nThe last answer could not be used: ' + wrong + '. Answer with the JSON object only, in the form asked for.'
-  }
-  return out
-}
-
-class UsablePlan {
-  text: string = ''
-  sketch: Sketch | null = null
-  tries: number = 0
-}
-
 /**
  * Runs between the plan and Jev's choices with the plan: text that settles what the plan left open (the person's answers),
  * for the plan to be drawn again with, or '' to go on with the plan as it is.
  */
 export type PlanReview = (sketch: Sketch) => Promise<string>
-
-export async function composeWith(prompt: string, askSketch: SketchAsk, askChoices: JevAsk,
-    onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false,
-    review: PlanReview | null = null): Promise<ComposeResult> {
-  let result = new ComposeResult()
-  let started = Date.now()
-  // A plan that cannot be used is asked for again, not given up on (usablePlan).
-  let usable = await usablePlan(askSketch, prompt, onSketch)
-  result.sketchMs = Date.now() - started
-  result.planTries = usable.tries
-  if (usable.sketch === null) { result.note = 'no usable sketch after ' + usable.tries.toString() + ' tries'; return result }
-  let text: string | null = usable.text
-  let sketch: Sketch = usable.sketch!
-  // What the plan left open, settled (the person's answers): the plan is drawn again with it, and Jev reads it too.
-  let settled = review !== null && sketch.questions.length > 0 ? await review(sketch) : ''
-  if (settled.length > 0) {
-    prompt = prompt + '\n\n' + settled
-    let again = Date.now()
-    let redrawn = await usablePlan(askSketch, prompt, onSketch)
-    result.sketchMs += Date.now() - again
-    result.replanned = true
-    result.planTries += redrawn.tries
-    if (redrawn.sketch === null) { result.note = 'no usable sketch drawn again after ' + redrawn.tries.toString() + ' tries'; return result }
-    text = redrawn.text
-    sketch = redrawn.sketch!
-    sketch.questions = []
-  }
-  result.sketch = text!
-  return composeFromSketch(result, prompt, sketch, askChoices, widget)
-}
 
 /**
  * Jev's choices for a plan already drawn, and the composition read from them. `pre` are answers given before this call (the

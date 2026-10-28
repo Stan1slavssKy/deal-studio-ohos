@@ -18,6 +18,7 @@ const path = require('node:path')
 const {loadVera} = require('./source-loader')
 const lib = require('./align-lib')
 const {compose, sections} = lib
+const needs = loadVera('NeedsChoose')
 
 const args = process.argv.slice(2)
 const option = (flag, fallback) => { const i = args.indexOf(flag); if (i < 0) return fallback; const v = args[i + 1]; args.splice(i, 2); return v }
@@ -80,7 +81,7 @@ async function one([label, prompt]) {
     const asks = []
     const askJev = async body => { const t = await jev(body); asks.push({body, answer: t}); return t }
     const [composed, raw] = await Promise.all([
-      compose.composeWith(prompt, async (system, user, onText, think) => {
+      needs.composeNeeds(prompt, async (system, user, onText, think) => {
         const text = await deepseek(system, user, think ? 6000 : 1500, true, think); onText(text); return text
       }, askJev, () => {}, false, async () => ''),
       sectionPick(prompt)

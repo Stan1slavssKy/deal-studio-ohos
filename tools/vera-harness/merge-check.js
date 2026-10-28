@@ -7,6 +7,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const {loadVera} = require('./source-loader')
+const {needsOf, asPlan} = require('./needs-lib')
 const c = loadVera('VeraCompose')
 const {compileVeraSource} = loadVera('VeraCompiler')
 const {smokeRun} = loadVera('VeraSmoke')
@@ -32,19 +33,13 @@ const fixedLength = (s, a) => {
   a['countdown.length'] = says('brewTime', 1)
 }
 
-// The question: the part and the sections that may stand in for it, each with the catalogue's own words. A countdown only: the
-// `timer` section has no stopwatch.
+// The question is not the composer's: the part and the sections that may stand in for it are put side by side before the composer
+// is asked anything (NeedsChoose.ets, needs-choose-check.js), and its answers are read below under the same keys.
 {
-  const q = JSON.parse(c.buildComposeRequest('a timer', c.parseSketch(fixture('soft-egg', 'sketch.json')))).questions
-  assert.deepEqual(Object.keys(q['clock.part'].criteria).sort(), ['part', 'timer'])
-  assert.ok(!('list.part' in q))
-  const sw = JSON.parse(c.buildComposeRequest('a stopwatch', c.parseSketch(fixture('stopwatch', 'sketch.json')))).questions
-  assert.ok(!('clock.part' in sw), 'no stopwatch in the timer section')
-  const l = JSON.parse(c.buildComposeRequest('expenses', c.parseSketch(fixture('expenses', 'sketch.json')))).questions
-  assert.deepEqual(Object.keys(l['list.part'].criteria).sort(), ['part', 'record_log', 'reminders'])
-  assert.ok(!('clock.part' in l))
-  const none = JSON.parse(c.buildComposeRequest('tip', c.parseSketch(fixture('tip', 'sketch.json')))).questions
-  assert.ok(!('clock.part' in none) && !('list.part' in none), 'a plan with neither asks neither')
+  for (const label of ['soft-egg', 'stopwatch', 'expenses', 'tip']) {
+    const q = JSON.parse(c.buildComposeRequest(label, c.parseSketch(fixture(label, 'sketch.json')))).questions
+    assert.ok(!('clock.part' in q) && !('list.part' in q), label + ': the composer does not ask whether a section does it')
+  }
 }
 
 // A stopwatch whose list is its laps: the Lap button is the stopwatch's, the list has no form to type one in, and a lap holds the time passed
@@ -129,17 +124,6 @@ for (const label of ['egg', 'soft-egg', 'default-boil']) {
   assert.ok(align.readerKinds(comp).includes('number_strip'), 'to the readers of the section\'s records')
 }
 
-// Off (`--ps veraUnified 0`): the same answers change nothing, and the question is not asked.
-{
-  c.setUnifiedChoice(false)
-  try {
-    const {comp} = read('soft-egg', {'clock.part': says('timer')}, fixedLength)
-    assert.deepEqual(comp.blocks, []); assert.deepEqual(comp.replaced, [])
-    const q = JSON.parse(c.buildComposeRequest('a timer', c.parseSketch(fixture('soft-egg', 'sketch.json')))).questions
-    assert.ok(!('clock.part' in q))
-  } finally { c.setUnifiedChoice(true) }
-}
-
 // The leftovers offered to the catalogue (AgentAlign.ets) never add a section beside the part that does the same job.
 {
   const pool = comp => align.alignKindsFor(comp)
@@ -179,7 +163,7 @@ const {AgentRequest, runAgent} = loadVera('agent/VeraAgent')
     if (edit) edit(sketchJson, body.answers)
     Object.assign(body.answers, extra)
     let filled = null
-    h.askPlan = async (system, user, onText) => { const t = JSON.stringify(sketchJson); onText(t); return t }
+    h.askPlan = async (system, user, onText) => { const t = JSON.stringify(needsOf(sketchJson, false)); onText(t); return t }
     h.askJev = async () => JSON.stringify(body)
     h.fillBlocks = async request => { filled = request; return defaultBlockFill(request) }
     const r = await runAgent(Object.assign(new AgentRequest(), {prompt: 'x'}), h)
@@ -253,7 +237,7 @@ const {AgentRequest, runAgent} = loadVera('agent/VeraAgent')
       const sketchJson = JSON.parse(fixture('expenses', 'sketch.json')); sketchJson.other = ['pick the category of each expense from a list']
       const body = JSON.parse(fixture('expenses', 'jev-answer.json')); body.answers['list.part'] = says('record_log')
       const verified = []
-      h.askPlan = async (system, user, onText) => { const t = JSON.stringify(sketchJson); onText(t); return t }
+      h.askPlan = async (system, user, onText) => { const t = JSON.stringify(needsOf(sketchJson, false)); onText(t); return t }
       h.askJev = async request => {
         const q = JSON.parse(request).questions
         if (q['does.0']) { verified.push(q['does.0'].instructions); return JSON.stringify({answers: {'does.0': {probabilities: {yes, no: 1 - yes}}}}) }
@@ -284,7 +268,7 @@ const {AgentRequest, runAgent} = loadVera('agent/VeraAgent')
     const h = new AgentHost()
     const body = JSON.parse(fixture('expenses', 'jev-answer.json')); body.answers['list.part'] = says('record_log')
     const asked = []
-    h.askPlan = async (system, user, onText) => { const t = fixture('expenses', 'sketch.json'); onText(t); return t }
+    h.askPlan = async (system, user, onText) => { const t = asPlan(fixture('expenses', 'sketch.json')); onText(t); return t }
     h.askJev = async request => {
       const q = JSON.parse(request).questions
       if (q['need.0']) { asked.push(Object.keys(q['need.0'].criteria)); return JSON.stringify({answers: {'need.0': {choice: 'number_strip', confidence: 0.9}, real_data: {choice: 'false', confidence: 0.1}}}) }

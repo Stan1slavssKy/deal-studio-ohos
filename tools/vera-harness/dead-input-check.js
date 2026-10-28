@@ -27,7 +27,7 @@ function screen(source) {
 }
 
 ;(async () => {
-  nc.setNeedsEnabled(true); align.setAlignEnabled(false)
+align.setAlignEnabled(false)
   const h = new AgentHost()
   h.askPlan = async (system, user, onText) => { const t = JSON.stringify(plan); onText(t); return t }
   h.askJev = async body => JSON.stringify({answers: {'ready.0': says('none', 0.9), 'whose.0': says('written'), real_data: says('false'),
@@ -43,6 +43,6 @@ function screen(source) {
   assert.ok(texts.some(t => /cannot look up the weather/.test(t)), 'the notice is on the screen: ' + texts.join(' | '))
   assert.ok(!texts.includes('Place'), 'the input kept for the section nobody wrote is not: ' + texts.join(' | '))
   assert.equal(r.screen.open().length, 0)
-  nc.setNeedsEnabled(false); align.setAlignEnabled(true)
+align.setAlignEnabled(true)
   console.log('dead-input-check ok')
 })().catch(e => { console.error(e); process.exit(1) })

@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const {loadVera} = require('./source-loader')
+const {needsOf, asPlan} = require('./needs-lib')
 const {AgentHost, defaultBlockFill} = loadVera('agent/AgentHost')
 const {AgentRequest, runAgent} = loadVera('agent/VeraAgent')
 const align = loadVera('agent/AgentAlign')
@@ -19,7 +20,7 @@ const compositionOf = label => compose.readComposition(fixture(label, 'jev-answe
 function host(label, says, {real = ['false', 0.1]} = {}) {
   const h = new AgentHost()
   const seen = {jev: 0, align: [], fill: null}
-  h.askPlan = async (system, user, onText) => { const t = fixture(label, 'sketch.json'); onText(t); return t }
+  h.askPlan = async (system, user, onText) => { const t = asPlan(fixture(label, 'sketch.json')); onText(t); return t }
   h.askJev = async body => {
     seen.jev++
     const q = JSON.parse(body).questions

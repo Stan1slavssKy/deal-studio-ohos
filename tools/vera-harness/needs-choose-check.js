@@ -70,7 +70,6 @@ const fixedLength = (s, a) => {
     assert.equal(nc.startOnRequested(mk('amount', 'minutes', {min: 1, max: 20, value: 5}), '25 minutes'), '', 'out of range')
     assert.equal(nc.startOnRequested(mk('amount', 'money', {value: 5}), '25 minutes'), '', 'not a length')
   }
-  nc.setNeedsEnabled(true)
   align.setAlignEnabled(false)
 
   // The plan's facts decide what is offered, before anyone is asked.
@@ -177,7 +176,6 @@ const fixedLength = (s, a) => {
     assert.deepEqual(comp.unboundNeeds, [])
     assert.equal(comp.events.length, 0)
   }
-  nc.setNeedsEnabled(false)
   align.setAlignEnabled(true)
   console.log('needs-choose-check ok')
 })().catch(e => { console.error(e); process.exit(1) })

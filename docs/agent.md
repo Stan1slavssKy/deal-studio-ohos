@@ -14,7 +14,9 @@ removed from the route because it never served -- none of the 121 prompts of the
 
 | term | what it is | where |
 |---|---|---|
-| **sketch** | the plan, as DeepSeek (no thinking) writes it: a JSON object of inputs, constants, values with formulas, a countdown or stopwatch, a list, events (what the phone does, and when), *ready* needs (things a catalogue section does whole), other items, and at most two questions | `VeraCompose.ets` (`SKETCH_BASE`, `parseSketch`) |
+| **plan of needs** | what DeepSeek (no thinking) writes: a JSON object of inputs, constants and a list of *needs*, each of a type that says what the person sees -- `figure` (with its formula over neutral names, `entries.total`, `clock.remaining`; `shown: false` when it only feeds another), `countdown`, `stopwatch`, `entries`, `content` (written for the request), `action` (what the phone does, with its trigger) -- and at most two questions. It is told nothing of the parts or the catalogue. Content and action needs quote the request's own words; one whose quote is not in the request is not built | `NeedsPlan.ets` (`NEEDS_PROMPT`, `parseNeedsPlan`) |
+| **sketch** | the plan as the composer reads it, which `sketchFrom` makes from the plan of needs: inputs, constants, values, a countdown or stopwatch, a list, events, *ready* needs (content a section does whole), other items. The composer's internal model; nobody writes it any more | `VeraCompose.ets` (`Sketch`, `parseSketch`) |
+| **Jev's choice of a section or a part** | one Jev call, before the composer's own, with one question per need that a part and a section of the catalogue can both do (a countdown, entries the person keeps, content written for the request); the options are cut by the plan's own facts first | `NeedsChoose.ets` (`buildChooseRequest`) |
 | **Jev's choices** | one Jev call over the sketch: a formula for each value, a widget for each input, an effect and a moment for each event, a catalogue section for each ready need, what is covered or left out | `buildComposeRequest`, `readComposition` |
 | **block** | one piece of a program in the one format (`FragmentSpec`): state fields, handlers, a view, and tokens for content, ports and holes. The catalogue's **sections** (checklist, itinerary, timeline, charts, timer, reminders, ...) and the composer's **parts** (inputs, figures, clock, list, effects) are both blocks | `VeraTemplates.ets`, `compositionParts` |
 | **ScreenPlan** | the one plan format both paths give: the screen's *state* (named values), its *slots* (each thing it does, with what it reads and writes, and whether it is a phone action) and the *components* that fill them. A slot is *open* until something fills it; a plan with an open slot is not served | `ScreenPlan.ets` |
@@ -25,28 +27,32 @@ removed from the route because it never served -- none of the 121 prompts of the
 
 ## The algorithm
 
-1. **Plan.** DeepSeek writes the sketch. One that is missing or does not parse is asked for again with what was wrong,
-   then once with thinking on.
+1. **Plan.** DeepSeek writes the plan of needs (`drawPlan` in `NeedsChoose.ets`). One that is missing or does not parse is asked
+   for again with what was wrong, then once with thinking on. A content or action need whose quote is not in the request is
+   dropped before anything is built (`dropUnasked`; the note says what was not built and why), and a request that names one
+   length of time ("a 10 minute timer") starts the one input that holds a length on it (`startOnRequested`).
 2. **Questions.** Jev keeps only the sketch's questions a default cannot stand in for; the person answers on a card,
    and an answer other than the default has the plan drawn again.
-3. **Choices.** One Jev call (asked twice if it does not answer) decides how each item is built. What the plan leaves
+3. **Choices.** One more Jev call (asked twice if it does not answer) decides how each remaining item is built. What the plan leaves
    open is settled, not refused:
    - a countdown nothing sets the length of, or a figure the parts read that no formula works out, becomes an input
      the person sets, starting from the plan's own number, and the person is told;
    - an event no effect does as asked, the person's own records, a figure nothing works out, an item of "other",
      a ready need with no section: a slot for the written section;
    - an input nothing uses is left out, with a note.
-3-. **Part or section, one question.** Where a part and a section of the catalogue can both do a need, the same Jev call asks once
-   with the part among the options (`clock.part`: the part or `timer`; `list.part`: the part, `record_log` or `reminders`;
-   `chooseSections` in `VeraCompose.ets`). A confident pick (the bar of any ready pick) takes the part's place -- the part is gone from the
-   program, the section has a slot of its own (`section.<kind>`) and is read against the need by the claims check -- unless something
-   else on the screen is wired to the part: a countdown the person sets the length of, a value that reads the time left or the entries,
-   an event at the countdown's end or on an entry (`canReplaceClock`, `canReplaceList`). Those keep the part. A section is never added
-   beside the part that does the same: Align's pool leaves out `timer` beside a countdown or a stopwatch and the entry-keeping sections
-   beside a list that is wired to something (`alignKindsFor`), and gives a list up for the section it chose when nothing is wired to it.
-   The `timer` section counts down from set times and has no stopwatch, so a stopwatch is always the part. `--ps veraUnified 0` keeps
-   the parts always. Host check `merge-check.js`; live on the host (6 short prompts): a fixed countdown is not offered a second timer, a list of
-   daily medicine reminders is one `reminders` section and no list part, a plain list of books and an expense log with a total stay parts.
+2b. **Part or section, one question per need** (`buildChooseRequest`, `NeedsChoose.ets`; one Jev call, which also asks which section
+   each *content* need is, whose data it is, and whether it needs a search). Where a part and a section can both do a need, the
+   question puts them side by side (`clock.part`: the part or `timer`; `list.part`: the part, `record_log` or `reminders`). What a
+   section cannot stand in for is not offered, from the plan's own facts: `timer` only for a countdown of one fixed time with nothing at its
+   end and no figure reading the time left (`timerMayTakeCountdown`); nothing that keeps entries when something happens as an entry is
+   added or tapped, and only `record_log` when a figure reads the entries (`listSectionsFor`). A stopwatch is always the part. The
+   answers go to the composer under the keys it reads, and its own call does not ask them again. A confident pick (the bar of any
+   ready pick) takes the part's place -- the part is gone from the program, the section has a slot of its own (`section.<kind>`)
+   and is read against the need by the claims check (`chooseSections`, `canReplaceClock`, `canReplaceList`, `replaceList` in
+   `VeraCompose.ets`, which carry the pick out and still refuse it when a countdown's length is set by the person, a value reads the
+   time left or the entries, or an event is at the countdown's end or on an entry). Without an answer from Jev the parts stay. A section
+   is never added beside the part that does the same: Align's pool leaves out `timer` beside a countdown or a stopwatch and the
+   entry-keeping sections beside a list that is wired to something (`alignKindsFor`). Host checks `needs-choose-check.js`, `merge-check.js`.
 3a. **Align** (on by default, `--ps veraAlign 0` turns it off; `AgentAlign.ets`). What the choices leave for the model to write -- a ready
    need no section was chosen for, an event no effect does, an item of "other" -- is offered to the catalogue once more:
    one Jev question per such need, whose answers are a ready-made section (the plan's ready kinds, `reminders`,
@@ -168,24 +174,37 @@ Fixed after that table, one by one (host runs of the same prompts, then the phon
 
 Still open: a stopwatch is always the part (the `timer` section only counts down), and what to do with a detail Jev is unsure the log does.
 
+## The plan of needs, measured (phone, 2026-10-27)
+
+The old path (the model writes the sketch, knowing the parts and the catalogue; Jev and the composer choose between a part and a section
+afterwards) against the plan of needs, on 25 fixed short prompts (`docs/prompts/needs-plan-25.md`, one run each on the same build, the top
+of each screen read): the plan of needs was not worse on any prompt after two fixes, and better on nine. What it found, and what was done:
+
+- A length of time the plan wrote as `"kind": "time", "measure": "seconds"` was read as a time of day, so no formula could use it: an
+  interval timer showed a length of five minutes of its own, a study timer 0:00. A `time` input with a measure of seconds or minutes is a
+  number now, and a figure a countdown's length is made of does not read the clock it sets (`lengthFeeders`; `length-feeders-check.js`).
+- Better than before the switch: a plank timer starts at 1:00 and has no unasked progress bar, "every 2 hours" is 2:00:00 (the old path
+  gave 1:00:00), a stopwatch has a list of laps, a shopping list or a workout log has no unasked totals, notes have the search field.
+- Not tried: the buttons and formulas after a person types, the ~121 prompts of the table above, a second run (the model's plan varies:
+  one run had a "Total minutes" figure for the study timer and the next did not).
+
+`--ps veraNeeds` and `--ps veraUnified` are gone: the plan of needs is the only way to build a screen, and the old sketch prompt, its `ready`
+paragraph and `composeWith` with it. What carries out Jev's choice is the composer's, and stays. Recorded sketches stand in for the
+model's plan in the host checks (`tools/vera-harness/needs-lib.js`: `needsOf`, `asPlan`).
+
 ## Switches and tools
 
 - `--ps veraCustom 0` turns written sections off;
-  `--ps veraWhole 0` the whole-screen hole; `--ps veraAlign 0` turns off the offer of what would be written to the catalogue first (`1` for the plain pool);
-  `--ps veraUnified 0` keeps a countdown and a list the person fills in as parts, without asking whether a section does them.
-- `--ps veraNeeds 1` (off by default, branch `cortex/needs-plan`) draws the plan as a list of *needs* (`NeedsPlan.ets`: the model is told nothing of
-  the parts or the catalogue), then asks Jev once, per need that a part and a section can both do, which does it (`NeedsChoose.ets`:
-  a countdown, entries the person keeps, content written for the request). What a section cannot stand in for is taken out of the
-  options from the plan's own facts first (`timerMayTakeCountdown`, `listSectionsFor`). The answers go to the composer under the keys
-  it reads (`clock.part`, `list.part`, `ready.N`, `whose.N`, `real_data`) and its own call no longer asks them. Host checks
-  `needs-plan-check.js`, `needs-choose-check.js` (`VERA_TYPESCRIPT_PATH` names a `typescript` package; the kit's is under
+  `--ps veraWhole 0` the whole-screen hole; `--ps veraAlign 0` turns off the offer of what would be written to the catalogue first (`1` for the plain pool).
+- Host checks run under node with `VERA_TYPESCRIPT_PATH` naming a `typescript` package (the kit's is under
   `~/agent-kit-sdk/command_line_tools/ohpm/node_modules/typescript`).
 - `tools/vera-harness/agent-run.js [-r] [-w]` runs the agent (or the whole route: the agent, then the whole screen) live on the host: DeepSeek
   (`$ARKESTR_API_KEY`), Jev (`$TYPESAFE_API_KEY`), Exa (`$EXA_API_KEY`, optional).
 - Every written hole is recorded: a `hole` event in the app's trace, `holes.jsonl` beside each host run.
   `tools/vera-harness/hole-report.py` groups the needs that recur -- the blocks the catalogue lacks.
-- Host checks: `tools/vera-harness/{agent,plan,parts,compose,route,pipeline,section-fill,align,align-agent}-check.js`; fixtures in
-  `tools/vera-harness/compose/`.
+- Host checks: `tools/vera-harness/{agent,plan,parts,compose,route,pipeline,section-fill,align,align-agent,needs-plan,needs-choose,merge,length-feeders}-check.js`;
+  fixtures in `tools/vera-harness/compose/` (recorded sketches, read as plans of needs through `needs-lib.js`) and `tools/vera-harness/needs-plans/`.
+  Two checks, `calendar-sdk-check.js` and `chat-handoff-check.js`, fail on a clean tree and are not about this.
 
 ## Known limits
 

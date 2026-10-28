@@ -7,6 +7,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const {loadVera} = require('./source-loader')
+const {needsOf, asPlan} = require('./needs-lib')
 const {AgentHost} = loadVera('agent/AgentHost')
 const {AgentRequest, runAgent} = loadVera('agent/VeraAgent')
 const route = loadVera('agent/VeraBuildRoute')
@@ -19,8 +20,8 @@ function replayHost(label, {jev = fixture(label, 'jev-answer.json'), cancelled =
   const seen = {status: [], previews: 0, plans: 0, jev: 0}
   host.askPlan = async (system, user, onText) => {
     seen.plans++
-    assert.match(system, /JSON sketch/)
-    const text = fixture(label, 'sketch.json')
+    assert.match(system, /JSON plan/)
+    const text = asPlan(fixture(label, 'sketch.json'))
     for (let i = 40; i < text.length; i += 40) onText(text.slice(0, i))
     return text
   }
@@ -77,7 +78,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
   // A plan that cannot be used is asked for again with what was wrong quoted, then once with thinking on.
   {
     const {host} = replayHost('tip')
-    const good = fixture('tip', 'sketch.json')
+    const good = asPlan(fixture('tip', 'sketch.json'))
     const asks = []
     const replies = ['not json at all', null, good]
     host.askPlan = async (system, user, onText, think) => { asks.push({user, think}); return replies.shift() }
@@ -90,7 +91,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     const none = replayHost('tip').host
     none.askPlan = async () => 'nope'
     const r2 = await runAgent(request('tip calculator'), none)
-    assert.equal(r2.note, 'no usable sketch after 3 tries')
+    assert.equal(r2.note, 'no usable plan after 3 tries')
   }
 
   // A need the plan says a ready-made section handles: Jev's section joins the composition's own parts, its content
@@ -231,7 +232,7 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     const askPlan = host.askPlan
     host.askPlan = async (system, user, onText) => {
       plans.push(user)
-      if (plans.length === 1) return JSON.stringify(Object.assign(JSON.parse(fixture('tip', 'sketch.json')), {questions: [{id: 'q', ask: 'Split it?', options: ['yes', 'no'], default: 0}]}))
+      if (plans.length === 1) return JSON.stringify(needsOf(Object.assign(JSON.parse(fixture('tip', 'sketch.json')), {questions: [{id: 'q', ask: 'Split it?', options: ['yes', 'no'], default: 0}]}), false))
       return askPlan(system, user, onText)
     }
     const askJev = host.askJev

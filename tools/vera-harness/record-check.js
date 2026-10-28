@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const {loadVera} = require('./source-loader')
+const {needsOf, asPlan} = require('./needs-lib')
 const {AgentHost} = loadVera('agent/AgentHost')
 const {AgentRequest, runAgent} = loadVera('agent/VeraAgent')
 const {BlockCalls, fillSections} = loadVera('SectionFill')
@@ -16,7 +17,7 @@ const {smokeRun} = loadVera('VeraSmoke')
 const fixture = (label, file) => fs.readFileSync(path.join(__dirname, 'compose', label, file), 'utf8')
 function host(label) {
   const h = new AgentHost()
-  h.askPlan = async (s, u, onText) => { const t = fixture(label, 'sketch.json'); onText(t); return t }
+  h.askPlan = async (s, u, onText) => { const t = asPlan(fixture(label, 'sketch.json')); onText(t); return t }
   h.askJev = async () => fixture(label, 'jev-answer.json')
   // The catalogue's sections filled as the app fills them, with no model to ask: their own defaults.
   const calls = new BlockCalls()
