@@ -878,6 +878,10 @@ struct GeneratePage {
     this.compiledSource = result.source
     this.compiledVbc2 = result.vbc2
     this.acceptRequest()
+    // The record of the screen, when it rebuilds exactly this program: a request to add, remove or move a section is then
+    // answered without the model (tryStructuralEdit); with none, such a request is refined by the model as before.
+    this.compositionJson = result.record !== null ? compositionToJson(result.record!) : ''
+    if (result.record !== null) { this.templateKinds = result.record!.kinds() }
     this.compiled = true
     this.compileErrors = ''
     this.composerOpen = false
