@@ -16,7 +16,8 @@ import { requestSdkEval } from '../vera/VeraSdkEval'
 import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
 import { setComposeEnabled, setComposePlanEnabled, setCustomSectionsEnabled } from '../vera/VeraCompose'
-import { setRouteOrder, routeOrder, setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
+import { setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
+import { setAlignEnabled, setAlignWide } from '../vera/agent/AgentAlign'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
 import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
@@ -339,10 +340,12 @@ export default class EntryAbility extends UIAbility {
       setCustomSectionsEnabled(!(text === '0' || text === 'false' || text === 'off'))
       hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE custom sections ' + text + ' from launch parameter')
     }
-    let order = params['veraOrder']
-    if (order !== null && order !== undefined) {
-      setRouteOrder(String(order).trim())
-      hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE order ' + routeOrder() + ' from launch parameter')
+    let align = params['veraAlign']
+    if (align !== null && align !== undefined) {
+      let text = String(align).trim()
+      setAlignEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      setAlignWide(text === 'wide')
+      hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE align ' + text + ' from launch parameter')
     }
     let whole = params['veraWhole']
     if (whole !== null && whole !== undefined) {
@@ -353,9 +356,9 @@ export default class EntryAbility extends UIAbility {
   }
 
   /**
-   * The Jev template path is on by default (VeraTemplateSelectFlag.ets); `--ps veraTemplateSelect 0`
-   * switches it off for this session so a generation can be compared with the plain path. It also
-   * needs the TypeSafe key (extractSelectorKey); without it generation goes straight to the model.
+   * Jev's structural edits of a composed screen are on by default (VeraTemplateSelectFlag.ets); `--ps veraTemplateSelect 0`
+   * switches them off for this session so a refine can be compared with the plain model refine. They also
+   * need the TypeSafe key (extractSelectorKey).
    */
   private extractTemplateSelect(want: Want): void {
     if (want.parameters === null || want.parameters === undefined) { return }

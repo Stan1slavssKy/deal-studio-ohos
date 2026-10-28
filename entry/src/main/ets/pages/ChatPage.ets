@@ -15,12 +15,10 @@ import { AttemptStat, ReplyStats, costOf, formatUsd, formatMs, speedOf } from '.
 import { chats, StoredChat, StoredMessage } from '../vera/ChatStore'
 import { store } from '../vera/ProjectStore'
 import { compileVeraSource } from '../vera/VeraCompiler'
-import { TemplateBuild, BUILD_COMPLETE, BUILD_TEMPLATE } from '../vera/VeraTemplatePipeline'
 import { appAgentHost } from '../vera/agent/AgentAppHost'
 import { AgentQuestion } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
-import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_TEMPLATE, OUTCOME_NOT_BUILT } from '../vera/agent/VeraBuildRoute'
-import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
+import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_NOT_BUILT } from '../vera/agent/VeraBuildRoute'
 
 const APP_NONE: string = 'none'
 const APP_DESCRIBING: string = 'describing'
@@ -426,7 +424,6 @@ struct ChatPage {
   /** Widget builds run one at a time: the DeepSeek engine has a single generation in flight. */
   private buildQueue: Promise<void> = Promise.resolve()
   /** The composed template a completion started from, kept for when the model cannot finish it. */
-  private chatFallback: TemplateBuild | null = null
 
   private hostContext(): common.Context {
     let context = this.getUIContext().getHostContext()
@@ -764,20 +761,10 @@ struct ChatPage {
       try {
         await this.loadResources()
         logStep('load-resources', startedAt)
-        // The route (agent/VeraBuildRoute.ets): the agent, from the marker's request, and the blocks, from the
-        // description, in the route's order. What neither builds is reported in the bubble, not generated; only a
-        // refine of an existing widget, which the route does not take, goes to the model. The blocks are never attempted on a refine
-        // (context.source non-empty): a revision asked for a change to an existing widget, not a generic replacement.
-        this.chatFallback = null
+        // The route (agent/VeraBuildRoute.ets): the agent, from the marker's request. What it does not build is reported in the
+        // bubble, not generated; only a refine of an existing widget, which the route does not take, goes to the model.
         let route = new RouteRequest()
         route.agent = chatAgentRequest(context)
-        if (templateSelectEnabled() && settings.hasSelectorKey()) {
-          if (context.source.length > 0) {
-            msg.templatePick = 'skipped (refine)'
-          } else {
-            route.blocksPrompt = context.brief.length > 0 ? context.brief : context.currentRequest
-          }
-        }
         context.composeTried = true
         let host = appAgentHost((s: string): void => {
           if (msg.buildStatus !== s) { msg.buildStatus = s }
@@ -801,7 +788,6 @@ struct ChatPage {
         msg.answerQuestion = null
         let composed = new MiniApp()
         if (outcome.agent !== null) { recordChatAgent(outcome.agent!, context, composed) }
-        if (outcome.blocks !== null) { this.noteBlocks(msg, context, outcome.blocks!, route.blocksPrompt) }
         if (outcome.kind === OUTCOME_AGENT && msg.appState !== APP_FAILED) {
           msg.attempts = composed.stats
           msg.vbc2 = composed.vbc2
@@ -817,22 +803,7 @@ struct ChatPage {
           this.persist()
           return
         }
-        if (outcome.kind === OUTCOME_TEMPLATE) {
-          let build: TemplateBuild = outcome.blocks!
-          msg.vbc2 = build.vbc2
-          msg.source = build.source
-          msg.originalRequest = context.originalRequest
-          msg.parentMessageId = context.parentMessageId
-          msg.appState = APP_READY
-          logMark('widget-ready')
-          msg.attempts = []
-          msg.widgetMs = Date.now() - startedAt
-          this.status = ''
-          this.scrollDown(true)
-          this.persist()
-          return
-        }
-        if (outcome.kind === OUTCOME_NOT_BUILT && context.source.length === 0 && (route.agent !== null || route.blocksPrompt.length > 0)) {
+        if (outcome.kind === OUTCOME_NOT_BUILT && context.source.length === 0 && route.agent !== null) {
           msg.error = 'Not built: ' + outcome.reason
           msg.appState = APP_FAILED
           msg.widgetMs = Date.now() - startedAt
@@ -860,15 +831,6 @@ struct ChatPage {
           msg.parentMessageId = context.parentMessageId
           msg.appState = APP_READY
           logMark('widget-ready')
-        } else if (this.chatFallback !== null) {
-          // The model could not finish the composed screen; the screen itself still works.
-          let fallback: TemplateBuild = this.chatFallback!
-          msg.templatePick = msg.templatePick + ' -- the model could not finish it, showing the template'
-          msg.vbc2 = fallback.vbc2
-          msg.source = fallback.source
-          msg.originalRequest = context.originalRequest
-          msg.parentMessageId = context.parentMessageId
-          msg.appState = APP_READY
         } else {
           msg.error = app.error
           msg.appState = APP_FAILED
@@ -884,27 +846,6 @@ struct ChatPage {
       this.scrollDown(true)
       this.persist()
     })
-  }
-
-  /**
-   * What the blocks (VeraTemplatePipeline.ets) answered for a widget, in msg.templatePick. A composition that
-   * is the right base but not enough becomes the program the model finishes (context.source), and chatFallback
-   * keeps it for when the model cannot.
-   */
-  private noteBlocks(msg: ChatMessage, context: WidgetBuildContext, build: TemplateBuild, prompt: string): void {
-    if (build.action === BUILD_COMPLETE) {
-      msg.templatePick = build.note + ' (completing)'
-      context.source = build.source
-      context.brief = prompt + '\n\nThe program provided is a ready-made screen for this request. Keep its layout and ' +
-        'theme, and edit it so that everything the request asks for works.'
-      this.chatFallback = build
-      this.status = build.status
-    } else if (build.action === BUILD_TEMPLATE) {
-      msg.templatePick = 'composed: ' + build.note
-      this.status = build.status
-    } else {
-      msg.templatePick = build.note + ' (generated normally)'
-    }
   }
 
   build() {
