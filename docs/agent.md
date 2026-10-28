@@ -173,6 +173,13 @@ Still open: a stopwatch is always the part (the `timer` section only counts down
 - `--ps veraCustom 0` turns written sections off;
   `--ps veraWhole 0` the whole-screen hole; `--ps veraAlign 0` turns off the offer of what would be written to the catalogue first (`1` for the plain pool);
   `--ps veraUnified 0` keeps a countdown and a list the person fills in as parts, without asking whether a section does them.
+- `--ps veraNeeds 1` (off by default, branch `cortex/needs-plan`) draws the plan as a list of *needs* (`NeedsPlan.ets`: the model is told nothing of
+  the parts or the catalogue), then asks Jev once, per need that a part and a section can both do, which does it (`NeedsChoose.ets`:
+  a countdown, entries the person keeps, content written for the request). What a section cannot stand in for is taken out of the
+  options from the plan's own facts first (`timerMayTakeCountdown`, `listSectionsFor`). The answers go to the composer under the keys
+  it reads (`clock.part`, `list.part`, `ready.N`, `whose.N`, `real_data`) and its own call no longer asks them. Host checks
+  `needs-plan-check.js`, `needs-choose-check.js` (`VERA_TYPESCRIPT_PATH` names a `typescript` package; the kit's is under
+  `~/agent-kit-sdk/command_line_tools/ohpm/node_modules/typescript`).
 - `tools/vera-harness/agent-run.js [-r] [-w]` runs the agent (or the whole route: the agent, then the whole screen) live on the host: DeepSeek
   (`$ARKESTR_API_KEY`), Jev (`$TYPESAFE_API_KEY`), Exa (`$EXA_API_KEY`, optional).
 - Every written hole is recorded: a `hole` event in the app's trace, `holes.jsonl` beside each host run.

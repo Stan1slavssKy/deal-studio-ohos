@@ -21,6 +21,7 @@ import { Repaired, settleProgram } from './AgentRepair'
 import { FragmentSpec } from '../VeraTemplates'
 import { buildSlotRequest, readSlotValues, specsOf } from '../VeraSectionCompose'
 import { claimsDone, claimsUndone, putBack } from './AgentClaims'
+import { composeNeeds, needsEnabled } from '../NeedsChoose'
 import { AlignResult, alignCandidates, alignIsEnabled, alignLeftovers } from './AgentAlign'
 import { Composition as ScreenRecord, compositionFromPlan, rebuilds } from '../VeraComposition'
 import { holeBodiesBySlot } from '../VeraHoles'
@@ -101,7 +102,9 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
   let result = new AgentResult()
   let started = Date.now()
   host.status(request.widget ? 'Sketching the widget...' : 'Composing...')
-  let composed = await composeWith(request.prompt, host.askPlan, host.askJev, (partial: Sketch): void => {
+  // The plan of needs (NeedsChoose.ets) or the sketch, as `--ps veraNeeds` says: both give the same result.
+  let compose = needsEnabled() ? composeNeeds : composeWith
+  let composed = await compose(request.prompt, host.askPlan, host.askJev, (partial: Sketch): void => {
     if (host.cancelled()) { return }
     let source = provisionalProgram(partial, request.widget)
     if (source.length === 0) { return }

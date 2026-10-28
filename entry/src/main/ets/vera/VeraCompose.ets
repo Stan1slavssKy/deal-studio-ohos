@@ -1214,7 +1214,7 @@ function planQuestions(sketch: Sketch): string {
     '"' + q.ask + '" (' + q.options.join(' / ') + ')').join('; ') + '.'
 }
 
-function choice(instructions: string, criteria: Map<string, string>): Record<string, Object> {
+export function choice(instructions: string, criteria: Map<string, string>): Record<string, Object> {
   let c: Record<string, Object> = {}
   criteria.forEach((describe: string, key: string) => { c[key] = describe })
   let q: Record<string, Object> = {}
@@ -1470,7 +1470,7 @@ function detailQuestion(item: string): Record<string, Object> {
 
 /** The Jev request: one independent choice per requirement in the sketch. */
 /** The sections of the catalogue a countdown or stopwatch may be, and the part, as the options of one question; null for neither. */
-function clockOptions(sketch: Sketch): Map<string, string> | null {
+export function clockOptions(sketch: Sketch): Map<string, string> | null {
   // The section counts down from one of a few set times; it has no stopwatch.
   if (!sketch.hasCountdown) { return null }
   let out: Map<string, string> = new Map<string, string>()
@@ -1481,7 +1481,7 @@ function clockOptions(sketch: Sketch): Map<string, string> | null {
 }
 
 /** The sections a list the person fills in may be, and the part, as the options of one question; null when there is no list. */
-function listOptions(sketch: Sketch): Map<string, string> | null {
+export function listOptions(sketch: Sketch): Map<string, string> | null {
   if (sketch.list === null) { return null }
   let out: Map<string, string> = new Map<string, string>()
   out.set(PART, 'the app\'s own plain list: ' + describeList(sketch.list!) + '. The only figures it gives are how many entries there are ' +
@@ -1496,7 +1496,7 @@ function listOptions(sketch: Sketch): Map<string, string> | null {
 }
 
 /** What the screen is to show besides the list, in words, for the question about the list: the plan's values and other needs. */
-function listNeeds(sketch: Sketch): string {
+export function listNeeds(sketch: Sketch): string {
   let needs: string[] = []
   for (let v of sketch.values) { needs.push(v.label + (v.means.length > 0 ? ' (' + v.means + ')' : '')) }
   for (let o of sketch.other) { needs.push(o) }
@@ -1504,7 +1504,33 @@ function listNeeds(sketch: Sketch): string {
   return needs.length === 0 ? '' : ' The screen also has to show or do: ' + needs.slice(0, 8).join('; ') + '.'
 }
 
-export function buildComposeRequest(prompt: string, sketch: Sketch, widget: boolean = false): string {
+/**
+ * The questions about the plan's ready needs: which section of the catalogue does each, whose data it shows, and whether the
+ * sections' content has to come from a search. Nothing when the plan has none. (The needs plan asks them first, NeedsChoose.ets.)
+ */
+export function askReady(sketch: Sketch, questions: Record<string, Object>): void {
+  if (sketch.ready.length === 0) { return }
+  let sections: Map<string, string> = new Map<string, string>()
+  for (let f of fragments()) { if (READY_KINDS.indexOf(f.kind) >= 0) { sections.set(f.kind, f.criteria) } }
+  sections.set('none', 'none of these: it needs something none of these sections does')
+  // A section's content is written for the request; the person's own records cannot be, however a plan words them.
+  let whose: Map<string, string> = new Map<string, string>()
+  whose.set('own', 'the person\'s own records: notes, entries, contacts, messages or files they keep, which nobody else could write')
+  whose.set('written', 'facts, places, steps, figures or suggestions that anyone could look up or write for the request')
+  for (let i = 0; i < sketch.ready.length; i++) {
+    questions['ready.' + i.toString()] = choice('The request needs "' + sketch.ready[i] + '". Which of these sections does exactly that?', sections)
+    questions['whose.' + i.toString()] = choice('What does "' + sketch.ready[i] + '" show?', whose)
+  }
+  // The catalogue's own question: whether the sections' content has to come from a search.
+  let real = vetoes().find((v: VetoSpec): boolean => v.key === 'needs_real_data')!
+  questions['real_data'] = choice(real.instructions, real.criteria)
+}
+
+/**
+ * `settled` names questions that are not asked because something else answered them already (the needs plan's own choice of a
+ * section or a part, NeedsChoose.ets); readComposition reads those answers from the body it is given.
+ */
+export function buildComposeRequest(prompt: string, sketch: Sketch, widget: boolean = false, settled: string[] = []): string {
   let questions: Record<string, Object> = {}
 
   let theme: Map<string, string> = new Map<string, string>()
@@ -1647,21 +1673,8 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
     if (widget) { questions['detail.' + i.toString()] = detailQuestion(sketch.other[i]) }
   }
   // Which ready-made section handles each need the plan gave one, by the catalogue's own words for each.
+  askReady(sketch, questions)
   if (sketch.ready.length > 0) {
-    let sections: Map<string, string> = new Map<string, string>()
-    for (let f of fragments()) { if (READY_KINDS.indexOf(f.kind) >= 0) { sections.set(f.kind, f.criteria) } }
-    sections.set('none', 'none of these: it needs something none of these sections does')
-    // A section's content is written for the request; the person's own records cannot be, however a plan words them.
-    let whose: Map<string, string> = new Map<string, string>()
-    whose.set('own', 'the person\'s own records: notes, entries, contacts, messages or files they keep, which nobody else could write')
-    whose.set('written', 'facts, places, steps, figures or suggestions that anyone could look up or write for the request')
-    for (let i = 0; i < sketch.ready.length; i++) {
-      questions['ready.' + i.toString()] = choice('The request needs "' + sketch.ready[i] + '". Which of these sections does exactly that?', sections)
-      questions['whose.' + i.toString()] = choice('What does "' + sketch.ready[i] + '" show?', whose)
-    }
-    // The catalogue's own question: whether the sections' content has to come from a search.
-    let real = vetoes().find((v: VetoSpec): boolean => v.key === 'needs_real_data')!
-    questions['real_data'] = choice(real.instructions, real.criteria)
     // A plan names a section's own buttons and lists again as events and items of other: what a section does is left
     // to it, by Jev's reading rather than the plan's.
     let needs: Map<string, string> = new Map<string, string>()
@@ -1688,7 +1701,13 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
   let body: Record<string, Object> = {}
   body['model'] = 'jev-latest'
   body['state'] = 'Request: ' + prompt + '\nThe app has:\n' + describeSketch(sketch)
-  body['questions'] = questions
+  if (settled.length > 0) {
+    let kept: Record<string, Object> = {}
+    Object.keys(questions).forEach((key: string) => { if (settled.indexOf(key) < 0) { kept[key] = questions[key] } })
+    body['questions'] = kept
+  } else {
+    body['questions'] = questions
+  }
   return JSON.stringify(body)
 }
 
@@ -1829,7 +1848,7 @@ const MORE_STEPS_ABOVE: number = 0.5
 /** Jev takes at most 255 criteria per question, the "unavailable" option included. */
 const MAX_CRITERIA: number = 255
 
-function answerOf(answers: Record<string, Object>, key: string, allowed: string[], log: string[],
+export function answerOf(answers: Record<string, Object>, key: string, allowed: string[], log: string[],
     above: number = PICK_ABOVE): string {
   let a = answers[key] as Record<string, Object>
   if (a === null || a === undefined) { log.push(key + '=?'); return '' }
@@ -2490,9 +2509,9 @@ const ADDED_ABOVE: number = 0.5
 const OTHER_ADDED_ABOVE: number = 0.7
 
 /** A section is a whole part of the screen, so it takes the bar a block takes in the blocks' own pick (SECTION_PICK_ABOVE). Not tuned. */
-const READY_ABOVE: number = 0.5
+export const READY_ABOVE: number = 0.5
 /** The option that is the composer's own part, in the questions that put a part and sections side by side. */
-const PART: string = 'part'
+export const PART: string = 'part'
 /** Sections that keep what the person enters, one entry at a time: the ones a list part may be replaced by. */
 export const LIST_SECTIONS: string[] = ['record_log', 'reminders']
 /** The bar the catalogue gives its own needs_real_data question (VeraTemplates.vetoes). */
@@ -3958,14 +3977,25 @@ export async function composeWith(prompt: string, askSketch: SketchAsk, askChoic
     sketch.questions = []
   }
   result.sketch = text!
+  return composeFromSketch(result, prompt, sketch, askChoices, widget)
+}
+
+/**
+ * Jev's choices for a plan already drawn, and the composition read from them. `pre` are answers given before this call (the
+ * needs plan's choices of a section or a part, NeedsChoose.ets): they are put into Jev's body and the questions they answer
+ * are named in `settled`, so Jev is not asked them twice.
+ */
+export async function composeFromSketch(result: ComposeResult, prompt: string, sketch: Sketch, askChoices: JevAsk,
+    widget: boolean = false, pre: Record<string, Object> | null = null, settled: string[] = []): Promise<ComposeResult> {
   result.parsed = sketch
-  started = Date.now()
-  let request = buildComposeRequest(prompt, sketch, widget)
+  let started = Date.now()
+  let request = buildComposeRequest(prompt, sketch, widget, settled)
   let body = await askChoices(request)
   // No answer is most often the network: once more before the plan is left to the route's wider holes.
   if (body.length === 0) { body = await askChoices(request) }
-  result.jevMs = Date.now() - started
+  result.jevMs += Date.now() - started
   if (body.length === 0) { result.note = 'Jev did not answer twice'; return result }
+  if (pre !== null) { body = withAnswers(body, pre!) }
   let comp = readComposition(body, sketch, widget)
   result.answers = comp.answers
   if (comp.unbound.length > 0) {
@@ -3984,4 +4014,19 @@ export async function composeWith(prompt: string, askSketch: SketchAsk, askChoic
     (comp.custom.length > 0 ? ', custom: ' + comp.custom.join('; ') : '') +
     (comp.dropped.length > 0 ? '; left out: ' + comp.dropped.join('; ') : '')
   return result
+}
+
+/** Jev's body with more answers in it, which win over any of the same name. */
+function withAnswers(body: string, more: Record<string, Object>): string {
+  try {
+    let parsed = JSON.parse(body) as Record<string, Object>
+    let answers: Record<string, Object> = {}
+    let found = parsed['answers']
+    if (found !== null && found !== undefined) { answers = found as Record<string, Object> }
+    Object.keys(more).forEach((key: string) => { answers[key] = more[key] })
+    parsed['answers'] = answers
+    return JSON.stringify(parsed)
+  } catch (_e) {
+    return body
+  }
 }

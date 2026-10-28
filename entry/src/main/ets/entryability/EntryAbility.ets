@@ -17,6 +17,7 @@ import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
 import { setComposeEnabled, setComposePlanEnabled, setCustomSectionsEnabled, setUnifiedChoice } from '../vera/VeraCompose'
 import { setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
+import { setNeedsEnabled } from '../vera/NeedsChoose'
 import { setAlignEnabled, setAlignWide } from '../vera/agent/AgentAlign'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
@@ -355,6 +356,12 @@ export default class EntryAbility extends UIAbility {
       let text = String(unified).trim()
       setUnifiedChoice(!(text === '0' || text === 'false' || text === 'off'))
       hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE unified choice ' + text + ' from launch parameter')
+    }
+    let needs = params['veraNeeds']
+    if (needs !== null && needs !== undefined) {
+      let text = String(needs).trim()
+      setNeedsEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-COMPOSE needs plan ' + text + ' from launch parameter')
     }
     let whole = params['veraWhole']
     if (whole !== null && whole !== undefined) {
