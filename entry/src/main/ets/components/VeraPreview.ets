@@ -126,6 +126,9 @@ class BarItem {
   value: string = ''
 }
 
+/** The tallest a pane of ui.Tabs grows in a chat reply, in vp; past it the pane scrolls inside the window. */
+const EMBEDDED_WINDOW: number = 360
+
 @Component
 export struct VeraPreview {
   /**
@@ -171,6 +174,8 @@ export struct VeraPreview {
   // The live tree is mutated in place, so it is not @State: its own @Trace
   // fields are what drive the re-render. See VeraLiveTree.
   @State hasRoot: boolean = false
+  /** Bumped when a typed number is taken, so its field is drawn again with the value the program holds. */
+  @State numberEpoch: number = 0
   private liveRoot: LiveNode | null = null
   /**
    * Which program liveRoot belongs to, bumped by every load(). The drawn tree
@@ -274,7 +279,7 @@ export struct VeraPreview {
   // discovered as a blank space in someone's generated app.
   private static RENDERED: string[] = ['column', 'scroll', 'row', 'card', 'text',
     'button', 'cell', 'spacer', 'path', 'image', 'field', 'toggle', 'checkbox',
-    'slider', 'select', 'divider', 'progress', 'progressring', 'ticker', 'grid', 'listitem', 'canvas',
+    'slider', 'select', 'tabs', 'divider', 'progress', 'progressring', 'ticker', 'grid', 'listitem', 'canvas',
     'apptheme', 'hero', 'adaptivecolumns', 'header', 'section', 'sectionheader', 'listgroup', 'banner',
     'emptystate', 'stat', 'metricgroup', 'tilegrid', 'tile',
     'numbertext', 'numberstat', 'numberfield', 'timefield', 'numberlistitem', 'actionbar',
@@ -1281,6 +1286,62 @@ export struct VeraPreview {
     return node.enabled || node.action.length === 0 ? 1 : 0.5
   }
 
+  /** The one-button action bars that follow a list row, each with the row it belongs to (see rowChildren). */
+  private rowBar: Map<LiveNode, LiveNode> = new Map<LiveNode, LiveNode>()
+
+  /**
+   * A list group's children without the action bars that hold one button for the row above them: that button is drawn at the
+   * end of the row (rowButton), so a stop with a Navigate button is one line, not a line and a bar. A bar of two buttons stays below.
+   */
+  private rowChildren(node: LiveNode): LiveNode[] {
+    let out: LiveNode[] = []
+    let i = 0
+    while (i < node.children.length) {
+      let row = node.children[i]
+      out.push(row)
+      let next = i + 1 < node.children.length ? node.children[i + 1] : null
+      if (row.kind === 'listitem' && next !== null && next.kind === 'actionbar' && next.children.length === 1 &&
+          next.children[0].kind === 'button') {
+        this.rowBar.set(row, next.children[0])
+        i += 2
+      } else {
+        this.rowBar.delete(row)
+        i++
+      }
+    }
+    return out
+  }
+
+  private rowButton(row: LiveNode): LiveNode[] {
+    let button = this.rowBar.get(row)
+    return button !== undefined ? [button] : []
+  }
+
+  /** What the person typed into a ui.NumberField, until they are done: node by node. */
+  private numberDraft: Map<LiveNode, string> = new Map<LiveNode, string>()
+
+  /** Takes a typed number: whole, within the field's limits; the field is drawn again either way, so it shows the value the program holds. */
+  private commitNumber(node: LiveNode): void {
+    let typed = this.numberDraft.get(node)
+    if (typed === undefined) { return }
+    this.numberDraft.delete(node)
+    let value = Math.round(parseFloat(typed))
+    if (!isNaN(value) && node.action.length > 0) {
+      value = Math.max(node.minimum, Math.min(node.maximum, value))
+      if (value !== node.numberValue) { this.handleAction(node.action, value) }
+    }
+    this.numberEpoch++
+  }
+
+  /** The pane ui.Tabs shows: its selected child, kept inside the children there are. */
+  private tabSelected(node: LiveNode): number {
+    return Math.max(0, Math.min(Math.floor(node.eventValue), node.children.length - 1))
+  }
+
+  private tabPane(node: LiveNode): LiveNode[] {
+    return node.children.length > 0 ? [node.children[this.tabSelected(node)]] : []
+  }
+
   private sectionPadY(style: string): number {
     return this.sectionFills(style) ? this.t().padCard : 0
   }
@@ -2099,7 +2160,7 @@ export struct VeraPreview {
             .padding({ left: this.t().padListX, right: this.t().padListX,
                        top: this.t().gapBase, bottom: this.t().gapTight })
         }
-        ForEach(node.children, (child: LiveNode, index: number) => {
+        ForEach(this.rowChildren(node), (child: LiveNode, index: number) => {
           // A hairline between rows, never above the first. Drawn by the group
           // rather than by the row so a row does not have to know whether it is
           // last.
@@ -2178,7 +2239,8 @@ export struct VeraPreview {
       // State starts empty, so for most programs this is the first thing anyone
       // sees. It used to be a blank column.
       Column({ space: this.t().gapBase }) {
-        if (node.icon.length > 0) {
+        // A widget in a chat reply has no room for the picture: the words say it.
+        if (node.icon.length > 0 && !this.embedded) {
           this.iconChip(node.icon, this.t().controlHeight + 24,
             this.t().primaryFill, this.t().primaryInk)
         }
@@ -2213,7 +2275,7 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(HorizontalAlign.Center)
       .justifyContent(FlexAlign.Center)
-      .padding(this.t().padLoose)
+      .padding(this.embedded ? this.t().padBase : this.t().padLoose)
     } else if (node.kind === 'stat') {
       // Carries no surface of its own: it is meant to sit inside a MetricGroup,
       // which owns the one surface the group shares.
@@ -2418,13 +2480,26 @@ export struct VeraPreview {
               let next = node.numberValue - 1
               if (next >= node.minimum) { this.handleAction(node.action, next) }
             })
-          Text(this.formatNumber(node))
-            .fontSize(this.renderTextSize('heading'))
-            .fontFamily(this.textFamily('metric'))
-            .fontWeight(this.t().weightHeading)
-            .fontColor(this.t().ink)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
+          // The value is typed as well as stepped: tap it and write 60, rather than tapping + sixty times. It is taken when the
+          // person is done editing and kept inside the field's own limits.
+          ForEach([this.numberEpoch], (_epoch: number) => {
+            TextInput({ text: this.formatNumber(node) })
+              .type(InputType.Number)
+              .fontSize(this.renderTextSize('heading'))
+              .fontFamily(this.textFamily('metric'))
+              .fontWeight(this.t().weightHeading)
+              .fontColor(this.t().ink)
+              .textAlign(TextAlign.Center)
+              .backgroundColor(Color.Transparent)
+              .borderRadius(0)
+              .padding(0)
+              .layoutWeight(1)
+              .height(this.t().controlHeight - 8)
+              .enabled(node.enabled)
+              .onChange((typed: string) => { this.numberDraft.set(node, typed) })
+              .onSubmit(() => { this.commitNumber(node) })
+              .onEditChange((editing: boolean) => { if (!editing) { this.commitNumber(node) } })
+          }, (epoch: number) => epoch.toString())
           Button('+')
             .fontSize(this.t().sizeBody)
             .fontFamily(this.textFamily())
@@ -2839,8 +2914,8 @@ export struct VeraPreview {
       Blank().height(0).width(0)
     } else if (node.kind === 'button') {
       Button(node.text.length === 0 ? ' ' : node.text)
-        .height(this.t().controlHeight)
-        .fontSize(this.t().sizeBody)
+        .height(parentKind === 'rowbar' ? this.t().controlHeight - 12 : this.t().controlHeight)
+        .fontSize(parentKind === 'rowbar' ? this.t().sizeCaption : this.t().sizeBody)
         .fontFamily(this.textFamily())
         .enabled(node.enabled)
         .type(node.style === 'secondary' ? ButtonType.Normal : ButtonType.Capsule)
@@ -3000,6 +3075,44 @@ export struct VeraPreview {
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'tabs') {
+      // One window: a row of tab names, and the selected pane under it. In a chat reply the pane is as tall as it needs, up to a
+      // limit, and scrolls inside the window past it, so the window does not grow with what a pane holds.
+      Column({ space: this.t().gapTight }) {
+        Row({ space: this.t().gapTight }) {
+          ForEach(node.options, (label: string, index: number) => {
+            Text(label)
+              .fontSize(this.t().sizeBody)
+              .fontFamily(this.textFamily())
+              .fontWeight(this.t().weightHeading)
+              .fontColor(index === this.tabSelected(node) ? this.t().onPrimary : this.t().ink)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(TextAlign.Center)
+              .layoutWeight(1)
+              .height(this.t().controlHeight)
+              .borderRadius(this.t().radiusControl)
+              .backgroundColor(index === this.tabSelected(node) ? this.t().primary : this.t().fieldFill)
+              .onClick(() => {
+                if (node.action.length > 0) { this.handleAction(node.action, index) }
+              })
+          }, (label: string, index: number) => index.toString() + ':' + label)
+        }
+        .width('100%')
+        Scroll() {
+          Column() {
+            ForEach(this.tabPane(node), (pane: LiveNode) => {
+              this.renderNode(pane, 'tabs')
+            }, (pane: LiveNode) => this.tabSelected(node).toString())
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .scrollBar(BarState.Off)
+        .constraintSize({ maxHeight: this.embedded ? EMBEDDED_WINDOW : 100000 })
+      }
+      .width('100%')
+      .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'grid') {
       // Equal columns built from a wrapping Flex rather than ArkUI's Grid: Grid
       // wants an explicit height, while a generated tree grows to whatever the
@@ -3040,6 +3153,10 @@ export struct VeraPreview {
         if (node.value.length > 0) {
           Text(node.value).fontSize(this.t().sizeBody - 1).fontFamily(this.textFamily()).fontColor(this.t().inkSoft)
         }
+        // The row's one action sits at its end, not on a line of its own under it.
+        ForEach(this.rowButton(node), (button: LiveNode) => {
+          this.renderNode(button, 'rowbar')
+        }, (button: LiveNode, index: number) => index.toString())
       }
       .width('100%')
       .padding({ left: this.t().padListX, right: this.t().padListX,

@@ -35,3 +35,17 @@ assert.equal(chat.chatAgentRequest(after), null)
 assert.match(chat.chatSystemPrompt(true), /search before you answer: do not say you cannot get it/)
 assert.doesNotMatch(chat.chatSystemPrompt(false), /web_search/)
 console.log('chat-prompt-check: ok')
+
+// A reply that writes out the record line of an earlier widget (the history shows them as "[widget messageId=3, status=ready: ...]")
+// instead of a marker is read as the marker it stands for; half a line is a marker still being written.
+{
+  const line = '[widget messageId=4, status=ready: A daily medication reminder card. Fields: name ["a", "b"].]'
+  let r = chat.parseReply('Here is a daily card.\n\n' + line, true)
+  assert.equal(r.error, ''); assert.equal(r.before, 'Here is a daily card.')
+  assert.equal(r.appDescription, 'A daily medication reminder card. Fields: name ["a", "b"].')
+  r = chat.parseReply('Here is a daily card.\n\n[widget messageId=4, status=ready: A daily medic')
+  assert.equal(r.describing, true); assert.equal(r.before, 'Here is a daily card.'); assert.equal(r.appDescription, '')
+  r = chat.parseReply('Done. <<app: {"request":"tip","description":"a tip calculator","mode":"create"}>>', true)
+  assert.equal(r.appDescription, 'a tip calculator', 'a real marker is as it was')
+}
+console.log('chat-prompt-check: record line read as a marker')

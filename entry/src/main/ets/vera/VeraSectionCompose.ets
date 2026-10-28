@@ -864,6 +864,20 @@ export function composeProgram(chosenKinds: string[], globalValues: Map<string, 
  * by original slot position. Globals: __THEME__, __TITLE__, __EYEBROW__, __SUPPORTING__ (text as it goes between
  * quotes), __HEADER_STYLE__ ('none' for no header), __HEADER_ICON__ ('check' when not given), __BANNER_SECTION__.
  */
+/** The state field that holds which pane of a widget's tabs is open. */
+const TAB_FIELD: string = 'paneTab'
+
+/** The name of a block's tab: the block's own (`tab`), else its kind in words ("record_log" is "Record log"), made different from the tabs before it. */
+function paneLabel(spec: FragmentSpec, taken: string[]): string {
+  let words = spec.tab.length > 0 ? spec.tab : spec.kind.split('_').join(' ')
+  let label = words.substring(0, 1).toUpperCase() + words.substring(1)
+  if (label.length > 14) { label = label.substring(0, 14) }
+  let out = label
+  let n = 2
+  while (taken.indexOf(out) >= 0) { out = label + ' ' + n.toString(); n++ }
+  return out
+}
+
 export function composeFragments(specAt: (FragmentSpec | null)[], globalValues: Map<string, string>,
     instanceValues: Map<string, string>[]): string {
 
@@ -895,6 +909,22 @@ export function composeFragments(specAt: (FragmentSpec | null)[], globalValues: 
     allFieldNames.push(names)
   }
 
+  // A widget in a chat reply is one window: when more than one block has a view, each is a pane of ui.Tabs, and the screen
+  // holds which one is open. Every handler passes that field through like any other.
+  let widget = globalValues.get('__WIDGET__') === 'true'
+  let paneOf: number[] = []
+  if (widget) {
+    for (let i = 0; i < specAt.length; i++) {
+      let spec = specAt[i]
+      if (spec !== null && spec.viewBlock.length > 0) { paneOf.push(i) }
+    }
+  }
+  let tabbed = paneOf.length > 1
+  if (tabbed) {
+    classFieldLines.push('  ' + TAB_FIELD + ': number;')
+    allFieldNames.push([TAB_FIELD])
+  }
+
   let portBindings = bindSpecPorts(specAt)
   let slotValues: Map<string, string>[] = []
   for (let i = 0; i < specAt.length; i++) {
@@ -922,12 +952,25 @@ export function composeFragments(specAt: (FragmentSpec | null)[], globalValues: 
     functionBlocks.push(fillPassthrough(fn, everyField))
   }
 
+  if (tabbed) {
+    functionBlocks.push(fillPassthrough('function setPaneTab(state: AppState, index: number): AppState {\n  return {' + TAB_FIELD +
+      ': index' + PASSTHROUGH + '};\n}', everyField))
+  }
   let viewBlocks: string[] = []
+  let tabNames: string[] = []
+  let tabPanes: string[] = []
   for (let i = 0; i < specAt.length; i++) {
     let spec = specAt[i]
     if (spec === null) { continue }
     let idx = (i + 1).toString()
-    let block = applyPorts(resolveInstanceText(spec.viewBlock, idx, slotValues[i], spec.indexed), portBindings[i])
+    let block = applyPorts(resolveInstanceText(spec.viewBlock, idx, slotValues[i], spec.indexed), portBindings[i]).split('__WIDGET__').join(widget ? 'true' : 'false')
+    let pane = paneOf.indexOf(i)
+    if (tabbed && pane >= 0 && block.length > 0) {
+      let name = 'pane' + pane.toString()
+      block = 'let ' + name + ': ui.View[] = [];\n' + block.split('sections.push(').join(name + '.push(')
+      tabNames.push(paneLabel(spec, tabNames))
+      tabPanes.push('ui.Column("default", ' + name + ')')
+    }
     viewBlocks.push(block)
   }
 
@@ -951,6 +994,7 @@ export function composeFragments(specAt: (FragmentSpec | null)[], globalValues: 
   lines.push('')
   lines.push('function init(): AppState {')
   for (let l of initStatementLines) { lines.push(l) }
+  if (tabbed) { initEntryParts.push(TAB_FIELD + ': 0') }
   lines.push('  return {' + initEntryParts.join(', ') + '};')
   lines.push('}')
   lines.push('')
@@ -967,6 +1011,10 @@ export function composeFragments(specAt: (FragmentSpec | null)[], globalValues: 
     lines.push('  sections.push(ui.Header("' + headerStyle + '", "' + title + '", "' + eyebrow + '", "' + supporting + '", "' + icon + '"));')
   }
   for (let vb of viewBlocks) { if (vb.length > 0) { lines.push('  ' + vb.split('\n').join('\n  ')) } }
+  if (tabbed) {
+    lines.push('  sections.push(ui.Tabs("default", [' + tabNames.map((n: string): string => '"' + n + '"').join(', ') + '], state.' + TAB_FIELD +
+      ', "setPaneTab", [' + tabPanes.join(', ') + ']));')
+  }
   if (bannerShow) { lines.push('  sections.push(' + bannerSectionView() + ');') }
   lines.push('  return ui.AppTheme("' + theme + '", "", sections);')
   lines.push('}')

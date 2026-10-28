@@ -528,6 +528,14 @@ export class UiHostEnvironment extends HostEnvironment {
           ['value', new VeraNumberValue(argNum(args, 3))],
           ['action', new VeraStringValue(argString(args, 4))],
         ])
+      case 'Tabs':
+        return viewNode('tabs', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['options', argArray(args, 1)],
+          ['value', new VeraNumberValue(argNum(args, 2))],
+          ['action', new VeraStringValue(argString(args, 3))],
+          ['children', argArray(args, 4)],
+        ])
       case 'Grid':
         return viewNode('grid', [
           ['style', new VeraStringValue(argString(args, 0))],

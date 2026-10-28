@@ -259,6 +259,7 @@ export function parseSection(reply: string): FragmentSpec | null {
   }
   let spec = new FragmentSpec('custom', '', classes, fields, '', inits.join(', '), functions, '{\n' + view + '\n}', [], [])
   spec.indexed = false
+  spec.tab = 'More'
   return spec
 }
 

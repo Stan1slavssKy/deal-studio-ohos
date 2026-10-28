@@ -90,6 +90,7 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['checkbox', ['default']],
   ['slider', ['default', 'accent', 'success', 'warning', 'danger']],
   ['select', ['default']],
+  ['tabs', ['default']],
   ['divider', ['default']],
   ['progress', ['default', 'accent', 'success', 'warning', 'danger']],
   ['progressring', ['default', 'accent', 'success', 'warning', 'danger']],
@@ -260,6 +261,12 @@ export const CATALOG: ComponentSpec[] = [
     [style('select'), new PropSpec('label', 'string'), new PropSpec('options', 'string[]'),
       new PropSpec('selected', 'number'), new PropSpec('action', 'string')],
     'choose one option; the handler takes (state, index: number)', 'number'),
+  new ComponentSpec('Tabs', 'tabs',
+    [style('tabs'), new PropSpec('labels', 'string[]'), new PropSpec('selected', 'number'), new PropSpec('action', 'string'),
+      new PropSpec('children', 'view[]')],
+    'one window with several panes: a row of tab names, and only the selected pane shown (children[selected]); the handler takes (state, index: number)',
+    'number',
+    'For a small window that holds several things -- a widget in a chat reply -- instead of stacking them. labels has one name per child (one or two words); keep the selected index in state, start it at 0 and have the handler return the state with the index it is given. Each child is one pane: a Column or a Section. A pane may scroll; the tab row does not. Not inside another Tabs.'),
 
   // The compositional layer.
   //
@@ -558,6 +565,7 @@ export const CHILD_RULES: ChildRule[] = [
   // frames, two paddings, and no more meaning than one.
   new ChildRule('Card', [], ['Card']),
   new ChildRule('Motion', [], ['Motion']),
+  new ChildRule('Tabs', [], ['Tabs']),
   new ChildRule('Stage', ['Transform'], ['Stage']),
   new ChildRule('Transform', [], ['Stage']),
   // One look per program.

@@ -11,7 +11,7 @@
 
 import { Sketch, SketchInput, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
   listNeeds, clockOptions, listOptions, choice, askReady, LIST_SECTIONS, PART } from './VeraCompose'
-import { NeedsPlan, Need, NEEDS_PROMPT, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
+import { NeedsPlan, Need, NEEDS_PROMPT, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
   needOf } from './NeedsPlan'
 
 /**
@@ -174,9 +174,9 @@ async function drawOnce(askPlan: SketchAsk, prompt: string, onSketch: (partial: 
 }
 
 /** A plan that can be used, asked for until there is one: the first, then once more with what was wrong with it quoted, then once thinking. */
-async function drawPlan(askPlan: SketchAsk, prompt: string, onSketch: (partial: Sketch) => void): Promise<DrawnPlan> {
+async function drawPlan(askPlan: SketchAsk, prompt: string, onSketch: (partial: Sketch) => void, note: string = ''): Promise<DrawnPlan> {
   let out = new DrawnPlan()
-  let user = prompt
+  let user = prompt + note
   for (let attempt = 0; attempt < 3; attempt++) {
     out.tries = attempt + 1
     let reply = await drawOnce(askPlan, user, onSketch, attempt === 2)
@@ -189,7 +189,7 @@ async function drawPlan(askPlan: SketchAsk, prompt: string, onSketch: (partial: 
       return out
     }
     let wrong = reply === null ? 'there was no answer' : 'it was not one JSON object in the form asked for: ' + reply!.substring(0, 200)
-    user = prompt + '\n\nThe last answer could not be used: ' + wrong + '. Answer with the JSON object only, in the form asked for.'
+    user = prompt + note + '\n\nThe last answer could not be used: ' + wrong + '. Answer with the JSON object only, in the form asked for.'
   }
   return out
 }
@@ -203,7 +203,7 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     review: PlanReview | null = null): Promise<ComposeResult> {
   let result = new ComposeResult()
   let started = Date.now()
-  let drawn = await drawPlan(askPlan, prompt, onSketch)
+  let drawn = await drawPlan(askPlan, prompt, onSketch, widget ? WIDGET_NEEDS_NOTE : '')
   result.sketchMs = Date.now() - started
   result.planTries = drawn.tries
   if (drawn.plan === null) { result.note = 'no usable plan after ' + drawn.tries.toString() + ' tries'; return result }
@@ -214,7 +214,7 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
   if (settled.length > 0) {
     prompt = prompt + '\n\n' + settled
     let again = Date.now()
-    let redrawn = await drawPlan(askPlan, prompt, onSketch)
+    let redrawn = await drawPlan(askPlan, prompt, onSketch, widget ? WIDGET_NEEDS_NOTE : '')
     result.sketchMs += Date.now() - again
     result.replanned = true
     result.planTries += redrawn.tries
@@ -227,7 +227,9 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
   result.sketch = text
   // What the model added that the request does not ask for (a note, a reminder nobody named) is not built.
   let unasked = dropUnasked(plan, prompt)
-  if (unasked.length > 0) {
+  // A widget has room for a few things: the plan was asked to keep to them, and what it did not is cut here.
+  let cut: string[] = widget ? capForWidget(plan, WIDGET_ROOM) : []
+  if (unasked.length > 0 || cut.length > 0) {
     let redone = sketchFrom(plan)
     if (redone !== null) { redone!.questions = sketch.questions; sketch = redone! }
   }
@@ -249,6 +251,10 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
   if (unasked.length > 0) {
     composed.note += '; not in the request, so not built: ' + unasked.join('; ')
     for (let words of unasked) { composed.dropped.push('not in the request: ' + words) }
+  }
+  if (cut.length > 0) {
+    composed.note += '; no room in a widget, so not built: ' + cut.join('; ')
+    for (let words of cut) { composed.dropped.push('no room in a widget: ' + words) }
   }
   return composed
 }

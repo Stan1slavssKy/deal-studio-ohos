@@ -334,3 +334,44 @@ export function dropUnasked(plan: NeedsPlan, request: string): string[] {
   plan.needs = kept
   return dropped
 }
+
+/** How many things a widget in a chat reply has room for: it is about 360 by 420 vp and does not scroll. */
+export const WIDGET_ROOM: number = 5
+
+/** Added to the request the plan is drawn from, for a widget; the cap below holds when the model does not keep to it. */
+export const WIDGET_NEEDS_NOTE: string =
+  '\n\nThis app is a small widget inside a chat reply, about 360 by 420 points with no scrolling: plan only the ' +
+  WIDGET_ROOM.toString() + ' things the request names first or most plainly, and leave the rest out.'
+
+/**
+ * A widget's plan cut to what fits in it: the first `room` needs the person sees, in the plan's order. A figure that only feeds
+ * another (`shown: false`) takes no room. What read a need that was cut goes with it: a figure of the entries or the clock, an
+ * action at the end of the countdown or on an entry. Returns the words of each need cut.
+ */
+export function capForWidget(plan: NeedsPlan, room: number): string[] {
+  let cut: Need[] = []
+  let kept: Need[] = []
+  let seen = 0
+  for (let n of plan.needs) {
+    if (n.type === NEED_FIGURE && n.raw['shown'] === false) { kept.push(n); continue }
+    if (seen < room) { seen++; kept.push(n) } else { cut.push(n) }
+  }
+  let has = (type: string): boolean => kept.some((n: Need): boolean => n.type === type)
+  let supplied = (reads: string): boolean => reads.startsWith('entries.') ? has(NEED_ENTRIES) : has(NEED_COUNTDOWN) || has(NEED_STOPWATCH)
+  let orphan = (n: Need): boolean => {
+    if (n.type === NEED_FIGURE) { return n.reads.some((q: string): boolean => !supplied(q)) }
+    if (n.type === NEED_ACTION) {
+      return (n.on === ON_END && !has(NEED_COUNTDOWN)) || ((n.on === ON_ADDED || n.on === ON_TAP) && !has(NEED_ENTRIES))
+    }
+    return false
+  }
+  // A figure cut may have been what another figure read, so the check runs until nothing more goes.
+  for (let again = true; again;) {
+    again = false
+    let next: Need[] = []
+    for (let n of kept) { if (orphan(n)) { cut.push(n); again = true } else { next.push(n) } }
+    kept = next
+  }
+  plan.needs = kept
+  return cut.map((n: Need): string => n.words.length > 60 ? n.words.substring(0, 60) + '...' : n.words)
+}

@@ -662,3 +662,16 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   assert.deepEqual(c.customInputs(comp), ['"Dice": state.dice'])
 }
 console.log('compose-check: ok')
+
+// What a section already holds is said to Jev where it is asked whether a section covers an input or a figure: from the block's own
+// description (`owns`), so no rule for any one kind of request lives in a prompt.
+{
+  const sketch = c.parseSketch(JSON.stringify({title: 'T', inputs: [{id: 'startTime', label: 'Start time', kind: 'count', min: 0, max: 100, value: 1}],
+    ready: ['a day plan'], values: [], events: [], other: []}))
+  const asked = (sections) => JSON.stringify(JSON.parse(c.buildComposeRequest('a day plan', sketch, false, [], sections)))
+  const withSection = asked(new Map([['ready.0', 'itinerary']]))
+  assert.match(withSection, /the section already has: the start time of the day/)
+  assert.doesNotMatch(asked(new Map()), /the section already has/, 'no section chosen: nothing to say of it')
+  assert.doesNotMatch(asked(new Map([['ready.0', 'checklist']])), /the section already has/, 'a block with no `owns` adds nothing')
+}
+console.log('compose: a chosen section says what it holds')

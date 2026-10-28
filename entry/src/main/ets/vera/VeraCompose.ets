@@ -1488,7 +1488,8 @@ export function askReady(sketch: Sketch, questions: Record<string, Object>): voi
  * `settled` names questions that are not asked because something else answered them already (the needs plan's own choice of a
  * section or a part, NeedsChoose.ets); readComposition reads those answers from the body it is given.
  */
-export function buildComposeRequest(prompt: string, sketch: Sketch, widget: boolean = false, settled: string[] = []): string {
+export function buildComposeRequest(prompt: string, sketch: Sketch, widget: boolean = false, settled: string[] = [],
+    sections: Map<string, string> = new Map<string, string>()): string {
   let questions: Record<string, Object> = {}
 
   let theme: Map<string, string> = new Map<string, string>()
@@ -1629,7 +1630,12 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
     // A plan names a section's own buttons and lists again as events and items of other: what a section does is left
     // to it, by Jev's reading rather than the plan's.
     let needs: Map<string, string> = new Map<string, string>()
-    for (let i = 0; i < sketch.ready.length; i++) { needs.set('ready.' + i.toString(), 'part of the ready-made section for: ' + sketch.ready[i]) }
+    for (let i = 0; i < sketch.ready.length; i++) {
+      // A section already chosen for the need says what it holds, so that what it holds is not asked of the person a second time.
+      let spec = fragments().find((f: FragmentSpec): boolean => f.kind === sections.get('ready.' + i.toString()))
+      needs.set('ready.' + i.toString(), 'part of the ready-made section for: ' + sketch.ready[i] +
+        (spec !== undefined && spec.owns.length > 0 ? ' (the section already has: ' + spec.owns + ')' : ''))
+    }
     needs.set('none', 'no: something of its own, apart from all of these')
     for (let e of sketch.events) {
       questions['within.event.' + e.id] = choice('Is "' + e.when + ': ' + e.what + '" part of one of these?', needs)
@@ -2068,6 +2074,13 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     let binding = new Binding()
     let show = answerOf(answers, 'show.' + v.id, SHOWS, comp.answers)
     binding.show = show.length > 0 ? show : (v.format === 'fraction' ? 'progress' : 'stat')
+    // A figure a chosen section already shows is that section's (what it holds is said to Jev: FragmentSpec.owns): it leaves,
+    // and an input only it read leaves with it, rather than both being put on the screen beside the section.
+    if (comp.blocks.length > 0 && answerOf(answers, 'within.value.' + v.id, served, comp.answers, COVERED_ABOVE).length > 0) {
+      failed.set(v.id, 'a section shows it')
+      comp.bindings.set(v.id, binding)
+      continue
+    }
     if (keys.length === 0 || keys.length >= MAX_CRITERIA) {
       let why = keys.length === 0 ? 'nothing to work it out from' : 'too many ways to work it out'
       let fault = useWritten(comp, answers, i, binding)
@@ -3518,7 +3531,9 @@ export function compositionParts(comp: Composition): FragmentSpec[] {
     p.viewBlock = ''
   }
   view.push('}')
-  parts.push(part('screen', [], [], view))
+  let screen = part('screen', [], [], view)
+  screen.tab = 'Overview'
+  parts.push(screen)
   return parts
 }
 
@@ -3626,6 +3641,7 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
   plan.globals.set('__THEME__', comp.theme)
   // A chat widget has no header: the conversation already says what it is.
   plan.globals.set('__HEADER_STYLE__', comp.widget ? 'none' : 'default')
+  if (comp.widget) { plan.globals.set('__WIDGET__', 'true') }
   plan.globals.set('__TITLE__', inQuotes(sketch.title))
   plan.globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
   plan.globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
@@ -3964,7 +3980,17 @@ export async function composeFromSketch(result: ComposeResult, prompt: string, s
     widget: boolean = false, pre: Record<string, Object> | null = null, settled: string[] = []): Promise<ComposeResult> {
   result.parsed = sketch
   let started = Date.now()
-  let request = buildComposeRequest(prompt, sketch, widget, settled)
+  let chosen: Map<string, string> = new Map<string, string>()
+  if (pre !== null) {
+    for (let i = 0; i < sketch.ready.length; i++) {
+      let answer = pre![('ready.' + i.toString())]
+      if (answer !== undefined && answer !== null && typeof answer === 'object') {
+        let kind = (answer as Record<string, Object>)['choice']
+        if (typeof kind === 'string') { chosen.set('ready.' + i.toString(), kind as string) }
+      }
+    }
+  }
+  let request = buildComposeRequest(prompt, sketch, widget, settled, chosen)
   let body = await askChoices(request)
   // No answer is most often the network: once more before the plan is left to the route's wider holes.
   if (body.length === 0) { body = await askChoices(request) }
