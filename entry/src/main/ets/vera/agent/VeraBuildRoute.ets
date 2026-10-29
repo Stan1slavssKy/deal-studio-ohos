@@ -22,6 +22,7 @@ import { settleProgram } from './AgentRepair'
 import { compositionFromPlan, rebuilds } from '../VeraComposition'
 import { addStage, WHO_MODEL, WHO_PHONE } from '../RunStages'
 import { toolCount, toolSpanSince } from '../ToolLog'
+import { briefSurface, writeSurfaceApp } from './AgentSurface'
 
 /** The agent's program is the result. */
 export const OUTCOME_AGENT: string = 'agent'
@@ -110,8 +111,49 @@ async function writeWholeScreen(request: RouteRequest, host: AgentHost, outcome:
   return true
 }
 
+/**
+ * A game, a toy, a simulation or a drawing (AgentSurface.ets): written whole on a ui.Surface, from a design the plan model
+ * writes. Null when the request is not one, so the agent builds it; an outcome when it is, served or not -- a game the
+ * agent's parts would build is a screen of buttons pretending to be one, so a game that could not be written is not built.
+ */
+async function buildSurface(request: RouteRequest, host: AgentHost): Promise<RouteOutcome | null> {
+  if (request.agent === null || request.agent!.widget || request.mode !== 'deepseek') { return null }
+  let prompt = request.agent!.prompt
+  let started = Date.now()
+  let brief = await briefSurface(prompt, host)
+  let briefMs = Date.now() - started
+  if (brief === null) {
+    // The question was asked and answered no (or not at all): its time is the agent's first stage.
+    return null
+  }
+  let outcome = new RouteOutcome()
+  let result = new AgentResult()
+  outcome.agent = result
+  addStage(result.stages, 'Model designs the game', WHO_MODEL, briefMs, brief.title)
+  let written = await writeSurfaceApp(prompt, brief, host)
+  addStage(result.stages, 'Model writes the game', WHO_MODEL, written.writeMs, written.attempts.toString() + ' attempt(s)')
+  addStage(result.stages, 'Compile and play it', WHO_PHONE, written.checkMs)
+  result.note = written.note
+  result.ms = Date.now() - started
+  if (host.cancelled()) { outcome.kind = OUTCOME_CANCELLED; return outcome }
+  if (written.source.length === 0) {
+    outcome.kind = OUTCOME_NOT_BUILT
+    outcome.reason = written.note
+    return outcome
+  }
+  result.source = written.source
+  result.vbc2 = written.vbc2
+  result.composed.source = written.source
+  result.composed.sketch = JSON.stringify(brief)
+  outcome.kind = OUTCOME_AGENT
+  return outcome
+}
+
 export async function buildScreen(request: RouteRequest, host: AgentHost): Promise<RouteOutcome> {
   let outcome = new RouteOutcome()
+  if (host.cancelled()) { outcome.kind = OUTCOME_CANCELLED; return outcome }
+  let surface = await buildSurface(request, host)
+  if (surface !== null) { return surface }
   if (host.cancelled()) { outcome.kind = OUTCOME_CANCELLED; return outcome }
   if (request.agent !== null) {
     let result = await runAgent(request.agent!, host)

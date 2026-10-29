@@ -316,6 +316,8 @@ struct GeneratePage {
   private promptTemplate: string = ''
   /** The skill before {{UI_CATALOG}} is filled in, so each request can choose what to describe. */
   private skillText: string = ''
+  /** How a game is written on a ui.Surface (rawfile vera-surface-skill.txt), for the route; '' when it did not load. */
+  private surfaceGuide: string = ''
   /** Components the current system prompt describes; empty means all of them. */
   private uiSelected: string[] = []
   private grammar: string = ''
@@ -601,6 +603,11 @@ struct GeneratePage {
       // VeraIntentIndex.ets) looks it up, along with the raw device
       // registry, when the model decides it needs one.
       this.skillText = skill
+      try {
+        this.surfaceGuide = await loadRawfileText(mgr, 'vera-surface-skill.txt')
+      } catch (e) {
+        console.warn('VERA-SURFACE no guide, games go to the agent: ' + (e as Error).message)
+      }
       this.promptTemplate = skill
         .replace('{{UI_CATALOG}}', describeCatalogForPrompt())
         .replace('{{UI_TOOL_NOTE}}\n', '')
@@ -901,7 +908,7 @@ struct GeneratePage {
       if (run !== this.runId || this.cancelRequested) { return }
       this.previewVbc2 = vbc2
       this.previewNote = 'Sketching the screen...'
-    }, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate)
+    }, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate, this.surfaceGuide)
     host.ask = (question: AgentQuestion): Promise<PersonAnswer> => this.askPerson(question)
     let outcome: RouteOutcome = await this.metricWork(run, (): Promise<RouteOutcome> => buildScreen(route, host))
     if (run !== this.runId) { return }

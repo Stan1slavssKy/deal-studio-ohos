@@ -20,6 +20,8 @@ const {describeCatalogForPrompt} = loadVera('VeraUiCatalog')
 // The language as the Generate screen shows it to the model, for a custom section.
 const language = fs.readFileSync(path.join(__dirname, '../../entry/src/main/resources/rawfile/vera-skill.txt'), 'utf8')
   .replace('{{UI_CATALOG}}', describeCatalogForPrompt()).replace('{{UI_TOOL_NOTE}}\n', '')
+// How a game is written on a ui.Surface (agent/AgentSurface.ets): with -r, a game is written whole from it.
+const surfaceGuide = fs.readFileSync(path.join(__dirname, '../../entry/src/main/resources/rawfile/vera-surface-skill.txt'), 'utf8')
 
 const args = process.argv.slice(2)
 const option = (flag, fallback) => { const i = args.indexOf(flag); if (i < 0) return fallback; const v = args[i + 1]; args.splice(i, 2); return v }
@@ -88,6 +90,7 @@ function host(log) {
   calls.hole = (system, user) => deepseek(system, user, 500, false)
   h.fillBlocks = request => fillSections(request, calls)
   h.language = language
+  h.surfaceGuide = surfaceGuide
   // Every written hole and how it ended (agent/AgentHole.ets), for tools/vera-harness/hole-report.py.
   h.onHole = r => (log.holes = log.holes || []).push(Object.assign({}, r))
   // AGENT_ANSWER=other picks an answer other than the suggested one, to exercise drawing the plan again; else the default.
