@@ -17,6 +17,7 @@
 #include <vector>
 #include <cmath>
 #include <atomic>
+#include <mutex>
 #include <napi/native_api.h>
 
 #ifndef LLAMA_STUB
@@ -258,14 +259,94 @@ static napi_value LlamaGenerate(napi_env env, napi_callback_info info) {
 #endif
 }
 
-// llamaEmbedInit(configJson: string): boolean
+// The embedding model runs on a worker thread (napi_async_work): a single long text took over 6 s on the
+// phone's CPU, and on the UI thread that is a THREAD_BLOCK_6S kill (appfreeze-...-20261028185007). The
+// model and its context are touched only under g_embed_mutex: a load, a batch and a free never overlap.
+#ifndef LLAMA_STUB
+static std::mutex g_embed_mutex;
+
+// Loads the model and context; false leaves both null. Caller holds g_embed_mutex.
+static bool embed_load(const std::string& model_path, int n_ctx, int n_threads) {
+    if (g_embed_ctx) { llama_free(g_embed_ctx); g_embed_ctx = nullptr; }
+    if (g_embed_model) { llama_model_free(g_embed_model); g_embed_model = nullptr; }
+
+    auto mparams = llama_model_default_params();
+    g_embed_model = llama_model_load_from_file(model_path.c_str(), mparams);
+    if (!g_embed_model) { return false; }
+
+    auto cparams = llama_context_default_params();
+    cparams.n_ctx = n_ctx;
+    // EmbeddingGemma is a non-causal (bidirectional) model -- llama.cpp's own
+    // embedding example sets n_ubatch == n_batch for exactly this case
+    // (examples/embedding/embedding.cpp), so both are pinned to n_ctx here
+    // rather than left at the (causal-generation-sized) defaults.
+    cparams.n_batch = n_ctx;
+    cparams.n_ubatch = n_ctx;
+    cparams.n_threads = n_threads;
+    cparams.n_threads_batch = n_threads;
+    cparams.embeddings = true;
+    cparams.pooling_type = LLAMA_POOLING_TYPE_MEAN;
+    g_embed_ctx = llama_init_from_model(g_embed_model, cparams);
+    if (!g_embed_ctx) {
+        llama_model_free(g_embed_model); g_embed_model = nullptr;
+        return false;
+    }
+    return true;
+}
+
+// One L2-normalized vector per text, in order; a text that fails to embed (too long for n_ctx,
+// decode error) is an empty vector. Caller holds g_embed_mutex.
+static std::vector<std::vector<float>> embed_texts(const std::vector<std::string>& texts) {
+    std::vector<std::vector<float>> out(texts.size());
+    if (!g_embed_model || !g_embed_ctx) { return out; }
+    auto vocab = llama_model_get_vocab(g_embed_model);
+    int n_embd = llama_model_n_embd_out(g_embed_model);
+    int n_ctx = llama_n_ctx(g_embed_ctx);
+    for (size_t i = 0; i < texts.size(); i++) {
+        const std::string& text = texts[i];
+        int n_tok = llama_tokenize(vocab, text.c_str(), text.size(), nullptr, 0, true, true);
+        int n_tok_abs = n_tok < 0 ? -n_tok : n_tok;
+        if (n_tok_abs == 0 || n_tok_abs > n_ctx) { continue; }
+        std::vector<llama_token> tokens(n_tok_abs);
+        llama_tokenize(vocab, text.c_str(), text.size(), tokens.data(), tokens.size(), true, true);
+
+        llama_memory_clear(llama_get_memory(g_embed_ctx), true);
+        llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
+        // llama.cpp's own batch validation marks every token as needing
+        // output when embeddings are requested but none were explicitly
+        // flagged (src/llama-batch.cpp), which is exactly the case here --
+        // llama_batch_get_one leaves `logits` null, same shape LlamaGenerate
+        // already relies on for the single-sequence case.
+        if (llama_decode(g_embed_ctx, batch) != 0) { continue; }
+        const float* embd = llama_get_embeddings_seq(g_embed_ctx, 0);
+        if (!embd) { continue; }
+
+        double sum_sq = 0;
+        for (int d = 0; d < n_embd; d++) { sum_sq += static_cast<double>(embd[d]) * embd[d]; }
+        double norm = std::sqrt(sum_sq);
+        out[i].resize(n_embd);
+        for (int d = 0; d < n_embd; d++) { out[i][d] = norm > 0 ? static_cast<float>(embd[d] / norm) : 0.0f; }
+    }
+    return out;
+}
+#endif
+
+struct EmbedInitWork {
+    napi_async_work work = nullptr;
+    napi_deferred deferred = nullptr;
+    std::string model_path;
+    int n_ctx = 512;
+    int n_threads = 4;
+    bool ok = false;
+};
+
+// llamaEmbedInit(configJson: string): Promise<boolean>
 // config: { model_path, n_ctx, n_threads }
 static napi_value LlamaEmbedInit(napi_env env, napi_callback_info info) {
-    napi_value result;
-#ifdef LLAMA_STUB
-    napi_get_boolean(env, false, &result);
-    return result;
-#else
+    napi_value promise;
+    auto* job = new EmbedInitWork();
+    napi_create_promise(env, &job->deferred, &promise);
+#ifndef LLAMA_STUB
     size_t argc = 1;
     napi_value args[1];
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
@@ -283,73 +364,55 @@ static napi_value LlamaEmbedInit(napi_env env, napi_callback_info info) {
     napi_create_string_utf8(env, config_json.c_str(), config_json.size(), &json_str);
     napi_call_function(env, json_obj, parse_fn, 1, &json_str, &config_val);
 
-    std::string model_path = json_string(env, config_val, "model_path");
-    int n_ctx = json_int(env, config_val, "n_ctx", 512);
-    int n_threads = json_int(env, config_val, "n_threads", 4);
-
-    if (g_embed_model) { llama_model_free(g_embed_model); g_embed_model = nullptr; }
-    if (g_embed_ctx) { llama_free(g_embed_ctx); g_embed_ctx = nullptr; }
-
-    auto mparams = llama_model_default_params();
-    g_embed_model = llama_model_load_from_file(model_path.c_str(), mparams);
-    if (!g_embed_model) {
-        napi_get_boolean(env, false, &result);
-        return result;
-    }
-
-    auto cparams = llama_context_default_params();
-    cparams.n_ctx = n_ctx;
-    // EmbeddingGemma is a non-causal (bidirectional) model -- llama.cpp's own
-    // embedding example sets n_ubatch == n_batch for exactly this case
-    // (examples/embedding/embedding.cpp), so both are pinned to n_ctx here
-    // rather than left at the (causal-generation-sized) defaults.
-    cparams.n_batch = n_ctx;
-    cparams.n_ubatch = n_ctx;
-    cparams.n_threads = n_threads;
-    cparams.n_threads_batch = n_threads;
-    cparams.embeddings = true;
-    cparams.pooling_type = LLAMA_POOLING_TYPE_MEAN;
-    g_embed_ctx = llama_init_from_model(g_embed_model, cparams);
-    if (!g_embed_ctx) {
-        llama_model_free(g_embed_model); g_embed_model = nullptr;
-        napi_get_boolean(env, false, &result);
-        return result;
-    }
-
-    napi_get_boolean(env, true, &result);
-    return result;
+    job->model_path = json_string(env, config_val, "model_path");
+    job->n_ctx = json_int(env, config_val, "n_ctx", 512);
+    job->n_threads = json_int(env, config_val, "n_threads", 4);
 #endif
+    napi_value name;
+    napi_create_string_utf8(env, "llamaEmbedInit", NAPI_AUTO_LENGTH, &name);
+    napi_create_async_work(env, nullptr, name,
+        [](napi_env, void* data) {
+#ifndef LLAMA_STUB
+            auto* j = static_cast<EmbedInitWork*>(data);
+            std::lock_guard<std::mutex> lock(g_embed_mutex);
+            j->ok = embed_load(j->model_path, j->n_ctx, j->n_threads);
+#endif
+        },
+        [](napi_env env, napi_status, void* data) {
+            auto* j = static_cast<EmbedInitWork*>(data);
+            napi_value ok;
+            napi_get_boolean(env, j->ok, &ok);
+            napi_resolve_deferred(env, j->deferred, ok);
+            napi_delete_async_work(env, j->work);
+            delete j;
+        },
+        job, &job->work);
+    napi_queue_async_work(env, job->work);
+    return promise;
 }
 
-// llamaEmbedBatch(texts: string[]): number[][]
+struct EmbedBatchWork {
+    napi_async_work work = nullptr;
+    napi_deferred deferred = nullptr;
+    std::vector<std::string> texts;
+    std::vector<std::vector<float>> vecs;
+};
+
+// llamaEmbedBatch(texts: string[]): Promise<number[][]>
 // One L2-normalized vector per input text, in order; a text that fails to
 // embed (too long for n_ctx, decode error) comes back as an empty array --
 // VeraEmbeddings.ets treats that element as "skip", never as a reason to
-// fail the whole batch.
+// fail the whole batch. The texts are copied on the UI thread, embedded on a
+// worker, and turned back into arrays on the UI thread.
 static napi_value LlamaEmbedBatch(napi_env env, napi_callback_info info) {
-#ifdef LLAMA_STUB
-    napi_value result;
-    napi_create_array(env, &result);
-    return result;
-#else
+    napi_value promise;
+    auto* job = new EmbedBatchWork();
+    napi_create_promise(env, &job->deferred, &promise);
     size_t argc = 1;
     napi_value args[1];
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-
     uint32_t n_texts = 0;
     napi_get_array_length(env, args[0], &n_texts);
-
-    napi_value out_array;
-    napi_create_array_with_length(env, n_texts, &out_array);
-
-    if (!g_embed_model || !g_embed_ctx) {
-        return out_array;
-    }
-
-    auto vocab = llama_model_get_vocab(g_embed_model);
-    int n_embd = llama_model_n_embd_out(g_embed_model);
-    int n_ctx = llama_n_ctx(g_embed_ctx);
-
     for (uint32_t i = 0; i < n_texts; i++) {
         napi_value item_val;
         napi_get_element(env, args[0], i, &item_val);
@@ -357,59 +420,47 @@ static napi_value LlamaEmbedBatch(napi_env env, napi_callback_info info) {
         napi_get_value_string_utf8(env, item_val, nullptr, 0, &len);
         std::string text(len, '\0');
         napi_get_value_string_utf8(env, item_val, text.data(), len + 1, &len);
-
-        napi_value vec_val;
-        int n_tok = llama_tokenize(vocab, text.c_str(), text.size(), nullptr, 0, true, true);
-        int n_tok_abs = n_tok < 0 ? -n_tok : n_tok;
-        if (n_tok_abs == 0 || n_tok_abs > n_ctx) {
-            napi_create_array_with_length(env, 0, &vec_val);
-            napi_set_element(env, out_array, i, vec_val);
-            continue;
-        }
-        std::vector<llama_token> tokens(n_tok_abs);
-        llama_tokenize(vocab, text.c_str(), text.size(), tokens.data(), tokens.size(), true, true);
-
-        llama_memory_clear(llama_get_memory(g_embed_ctx), true);
-        llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
-        // llama.cpp's own batch validation marks every token as needing
-        // output when embeddings are requested but none were explicitly
-        // flagged (src/llama-batch.cpp), which is exactly the case here --
-        // llama_batch_get_one leaves `logits` null, same shape LlamaGenerate
-        // already relies on for the single-sequence case.
-        if (llama_decode(g_embed_ctx, batch) != 0) {
-            napi_create_array_with_length(env, 0, &vec_val);
-            napi_set_element(env, out_array, i, vec_val);
-            continue;
-        }
-
-        const float* embd = llama_get_embeddings_seq(g_embed_ctx, 0);
-        if (!embd) {
-            napi_create_array_with_length(env, 0, &vec_val);
-            napi_set_element(env, out_array, i, vec_val);
-            continue;
-        }
-
-        double sum_sq = 0;
-        for (int d = 0; d < n_embd; d++) { sum_sq += static_cast<double>(embd[d]) * embd[d]; }
-        double norm = std::sqrt(sum_sq);
-
-        napi_create_array_with_length(env, n_embd, &vec_val);
-        for (int d = 0; d < n_embd; d++) {
-            napi_value num_val;
-            double v = norm > 0 ? static_cast<double>(embd[d]) / norm : 0;
-            napi_create_double(env, v, &num_val);
-            napi_set_element(env, vec_val, d, num_val);
-        }
-        napi_set_element(env, out_array, i, vec_val);
+        job->texts.push_back(text);
     }
+    job->vecs.resize(job->texts.size());
 
-    return out_array;
+    napi_value name;
+    napi_create_string_utf8(env, "llamaEmbedBatch", NAPI_AUTO_LENGTH, &name);
+    napi_create_async_work(env, nullptr, name,
+        [](napi_env, void* data) {
+#ifndef LLAMA_STUB
+            auto* j = static_cast<EmbedBatchWork*>(data);
+            std::lock_guard<std::mutex> lock(g_embed_mutex);
+            j->vecs = embed_texts(j->texts);
 #endif
+        },
+        [](napi_env env, napi_status, void* data) {
+            auto* j = static_cast<EmbedBatchWork*>(data);
+            napi_value out_array;
+            napi_create_array_with_length(env, j->vecs.size(), &out_array);
+            for (size_t i = 0; i < j->vecs.size(); i++) {
+                napi_value vec_val;
+                napi_create_array_with_length(env, j->vecs[i].size(), &vec_val);
+                for (size_t d = 0; d < j->vecs[i].size(); d++) {
+                    napi_value num_val;
+                    napi_create_double(env, j->vecs[i][d], &num_val);
+                    napi_set_element(env, vec_val, d, num_val);
+                }
+                napi_set_element(env, out_array, i, vec_val);
+            }
+            napi_resolve_deferred(env, j->deferred, out_array);
+            napi_delete_async_work(env, j->work);
+            delete j;
+        },
+        job, &job->work);
+    napi_queue_async_work(env, job->work);
+    return promise;
 }
 
-// llamaEmbedFree(): void
+// llamaEmbedFree(): void -- waits for a load or batch in progress.
 static napi_value LlamaEmbedFree(napi_env env, napi_callback_info info) {
 #ifndef LLAMA_STUB
+    std::lock_guard<std::mutex> lock(g_embed_mutex);
     if (g_embed_ctx) { llama_free(g_embed_ctx); g_embed_ctx = nullptr; }
     if (g_embed_model) { llama_model_free(g_embed_model); g_embed_model = nullptr; }
 #endif
