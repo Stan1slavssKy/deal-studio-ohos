@@ -89,19 +89,24 @@ async function test(name,fn){try{const observed=await fn();checks.push({name,sta
      while(scan.scan()!==ts.SyntaxKind.EndOfFileToken){if(scan.getToken()===ts.SyntaxKind.OpenBraceToken){depth++;opened=true}if(scan.getToken()===ts.SyntaxKind.CloseBraceToken && --depth===0 && opened)return preview.slice(start,start+scan.getTextPos())}
      throw Error('Unclosed renderer method '+name)
    }
-   const methods=['load','dispatch','stateKeys','stamp','restoreState','persistState','notifyStateSnapshot'].map(method).join('\n')
+   const methods=['load','dispatch','stateKeys','stamp','seeded','restoreState','persistState','notifyStateSnapshot'].map(method).join('\n')
    const code=ts.transpileModule('class Controller { '+methods+' } module.exports=Controller;', {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText
    const values=new Map(), store={saveState(p,v,stamp,encoded){values.set(p+'/'+v,{stamp,encoded})},loadState(p,v,stamp){const value=values.get(p+'/'+v);return value&&value.stamp===stamp?value.encoded:''}}
-   const globals={store,UiHostEnvironment:U.UiHostEnvironment,deserializeVbc2:V.deserializeVbc2,VirtualMachine:V.VirtualMachine,encodeRuntimeValue:V.encodeRuntimeValue,decodeRuntimeValue:V.decodeRuntimeValue}
+   const globals={store,armReveal:()=>{},carryState:loadVera('VeraStateCarry').carryState,UiHostEnvironment:U.UiHostEnvironment,deserializeVbc2:V.deserializeVbc2,VirtualMachine:V.VirtualMachine,encodeRuntimeValue:V.encodeRuntimeValue,decodeRuntimeValue:V.decodeRuntimeValue}
    const mod={exports:{}};new Function('module',...Object.keys(globals),code)(mod,...Object.values(globals))
    const controller=new mod.exports(), snapshots=[], trees=[]
    controller.vbc2=C.compileVeraSource(fs.readFileSync(path.join(__dirname,'examples/visual-counter.vera'),'utf8')).vbc2
-   controller.persistKey='chat-fixture/1';controller.revision=0;controller.stopAllTimers=()=>{};controller.drainEffects=()=>{}
+   controller.persistKey='chat-fixture/1';controller.seedState='';controller.revision=0;controller.stopAllTimers=()=>{};controller.drainEffects=()=>{}
    controller.onStateSnapshot=encoded=>snapshots.push(JSON.parse(encoded))
    controller.renderView=()=>{controller.host.effectsAllowed=false;trees.push(U.decodeVeraUi(controller.vm.execute('view',[controller.currentState])))}
    controller.load();assert.equal(controller.error,'');assert.equal(V.decodeRuntimeValue(snapshots.at(-1)).fields.get('count').value,7)
    controller.dispatch('change',new V.VeraNumberValue(1));assert.equal(V.decodeRuntimeValue(snapshots.at(-1)).fields.get('count').value,8)
    controller.load();assert.equal(V.decodeRuntimeValue(snapshots.at(-1)).fields.get('count').value,8)
+   // A refined program (no saved state of its own) starts from the state it replaces.
+   const seed=JSON.stringify(snapshots.at(-1));controller.persistKey='';controller.seedState=seed;controller.load()
+   assert.equal(controller.error,'');assert.equal(V.decodeRuntimeValue(snapshots.at(-1)).fields.get('count').value,8)
+   controller.seedState='';controller.persistKey='chat-fixture/1'
+   trees.pop()
    assert(trees.every(tree=>tree[0].kind==='apptheme'));assert.equal(values.size,1)
    function walk(nodes){return nodes.flatMap(n=>[n,...walk(n.children||[])])}
    assert.deepEqual(trees.map(tree=>walk(tree).find(n=>n.kind==='numbertext').numberValue),[7,8,8])

@@ -21,6 +21,8 @@ import { setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
 import { setAlignEnabled, setAlignWide } from '../vera/agent/AgentAlign'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
+import { compileVeraSource } from '../vera/VeraCompiler'
+import util from '@ohos.util'
 import { enableTemplateSelect, disableTemplateSelect } from '../vera/VeraTemplateSelectFlag'
 
 const DOMAIN = 0x0000
@@ -41,6 +43,8 @@ class LaunchRoute {
   kind: string = 'home'
   projectId: string = ''
   revision: number = 0
+  /** kind 'proof': the compiled program to show. */
+  vbc2: string = ''
 }
 
 export default class EntryAbility extends UIAbility {
@@ -93,6 +97,7 @@ export default class EntryAbility extends UIAbility {
     this.extractUiAb(want)
     this.extractCompose(want)
     this.extractTemplateSelect(want)
+    this.extractProof(want)
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -115,7 +120,33 @@ export default class EntryAbility extends UIAbility {
     this.extractUiAb(want)
     this.extractCompose(want)
     this.extractTemplateSelect(want)
+    this.extractProof(want)
     this.navigateToProject()
+  }
+
+  /**
+   * Development only: runs a hand-written program, so a change to the renderer can be looked at on the phone
+   * without waiting for a generation to happen to contain it:
+   *
+   *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps proofSource $(base64 -w0 proof.vera)
+   *
+   * The source is compiled here and opened in the runner on top of whatever is on screen, with no saved state.
+   * A source that does not compile is logged (VERA-PROOF) and nothing opens.
+   */
+  private extractProof(want: Want): void {
+    if (want.parameters === null || want.parameters === undefined) { return }
+    let encoded = (want.parameters as Record<string, Object>)['proofSource']
+    if (typeof encoded !== 'string' || encoded.trim().length === 0) { return }
+    try {
+      let bytes = new util.Base64Helper().decodeSync(encoded.trim())
+      let source = util.TextDecoder.create('utf-8').decodeToString(bytes)
+      let vbc2 = compileVeraSource(source, 'proof').vbc2
+      this.queueRoute('proof', '')
+      this.pendingRoute!.vbc2 = vbc2
+      hilog.info(DOMAIN, 'VERA', 'VERA-PROOF compiled ' + source.length.toString() + ' chars')
+    } catch (e) {
+      hilog.error(DOMAIN, 'VERA', 'VERA-PROOF failed: ' + (e as Error).message)
+    }
   }
 
   /**
@@ -590,9 +621,14 @@ export default class EntryAbility extends UIAbility {
         let router = ui.getRouter()
         let options: routerApi.RouterOptions = { url: 'pages/Index' }
         let isolated = request.kind === 'shortcut'
-        let replaceRoot = (request.kind !== 'project' && request.kind !== 'run') || this.isolatedRoot || this.rootNeedsReset
+        let replaceRoot = (request.kind !== 'project' && request.kind !== 'run' && request.kind !== 'proof') ||
+          this.isolatedRoot || this.rootNeedsReset
         let missingProject = false
-        if (request.kind !== 'home') {
+        if (request.kind === 'proof') {
+          let p = new RunProjectNavParams()
+          p.vbc2 = request.vbc2
+          options = { url: 'pages/RunnerPage', params: p }
+        } else if (request.kind !== 'home') {
           store.init(this.context.filesDir)
           let project = store.getProject(request.projectId)
           missingProject = project === null

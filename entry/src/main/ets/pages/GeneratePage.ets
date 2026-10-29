@@ -265,6 +265,10 @@ struct GeneratePage {
   /** The Metrics pane's real width, measured: a percentage inside the Scroll resolves against a wider box than the one drawn. */
   @State metricsWidth: number = 0
   @State compiledVbc2: string = ''
+  /** The running preview's state as it last changed; not @State, as writing it must not redraw the page. */
+  private liveState: string = ''
+  /** What the next compiled program starts from (VeraPreview.seedState): the state at the moment a refine was asked for. */
+  @State carriedState: string = ''
   /**
    * A picture of the screen drawn from the composer's sketch while the real program is still on its way:
    * it builds up as the sketch streams in, and stays up through a fallback generation. Taps are off;
@@ -456,6 +460,8 @@ struct GeneratePage {
   }
 
   private startNew(): void {
+    this.liveState = ''
+    this.carriedState = ''
     this.baseVersionId = ''
     this.baseVersionNumber = 0
     this.baseError = ''
@@ -1576,6 +1582,8 @@ struct GeneratePage {
   private doRefine(): void {
     let ask = this.refinePrompt.trim()
     if (ask.length === 0 || this.compiledSource.length === 0 || this.generating || this.baseError.length > 0) { return }
+    // What the person typed into the preview is kept through the refine.
+    this.carriedState = this.liveState
     // A change that only adds, removes, replaces or moves a block of a composed screen is made on its
     // record, with no model rewrite; anything else, and any step that does not hold, refines as before.
     if (this.compositionJson.length > 0 && this.mode === MODE_DEEPSEEK && templateSelectEnabled() && settings.hasSelector()) {
@@ -2373,7 +2381,8 @@ struct GeneratePage {
                 .margin({ bottom: 8 })
             }
             if (this.hasResult()) {
-              VeraPreview({ vbc2: this.compiledVbc2 })
+              VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState,
+                onStateSnapshot: (encoded: string): void => { this.liveState = encoded } })
             } else if (this.generating && this.previewVbc2.length > 0) {
               Text(this.previewNote)
                 .fontSize(12)
