@@ -1,4 +1,5 @@
 import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
+import { SymbolGlyphModifier } from '@kit.ArkUI'
 import common from '@ohos.app.ability.common'
 import { VeraPreview } from '../components/VeraPreview'
 import { loadRawfileText } from '../vera/LlamaEngine'
@@ -20,6 +21,7 @@ import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_NOT_BUILT } from '../vera/agent/VeraBuildRoute'
 import { app, PrimaryButton } from '../components/AppStyle'
+import { ChatStarters } from '../components/ChatStarters'
 
 const APP_NONE: string = 'none'
 const APP_DESCRIBING: string = 'describing'
@@ -676,6 +678,16 @@ struct ChatPage {
     this.scrollDown()
   }
 
+  /**
+   * The saved chats. This page is replaced by the list rather than covered by
+   * it, so Back from a chat opened there returns to the list, and from the
+   * list to the projects. The chat is saved on the way out, as on Back.
+   */
+  private openHistory(): void {
+    this.getUIContext().getRouter().replaceUrl({ url: 'pages/ChatListPage' })
+      .catch((e: Error): void => { console.error('Navigate to chat list failed: ' + e.message) })
+  }
+
   private async send(): Promise<void> {
     let text = this.draft.trim()
     if (text.length === 0 || this.busy) { return }
@@ -925,6 +937,16 @@ struct ChatPage {
               StatsPanel({ tally: tallyOf(this.messages), attempts: [], heading: 'Whole chat' })
             }
           }
+          // An empty chat offers ready-made first messages; a tap sends one, as if typed.
+          if (this.messages.length === 0) {
+            ListItem() {
+              ChatStarters({ onPick: (prompt: string): void => {
+                if (this.busy) { return }
+                this.draft = prompt
+                this.send()
+              } })
+            }
+          }
           ForEach(this.messages, (m: ChatMessage) => {
             ListItem() {
               MessageBubble({ msg: m, showStats: this.showStats, chatId: this.chatId })
@@ -970,5 +992,10 @@ struct ChatPage {
     }
     .title('Chat')
     .titleMode(NavigationTitleMode.Mini)
+    .menus([{
+      value: 'History',
+      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.clock')),
+      action: () => { this.openHistory() }
+    }])
   }
 }

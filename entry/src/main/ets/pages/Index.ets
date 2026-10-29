@@ -54,8 +54,8 @@ struct Index {
     this.projects = rows
   }
 
-  private openChats(): void {
-    this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatListPage' })
+  private openChat(): void {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatPage' })
       .catch((e: Error): void => { console.error('Navigate to chats failed: ' + e.message) })
   }
 
@@ -98,7 +98,7 @@ struct Index {
         value: 'Chat',
         symbolIcon: new SymbolGlyphModifier($r('sys.symbol.ellipsis_message')),
         status: ToolbarItemStatus.NORMAL,
-        action: () => { this.openChats() }
+        action: () => { this.openChat() }
       }, {
         value: 'New Project',
         symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),

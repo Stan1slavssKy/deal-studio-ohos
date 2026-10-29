@@ -222,9 +222,9 @@ fixed-height (420 vp) card under the message. Widget builds are queued, one at a
   the address, hours and a Directions button. The image address must be one the
   search returned; the one in the run above was checked against Exa's own
   results. Without the key there is no search and no photo.
-- **Saved chats and stats.** The Chat button opens the list of saved chats (newest
-  first, with message count, widgets and estimated cost; swipe a row to delete
-  it) and a New chat button. A chat is saved as it goes, including each widget's
+- **Saved chats and stats.** The Chat button opens a new chat; the clock icon in
+  its header opens the list of saved chats (newest first, with message count,
+  widgets and estimated cost; swipe a row to delete it) and a New chat button. A chat is saved as it goes, including each widget's
   program and its own state (`{filesDir}/vera/chats`, and `chat-<id>/` for widget
   state), so reopening it, even after the app was stopped, shows the same
   conversation and the same widgets. A widget that was still being built when
@@ -246,6 +246,26 @@ fixed-height (420 vp) card under the message. Widget builds are queued, one at a
 
 Run on a phone (debug-signed as a system app, DeepSeek key stored): the Chat
 button on the project list opens the screen.
+
+## 6. Chat starters
+
+The Chat button on the home screen opens a new chat, and a new, empty chat
+shows a list of ready-made first messages ("prompt
+starters"). A tap sends one as if it had been typed; the list goes away once
+the chat has a message, and the chat is saved like any other. An EN / 中文
+switch above the list picks the language; it is kept while the app runs. The
+prompts live in `STARTERS_ZH` and `STARTERS_EN` in
+`entry/src/main/ets/components/ChatStarters.ets`.
+
+| starter | 中文 | EN |
+|---|---|---|
+| 旅行计划 / Trip plan | 我们一家三口要去西湖玩一天，帮忙计划行程。 | We are a family of three going to West Lake for a day. Help us plan the itinerary. |
+| 宝宝护理 / Baby fever | 我宝宝发烧了，37.5度。帮我创建宝宝发热护理卡片与服务。 | My baby has a fever of 37.5°C. Create a baby fever care card and services for me. |
+| 吃药提醒 / Pills | 帮我创建一张吃药卡，提醒我每天吃药。 | Create a medicine card that reminds me to take my pills every day. |
+
+For 旅行计划 the presenter pastes a travel-guide link as the next message when
+the model asks. Chat cannot open the link itself: the plan comes from the
+model's own knowledge and web search, with the link as context.
 
 ## What none of the prompts say
 

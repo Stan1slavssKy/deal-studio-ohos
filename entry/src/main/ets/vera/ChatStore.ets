@@ -7,6 +7,10 @@
  * A widget's own state (a timer's setting, a tick box) is saved by VeraPreview
  * under the key `chat-<chatId>/<messageId>`, in the same place a project's
  * program state goes; remove() clears that too.
+ *
+ * Which chats are pinned is kept apart, in {filesDir}/vera/chat-pins.json: a
+ * chat's own file is rewritten whole by every save, and pinning one should
+ * neither be lost that way nor count as a change that moves it up the list.
  */
 
 import fs from '@ohos.file.fs'
@@ -64,6 +68,7 @@ export class ChatSummary {
   messages: number = 0
   costUsd: number = 0
   widgets: number = 0
+  pinned: boolean = false
 }
 
 function ensureDir(path: string): void {
@@ -193,11 +198,42 @@ export function chatCost(c: StoredChat): number {
 export class ChatStore {
   private root: string = ''
   private base: string = ''
+  private pins: string[] = []
 
   init(filesDir: string): void {
     this.base = filesDir + '/vera'
     this.root = this.base + '/chats'
     ensureDir(this.root)
+    this.pins = this.readPins()
+  }
+
+  private pinsPath(): string { return this.base + '/chat-pins.json' }
+
+  private readPins(): string[] {
+    let text = readText(this.pinsPath())
+    if (text.length === 0) { return [] }
+    try {
+      let ids = JSON.parse(text) as Object[]
+      return ids.filter((x: Object): boolean => typeof x === 'string').map((x: Object): string => x as string)
+    } catch (_e) {
+      return []
+    }
+  }
+
+  isPinned(id: string): boolean {
+    return this.pins.indexOf(id) >= 0
+  }
+
+  /** Pins or unpins a chat; the chat's own file and its time are left alone. */
+  setPinned(id: string, pinned: boolean): void {
+    if (this.root.length === 0 || this.isPinned(id) === pinned) { return }
+    let next = pinned ? [...this.pins, id] : this.pins.filter((p: string): boolean => p !== id)
+    try {
+      writeText(this.pinsPath(), JSON.stringify(next))
+      this.pins = next
+    } catch (e) {
+      console.error('VERA-CHAT pin failed: ' + (e as Error).message)
+    }
   }
 
   private path(id: string): string { return this.root + '/' + id + '.json' }
@@ -229,6 +265,7 @@ export class ChatStore {
   remove(id: string): void {
     try { fs.unlinkSync(this.path(id)) } catch (_e) {}
     try { fs.rmdirSync(this.base + '/chat-' + id) } catch (_e) {}
+    this.setPinned(id, false)
   }
 
   list(): ChatSummary[] {
@@ -243,6 +280,7 @@ export class ChatStore {
       s.id = chat!.id
       s.title = chat!.title
       s.updatedAt = chat!.updatedAt
+      s.pinned = this.isPinned(s.id)
       s.messages = chat!.messages.length
       s.costUsd = chatCost(chat!)
       for (let m of chat!.messages) { if (m.vbc2.length > 0) { s.widgets++ } }
