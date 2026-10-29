@@ -1,4 +1,6 @@
-import { Project, store } from '../vera/ProjectStore'
+import { Project, ProjectSummary, store } from '../vera/ProjectStore'
+import { versionCountText } from '../vera/ProjectText'
+import { SymbolGlyphModifier } from '@kit.ArkUI'
 import { projectOperations, ProjectOperationStatus } from '../vera/ProjectOperations'
 import { consent } from '../vera/VeraConsentStore'
 import { refreshForms } from '../vera/FormUpdater'
@@ -11,10 +13,16 @@ class ProjectNavParams {
   projectId: string = ''
 }
 
+/** A project and what its row shows of it. */
+class ProjectRow {
+  project: Project = new Project()
+  summary: ProjectSummary = new ProjectSummary()
+}
+
 @Entry
 @Component
 struct Index {
-  @State projects: Project[] = []
+  @State projects: ProjectRow[] = []
   @State showCreate: boolean = false
   @State deletionPending: boolean = false
   @State newName: string = ''
@@ -32,134 +40,177 @@ struct Index {
     this.reload()
   }
 
+  /** Newest work first: by when a project's latest version was saved, or when it was made if it has none. */
   private reload(): void {
-    this.projects = store.listProjects()
+    let rows: ProjectRow[] = []
+    for (let project of store.listProjects()) {
+      let row = new ProjectRow()
+      row.project = project
+      row.summary = store.summaryOf(project)
+      rows.push(row)
+    }
+    rows.sort((a: ProjectRow, b: ProjectRow): number => b.summary.updatedAt - a.summary.updatedAt)
+    this.projects = rows
+  }
+
+  private openChats(): void {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatListPage' })
+      .catch((e: Error): void => { console.error('Navigate to chats failed: ' + e.message) })
+  }
+
+  private openCreate(): void {
+    this.showCreate = true
+    this.newName = ''
+    this.selectedIcon = '📱'
   }
 
   build() {
-    Navigation() {
-      if (this.projects.length === 0 && !this.showCreate) {
-        Column() {
-          Text('No projects yet').fontSize(18).fontColor('#999999').margin({ top: 120 })
-          Text('Tap + to create your first VERA app').fontSize(14).fontColor('#BBBBBB').margin({ top: 8 })
-        }.width('100%').alignItems(HorizontalAlign.Center)
-      } else {
-        List({ space: 12 }) {
-          ForEach(this.projects, (p: Project) => {
-            ListItem() {
-              Row() {
-                Image(projectIconResource(p.icon))
-                  .width(44).height(44).objectFit(ImageFit.Contain).margin({ right: 14 })
-                Column() {
-                  Text(p.name).fontSize(17).fontWeight(FontWeight.Medium)
-                  Text(new Date(p.createdAt).toLocaleDateString())
-                    .fontSize(13).fontColor('#999999').margin({ top: 2 })
+    // The dialog is a sibling of the page, not a child of its content: its dimming then covers the title and the toolbar too.
+    Stack() {
+      Navigation() {
+        if (this.projects.length === 0) {
+          Column() {
+            Text('No projects yet').fontSize(18).fontColor('#999999').margin({ top: 120 })
+            Text('Tap New Project to create your first VERA app').fontSize(14).fontColor('#BBBBBB').margin({ top: 8 })
+          }.width('100%').alignItems(HorizontalAlign.Center)
+        } else {
+          List({ space: 12 }) {
+            ForEach(this.projects, (row: ProjectRow) => {
+              ListItem() {
+                this.projectRow(row)
+              }
+              .swipeAction({
+                end: {
+                  builder: () => { this.deleteAction(row.project.id) }
                 }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-
-                Text('>').fontSize(18).fontColor('#CCCCCC')
-              }
-              .width('100%')
-              .padding(14)
-              .backgroundColor('#FFFFFF')
-              .borderRadius(12)
-              .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
-              .onClick(() => {
-                let nav = new ProjectNavParams()
-                nav.projectId = p.id
-                this.getUIContext().getRouter().pushUrl({ url: 'pages/ProjectPage', params: nav })
-                  .catch((e: Error): void => { console.error('Navigate to project failed: ' + e.message) })
               })
-            }
-            .swipeAction({
-              end: {
-                builder: () => { this.deleteAction(p.id) }
-              }
-            })
-          }, (p: Project) => p.id)
+            }, (row: ProjectRow) => row.project.id)
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 8 })
         }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8 })
       }
+      .title('VERA')
+      .titleMode(NavigationTitleMode.Full)
+      .toolbarConfiguration([{
+        value: 'Chat',
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.ellipsis_message')),
+        status: ToolbarItemStatus.NORMAL,
+        action: () => { this.openChats() }
+      }, {
+        value: 'New Project',
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),
+        status: ToolbarItemStatus.NORMAL,
+        action: () => { this.openCreate() }
+      }])
 
       if (this.showCreate) {
-        Column() {
-          Column() {
-            Text('New Project').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 })
-
-            TextInput({ placeholder: 'Project name', text: this.newName })
-              .onChange((value: string) => { this.newName = value })
-              .width('100%')
-              .height(44)
-              .margin({ bottom: 16 })
-
-            Text('Icon').fontSize(14).fontColor('#666666').margin({ bottom: 8 })
-            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-              ForEach(ICONS, (icon: string) => {
-                Image(projectIconResource(icon))
-                  .width(40)
-                  .height(40)
-                  .objectFit(ImageFit.Contain)
-                  .padding(6)
-                  .backgroundColor(this.selectedIcon === icon ? '#E0E8FF' : '#00000000')
-                  .borderRadius(8)
-                  .onClick(() => { this.selectedIcon = icon })
-              }, (icon: string) => icon)
-            }.width('100%')
-
-            Row({ space: 12 }) {
-              Button('Cancel')
-                .type(ButtonType.Normal)
-                .backgroundColor('#E0E0E0')
-                .fontColor('#333333')
-                .layoutWeight(1)
-                .onClick(() => { this.showCreate = false })
-              Button('Create')
-                .type(ButtonType.Normal)
-                .layoutWeight(1)
-                .enabled(this.newName.trim().length > 0)
-                .onClick(() => { this.doCreate() })
-            }
-            .width('100%')
-            .margin({ top: 20 })
-          }
-          .width('90%')
-          .padding(24)
-          .backgroundColor('#FFFFFF')
-          .borderRadius(16)
-          .shadow({ radius: 8, color: '#30000000' })
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor('#50000000')
-        .position({ x: 0, y: 0 })
-        .onClick(() => { this.showCreate = false })
+        this.createDialog()
       }
     }
-    .title('VERA')
-    .titleMode(NavigationTitleMode.Full)
-    .menus([{
-      value: 'Chat',
-      icon: 'resources/base/media/startIcon.png',
-      action: () => { this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatListPage' })
-        .catch((e: Error): void => { console.error('Navigate to chats failed: ' + e.message) }) }
-    }, {
-      value: '',
-      icon: 'resources/base/media/startIcon.png',
-      action: () => { this.showCreate = true; this.newName = ''; this.selectedIcon = '📱' }
-    }])
-    .toolbarConfiguration([{
-      value: 'Chat',
-      status: ToolbarItemStatus.NORMAL,
-      action: () => { this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatListPage' })
-        .catch((e: Error): void => { console.error('Navigate to chats failed: ' + e.message) }) }
-    }, {
-      value: 'New Project',
-      status: ToolbarItemStatus.NORMAL,
-      action: () => { this.showCreate = true; this.newName = ''; this.selectedIcon = '📱' }
-    }])
+    .width('100%')
+    .height('100%')
+  }
+
+  /** One project: what it is (the request it began as), how much work is in it, and when it was last worked on. */
+  @Builder
+  projectRow(row: ProjectRow) {
+    Row() {
+      Image(projectIconResource(row.project.icon))
+        .width(44).height(44).objectFit(ImageFit.Contain).margin({ right: 14 })
+      Column({ space: 2 }) {
+        Text(row.project.name).fontSize(17).fontWeight(FontWeight.Medium).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (row.summary.request.length > 0) {
+          Text(row.summary.request).fontSize(13).fontColor('#666666').maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        Text(versionCountText(row.summary.versions) + ' · ' + new Date(row.summary.updatedAt).toLocaleDateString())
+          .fontSize(12).fontColor('#999999')
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(18).fontColor(['#C4C4C4'])
+    }
+    .width('100%')
+    .padding(14)
+    .backgroundColor('#FFFFFF')
+    .borderRadius(12)
+    .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
+    .onClick(() => {
+      let nav = new ProjectNavParams()
+      nav.projectId = row.project.id
+      this.getUIContext().getRouter().pushUrl({ url: 'pages/ProjectPage', params: nav })
+        .catch((e: Error): void => { console.error('Navigate to project failed: ' + e.message) })
+    })
+    // A swipe is not a thing anyone is told about: the press that opens a menu is.
+    .bindContextMenu(this.rowMenu(row.project.id), ResponseType.LongPress)
+  }
+
+  @Builder
+  rowMenu(id: string) {
+    Menu() {
+      MenuItem({ content: 'Delete project', symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')) })
+        .onClick(() => { this.confirmDelete(id) })
+    }
+  }
+
+  @Builder
+  createDialog() {
+    Column() {
+      Column() {
+        Text('New Project').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 })
+
+        TextInput({ placeholder: 'Project name', text: this.newName })
+          .onChange((value: string) => { this.newName = value })
+          .width('100%')
+          .height(44)
+          .margin({ bottom: 16 })
+
+        Text('Icon').fontSize(14).fontColor('#666666').margin({ bottom: 8 })
+        Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
+          ForEach(ICONS, (icon: string) => {
+            Image(projectIconResource(icon))
+              .width(40)
+              .height(40)
+              .objectFit(ImageFit.Contain)
+              .padding(6)
+              .backgroundColor(this.selectedIcon === icon ? '#E0E8FF' : '#00000000')
+              .borderRadius(8)
+              .onClick(() => { this.selectedIcon = icon })
+          }, (icon: string) => icon)
+        }.width('100%')
+
+        Row({ space: 12 }) {
+          Button('Cancel')
+            .type(ButtonType.Normal)
+            .backgroundColor('#E0E0E0')
+            .fontColor('#333333')
+            .layoutWeight(1)
+            .onClick(() => { this.showCreate = false })
+          Button('Create')
+            .type(ButtonType.Normal)
+            .layoutWeight(1)
+            .enabled(this.newName.trim().length > 0)
+            .onClick(() => { this.doCreate() })
+        }
+        .width('100%')
+        .margin({ top: 20 })
+      }
+      .width('90%')
+      .padding(24)
+      .backgroundColor('#FFFFFF')
+      .borderRadius(16)
+      .shadow({ radius: 8, color: '#30000000' })
+      // A tap inside the card is the card's, not a tap on the dimming behind it.
+      .onClick(() => {})
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#50000000')
+    .onClick(() => { this.showCreate = false })
   }
 
   @Builder

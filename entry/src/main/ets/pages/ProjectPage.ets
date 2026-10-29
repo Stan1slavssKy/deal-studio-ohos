@@ -1,6 +1,7 @@
 import { Project, Version, VersionMetrics, store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { projectIconResource } from '../vera/ProjectIcons'
+import { requestHeadline, changeNote, versionCountText } from '../vera/ProjectText'
 import { projectOperations, ProjectOperationStatus, ProjectShortcutState } from '../vera/ProjectOperations'
 import { common } from '@kit.AbilityKit'
 
@@ -34,6 +35,8 @@ struct ProjectPage {
   // Shown beside the source: the request a version came from is the thing you
   // actually need when deciding whether to refine it or start again.
   @State viewedPrompt: string = ''
+  @State renaming: boolean = false
+  @State renameText: string = ''
 
   aboutToAppear(): void {
     this.pageVisible = true
@@ -100,6 +103,8 @@ struct ProjectPage {
   }
 
   build() {
+    // The overlays are siblings of the page, not children of its content: their dimming then covers the title bar too.
+    Stack() {
     Navigation() {
       Column() {
         if (this.project !== null) {
@@ -108,32 +113,39 @@ struct ProjectPage {
               .width(56).height(56).objectFit(ImageFit.Contain).margin({ right: 16 })
             Column() {
               Text(this.project!.name).fontSize(22).fontWeight(FontWeight.Bold)
-              Text(this.versions.length.toString() + ' version' + (this.versions.length !== 1 ? 's' : ''))
+              Text(versionCountText(this.versions.length))
                 .fontSize(14).fontColor('#999999').margin({ top: 4 })
             }.alignItems(HorizontalAlign.Start).layoutWeight(1)
           }
           .width('100%')
           .padding(16)
 
+          // One thing to do first (Generate), the one next to it (Run), and the rest in a menu.
           Row({ space: 10 }) {
             Button('Generate')
-              .type(ButtonType.Normal)
+              .type(ButtonType.Capsule)
               .layoutWeight(1)
               .onClick(() => { this.openGenerate('') })
             Button('Run')
-              .type(ButtonType.Normal)
+              .type(ButtonType.Capsule)
               .layoutWeight(1)
+              .backgroundColor('#E8EEFF')
+              .fontColor('#0A59F7')
               .enabled(this.latestRunnableIndex() >= 0)
               .onClick(() => { this.runLatest() })
-            Button(this.shortcutButtonLabel())
-              .type(ButtonType.Normal)
-              .fontSize(14)
-              .enabled(!this.projectOperationPending && this.shortcutState !== ProjectShortcutState.Unknown)
-              .onClick(() => {
-                if (this.shortcutState === ProjectShortcutState.Present) { this.unpinFromHome() }
-                else if (this.shortcutState === ProjectShortcutState.Absent) { this.pinToHome() }
-                else { this.refreshShortcutState() }
-              })
+            Button('\u22EF')
+              .type(ButtonType.Capsule)
+              .width(52)
+              .fontSize(22)
+              .backgroundColor('#E8EEFF')
+              .fontColor('#0A59F7')
+              .enabled(!this.projectOperationPending)
+              .bindMenu([
+                { value: this.shortcutButtonLabel(), action: () => { this.onShortcutMenu() },
+                  enabled: this.shortcutMenuEnabled() },
+                { value: 'Rename', action: () => { this.renameText = this.project!.name; this.renaming = true } },
+                { value: 'Delete project', action: () => { this.confirmDeleteProject() } }
+              ])
           }
           .width('100%')
           .padding({ left: 16, right: 16, bottom: 12 })
@@ -166,8 +178,13 @@ struct ProjectPage {
                           .margin({ left: 8 })
                       }
                     }
-                    if (v.note.length > 0) {
-                      Text(v.note).fontSize(13).fontColor('#666666').margin({ top: 2 })
+                    // What the app is (the request it began as); and, for a refinement, what this version changed.
+                    if (requestHeadline(v.prompt, v.note).length > 0) {
+                      Text(requestHeadline(v.prompt, v.note)).fontSize(13).fontColor('#444444').margin({ top: 2 })
+                        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    }
+                    if (changeNote(v.prompt, v.note).length > 0) {
+                      Text('Changed: ' + changeNote(v.prompt, v.note)).fontSize(12).fontColor('#666666').margin({ top: 2 })
                         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
                     }
                     Text(new Date(v.createdAt).toLocaleString())
@@ -192,7 +209,7 @@ struct ProjectPage {
                       .backgroundColor('#E0E0E0')
                       .fontColor('#333333')
                       .onClick(() => { this.openGenerate(v.id) })
-                    Button('Src')
+                    Button('Code')
                       .type(ButtonType.Normal)
                       .height(32)
                       .fontSize(13)
@@ -227,16 +244,23 @@ struct ProjectPage {
           .layoutWeight(1)
         }
 
-        if (this.viewedSource.length > 0) {
-          this.sourceOverlay()
-        }
-        if (this.viewedMetricsVersion !== null) {
-          this.metricsOverlay()
-        }
       }.width('100%').height('100%')
     }
     .title(this.project !== null ? this.project!.name : 'Project')
     .titleMode(NavigationTitleMode.Mini)
+
+    if (this.viewedSource.length > 0) {
+      this.sourceOverlay()
+    }
+    if (this.viewedMetricsVersion !== null) {
+      this.metricsOverlay()
+    }
+    if (this.renaming) {
+      this.renameOverlay()
+    }
+    }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder
@@ -455,6 +479,7 @@ struct ProjectPage {
   metricsOverlay() {
     if (this.viewedMetricsVersion !== null) {
       Column() {
+      Column() {
         Row() {
           Text('Version ' + this.viewedMetricsNumber.toString() + ' · Metrics')
             .fontSize(18).fontWeight(FontWeight.Bold)
@@ -502,7 +527,14 @@ struct ProjectPage {
       .backgroundColor('#FFFFFF')
       .borderRadius(14)
       .shadow({ radius: 10, color: '#40000000' })
-      .position({ x: '5%', y: '10%' })
+      // A tap inside the card is the card's, not a tap on the dimming behind it.
+      .onClick(() => {})
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor('#50000000')
+      .onClick(() => { this.viewedMetricsVersion = null; this.viewedMetricsNumber = 0 })
     }
   }
 
@@ -544,8 +576,9 @@ struct ProjectPage {
   sourceOverlay() {
     if (this.viewedSource.length > 0) {
       Column() {
+      Column() {
         Row() {
-          Text('Version ' + this.viewedVersionNumber.toString()).fontSize(18).fontWeight(FontWeight.Bold)
+          Text('Version ' + this.viewedVersionNumber.toString() + ' \u00B7 Code').fontSize(18).fontWeight(FontWeight.Bold)
           Blank()
           Button('Close')
             .height(36)
@@ -589,7 +622,108 @@ struct ProjectPage {
       .backgroundColor('#FFFFFF')
       .borderRadius(14)
       .shadow({ radius: 10, color: '#40000000' })
-      .position({ x: '5%', y: '10%' })
+      .onClick(() => {})
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor('#50000000')
+      .onClick(() => { this.viewedSource = ''; this.viewedPrompt = ''; this.viewedVersionNumber = 0 })
+    }
+  }
+
+  @Builder
+  renameOverlay() {
+    Column() {
+      Column() {
+        Text('Rename').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 })
+        TextInput({ placeholder: 'Project name', text: this.renameText })
+          .onChange((value: string) => { this.renameText = value })
+          .width('100%')
+          .height(44)
+        Row({ space: 12 }) {
+          Button('Cancel')
+            .type(ButtonType.Normal)
+            .backgroundColor('#E0E0E0')
+            .fontColor('#333333')
+            .layoutWeight(1)
+            .onClick(() => { this.renaming = false })
+          Button('Save')
+            .type(ButtonType.Normal)
+            .layoutWeight(1)
+            .enabled(this.renameText.trim().length > 0)
+            .onClick(() => { this.doRename() })
+        }
+        .width('100%')
+        .margin({ top: 20 })
+      }
+      .width('90%')
+      .padding(24)
+      .backgroundColor('#FFFFFF')
+      .borderRadius(16)
+      .shadow({ radius: 8, color: '#30000000' })
+      .onClick(() => {})
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#50000000')
+    .onClick(() => { this.renaming = false })
+  }
+
+  private doRename(): void {
+    let name = this.renameText.trim()
+    if (name.length === 0 || this.project === null) { return }
+    store.updateProject(this.projectId, name, this.project!.icon)
+    this.renaming = false
+    this.reload()
+    refreshForms()
+  }
+
+  /** A shortcut can be added only to something that runs; one that exists can always be removed. */
+  private shortcutMenuEnabled(): boolean {
+    if (this.projectOperationPending || this.shortcutState === ProjectShortcutState.Unknown) { return false }
+    return this.shortcutState === ProjectShortcutState.Present || this.latestRunnableIndex() >= 0
+  }
+
+  private onShortcutMenu(): void {
+    if (this.shortcutState === ProjectShortcutState.Present) { this.unpinFromHome() }
+    else if (this.shortcutState === ProjectShortcutState.Absent) { this.pinToHome() }
+    else { this.refreshShortcutState() }
+  }
+
+  private confirmDeleteProject(): void {
+    if (this.project === null) { return }
+    this.getUIContext().showAlertDialog({
+      title: 'Delete mini-app?',
+      message: 'Delete "' + this.project!.name + '" and all its saved versions and data? This cannot be undone.',
+      primaryButton: {
+        value: 'Cancel',
+        action: () => {}
+      },
+      secondaryButton: {
+        value: 'Delete',
+        fontColor: '#FF3B30',
+        action: () => { this.doDeleteProject() }
+      }
+    })
+  }
+
+  private async doDeleteProject(): Promise<void> {
+    if (this.projectOperationPending) { return }
+    this.projectOperationPending = true
+    let context = (): common.UIAbilityContext => this.getUIContext().getHostContext() as common.UIAbilityContext
+    const status = await projectOperations.deleteProject(context, this.projectId)
+    this.projectOperationPending = false
+    refreshForms()
+    if (status === ProjectOperationStatus.Success || status === ProjectOperationStatus.NotFound ||
+        status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed) {
+      if (status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed) {
+        this.showProjectMessage('Mini-application was deleted, but its shortcut cannot be removed.')
+      }
+      this.returnToIndex()
+    } else {
+      this.showProjectMessage('Error deleting mini-app.')
     }
   }
 }

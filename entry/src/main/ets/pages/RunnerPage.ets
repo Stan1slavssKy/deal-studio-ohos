@@ -17,6 +17,8 @@ struct RunnerPage {
   @State hasBackHandler: boolean = false
   @State backPressSignal: number = 0
   @State shortcutMode: boolean = false
+  /** The project's name, once known; a program run from nowhere in a project is just "App". */
+  @State title: string = 'App'
   private closing: boolean = false
 
   aboutToAppear(): void {
@@ -39,6 +41,8 @@ struct RunnerPage {
       }
       store.init(context.filesDir)
       consent.init(context.filesDir)
+      let project = store.getProject(projectId)
+      if (project !== null) { this.title = project!.name }
     }
   }
 
@@ -84,7 +88,7 @@ struct RunnerPage {
         }
       }.width('100%').height('100%')
     }
-    .title('App')
+    .title(this.title)
     .titleMode(NavigationTitleMode.Mini)
     .hideTitleBar(this.shortcutMode)
     .hideBackButton(this.shortcutMode)
