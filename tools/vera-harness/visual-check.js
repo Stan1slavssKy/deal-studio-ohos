@@ -142,7 +142,7 @@ if (!baseline) {
    let change, renders=0, density=1
    const listener={matches:true,on(event,cb){events.push(event);change=cb},off(event){events.push('off:'+event)}}
    probe.getUIContext=()=>({getMediaQuery:()=>({matchMediaSync(query){queries.push(query);return listener}}),vp2px:value=>value*density})
-   probe.renderView=()=>renders++;probe.stopAllTimers=()=>events.push('stop');probe.dark=false;probe.disposed=false
+   probe.renderView=()=>renders++;probe.stopAllTimers=()=>events.push('stop');probe.dark=false;probe.disposed=false;probe.liveSurfaces=[]
    probe.watchDarkMode();assert.deepEqual(queries,['(dark-mode: true)']);assert.equal(probe.dark,true);assert.equal(probe.darkListener,listener)
    change({matches:true});assert.equal(renders,0);change({matches:false});assert.equal(renders,1);assert.equal(probe.dark,false)
    for(density of [1,2,3.5]) {

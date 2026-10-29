@@ -2,6 +2,7 @@ import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter
 import { CATALOG, ComponentSpec, ChildRule, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
 import { iconPath, iconNames } from './VeraIcons'
 import { isValidSdkTarget } from './VeraSdkIndex'
+import { GFX_FUNCTIONS, GFX_POINTER_FIELDS, GFX_ROLES, isGfxColor, gfxFunction } from './VeraGfx'
 
 // ===== AST Nodes =====
 
@@ -1391,11 +1392,40 @@ function buildStdSdkModule(): ModuleInterface {
   return new ModuleInterface('std/sdk', fns, [])
 }
 
+/**
+ * What a ui.Surface draws: shapes in the surface's own units, and the pointer its handler is handed. Generated
+ * from VeraGfx's table, so the signatures cannot drift from what the host builds and the prompt describes.
+ */
+function buildStdGfxModule(): ModuleInterface {
+  let shapeType = new VeraClassType('std/gfx:Shape', 'Shape')
+  let pointerType = new VeraClassType('std/gfx:Pointer', 'Pointer')
+  for (let pair of GFX_POINTER_FIELDS) {
+    pointerType.fields.set(pair[0], pair[1] === 'number' ? NUMBER : STRING)
+  }
+  let fns: ExternalFunction[] = []
+  for (let f of GFX_FUNCTIONS) {
+    let params: VeraType[] = []
+    let required = 0
+    for (let p of f.params) {
+      if (p.kind === 'number') params.push(NUMBER)
+      else if (p.kind === 'boolean') params.push(BOOLEAN)
+      else if (p.kind === 'number[]') params.push(new VeraArrayType(NUMBER))
+      else if (p.kind === 'shapes') params.push(new VeraArrayType(shapeType))
+      else params.push(STRING)
+      if (!p.optional) required = params.length
+    }
+    let result: VeraType = f.result === 'shape' ? shapeType : f.result === 'number' ? NUMBER
+      : f.result === 'boolean' ? BOOLEAN : STRING
+    fns.push(new ExternalFunction(f.name, params, result, false, required))
+  }
+  return new ModuleInterface('std/gfx', fns, [new ExternalClass('Shape', shapeType), new ExternalClass('Pointer', pointerType)])
+}
+
 /** String methods a program may call on a string value; each is the std/strings function of that name. */
 const STRING_METHODS: string[] = ['toUpperCase', 'toLowerCase']
 
 /** std modules a program may use without importing them, each under its own name. */
-const PRELUDE_NAMES: string[] = ['ui', 'math', 'time', 'strings', 'sdk']
+const PRELUDE_NAMES: string[] = ['ui', 'math', 'time', 'strings', 'sdk', 'gfx']
 
 class Scope {
   values: Map<string, VeraType> = new Map<string, VeraType>()
@@ -1497,6 +1527,7 @@ class Analyzer {
     registry.set('std/math', buildStdMathModule())
     registry.set('std/strings', buildStdStringsModule())
     registry.set('std/sdk', buildStdSdkModule())
+    registry.set('std/gfx', buildStdGfxModule())
     for (let decl of this.model.application.imports) {
       if (this.globals.find(decl.name) !== null) { this.addError('E2001', 'duplicate global ' + decl.name, decl.span); continue }
       let found = registry.get(decl.specifier)
@@ -1885,6 +1916,7 @@ class Analyzer {
     this.checkStyleArguments(expr, callee)
     this.checkComposition(expr, callee)
     this.checkSdkArguments(expr, callee)
+    this.checkGfxArguments(expr, callee)
     return callee.result
   }
 
@@ -1998,6 +2030,7 @@ class Analyzer {
       if (spec.name !== name) continue
       this.checkIconArguments(expr, spec)
       this.checkHandlerSignature(expr, spec)
+      if (spec.nodeKind === 'surface') this.checkSurfaceFunctions(expr, spec)
       return
     }
   }
@@ -2018,6 +2051,72 @@ class Analyzer {
       if (iconPath(value).length === 0) {
         this.addError('E2108', 'unknown icon "' + value + '"; the icons are: ' +
           iconNames().join(' '), arg.span)
+      }
+    }
+  }
+
+  /**
+   * A colour std/gfx does not know is drawn in ink, which on a dark scene is a shape that vanished, and an align
+   * outside the three is drawn left. Only a literal is checked, as with icons.
+   */
+  private checkGfxArguments(expr: CallExpression, callee: VeraFunctionType): void {
+    const prefix = 'external:std/gfx:'
+    if (!callee.identity.startsWith(prefix)) return
+    let f = gfxFunction(callee.identity.substring(prefix.length))
+    if (f === null) return
+    for (let i = 0; i < f.params.length && i < expr.argumentsList.length; i++) {
+      let arg = expr.argumentsList[i]
+      if (!(arg instanceof StringExpression)) continue
+      let value = (arg as StringExpression).value
+      if (f.params[i].kind === 'color' && !isGfxColor(value)) {
+        this.addError('E2112', 'unknown colour "' + value + '"; a colour is one of ' + GFX_ROLES.join(' ') +
+          ', or "#rrggbb" / "#rrggbbaa", or gfx.rgb(red, green, blue)', arg.span)
+      } else if (f.params[i].name === 'align' && ['left', 'center', 'right'].indexOf(value) < 0) {
+        this.addError('E2112', 'align is "left", "center" or "right"; got "' + value + '"', arg.span)
+      }
+    }
+  }
+
+  /**
+   * A ui.Surface names three functions: what it draws, what happens each frame, and what a finger does. Each is
+   * only a string in the tree until the renderer calls it sixty times a second, so a wrong signature is caught
+   * here rather than as a trap on the first frame. "" means none, except for draw: a surface draws something.
+   */
+  private checkSurfaceFunctions(expr: CallExpression, spec: ComponentSpec): void {
+    for (let i = 0; i < spec.props.length && i < expr.argumentsList.length; i++) {
+      let role = spec.props[i].name
+      if (role !== 'draw' && role !== 'frame' && role !== 'pointer') continue
+      let arg = expr.argumentsList[i]
+      if (!(arg instanceof StringExpression)) continue
+      let name = (arg as StringExpression).value
+      if (name.length === 0) {
+        if (role === 'draw') this.addError('E2106', 'a ui.Surface needs a draw function: function draw(state: AppState): gfx.Shape[]', arg.span)
+        continue
+      }
+      let fn = this.model.functions.get(name)
+      if (fn === undefined) {
+        if (!this.options.allowMissingHandlers) { this.addError('E2106', 'no function named "' + name + '"', arg.span) }
+        continue
+      }
+      if (role === 'draw') {
+        let result = fn.result
+        let ok = fn.parameters.length === 1 && result instanceof VeraArrayType &&
+          (result as VeraArrayType).element instanceof VeraClassType &&
+          ((result as VeraArrayType).element as VeraClassType).identity === 'std/gfx:Shape'
+        if (!ok) {
+          this.addError('E2106', 'ui.Surface draws what "' + name + '" returns, so it must be function ' + name +
+            '(state: AppState): gfx.Shape[]', arg.span)
+        }
+      } else if (role === 'frame') {
+        if (fn.parameters.length !== 2 || !identical(fn.parameters[1], NUMBER)) {
+          this.addError('E2106', 'ui.Surface hands "' + name + '" the milliseconds since the last frame, so it must take (state, elapsedMs: number)', arg.span)
+        }
+      } else {
+        let p = fn.parameters.length === 2 ? fn.parameters[1] : null
+        let ok = p !== null && p instanceof VeraClassType && (p as VeraClassType).identity === 'std/gfx:Pointer'
+        if (!ok) {
+          this.addError('E2106', 'ui.Surface hands "' + name + '" a finger, so it must take (state, p: gfx.Pointer)', arg.span)
+        }
       }
     }
   }
@@ -2770,7 +2869,7 @@ export class CompileResult {
   vbc2: string
   /**
    * Every handler a tap, a ticker or an answer can reach -- (state, value) to state -- with the kind of value
-   * it takes: number, string or boolean. For running a new program once before it is served.
+   * it takes: number, string or boolean, or pointer for a ui.Surface's finger handler. For running a new program once before it is served.
    */
   handlers: Map<string, string> = new Map<string, string>()
   /** Fields of the app's state that no code reads (unreadStateFields): a setter writes them, nothing shows or uses what it wrote. */
@@ -2787,6 +2886,7 @@ function handlersOf(model: SemanticModel): Map<string, string> {
     if (fn.isAsync || fn.parameters.length !== 2 || !identical(fn.parameters[0], state) || !identical(fn.result, state)) { return }
     let value = fn.parameters[1]
     if (value === NUMBER || value === STRING || value === BOOLEAN) { handlers.set(name, (value as PrimitiveType).name) }
+    else if (value instanceof VeraClassType && (value as VeraClassType).identity === 'std/gfx:Pointer') { handlers.set(name, 'pointer') }
   })
   return handlers
 }

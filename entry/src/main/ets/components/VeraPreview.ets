@@ -30,6 +30,8 @@ import { carryState } from '../vera/VeraStateCarry'
 import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
   columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
 import matrix4 from '@ohos.matrix4'
+import displaySync from '@ohos.graphics.displaySync'
+import { decodeGfx, paintGfx, pointerValue, gfxFit, gfxToSurface, gfxNaturalHeight } from '../vera/VeraGfx'
 
 /**
  * The rotation of every spinning shape on screen.
@@ -82,6 +84,21 @@ class SceneLayer {
 class SceneFrame {
   at: number = -1
   layers: SceneLayer[] = []
+}
+
+/** How often a running surface re-runs view() for what is drawn around it, in ms: a score in a header, not the scene. */
+const SURFACE_VIEW_MS: number = 100
+/** How often a running surface's state is saved, in ms. Every frame would write the project sixty times a second. */
+const SURFACE_SAVE_MS: number = 5000
+/** The longest a frame says has passed, in ms, so a pause -- the app in the background, a slow frame -- is not a leap. */
+const SURFACE_MAX_ELAPSED_MS: number = 100
+
+/** One ui.Surface on screen: the canvas it paints into and the box it was given, in vp. */
+class SurfaceBox {
+  ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
+  ready: boolean = false
+  width: number = 0
+  height: number = 0
 }
 
 /**
@@ -285,6 +302,27 @@ export struct VeraPreview {
   private poseAnims: Map<LiveNode, PoseAnim> = new Map<LiveNode, PoseAnim>()
   private sceneFrames: Map<LiveNode, SceneFrame> = new Map<LiveNode, SceneFrame>()
   private spinPeriod: number = 0
+  /**
+   * The program's ui.Surfaces: each one's canvas by its node (reconcile keeps a node while it stays a surface),
+   * the ones in the frame now, in tree order, and the frame loop that drives the ones with a frame handler.
+   *
+   * A surface does not go through view() and reconcile on every frame. Its frame handler moves the state, its
+   * draw function turns the state into shapes, and the shapes go straight to its canvas; the tree around it is
+   * brought up to date every SURFACE_VIEW_MS, which is plenty for a score and nothing like sixty times a second.
+   */
+  private surfaces: Map<LiveNode, SurfaceBox> = new Map<LiveNode, SurfaceBox>()
+  private liveSurfaces: LiveNode[] = []
+  private surfaceSync: displaySync.DisplaySync | null = null
+  private surfaceTimer: number = -1
+  private lastFrameAt: number = 0
+  private lastViewAt: number = 0
+  private lastSurfaceSave: number = 0
+  private framing: boolean = false
+  /** Frames since the last VERA-SURFACE rate line, and the ms they spent in the program and painting, worst included. */
+  private frameCount: number = 0
+  private frameWork: number = 0
+  private frameWorst: number = 0
+  private frameReportAt: number = 0
 
   // Kinds renderNode has a branch for. Checked against the catalogue on mount so
   // a component that compiles but cannot be drawn is reported here rather than
@@ -297,7 +335,7 @@ export struct VeraPreview {
     'numbertext', 'numberstat', 'numberfield', 'timefield', 'numberlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
     'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler',
-    'table', 'tablerow', 'motion', 'transform', 'stage']
+    'table', 'tablerow', 'motion', 'transform', 'stage', 'surface']
 
   aboutToAppear(): void {
     let missing: string[] = []
@@ -683,6 +721,7 @@ export struct VeraPreview {
   }
 
   private stopAllTimers(): void {
+    this.stopSurfaceLoop()
     for (let id of Array.from(this.timers.keys())) { this.stopTimer(id) }
     if (this.spinTimer >= 0) { clearInterval(this.spinTimer); this.spinTimer = -1 }
     this.spinPeriod = 0
@@ -696,6 +735,8 @@ export struct VeraPreview {
     // Without this the tickers -- and the VM they drive -- outlive the screen.
     this.disposed = true
     this.stopAllTimers()
+    // A running surface saves every few seconds; the frames since the last save would otherwise be lost.
+    if (this.liveSurfaces.length > 0 && !this.previewOnly) { this.persistState() }
     // The same applies to the dark-mode listener: it holds this component, and
     // its callback re-enters the VM.
     if (this.darkListener !== null) {
@@ -770,8 +811,9 @@ export struct VeraPreview {
     }
   }
 
-  private renderView(): void {
+  private renderView(paint: boolean = true): void {
     if (this.vm === null || this.currentState === null) { return }
+    this.lastViewAt = Date.now()
     try {
       // view is re-run on every change, so an intent call from there would
       // start navigation on every repaint. The host refuses one while this is
@@ -780,9 +822,12 @@ export struct VeraPreview {
       let viewTree = this.vm!.execute('view', [this.currentState!])
       let nodes = decodeVeraUi(viewTree)
       let root = nodes.length > 0 ? nodes[0] : null
-      console.info('VERA-VIEW rev=' + (this.revision + 1).toString() +
-        ' root=' + (root !== null ? root!.kind : 'null') +
-        ' children=' + (root !== null ? root!.children.length.toString() : '0'))
+      // Not for the refreshes a running surface makes ten times a second: they would bury every other line.
+      if (paint) {
+        console.info('VERA-VIEW rev=' + (this.revision + 1).toString() +
+          ' root=' + (root !== null ? root!.kind : 'null') +
+          ' children=' + (root !== null ? root!.children.length.toString() : '0'))
+      }
       this.reconcileTheme(root)
       if (root === null) {
         this.liveRoot = null
@@ -798,8 +843,209 @@ export struct VeraPreview {
       this.reconcileSpin(root)
       this.reconcileMotion()
       this.reconcileBackHandler(root)
+      this.reconcileSurfaces(paint)
     } catch (e) {
       this.error = 'View error: ' + (e as Error).message
+    }
+  }
+
+  /**
+   * Bring the surfaces in line with the frame just reconciled: forget the canvases of nodes that are no longer
+   * surfaces, run the frame loop exactly while one of them has a frame handler, and paint them all now unless the
+   * frame loop is the one asking (it paints straight after).
+   */
+  private reconcileSurfaces(paint: boolean): void {
+    let found: LiveNode[] = []
+    if (this.liveRoot !== null) { this.collectSurfaces(this.liveRoot!, found) }
+    for (let node of Array.from(this.surfaces.keys())) {
+      if (found.indexOf(node) < 0) { this.surfaces.delete(node) }
+    }
+    this.liveSurfaces = found
+    let animated = false
+    for (let node of found) { if (node.action.length > 0) { animated = true } }
+    if (animated && !this.previewOnly && this.error.length === 0) { this.startSurfaceLoop() } else { this.stopSurfaceLoop() }
+    if (paint) { this.paintSurfaces() }
+  }
+
+  private collectSurfaces(node: LiveNode, found: LiveNode[]): void {
+    if (node.kind === 'surface') { found.push(node) }
+    for (let child of node.children) { this.collectSurfaces(child, found) }
+  }
+
+  /**
+   * Frames at the display's own rate. displaySync is the vsync of this window; an interval is the fallback for a
+   * system that refuses one, and is near enough for a game that measures elapsed time rather than counting frames.
+   */
+  private startSurfaceLoop(): void {
+    if (this.surfaceSync !== null || this.surfaceTimer >= 0) { return }
+    this.lastFrameAt = 0
+    this.lastSurfaceSave = Date.now()
+    try {
+      let sync = displaySync.create()
+      let range: ExpectedFrameRateRange = { expected: 60, min: 30, max: 120 }
+      sync.setExpectedFrameRateRange(range)
+      sync.on('frame', (_info: displaySync.IntervalInfo) => { this.surfaceFrame() })
+      sync.start()
+      this.surfaceSync = sync
+    } catch (e) {
+      console.warn('VERA-SURFACE no display sync, using an interval: ' + (e as Error).message)
+      this.surfaceTimer = setInterval(() => { this.surfaceFrame() }, 16)
+    }
+  }
+
+  private stopSurfaceLoop(): void {
+    if (this.surfaceSync !== null) {
+      try {
+        this.surfaceSync!.stop()
+        this.surfaceSync!.off('frame')
+      } catch (e) {
+        console.warn('VERA-SURFACE stopping display sync failed: ' + (e as Error).message)
+      }
+      this.surfaceSync = null
+    }
+    if (this.surfaceTimer >= 0) { clearInterval(this.surfaceTimer); this.surfaceTimer = -1 }
+  }
+
+  /**
+   * One frame: every surface's frame handler is told how long it has been, then every surface is painted. Effects
+   * stay off -- a frame is not a person asking for something -- and a trap stops the loop and says so, as a ticker's
+   * does, rather than trapping again sixty times a second.
+   */
+  private surfaceFrame(): void {
+    if (this.disposed || this.framing || this.vm === null || this.currentState === null) { return }
+    let now = Date.now()
+    let elapsed = this.lastFrameAt > 0 ? Math.min(SURFACE_MAX_ELAPSED_MS, Math.max(0, now - this.lastFrameAt)) : 16
+    this.lastFrameAt = now
+    this.framing = true
+    try {
+      if (this.host !== null) { this.host!.effectsAllowed = false }
+      for (let node of this.liveSurfaces) {
+        if (node.action.length === 0) { continue }
+        this.currentState = this.vm!.execute(node.action, [this.currentState!, new VeraNumberValue(elapsed)])
+      }
+      this.paintSurfaces()
+      if (now - this.lastViewAt >= SURFACE_VIEW_MS) { this.renderView(false) }
+      this.countFrame(now, Date.now() - now)
+      if (now - this.lastSurfaceSave >= SURFACE_SAVE_MS) {
+        this.lastSurfaceSave = now
+        this.persistState()
+        this.notifyStateSnapshot()
+      }
+    } catch (e) {
+      console.error('VERA-SURFACE frame TRAP err=' + (e as Error).message)
+      this.error = 'Frame error: ' + (e as Error).message
+      this.stopAllTimers()
+    } finally {
+      this.framing = false
+    }
+  }
+
+  /**
+   * Every two seconds, how many frames ran and how long the program and the painting took in them: the one number
+   * that says whether a surface keeps up with the display, on the phone, without a profiler.
+   */
+  private countFrame(now: number, work: number): void {
+    if (this.frameReportAt === 0) { this.frameReportAt = now }
+    this.frameCount += 1
+    this.frameWork += work
+    if (work > this.frameWorst) { this.frameWorst = work }
+    if (now - this.frameReportAt < 2000) { return }
+    let seconds = (now - this.frameReportAt) / 1000
+    console.info('VERA-SURFACE fps=' + (this.frameCount / seconds).toFixed(1) +
+      ' workMs avg=' + (this.frameWork / this.frameCount).toFixed(1) + ' max=' + this.frameWorst.toString())
+    this.frameReportAt = now
+    this.frameCount = 0
+    this.frameWork = 0
+    this.frameWorst = 0
+  }
+
+  private paintSurfaces(): void {
+    for (let node of this.liveSurfaces) { this.paintSurface(node) }
+  }
+
+  /** Ask the program what this surface shows now and paint it; nothing until its canvas is ready and has a size. */
+  private paintSurface(node: LiveNode): void {
+    let box = this.surfaces.get(node)
+    if (box === undefined || !box.ready || box.width <= 0 || box.height <= 0) { return }
+    if (this.vm === null || this.currentState === null || node.label.length === 0) { return }
+    try {
+      if (this.host !== null) { this.host!.effectsAllowed = false }
+      let ops = decodeGfx(this.vm!.execute(node.label, [this.currentState!]))
+      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum)
+    } catch (e) {
+      console.error('VERA-SURFACE draw TRAP err=' + (e as Error).message)
+      this.error = 'Draw error: ' + (e as Error).message
+      this.stopAllTimers()
+    }
+  }
+
+  /** The canvas of a surface node, made the first time the node is drawn. */
+  private surfaceBox(node: LiveNode): SurfaceBox {
+    let box = this.surfaces.get(node)
+    if (box === undefined) {
+      box = new SurfaceBox()
+      this.surfaces.set(node, box)
+    }
+    return box
+  }
+
+  /**
+   * How tall a surface is drawn, in vp. As wide as its column and as tall as its proportions make that; style fill
+   * instead runs to the bottom of the program's window from wherever the surface starts (measured into
+   * layoutHeight), except in a chat, where there is no window of its own to fill.
+   */
+  private surfaceHeight(node: LiveNode): number {
+    let width = this.viewportWidth > 0 ? this.viewportWidth : 360
+    let natural = gfxNaturalHeight(width, node.minimum, node.maximum)
+    if (node.style === 'fill' && !this.embedded && node.layoutHeight > 0) { return node.layoutHeight }
+    return natural > 0 ? natural : width
+  }
+
+  private surfaceArea(node: LiveNode, now: Area): void {
+    let box = this.surfaceBox(node)
+    box.width = Number(now.width)
+    box.height = Number(now.height)
+    if (node.style === 'fill' && !this.embedded && this.rootHeight > 0) {
+      let want = Math.max(160, this.rootTop + this.rootHeight - this.snackSpace - Number(now.globalPosition.y))
+      // A whole vp, for the same reason viewportWidth is guarded: a re-layout a fraction different would write again.
+      if (Math.abs(want - node.layoutHeight) >= 1) { node.layoutHeight = want }
+    }
+    this.paintSurface(node)
+  }
+
+  /**
+   * Fingers on a surface, in its own units. Down, up and cancel are taps and go the way every tap goes -- the
+   * handler, then the tree, saved, effects run. A move is a stream of them, so it only runs the handler and
+   * repaints; the tree catches up on the frame loop's schedule, and the state is saved when the finger lifts.
+   */
+  private surfaceTouch(node: LiveNode, event: TouchEvent): void {
+    if (node.value.length === 0 || this.previewOnly) { return }
+    let box = this.surfaces.get(node)
+    if (box === undefined || box.width <= 0 || box.height <= 0) { return }
+    let fit = gfxFit(box.width, box.height, node.minimum, node.maximum)
+    let phase = event.type === TouchType.Down ? 'down' : event.type === TouchType.Move ? 'move'
+      : event.type === TouchType.Up ? 'up' : 'cancel'
+    for (let touch of event.changedTouches) {
+      let at = gfxToSurface(fit, touch.x, touch.y)
+      let value = pointerValue(phase, touch.id, at[0], at[1])
+      if (phase === 'move') { this.surfaceMove(node.value, value) } else { this.dispatch(node.value, value) }
+    }
+  }
+
+  private surfaceMove(action: string, value: RuntimeValue): void {
+    if (this.vm === null || this.currentState === null) { return }
+    try {
+      if (this.host !== null) { this.host!.effectsAllowed = false }
+      this.currentState = this.vm!.execute(action, [this.currentState!, value])
+      // The frame loop paints and refreshes the tree itself; without one, this move is the frame.
+      if (this.surfaceSync === null && this.surfaceTimer < 0) {
+        this.paintSurfaces()
+        if (Date.now() - this.lastViewAt >= SURFACE_VIEW_MS) { this.renderView(false) }
+      }
+    } catch (e) {
+      console.error('VERA-SURFACE ' + action + ' TRAP err=' + (e as Error).message)
+      this.error = 'Action error: ' + (e as Error).message
+      this.stopAllTimers()
     }
   }
 
@@ -3558,6 +3804,23 @@ export struct VeraPreview {
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'surface') {
+      // The program paints this itself, frame by frame (paintSurface); the tree only gives it a box.
+      Canvas(this.surfaceBox(node).ctx)
+        .width('100%')
+        .height(this.surfaceHeight(node))
+        .onReady(() => {
+          this.surfaceBox(node).ready = true
+          this.paintSurface(node)
+        })
+        .onAreaChange((_old: Area, now: Area) => { this.surfaceArea(node, now) })
+        .onTouch((event: TouchEvent) => { this.surfaceTouch(node, event) })
+        // A drag on a surface that takes fingers is the program's, not the page's: without a pan gesture of its
+        // own the screen around it scrolls under the finger. One that takes none lets the page scroll through it.
+        .gesture(PanGesture({ distance: 1 }))
+        .onGestureJudgeBegin((_info: GestureInfo, _event: BaseGestureEvent) => {
+          return node.value.length > 0 ? GestureJudgeResult.CONTINUE : GestureJudgeResult.REJECT
+        })
     } else if (node.kind === 'canvas') {
       Column() {
         Row()
