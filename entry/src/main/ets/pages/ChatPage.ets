@@ -8,7 +8,7 @@ import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { ensureCapabilities } from '../vera/VeraCapabilities'
 import { modelSupportNote } from '../vera/VeraEmbeddings'
-import { WidgetBuildContext, WidgetReference, recentWidgetConversation } from '../vera/VeraWidgetContext'
+import { WidgetBuildContext, WidgetReference, recentWidgetConversation, earlierSearchResults, SearchedTurn } from '../vera/VeraWidgetContext'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { ChatTurn, ParsedReply, MiniApp, parseReply, chatReply, buildMiniApp, chatAgentRequest, recordChatAgent } from '../vera/VeraChat'
 import { AttemptStat, ReplyStats, costOf, formatUsd, formatMs, speedOf } from '../vera/VeraChatStats'
@@ -71,6 +71,8 @@ class ChatMessage {
   chatOutput: number = 0
   searches: number = 0
   searchMs: number = 0
+  /** What web_search returned for this reply (earlierSearchResults). */
+  searchResults: string[] = []
   widgetMs: number = 0
   attempts: AttemptStat[] = []
   /** Experiment only (experiment/jev-template-select branch): see noteBlocks. */
@@ -497,6 +499,7 @@ struct ChatPage {
       msg.chatOutput = m.chatOutput
       msg.searches = m.searches
       msg.searchMs = m.searchMs
+      msg.searchResults = m.searchResults
       msg.widgetMs = m.widgetMs
       msg.attempts = m.attempts
       msg.templatePick = m.templatePick
@@ -543,6 +546,7 @@ struct ChatPage {
       sm.chatOutput = m.chatOutput
       sm.searches = m.searches
       sm.searchMs = m.searchMs
+      sm.searchResults = m.searchResults
       sm.widgetMs = m.widgetMs
       sm.attempts = m.attempts
       sm.templatePick = m.templatePick
@@ -660,6 +664,13 @@ struct ChatPage {
     context.currentRequest = text
     context.originalRequest = text
     context.recentConversation = recentWidgetConversation(turns)
+    // Taken before this turn's reply is added: the reply that answered the person last.
+    context.verifiedSearchResults = earlierSearchResults(this.messages.map((m: ChatMessage): SearchedTurn => {
+      let t = new SearchedTurn()
+      t.role = m.role
+      t.searchResults = m.searchResults
+      return t
+    }))
     let reply = new ChatMessage()
     reply.id = this.nextId++
     reply.role = 'assistant'
@@ -689,7 +700,10 @@ struct ChatPage {
         }
       }, (status: string): void => {
         this.status = status.length > 0 ? status : 'Thinking...'
-      }, stats, (verified: string): void => { context.verifiedSearchResults.push(verified) })
+      }, stats, (verified: string): void => {
+        context.verifiedSearchResults.push(verified)
+        reply.searchResults.push(verified)
+      })
       logMark('chat-reply-done')
       console.info('VERA-CHAT reply: ' + raw)
       let parsed = parseReply(raw, true)

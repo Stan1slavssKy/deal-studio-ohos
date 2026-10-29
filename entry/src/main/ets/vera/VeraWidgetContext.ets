@@ -28,6 +28,24 @@ export class WidgetBuildContext {
   parentMessageId: number = 0
 }
 
+/** A reply as far as its search results go: who said it and what web_search returned for it. */
+export class SearchedTurn {
+  role: string = 'user'
+  searchResults: string[] = []
+}
+
+/**
+ * The web results a widget asked for now can rest on: those of the reply just before the person's message. "Show it as a
+ * widget" after a reply that looked the weather up is a widget built on that search, though this turn searched nothing.
+ * Only that reply's: a widget asked for further on is another subject, and the agent builds it from its own words.
+ */
+export function earlierSearchResults(messages: SearchedTurn[]): string[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant') { return messages[i].searchResults.slice() }
+  }
+  return []
+}
+
 /** Drop oldest whole turns. Required request fields have no truncation limit. */
 export function recentWidgetConversation(turns: WidgetConversationTurn[]): WidgetConversationTurn[] {
   let out: WidgetConversationTurn[] = []

@@ -21,4 +21,17 @@ assert.equal(chat.chatAgentRequest(context({request: 'tip calculator', source: '
 // A widget built on search results is not the agent's.
 assert.equal(chat.chatAgentRequest(context({request: 'weather', verifiedSearchResults: ['x']})), null)
 assert.equal(chat.chatAgentRequest(context({request: 'tip calculator'})).widget, true)
+// The reply just before the person's message searched: a widget asked for now is built on those results; an older reply's are
+// another subject's.
+const {earlierSearchResults, SearchedTurn} = loadVera('VeraWidgetContext')
+const turn = (role, searchResults = []) => Object.assign(new SearchedTurn(), {role, searchResults})
+const weather = 'Web results for "Moscow weather today"...'
+assert.deepEqual(earlierSearchResults([turn('user'), turn('assistant', [weather]), turn('user')]), [weather])
+assert.deepEqual(earlierSearchResults([turn('user'), turn('assistant', [weather]), turn('user'), turn('assistant'), turn('user')]), [])
+assert.deepEqual(earlierSearchResults([turn('user')]), [])
+const after = context({request: 'weather card', verifiedSearchResults: earlierSearchResults([turn('assistant', [weather]), turn('user')])})
+assert.equal(chat.chatAgentRequest(after), null)
+// The chat searches for a current figure rather than refusing it.
+assert.match(chat.chatSystemPrompt(true), /search before you answer: do not say you cannot get it/)
+assert.doesNotMatch(chat.chatSystemPrompt(false), /web_search/)
 console.log('chat-prompt-check: ok')
