@@ -2,6 +2,7 @@ import { VeraPreview } from '../components/VeraPreview'
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { common } from '@kit.AbilityKit'
+import { app } from '../components/AppStyle'
 
 @Entry
 @Component
@@ -17,6 +18,8 @@ struct RunnerPage {
   @State hasBackHandler: boolean = false
   @State backPressSignal: number = 0
   @State shortcutMode: boolean = false
+  /** The project's name, once known; a program run from nowhere in a project is just "App". */
+  @State title: string = 'App'
   private closing: boolean = false
 
   aboutToAppear(): void {
@@ -39,6 +42,8 @@ struct RunnerPage {
       }
       store.init(context.filesDir)
       consent.init(context.filesDir)
+      let project = store.getProject(projectId)
+      if (project !== null) { this.title = project!.name }
     }
   }
 
@@ -70,10 +75,10 @@ struct RunnerPage {
         if (this.error.length > 0) {
           Text(this.error)
             .fontSize(14)
-            .fontColor('#CC0000')
+            .fontColor(app.dangerInk)
             .padding(16)
             .width('100%')
-            .backgroundColor('#FFECEC')
+            .backgroundColor(app.dangerFill)
         }
         if (this.vbc2.length > 0) {
           VeraPreview({
@@ -84,7 +89,7 @@ struct RunnerPage {
         }
       }.width('100%').height('100%')
     }
-    .title('App')
+    .title(this.title)
     .titleMode(NavigationTitleMode.Mini)
     .hideTitleBar(this.shortcutMode)
     .hideBackButton(this.shortcutMode)

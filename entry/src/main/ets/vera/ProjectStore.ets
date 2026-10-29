@@ -1,4 +1,5 @@
 import fs from '@ohos.file.fs'
+import { requestHeadline } from './ProjectText'
 
 
 export class Project {
@@ -6,6 +7,15 @@ export class Project {
   name: string = ''
   icon: string = ''
   createdAt: number = 0
+}
+
+/** What the project list shows of a project, without opening each of its versions every time it is drawn. */
+export class ProjectSummary {
+  versions: number = 0
+  /** The request the latest version began as. */
+  request: string = ''
+  /** When it was last worked on: its latest version, or its creation when it has none. */
+  updatedAt: number = 0
 }
 
 export class VersionMetrics {
@@ -185,6 +195,24 @@ export class ProjectStore {
     return this.readIndex()
   }
 
+  /** Per project, read from its versions once and kept until a version is saved or deleted. */
+  private summaries: Map<string, ProjectSummary> = new Map<string, ProjectSummary>()
+
+  summaryOf(project: Project): ProjectSummary {
+    let known = this.summaries.get(project.id)
+    if (known !== undefined) { return known }
+    let versions = this.listVersions(project.id)
+    let summary = new ProjectSummary()
+    summary.versions = versions.length
+    summary.updatedAt = project.createdAt
+    if (versions.length > 0) {
+      summary.updatedAt = Math.max(project.createdAt, versions[0].createdAt)
+      summary.request = requestHeadline(versions[0].prompt, versions[0].note)
+    }
+    this.summaries.set(project.id, summary)
+    return summary
+  }
+
   getProject(id: string): Project | null {
     let projects = this.readIndex()
     for (let p of projects) {
@@ -227,6 +255,7 @@ export class ProjectStore {
     }
     this.writeIndex(filtered)
     removeRecursive(this.projectDir(id))
+    this.summaries.delete(id)
   }
 
   listVersions(projectId: string): Version[] {
@@ -302,6 +331,7 @@ export class ProjectStore {
     if (v.metrics !== null) { obj['metrics'] = v.metrics }
     obj['createdAt'] = v.createdAt
     writeJson(this.versionPath(projectId, v.id), JSON.stringify(obj))
+    this.summaries.delete(projectId)
     return v
   }
 
@@ -339,6 +369,7 @@ export class ProjectStore {
     }
     fs.unlinkSync(this.versionPath(projectId, versionId))
     this.clearState(projectId, versionId)
+    this.summaries.delete(projectId)
     return false
   }
 

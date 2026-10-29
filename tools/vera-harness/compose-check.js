@@ -212,6 +212,8 @@ function runSketch(sketchJson, answers, widget = false) {
   return {
     source,
     host,
+    vm,
+    state: () => state,
     call(name, tag, value) { host.effectsAllowed = true; try { state = vm.execute(name, [state, decodeRuntimeValue([tag, value])]) } finally { host.effectsAllowed = false } },
     screen: () => texts(decodeVeraUi(vm.execute('view', [state]))[0]).join(' | '),
   }
@@ -233,6 +235,46 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
     constants: [{id: 'per', label: 'Per roll', value: 5.3}], values: [{id: 'rolls', label: 'Rolls', format: 'count'}]}),
   {'expr.rolls': pick('divide_up:area:per'), 'steps.rolls': pick('one'), 'widget.area': pick('stepper')})
   assert.match(b.screen() + ' |', /\| 6 \|/)
+}
+
+// A bar is a share of one: a percent is divided by a hundred (1 of 8 is 12.5%, not a full bar), a fraction is
+// itself, and a count has no "full" and stays a figure.
+{
+  const bar = (format, expr) => runSketch(JSON.stringify({title: 'T',
+    inputs: [{id: 'done', label: 'Done', kind: 'count', min: 0, max: 20, value: 1}],
+    constants: [{id: 'goal', label: 'Goal', value: 8, measure: 'count'}], values: [{id: 'pct', label: 'Progress', format}]}),
+  {'expr.pct': pick(expr), 'steps.pct': pick('one'), 'show.pct': pick('progress'), 'widget.done': pick('stepper')})
+  const progressOf = run => {
+    const find = n => n.kind === 'progress' ? n : (n.children || []).map(find).find(Boolean)
+    return find(decodeVeraUi(run.vm.execute('view', [run.state()]))[0])
+  }
+  for (const [format, expr] of [['percent', 'ratio_percent:done:goal'], ['fraction', 'divide:done:goal']]) {
+    const p = progressOf(bar(format, expr))
+    assert.ok(p, format + ': a bar')
+    assert.deepEqual([p.eventValue, p.maximum], [125, 1000], format + ': 1 of 8 is an eighth of the bar')
+  }
+  const count = bar('count', 'divide:done:goal')
+  assert.equal(progressOf(count), undefined, 'a count is no bar')
+  assert.match(count.source, /ui\.NumberStat\("default", "Progress"/)
+}
+
+// A written formula that bounds its result (max, min) or rounds it wins over Jev's plain vocabulary formula, which would
+// drop the bound: max(0, a - b) stays 0 when a is below b. One that does nothing more leaves Jev's choice alone.
+{
+  const sketch = (formula, result) => JSON.stringify({title: 'T',
+    inputs: [{id: 'a', label: 'A', kind: 'amount', value: 3}],
+    constants: [{id: 'b', label: 'B', value: 5, measure: 'number'}],
+    values: [{id: 'over', label: 'Over', means: 'how much A is over B', format: 'plain',
+      formula, example: {given: {a: 7, b: 5}, result}}]})
+  const answers = {'expr.over': pick('subtract:a:b'), 'steps.over': pick('one'), 'written.over': pick('right'),
+    'widget.a': pick('typed_number')}
+  const bounded = runSketch(sketch('max(0, a - b)', 2), answers)
+  assert.match(bounded.source, /math\.max\(0, /)
+  assert.match(bounded.screen() + ' |', /Over \| 0 \|/)
+  const plain = runSketch(sketch('a - b', 2), answers)
+  assert.doesNotMatch(plain.source, /math\.max/)
+  assert.equal(c.writtenSaysMore({formula: 'ceil(a / b)'}, 'divide_up'), false)
+  assert.equal(c.writtenSaysMore({formula: 'round(a / b)'}, 'divide'), true)
 }
 
 // Minutes: a countdown runs from a length in minutes, and a time in minutes reads as m:ss.
@@ -267,6 +309,31 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   l.call('addEntry', 'n', 0); l.call('addEntry', 'n', 0)
   assert.match(l.screen(), /#2/)
   assert.match(l.screen() + ' |', /Cups \| 2 \|/)
+  // A list says nothing about what the screen is for, so its header carries no list icon.
+  assert.match(l.source, /ui\.Header\("[^"]*", "T", "[^"]*", "[^"]*", ""\)/)
+}
+
+// A row is removed by its own button, not by a tap on the row; Undo puts it back where it stood, and adding the next
+// entry ends the chance to. Add is off while the entry has nothing to add.
+{
+  const l = runSketch(JSON.stringify({title: 'T', list: {label: 'Items', fields: [{id: 'what', label: 'Item', kind: 'text'}]}}), {})
+  const find = (pred) => { const f = n => pred(n) ? n : (n.children || []).map(f).find(Boolean); return f(decodeVeraUi(l.vm.execute('view', [l.state()]))[0]) }
+  const addButton = () => find(n => n.kind === 'button' && n.text === 'Add')
+  assert.equal(addButton().enabled, false, 'Add is off with nothing typed')
+  assert.doesNotMatch(l.source, /tap to remove/)
+  for (const w of ['Alpha', 'Beta', 'Gamma']) { l.call('set_draft_what', 's', w); assert.equal(addButton().enabled, true); l.call('addEntry', 'n', 0) }
+  assert.ok(find(n => n.kind === 'button' && n.text === 'Remove'), 'each row has a Remove button')
+  l.call('removeEntry', 'n', 1)
+  assert.doesNotMatch(l.screen(), /Beta/)
+  assert.match(l.screen(), /Removed \| Undo/)
+  l.call('undoRemove', 'n', 0)
+  assert.match(l.screen(), /Gamma.*Beta.*Alpha/, 'Beta is back between the other two (newest first)')
+  assert.doesNotMatch(l.screen(), /Removed/)
+  l.call('removeEntry', 'n', 2)
+  l.call('set_draft_what', 's', 'Delta'); l.call('addEntry', 'n', 0)
+  assert.doesNotMatch(l.screen(), /Removed/, 'adding ends the undo')
+  l.call('undoRemove', 'n', 0)
+  assert.doesNotMatch(l.screen(), /Gamma.*Gamma/)
 }
 
 // pill: an entry of words, a time of day and an on/off; adding it asks the calendar with the entry's own
@@ -662,3 +729,29 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
   assert.deepEqual(c.customInputs(comp), ['"Dice": state.dice'])
 }
 console.log('compose-check: ok')
+
+// What a section already holds is said to Jev where it is asked whether a section covers an input or a figure: from the block's own
+// description (`owns`), so no rule for any one kind of request lives in a prompt.
+{
+  const sketch = c.parseSketch(JSON.stringify({title: 'T', inputs: [{id: 'startTime', label: 'Start time', kind: 'count', min: 0, max: 100, value: 1}],
+    ready: ['a day plan'], values: [], events: [], other: []}))
+  const asked = (sections) => JSON.stringify(JSON.parse(c.buildComposeRequest('a day plan', sketch, false, [], sections)))
+  const withSection = asked(new Map([['ready.0', 'itinerary']]))
+  assert.match(withSection, /the section already has: the start time of the day/)
+  assert.doesNotMatch(asked(new Map()), /the section already has/, 'no section chosen: nothing to say of it')
+  assert.doesNotMatch(asked(new Map([['ready.0', 'checklist']])), /the section already has/, 'a block with no `owns` adds nothing')
+}
+console.log('compose: a chosen section says what it holds')
+
+// An input the plan calls a time is a time of day only when it is minutes after midnight (0 to 1439); a length of time is a number.
+{
+  const kindOf = (measure, min, max, value) => c.parseSketch(JSON.stringify({title: 'T', inputs: [{id: 'x', label: 'X', kind: 'time', measure, min, max, value}]})).inputs[0]
+  const start = kindOf('minutes', 0, 1439, 540)
+  assert.equal(start.kind, 'time', 'start time, 0 to 1439 minutes: a time of day'); assert.equal(start.measure, 'clock')
+  assert.equal(kindOf('seconds', 0, 3600, 10).kind, 'count', 'a rest of 0 to 3600 seconds is a length')
+  assert.equal(kindOf('minutes', 15, 240, 60).kind, 'count', 'a stop of 15 to 240 minutes is a length')
+  assert.equal(kindOf('minutes', 0, 600, 60).kind, 'count', 'a length that does not span the day is a length')
+  const wake = kindOf('minutes', 300, 1439, 420)
+  assert.equal(wake.kind, 'time', 'a wake time of 05:00 to 23:59 is a time of day'); assert.equal(wake.value, 420)
+}
+console.log('compose: a time of day is minutes after midnight, a length is a number')

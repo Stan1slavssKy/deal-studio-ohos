@@ -1,3 +1,5 @@
+import { app } from './AppStyle'
+
 /**
  * A blocking question from the agent (agent/AgentQuestions.ets): the question, its answers as buttons, the one the plan
  * was drawn for marked and first in focus, and a field for an answer of the person's own when none of them is it (which
@@ -17,15 +19,15 @@ export struct QuestionCard {
       Text(this.question)
         .fontSize(15)
         .fontWeight(FontWeight.Medium)
-        .fontColor('#1A1A1A')
+        .fontColor(app.inkStrong)
         .width('100%')
       Flex({ wrap: FlexWrap.Wrap }) {
         ForEach(this.options, (option: string, index: number) => {
           Button(index === this.fallback ? option + ' (suggested)' : option)
             .type(ButtonType.Capsule)
             .fontSize(14)
-            .fontColor(index === this.fallback ? '#FFFFFF' : '#2F6BFF')
-            .backgroundColor(index === this.fallback ? '#2F6BFF' : '#E8EEFF')
+            .fontColor(index === this.fallback ? app.onPrimary : app.primaryInk)
+            .backgroundColor(index === this.fallback ? app.primary : app.primaryFill)
             .margin({ right: 8, bottom: 8 })
             .onClick(() => { this.onPick(index) })
         }, (option: string, index: number) => index.toString() + option)
@@ -39,9 +41,11 @@ export struct QuestionCard {
           .fontSize(14)
           .height(40)
           .layoutWeight(1)
-          .backgroundColor('#FFFFFF')
+          .backgroundColor(app.surface)
         Button('Answer')
           .type(ButtonType.Capsule)
+          .backgroundColor(app.primary)
+          .fontColor(app.onPrimary)
           .fontSize(14)
           .height(40)
           .enabled(this.typed.trim().length > 0)
@@ -51,7 +55,7 @@ export struct QuestionCard {
     }
     .width('100%')
     .padding(12)
-    .backgroundColor('#F3F6FF')
+    .backgroundColor(app.primaryFill)
     .borderRadius(12)
   }
 }

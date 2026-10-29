@@ -221,7 +221,7 @@ const RESERVED_IDS: string[] = ['state', 'value', 'elapsedMs', 'running', 'finis
   'elapsed', 'duration', 'view', 'init', 'ui', 'math', 'strings', 'sdk', 'time', 'entries', 'entryCount', 'entryTotal',
   'draftText', 'draftNumberText', 'entry', 'out', 'rows', 'i', 'e', 'emptyEntries', 'total', 'next', 'startAt',
   'effectNote', 'share', 'countdownSeconds', 'addEntry', 'removeEntry', 'ignored', 'onEntryAnswer', 'answered', 'marked',
-  'note', 'sub']
+  'note', 'sub', 'undoRemove', 'removedEntries', 'removedAt', 'gone', 'none']
 
 /** The sketch from the model's reply, or null when it is not one. Ids that cannot be names are dropped. */
 export function parseSketch(text: string): Sketch | null {
@@ -257,8 +257,11 @@ export function parseSketch(text: string): Sketch | null {
       if (MEASURES.indexOf(input.measure) < 0 || input.measure === 'clock') { input.measure = 'number' }
       if (input.measure === 'money') { input.unit = currencySign(input.unit) }
       // A length of time the sketch called a time ("kind": "time", "measure": "seconds") is a number of seconds or minutes, as it says.
-      // Minutes running over the whole day (0 to 1439) are a time of day: the plan's own rule writes 07:30 as 450 minutes.
-      if (input.kind === 'time' && isTime(input.measure) && !(input.measure === 'minutes' && input.max >= 1439)) { input.kind = 'count' }
+      // Unless it is minutes after midnight, which is what its range says: 0 to 1439 ("Start time" 09:00 is 540). A length of time
+      // (a rest of 0 to 3600 seconds, a stop of 15 to 240 minutes) is a number, as it says. The range may start later in the
+      // day (a wake time of 05:00 to 23:59 is 300 to 1439): it is the end at midnight that says so.
+      let minutesOfTheDay = input.measure === 'minutes' && input.min < 1439 && input.max >= 1439 && input.max <= 1440
+      if (input.kind === 'time' && isTime(input.measure) && !minutesOfTheDay) { input.kind = 'count' }
       // A time of day is minutes since midnight, whatever measure the sketch wrote.
       if (input.kind === 'time') {
         input.measure = 'clock'
@@ -1488,7 +1491,8 @@ export function askReady(sketch: Sketch, questions: Record<string, Object>): voi
  * `settled` names questions that are not asked because something else answered them already (the needs plan's own choice of a
  * section or a part, NeedsChoose.ets); readComposition reads those answers from the body it is given.
  */
-export function buildComposeRequest(prompt: string, sketch: Sketch, widget: boolean = false, settled: string[] = []): string {
+export function buildComposeRequest(prompt: string, sketch: Sketch, widget: boolean = false, settled: string[] = [],
+    sections: Map<string, string> = new Map<string, string>()): string {
   let questions: Record<string, Object> = {}
 
   let theme: Map<string, string> = new Map<string, string>()
@@ -1629,7 +1633,12 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
     // A plan names a section's own buttons and lists again as events and items of other: what a section does is left
     // to it, by Jev's reading rather than the plan's.
     let needs: Map<string, string> = new Map<string, string>()
-    for (let i = 0; i < sketch.ready.length; i++) { needs.set('ready.' + i.toString(), 'part of the ready-made section for: ' + sketch.ready[i]) }
+    for (let i = 0; i < sketch.ready.length; i++) {
+      // A section already chosen for the need says what it holds, so that what it holds is not asked of the person a second time.
+      let spec = fragments().find((f: FragmentSpec): boolean => f.kind === sections.get('ready.' + i.toString()))
+      needs.set('ready.' + i.toString(), 'part of the ready-made section for: ' + sketch.ready[i] +
+        (spec !== undefined && spec.owns.length > 0 ? ' (the section already has: ' + spec.owns + ')' : ''))
+    }
     needs.set('none', 'no: something of its own, apart from all of these')
     for (let e of sketch.events) {
       questions['within.event.' + e.id] = choice('Is "' + e.when + ': ' + e.what + '" part of one of these?', needs)
@@ -2061,6 +2070,10 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
 
   // Values nothing could work out, with why: refused, or left out at the end when the sketch added them.
   let failed: Map<string, string> = new Map<string, string>()
+  // A figure a chosen section already shows is that section's (what it holds is said to Jev: FragmentSpec.owns): it leaves,
+  // and an input only it read leaves with it, rather than both being put on the screen beside the section. It is still
+  // worked out here, so a figure that stays and reads it keeps a working binding (dropValues).
+  let shownBySection: string[] = []
   for (let i = 0; i < sketch.values.length; i++) {
     let v = sketch.values[i]
     let keys: string[] = []
@@ -2068,6 +2081,9 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     let binding = new Binding()
     let show = answerOf(answers, 'show.' + v.id, SHOWS, comp.answers)
     binding.show = show.length > 0 ? show : (v.format === 'fraction' ? 'progress' : 'stat')
+    if (comp.blocks.length > 0 && answerOf(answers, 'within.value.' + v.id, served, comp.answers, COVERED_ABOVE).length > 0) {
+      shownBySection.push(v.id)
+    }
     if (keys.length === 0 || keys.length >= MAX_CRITERIA) {
       let why = keys.length === 0 ? 'nothing to work it out from' : 'too many ways to work it out'
       let fault = useWritten(comp, answers, i, binding)
@@ -2097,6 +2113,10 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     if (why.length > 0) {
       let fault = useWritten(comp, answers, i, binding)
       if (fault.length > 0) { failed.set(v.id, why + '; ' + fault) }
+    } else if (writtenSaysMore(v, binding.formula)) {
+      // The plan's own formula bounds or rounds what the vocabulary's cannot ("max(0, a - b)" is not
+      // "subtract"): it wins when it holds up. When it does not, the vocabulary's stays, unchanged.
+      useWritten(comp, answers, i, binding)
     }
     comp.bindings.set(v.id, binding)
   }
@@ -2252,7 +2272,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       comp.sketch = withList(comp.sketch, trimmed)
     }
   }
-  dropValues(comp, answers, failed, served)
+  dropValues(comp, answers, failed, served, shownBySection)
   // An input nothing reads does nothing. A number the request did not ask for is the sketch's extra and is
   // left out, and the note says so; one it asked for, a switch or words mean the request wants something
   // the parts do not do with it.
@@ -2305,7 +2325,8 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
  * other value, not the countdown's length, not an item of "other" they were said to cover -- are left out,
  * as an input is; the rest refuse the screen. A value read only by others left out goes with them.
  */
-function dropValues(comp: Composition, answers: Record<string, Object>, failed: Map<string, string>, served: string[]): void {
+function dropValues(comp: Composition, answers: Record<string, Object>, failed: Map<string, string>, served: string[],
+                    shownBySection: string[]): void {
   let sketch = comp.sketch
   // A value worked out from one that cannot be is no better off: its example passed on a number given to it.
   for (let v of sketch.values) {
@@ -2322,6 +2343,11 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     if (answerOf(answers, 'asked.value.' + id, ['added'], comp.answers, ADDED_ABOVE) === 'added') { leaving.push(id) }
     else if (answerOf(answers, 'within.value.' + id, served, comp.answers, COVERED_ABOVE).length > 0) { leaving.push(id); sections.push(id) }
   })
+  // One a section shows that could be worked out leaves too, unless a figure that stays reads it (the loop below
+  // brings it back, still bound).
+  for (let id of shownBySection) {
+    if (!failed.has(id)) { leaving.push(id); sections.push(id) }
+  }
   let covering: string[] = []
   for (let i = 0; i < sketch.other.length; i++) {
     let a = answers['covers.' + i.toString()] as Record<string, Object>
@@ -2381,6 +2407,12 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     }
     else { comp.dropped.push('value "' + label + '": not asked for, and ' + why) }
   })
+  for (let id of shownBySection) {
+    if (failed.has(id) || leaving.indexOf(id) < 0) { continue }
+    let label = labelOf(sketch, id)
+    comp.dropped.push('value "' + label + '": a section shows it')
+    comp.claimed.push('shows ' + label)
+  }
   if (leaving.length === 0) { return }
   for (let id of leaving) { comp.bindings.delete(id) }
   let out = withList(sketch, sketch.list)
@@ -2458,6 +2490,17 @@ function useWritten(comp: Composition, answers: Record<string, Object>, index: n
   binding.scale = m === 'seconds' && v.format === 'minutes' ? ' / 60' : (m === 'minutes' && v.format === 'seconds' ? ' * 60' : '')
   comp.answers.push('written.' + v.id + ': ' + v.formula)
   return ''
+}
+
+/**
+ * Whether value `v`'s written formula does something formula `formulaId` of the vocabulary cannot: bounds it (max, min),
+ * takes its size (abs), rounds it or raises it. A ceil is what divide_up and round_up already do.
+ */
+export function writtenSaysMore(v: SketchValue, formulaId: string): boolean {
+  let calls = v.formula.match(/\b(max|min|abs|floor|ceil|round|pow|sqrt)\s*\(/g)
+  if (calls === null) { return false }
+  let rounding = formulaId === 'divide_up' || formulaId === 'round_up'
+  return calls.some((c: string): boolean => !(rounding && c.indexOf('ceil') === 0))
 }
 
 /**
@@ -2600,6 +2643,9 @@ function clockFields(): Field[] {
 function entryFields(list: SketchList): Field[] {
   let fields: Field[] = [new Field('entries', 'LogEntry[]', 'emptyEntries')]
   for (let f of list.fields) { fields.push(new Field(draftOf(f), draftType(f), draftInit(f))) }
+  // The entry removed last and where it stood, so one tap can put it back (none, or exactly one).
+  fields.push(new Field('removedEntries', 'LogEntry[]', 'emptyEntries'))
+  fields.push(new Field('removedAt', 'number', '-1'))
   return fields
 }
 
@@ -2937,6 +2983,16 @@ function statColumns(stats: string[]): number {
   return stats.filter((st: string): boolean => st.indexOf('ui.When(entryCount === 0,') !== 0).length
 }
 
+/**
+ * How full a bar for value `v` is, as a share of one: a fraction already is one, a percent is a hundredth of itself.
+ * Empty for any other value -- a count or an amount has no "full", so it is shown as a figure instead of a bar.
+ */
+export function barFraction(v: SketchValue): string {
+  if (v.format === 'fraction') { return v.id }
+  if (v.format === 'percent') { return '(' + v.id + ' / 100)' }
+  return ''
+}
+
 function figuresOf(comp: Composition): Figures {
   let sketch = comp.sketch
   let out = new Figures()
@@ -2948,7 +3004,9 @@ function figuresOf(comp: Composition): Figures {
     if (v.hidden) { continue }
     if (b.show === 'hero' && comp.widget) { leading.push(statFor(v, v.id)) }
     else if (b.show === 'hero') { out.heroes.push(v.id) }
-    else if (b.show === 'progress') { out.bars.push('ui.Progress("accent", ' + quote(v.label) + ', math.round(math.min(math.max(' + v.id + ', 0), 1) * 1000), 1000)') }
+    else if (b.show === 'progress' && barFraction(v).length > 0) {
+      out.bars.push('ui.Progress("accent", ' + quote(v.label) + ', math.round(math.min(math.max(' + barFraction(v) + ', 0), 1) * 1000), 1000)')
+    }
     else if (comp.provisional && b.formula.length === 0) { stats.push('ui.Stat("default", ' + quote(v.label) + ', "—", "", "chart")') }
     else if (isEntryAverage(sketch, v, b)) {
       // An average of no entries is not 0.0: until there is one, the figure is a dash.
@@ -2986,7 +3044,7 @@ function figuresOf(comp: Composition): Figures {
     for (let g of givens) { figureRows.push(figureRow(g, g.id)) }
     for (let v of sketch.values) {
       let b = comp.bindings.get(v.id)!
-      if (v.hidden || b.show === 'progress' || out.heroes.indexOf(v.id) >= 0) { continue }
+      if (v.hidden || (b.show === 'progress' && barFraction(v).length > 0) || out.heroes.indexOf(v.id) >= 0) { continue }
       figureRows.push(figureRow(v, v.id))
     }
     stats = []
@@ -3256,6 +3314,8 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   }
   let added: Map<string, string> = new Map<string, string>()
   added.set('entries', 'out')
+  // Adding is the next thing done: a removal can no longer be undone.
+  added.set('removedEntries', 'none')
   // Typed fields empty for the next entry; a time and an on/off keep what was set.
   for (let f of list.fields) { if (draftType(f) === 'string') { added.set(draftOf(f), '""') } }
   let calls = effectCallsAt(comp, 'entry_added')
@@ -3271,6 +3331,7 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   for (let f of list.fields) { members.push(f.id + ': ' + draftValue(f)) }
   members.push('minute: time.hourOfDay() * 60 + time.minuteOfHour()')
   if (answering.length > 0) { members.push('status: "pending"') }
+  add.push('  let none: LogEntry[] = [];')
   add.push('  let entry: LogEntry = {' + members.join(', ') + '};')
   add.push('  let out: LogEntry[] = [];')
   add.push('  for (let e: LogEntry of state.entries) { out.push(e); }')
@@ -3295,7 +3356,10 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     lapMembers.push('minute: time.hourOfDay() * 60 + time.minuteOfHour()')
     let lapped: Map<string, string> = new Map<string, string>()
     lapped.set('entries', 'out')
+    // A lap moves the entries on, as an Add does: a removal can no longer be undone into its old place.
+    lapped.set('removedEntries', 'none')
     functions.push(fn(['function lapEntry(state: AppState, ignored: number): AppState {',
+      '  let none: LogEntry[] = [];',
       '  let before: number = 0;',
       '  if (state.entries.length() > 0) { before = state.entries[state.entries.length() - 1].' + total!.id + '; }',
       '  let lap: LogEntry = {' + lapMembers.join(', ') + '};',
@@ -3334,14 +3398,35 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   }
   let removed: Map<string, string> = new Map<string, string>()
   removed.set('entries', 'out')
+  removed.set('removedEntries', 'gone')
+  removed.set('removedAt', 'value')
   functions.push(fn(['function removeEntry(state: AppState, value: number): AppState {',
     '  let out: LogEntry[] = [];',
+    '  let gone: LogEntry[] = [];',
     '  let i: number = 0;',
     '  while (i < state.entries.length()) {',
-    '    if (i !== value) { out.push(state.entries[i]); }',
+    '    if (i !== value) { out.push(state.entries[i]); } else { gone.push(state.entries[i]); }',
     '    i = i + 1;',
     '  }',
     '  return ' + changed(fields, removed) + ';',
+    '}']))
+  // Undo puts the removed entry back where it stood.
+  let restored: Map<string, string> = new Map<string, string>()
+  restored.set('entries', 'out')
+  restored.set('removedEntries', 'none')
+  restored.set('removedAt', '-1')
+  functions.push(fn(['function undoRemove(state: AppState, ignored: number): AppState {',
+    '  if (state.removedEntries.length() === 0) { return state; }',
+    '  let out: LogEntry[] = [];',
+    '  let none: LogEntry[] = [];',
+    '  let i: number = 0;',
+    '  while (i < state.entries.length()) {',
+    '    if (i === state.removedAt) { out.push(state.removedEntries[0]); }',
+    '    out.push(state.entries[i]);',
+    '    i = i + 1;',
+    '  }',
+    '  if (state.removedAt >= state.entries.length()) { out.push(state.removedEntries[0]); }',
+    '  return ' + changed(fields, restored) + ';',
     '}']))
 
   let form: string[] = []
@@ -3352,7 +3437,9 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     else if (f.kind === 'time') { form.push('ui.TimeField("default", ' + quote(f.label) + ', ' + at + ')') }
     else { form.push('ui.Toggle("default", ' + quote(f.label) + ', ' + at + ')') }
   }
-  form.push('ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, true)])')
+  // Add is off until the entry has what addEntry needs, so the tap is never silently ignored.
+  let canAdd = required !== null ? 'strings.trim(state.' + draftOf(required) + ') !== ""' : 'true'
+  form.push('ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, ' + canAdd + ')])')
   // Laps are made by the stopwatch's Lap button: there is no form to type one in.
   let laps = hasLaps(comp)
   if (laps) { form = [] }
@@ -3399,14 +3486,17 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     view.push('  rows.push(ui.ListItem("default", ' + title + ', sub, ' + trailing + ', "", 0, false, ""));')
     view.push('  rows.push(ui.ActionBar("end", [' + rowButtons.join(', ') + ', ui.Button("secondary", "Remove", "removeEntry", i, true)]));')
   } else {
-    view.push('  rows.push(ui.ListItem("default", ' + title + ', sub + " · tap to remove", ' + trailing + ', "removeEntry", i, true, ""));')
+    // A row and an action bar with one button are drawn as one row with the button at its end.
+    view.push('  rows.push(ui.ListItem("default", ' + title + ', sub, ' + trailing + ', "", 0, false, ""));')
+    view.push('  rows.push(ui.ActionBar("end", [ui.Button("secondary", "Remove", "removeEntry", i, true)]));')
   }
   view.push('  i = i - 1;')
   view.push('}')
   let listNodes: string[] = ['ui.SectionHeader("default", ' + quote(list.label) + ', "Newest first", ui.numberToString(entryCount))',
     'ui.When(entryCount === 0, ui.EmptyState("default", "Nothing added yet", ' +
     quote(laps ? 'Start the stopwatch and tap Lap.' : (form.length > 1 ? 'Fill in the fields above and tap Add.' : 'Tap Add to add one.')) + ', "", "", "list"))',
-    'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))']
+    'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))',
+    'ui.When(state.removedEntries.length() > 0, ui.Snackbar("default", "Removed", "Undo", "undoRemove"))']
   if (comp.widget) {
     for (let node of form.concat(listNodes)) { view.push('sets.push(' + node + ');') }
   } else {
@@ -3518,7 +3608,9 @@ export function compositionParts(comp: Composition): FragmentSpec[] {
     p.viewBlock = ''
   }
   view.push('}')
-  parts.push(part('screen', [], [], view))
+  let screen = part('screen', [], [], view)
+  screen.tab = 'Overview'
+  parts.push(screen)
   return parts
 }
 
@@ -3626,10 +3718,12 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
   plan.globals.set('__THEME__', comp.theme)
   // A chat widget has no header: the conversation already says what it is.
   plan.globals.set('__HEADER_STYLE__', comp.widget ? 'none' : 'default')
+  if (comp.widget) { plan.globals.set('__WIDGET__', 'true') }
   plan.globals.set('__TITLE__', inQuotes(sketch.title))
   plan.globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
   plan.globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
-  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : ''))
+  // A clock says what a timed screen is about; a list icon says nothing about the subject, so a screen with only a list gets none.
+  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : '')
 
   for (let input of comp.inputs) { plan.state.push(new StateItem(input.id, 'input', inputType(input), input.label)) }
   for (let k of sketch.constants) { plan.state.push(new StateItem(k.id, 'constant', 'number', k.label)) }
@@ -3732,7 +3826,8 @@ export function wholeScreenPlan(sketch: Sketch, widget: boolean): ScreenPlan {
   plan.globals.set('__TITLE__', inQuotes(sketch.title))
   plan.globals.set('__EYEBROW__', inQuotes(sketch.eyebrow))
   plan.globals.set('__SUPPORTING__', inQuotes(sketch.subtitle))
-  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : (sketch.list !== null ? 'list' : ''))
+  // A clock says what a timed screen is about; a list icon says nothing about the subject, so a screen with only a list gets none.
+  plan.globals.set('__HEADER_ICON__', hasClock(sketch) ? 'clock' : '')
   let n = 0
   let add = (need: string, phone: boolean = false): void => { plan.addToWrite('screen.' + (n++).toString(), need, phone) }
   for (let input of sketch.inputs) {
@@ -3964,7 +4059,17 @@ export async function composeFromSketch(result: ComposeResult, prompt: string, s
     widget: boolean = false, pre: Record<string, Object> | null = null, settled: string[] = []): Promise<ComposeResult> {
   result.parsed = sketch
   let started = Date.now()
-  let request = buildComposeRequest(prompt, sketch, widget, settled)
+  let chosen: Map<string, string> = new Map<string, string>()
+  if (pre !== null) {
+    for (let i = 0; i < sketch.ready.length; i++) {
+      let answer = pre![('ready.' + i.toString())]
+      if (answer !== undefined && answer !== null && typeof answer === 'object') {
+        let kind = (answer as Record<string, Object>)['choice']
+        if (typeof kind === 'string') { chosen.set('ready.' + i.toString(), kind as string) }
+      }
+    }
+  }
+  let request = buildComposeRequest(prompt, sketch, widget, settled, chosen)
   let body = await askChoices(request)
   // No answer is most often the network: once more before the plan is left to the route's wider holes.
   if (body.length === 0) { body = await askChoices(request) }

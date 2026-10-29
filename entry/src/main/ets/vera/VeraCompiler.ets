@@ -2115,6 +2115,8 @@ class Analyzer {
       let arg = expr.argumentsList[i]
       if (!(arg instanceof StringExpression)) return
       let handlerName = (arg as StringExpression).value
+      // No action: a banner or an empty state with nothing to tap passes "".
+      if (handlerName.length === 0) return
       let fn = this.model.functions.get(handlerName)
       if (fn === undefined) {
         if (!this.options.allowMissingHandlers) { this.addError('E2106', 'no handler named "' + handlerName + '"', arg.span) }
@@ -2691,6 +2693,77 @@ function serializeVbc2(module: BytecodeModule): string {
   return JSON.stringify(['VBC2', module.entryCandidates, functions])
 }
 
+// ===== Fields nothing reads =====
+
+/**
+ * The fields of the app's state (the class init() returns) that no code reads. A handler hands the state on field by field
+ * ({a: state.a, b: value}); that is not a read. A read is any other use of `.field`: in view(), in a formula, a condition, a call.
+ * A field only a setter writes is an input the person can fill in that changes nothing.
+ */
+function unreadStateFields(app: Application): string[] {
+  let stateName = ''
+  for (let d of app.declarations) {
+    if (d instanceof FunctionDeclaration && (d as FunctionDeclaration).name === 'init') { stateName = (d as FunctionDeclaration).returnType.name }
+  }
+  let fields: string[] = []
+  for (let d of app.declarations) {
+    if (d instanceof ClassDeclaration && (d as ClassDeclaration).name === stateName) {
+      for (let f of (d as ClassDeclaration).fields) { fields.push(f.name) }
+    }
+  }
+  let read = new Set<string>()
+  let walkExpr = (e: Expression): void => {}
+  let walkStmt = (st: Statement): void => {}
+  walkExpr = (e: Expression): void => {
+    if (e instanceof SelectExpression) {
+      let sel = e as SelectExpression
+      read.add(sel.field)
+      walkExpr(sel.target)
+    } else if (e instanceof UnaryExpression) { walkExpr((e as UnaryExpression).operand) }
+    else if (e instanceof BinaryExpression) { walkExpr((e as BinaryExpression).left); walkExpr((e as BinaryExpression).right) }
+    else if (e instanceof CallExpression) {
+      walkExpr((e as CallExpression).callee)
+      for (let a of (e as CallExpression).argumentsList) { walkExpr(a) }
+    } else if (e instanceof IndexExpression) { walkExpr((e as IndexExpression).target); walkExpr((e as IndexExpression).index) }
+    else if (e instanceof ArrayExpression) { for (let x of (e as ArrayExpression).elements) { walkExpr(x) } }
+    else if (e instanceof ObjectExpression) {
+      // {a: state.a} in a new state is the field handed on under its own name, not read. Only in a new state: an entry built
+      // from a draft field of the same name ({title: state.title, done: false}) reads it. A new state names every field of
+      // the state class and nothing else.
+      let props = (e as ObjectExpression).properties
+      let isState = props.length === fields.length && props.every((p: Property): boolean => fields.indexOf(p.name) >= 0)
+      for (let prop of props) {
+        let v = prop.value
+        if (isState && v instanceof SelectExpression && (v as SelectExpression).field === prop.name) { walkExpr((v as SelectExpression).target) }
+        else { walkExpr(v) }
+      }
+    } else if (e instanceof LambdaExpression) { walkStmt((e as LambdaExpression).body) }
+    else if (e instanceof AwaitExpression) { walkExpr((e as AwaitExpression).operand) }
+    else if (e instanceof EnsureNotNullExpression) { walkExpr((e as EnsureNotNullExpression).operand) }
+  }
+  walkStmt = (st: Statement): void => {
+    if (st instanceof BlockStatement) { for (let x of (st as BlockStatement).statements) { walkStmt(x) } }
+    else if (st instanceof LetStatement) { walkExpr((st as LetStatement).initializer) }
+    else if (st instanceof IfStatement) {
+      walkExpr((st as IfStatement).condition)
+      walkStmt((st as IfStatement).thenBranch)
+      let other = (st as IfStatement).elseBranch
+      if (other !== null) { walkStmt(other) }
+    } else if (st instanceof WhileStatement) { walkExpr((st as WhileStatement).condition); walkStmt((st as WhileStatement).body) }
+    else if (st instanceof ForOfStatement) { walkExpr((st as ForOfStatement).iterable); walkStmt((st as ForOfStatement).body) }
+    else if (st instanceof ReturnStatement) {
+      let v = (st as ReturnStatement).value
+      if (v !== null) { walkExpr(v) }
+    } else if (st instanceof AssignStatement) { walkExpr((st as AssignStatement).target); walkExpr((st as AssignStatement).value) }
+    else if (st instanceof ExpressionStatement) { walkExpr((st as ExpressionStatement).expression) }
+    else if (st instanceof TryStatement) { walkStmt((st as TryStatement).tryBlock); walkStmt((st as TryStatement).catchBlock) }
+  }
+  for (let d of app.declarations) {
+    if (d instanceof FunctionDeclaration) { walkStmt((d as FunctionDeclaration).body) }
+  }
+  return fields.filter((f: string): boolean => !read.has(f))
+}
+
 // ===== Public API =====
 
 export class CompileResult {
@@ -2700,6 +2773,8 @@ export class CompileResult {
    * it takes: number, string or boolean. For running a new program once before it is served.
    */
   handlers: Map<string, string> = new Map<string, string>()
+  /** Fields of the app's state that no code reads (unreadStateFields): a setter writes them, nothing shows or uses what it wrote. */
+  unreadFields: string[] = []
   constructor(vbc2: string) { this.vbc2 = vbc2 }
 }
 
@@ -2735,5 +2810,6 @@ export function compileVeraSource(source: string, sourceName: string = '<source>
   let module = new BytecodeCompiler(model).compile()
   let result = new CompileResult(serializeVbc2(module))
   result.handlers = handlersOf(model)
+  result.unreadFields = unreadStateFields(app)
   return result
 }

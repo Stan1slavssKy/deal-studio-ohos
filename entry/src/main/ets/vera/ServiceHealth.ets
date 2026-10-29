@@ -82,3 +82,21 @@ export function describeService(n: ServiceNote): string {
   return head + n.failed.toString() + ' of ' + calls.toString() + ' call(s) failed' + (n.lastError.length > 0 ? ' (' + n.lastError + ')' : '')
 }
 
+
+/**
+ * What a service that did not answer cost this run, in words for the person: a screen that is slower or plainer than usual is
+ * not blamed on the app when Jev or the web search was down. '' when every call answered.
+ */
+export function serviceTrouble(): string {
+  let lines: string[] = []
+  for (let n of notes) {
+    if (n.failed === 0) { continue }
+    let calls = n.answered + n.failed
+    let what = silent(n) ? n.service + ' did not answer' : n.service + ' failed ' + n.failed.toString() + ' of ' + calls.toString() + ' calls'
+    let cost = ''
+    if (n.service === SERVICE_JEV) { cost = 'the ready-made parts were chosen without it, so the screen may be slower and plainer' }
+    else if (n.service === SERVICE_EXA) { cost = 'real data may be missing' }
+    lines.push(what + (n.lastError.length > 0 ? ' (' + n.lastError + ')' : '') + (cost.length > 0 ? ': ' + cost : ''))
+  }
+  return lines.join('. ')
+}

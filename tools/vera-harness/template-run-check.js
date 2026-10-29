@@ -105,3 +105,59 @@ function view(state: AppState): ui.View {
 }`
 assert.match(smokeRun(compileVeraSource(empty)), /drew an empty screen/)
 console.log('template-run-check: ok (' + fragments().length + ' fragments)')
+
+// A record_log in a widget (the global __WIDGET__) is the same program with a smaller form: no note, no clear-all; it still adds and removes.
+{
+  const widgetGlobals = new Map(globals); widgetGlobals.set('__WIDGET__', 'true')
+  const run = g => {
+    const result = compileVeraSource(composeProgram(['record_log'], g, [values('record_log')]))
+    return new VirtualMachine(deserializeVbc2(result.vbc2 !== undefined ? result.vbc2 : result), new UiHostEnvironment())
+  }
+  const full = run(globals), small = run(widgetGlobals)
+  const fullText = texts(view(full, full.execute('init'))).join('|'), smallText = texts(view(small, small.execute('init'))).join('|')
+  assert.match(fullText, /Note/); assert.match(fullText, /Start over/)
+  assert.doesNotMatch(smallText, /Note/, 'a widget form has no note'); assert.doesNotMatch(smallText, /Start over/)
+  assert.match(smallText, /Add/); assert.match(smallText, /Remove last/)
+  let s = small.execute('init')
+  s = small.execute('setAmount1', [s, str('12')]); s = small.execute('addRecord1', [s, int(0)])
+  assert.match(texts(view(small, s)).join('|'), /12/, 'a widget still adds a record')
+}
+console.log('template-run: record_log widget view ok')
+
+// A widget with more than one block in it is one window of tabs: only the open pane is drawn, and the handler opens another.
+{
+  const widgetGlobals = new Map(globals); widgetGlobals.set('__WIDGET__', 'true'); widgetGlobals.set('__HEADER_STYLE__', 'none')
+  const kinds = ['record_log', 'checklist', 'bar_chart']
+  const result = compileVeraSource(composeProgram(kinds, widgetGlobals, kinds.map(values)))
+  const vm = new VirtualMachine(deserializeVbc2(result.vbc2 !== undefined ? result.vbc2 : result), new UiHostEnvironment())
+  let state = vm.execute('init')
+  const tabs = node => node.kind === 'tabs' ? node : (node.children || []).map(tabs).find(Boolean)
+  const t = tabs(view(vm, state))
+  assert.ok(t, 'the widget is a ui.Tabs')
+  assert.deepEqual(t.options, ['Record log', 'Checklist', 'Bar chart'])
+  assert.equal(t.eventValue, 0); assert.equal(t.children.length, 3)
+  state = vm.execute('setPaneTab', [state, int(1)])
+  assert.equal(tabs(view(vm, state)).eventValue, 1, 'the handler opens another pane')
+  state = vm.execute('addRecord1', [vm.execute('setAmount1', [state, str('12')]), int(0)])
+  assert.equal(tabs(view(vm, state)).eventValue, 1, 'a handler of a block keeps the pane open')
+  // One block alone is not tabbed.
+  const one = compileVeraSource(composeProgram(['record_log'], widgetGlobals, [values('record_log')]))
+  const vm1 = new VirtualMachine(deserializeVbc2(one.vbc2 !== undefined ? one.vbc2 : one), new UiHostEnvironment())
+  assert.ok(!tabs(view(vm1, vm1.execute('init'))), 'one block: no tabs')
+}
+console.log('template-run: widget tabs ok')
+
+// An itinerary has its own start time (hours and minutes) and gap; changing them moves the stops' windows.
+{
+  const vm = build(['itinerary'])
+  let s = vm.execute('init')
+  const find = (node, kind) => node.kind === kind ? node : (node.children || []).map(c => find(c, kind)).find(Boolean)
+  const t0 = view(vm, s)
+  assert.ok(find(t0, 'timefield'), 'the day has a start time field')
+  const before = texts(t0).join('|')
+  s = vm.execute('setStart1', [s, int(600)])
+  const after = texts(view(vm, s)).join('|')
+  assert.notEqual(before, after, 'a later start moves the stops')
+  assert.match(after, /10:00/)
+}
+console.log('template-run: itinerary start time ok')

@@ -73,6 +73,22 @@ export class LiveNode {
   @Trace email: boolean = false
   @Trace emailMessage: string = ''
   @Trace children: LiveNode[] = []
+  /**
+   * Renderer state: this node appeared because of something the person just did (a card opened, a result banner came up),
+   * so the renderer brings it into view once it has a size. Never traced: reading it must not redraw anything.
+   */
+  reveal: boolean = false
+}
+
+/** The kinds that are brought into view when a tap makes them appear: what opens, not a row added to a list. */
+const REVEALED_KINDS: string[] = ['card', 'banner', 'section']
+
+/** Whether the frame being reconciled answers a person's action; only then is what appears brought into view. */
+let revealArmed: boolean = false
+
+/** Arm or disarm marking new cards, banners and sections for reveal (VeraPreview.dispatch arms it around one frame). */
+export function armReveal(on: boolean): void {
+  revealArmed = on
 }
 
 /** A fresh live subtree, used for the parts a frame actually adds. */
@@ -151,6 +167,8 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.kind !== next.kind) {
     live.kind = next.kind
     live.layoutWidth = 0
+    // A ui.When that turned true: the spacer that held its place is now the card.
+    if (revealArmed && REVEALED_KINDS.indexOf(next.kind) >= 0) { live.reveal = true }
   }
   if (live.style !== next.style) { live.style = next.style }
   if (live.text !== next.text) { live.text = next.text }
@@ -209,6 +227,10 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   // by reference; only the tail is new.
   let kids: LiveNode[] = []
   for (let i = 0; i < shared; i++) { kids.push(live.children[i]) }
-  for (let i = shared; i < next.children.length; i++) { kids.push(toLive(next.children[i])) }
+  for (let i = shared; i < next.children.length; i++) {
+    let added = toLive(next.children[i])
+    if (revealArmed && REVEALED_KINDS.indexOf(added.kind) >= 0) { added.reveal = true }
+    kids.push(added)
+  }
   live.children = kids
 }

@@ -145,3 +145,45 @@ console.log('needs-plan quotes and hidden figures ok')
   assert.ok(comp.custom.some(t => /\(the plan works it out as a \* 2; for a = 1 that is 2\)$/.test(t)), 'the plan\'s own formula goes with it: ' + comp.custom.join(' / '))
 }
 console.log('needs-plan words and forms ok')
+
+// A widget has room for WIDGET_ROOM things: the rest is cut, with what read it.
+{
+  const plan = x => np.parseNeedsPlan(JSON.stringify(x))
+  const trip = plan({title: 'T', needs: [
+    {type: 'content', what: 'a day-by-day itinerary', from: 'itinerary'},
+    {type: 'entries', label: 'Expenses', fields: []},
+    {type: 'figure', id: 'total', label: 'Total spent', formula: 'entries.total'},
+    {type: 'figure', id: 'share', label: 'Top share', formula: 'entries.total / 2'},
+    {type: 'action', id: 'cal', when: 'on a button', what: 'add to calendar', on: 'button', from: 'calendar'}]})
+  const roomy = plan({title: 'T', needs: trip.needs.map(n => n.raw)})
+  assert.deepEqual(np.capForWidget(roomy, np.WIDGET_ROOM), [], 'the trip planner of five things fits: the tabs hold them')
+  assert.equal(roomy.needs.length, 5)
+  const cut = np.capForWidget(trip, 3)
+  assert.equal(cut.length, 2)
+  assert.ok(cut[0].startsWith('Top share') && cut[1].includes('add to calendar'), cut.join(' | '))
+  // What read a need that was cut goes with it; a figure that only feeds another takes no room.
+  const timer = plan({title: 'T', needs: [
+    {type: 'content', what: 'a tip', from: 'tip'}, {type: 'content', what: 'a quote', from: 'quote'}, {type: 'content', what: 'a joke', from: 'joke'},
+    {type: 'countdown', label: 'Brew', length: 'x'},
+    {type: 'figure', id: 'left', label: 'Left', formula: 'clock.remaining * 2'},
+    {type: 'action', id: 'beep', when: 'at the end', what: 'beep', on: 'countdown_end', from: 'beep'}]})
+  np.capForWidget(timer, 3)
+  assert.deepEqual(timer.needs.map(n => n.type), ['content', 'content', 'content'], 'nothing is left reading a clock that was cut')
+  const feeder = plan({title: 'T', needs: [
+    {type: 'figure', id: 'sub', label: 'Sub', shown: false, formula: '1'},
+    {type: 'figure', id: 'a', label: 'A', formula: 'sub'}, {type: 'figure', id: 'b', label: 'B', formula: 'sub'}, {type: 'figure', id: 'c', label: 'C', formula: 'sub'}]})
+  assert.deepEqual(np.capForWidget(feeder, 3), [], 'a hidden figure takes no room')
+  assert.equal(feeder.needs.length, 4)
+  // A kept figure whose formula names a figure that was cut goes with it, and so on down the line.
+  const chain = plan({title: 'T', needs: [
+    {type: 'content', what: 'a tip', from: 'tip'}, {type: 'content', what: 'a quote', from: 'quote'},
+    {type: 'figure', id: 'perPerson', label: 'Per person', shown: false, formula: 'totalCost / 2'},
+    {type: 'figure', id: 'perPersonDay', label: 'Per day', shown: false, formula: 'perPerson / 3'},
+    {type: 'figure', id: 'totalCostX', label: 'Other', formula: '1'},
+    {type: 'figure', id: 'totalCost', label: 'Total cost', formula: '5'}]})
+  np.capForWidget(chain, 3)
+  assert.deepEqual(chain.needs.map(n => n.raw.id || n.type), ['content', 'content', 'totalCostX'],
+    'a figure reading a cut figure, and one reading that, are cut; a longer id that only starts the same is not')
+  assert.match(np.WIDGET_NEEDS_NOTE, /small widget/)
+}
+console.log('needs-plan widget room ok')

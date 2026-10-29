@@ -150,6 +150,16 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     r = await run([broken, good])
     assert.ok(r.section !== null && r.attempts === 2, r.failed)
     assert.match(asks[1].user, /It failed:[\s\S]*c_cuont/)
+    // A field the section keeps and nothing reads is an input that changes nothing: it is sent back, saying which.
+    {
+      const unread = section('function c_bump(state: AppState, value: number): AppState {\n  return {c_count: state.c_count + 1, c_ghost: value__PASSTHROUGH__};\n}\n' +
+        'function c_setGhost(state: AppState, value: number): AppState {\n  return {c_ghost: value, c_count: state.c_count__PASSTHROUGH__};\n}',
+        'sections.push(ui.Section("content", "", "", [ui.Button("primary", "Count " + ui.numberToString(state.c_count), "c_bump", 0, true), ui.NumberField("default", "Ghost", 0, 0, 9, "c_setGhost")]));')
+        .replace('c_count: number = 0', 'c_count: number = 0\nc_ghost: number = 0')
+      r = await run([unread, good])
+      assert.equal(r.attempts, 2, r.failed)
+      assert.match(asks[1].user, /state field c_ghost is set by a handler but nothing reads it/)
+    }
     r = await run([good.replace('return {', 'sdk.call("x/y", [], "c_bump");\n  return {'), good])
     assert.equal(r.attempts, 2)
     assert.match(asks[1].user, /sdk\.call/)

@@ -12,7 +12,7 @@
 
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraNumberValue, VeraStringValue,
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
-import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock } from '../vera/VeraUi'
+import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock, unitAfter, keepUnits } from '../vera/VeraUi'
 import { runRawIntent } from '../vera/VeraIntents'
 import { runSdkAdapter } from '../vera/VeraSdkBackend'
 import { LengthMetrics } from '@ohos.arkui.node'
@@ -25,7 +25,8 @@ import { ResolvedTheme, resolveTheme, containerFill, toneFill, toneEdge, toneInk
   densityGap, spacerSize, readableInk } from '../vera/VeraTheme'
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
-import { LiveNode, toLive, reconcile } from './VeraLiveTree'
+import { LiveNode, toLive, reconcile, armReveal } from './VeraLiveTree'
+import { carryState } from '../vera/VeraStateCarry'
 import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
   columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
 import matrix4 from '@ohos.matrix4'
@@ -126,6 +127,9 @@ class BarItem {
   value: string = ''
 }
 
+/** The tallest a pane of ui.Tabs grows in a chat reply, in vp; past it the pane scrolls inside the window. */
+const EMBEDDED_WINDOW: number = 360
+
 @Component
 export struct VeraPreview {
   /**
@@ -144,6 +148,11 @@ export struct VeraPreview {
    * thing and has to remember.
    */
   @Prop persistKey: string = ''
+  /**
+   * The state of the program this one replaces, as onStateSnapshot gave it: when no saved state is restored, what it held
+   * is carried into the new program's fresh state (carryState), so a refine does not wipe what the person typed.
+   */
+  @Prop seedState: string = ''
   /** Read-only snapshot for a hosting chat. It does not migrate state between programs. */
   onStateSnapshot: (encoded: string) => void = (_encoded: string): void => {}
   /**
@@ -171,6 +180,8 @@ export struct VeraPreview {
   // The live tree is mutated in place, so it is not @State: its own @Trace
   // fields are what drive the re-render. See VeraLiveTree.
   @State hasRoot: boolean = false
+  /** Bumped when a typed number is taken, so its field is drawn again with the value the program holds. */
+  @State numberEpoch: number = 0
   private liveRoot: LiveNode | null = null
   /**
    * Which program liveRoot belongs to, bumped by every load(). The drawn tree
@@ -194,6 +205,12 @@ export struct VeraPreview {
   @State error: string = ''
   private vm: VirtualMachine | null = null
   private host: UiHostEnvironment | null = null
+  /** The program's own scroll (not in a chat, where the chat scrolls) and where it sits, in vp, for revealIfAsked. */
+  private rootScroller: Scroller = new Scroller()
+  private rootTop: number = 0
+  private rootHeight: number = 0
+  /** How tall the snackbars drawn over the bottom of the window are, in vp: the content ends that far above it (programFrame). */
+  @State snackSpace: number = 0
   private currentState: RuntimeValue | null = null
   /**
    * Set when the screen goes away. An intent answers long after the tap, and
@@ -274,7 +291,7 @@ export struct VeraPreview {
   // discovered as a blank space in someone's generated app.
   private static RENDERED: string[] = ['column', 'scroll', 'row', 'card', 'text',
     'button', 'cell', 'spacer', 'path', 'image', 'field', 'toggle', 'checkbox',
-    'slider', 'select', 'divider', 'progress', 'progressring', 'ticker', 'grid', 'listitem', 'canvas',
+    'slider', 'select', 'tabs', 'divider', 'progress', 'progressring', 'ticker', 'grid', 'listitem', 'canvas',
     'apptheme', 'hero', 'adaptivecolumns', 'header', 'section', 'sectionheader', 'listgroup', 'banner',
     'emptystate', 'stat', 'metricgroup', 'tilegrid', 'tile',
     'numbertext', 'numberstat', 'numberfield', 'timefield', 'numberlistitem', 'actionbar',
@@ -345,7 +362,7 @@ export struct VeraPreview {
       let module = deserializeVbc2(this.vbc2)
       this.vm = new VirtualMachine(module, this.host)
       this.currentState = this.restoreState()
-      if (this.currentState === null) { this.currentState = this.vm!.execute('init') }
+      if (this.currentState === null) { this.currentState = this.seeded(this.vm!.execute('init')) }
       this.notifyStateSnapshot()
       this.renderView()
     } catch (e) {
@@ -702,6 +719,22 @@ export struct VeraPreview {
     return this.vbc2.length.toString() + ':' + this.vbc2.substring(0, 64)
   }
 
+  /** `fresh` with what seedState held carried into it, or `fresh` itself when there is none or the program cannot draw it. */
+  private seeded(fresh: RuntimeValue): RuntimeValue {
+    if (this.seedState.length === 0 || this.previewOnly) { return fresh }
+    try {
+      let carried = carryState(fresh, decodeRuntimeValue(JSON.parse(this.seedState) as Object), this.vm!.classShapes())
+      if (this.host !== null) { this.host!.effectsAllowed = false }
+      // An entry of an old class may lack a field the new code reads: a view that fails on it means starting clean.
+      this.vm!.execute('view', [carried])
+      console.info('VERA-STATE carried into the refined program')
+      return carried
+    } catch (e) {
+      console.warn('VERA-STATE could not carry the old state, starting clean: ' + (e as Error).message)
+      return fresh
+    }
+  }
+
   private restoreState(): RuntimeValue | null {
     let keys = this.stateKeys()
     if (keys.length === 0 || this.previewOnly) { return null }
@@ -832,7 +865,9 @@ export struct VeraPreview {
       this.notifyStateSnapshot()
       console.info('VERA-ACTION ' + action + ' steps=' + this.vm!.stepsExecuted().toString() +
         ' ms=' + (Date.now() - t0).toString())
-      this.renderView()
+      // What this tap makes appear -- a card it opens, a banner with its result -- is brought into view.
+      armReveal(true)
+      try { this.renderView() } finally { armReveal(false) }
       if (persist) { this.persistState() }
       this.drainEffects()
     } catch (e) {
@@ -1094,31 +1129,56 @@ export struct VeraPreview {
           .backgroundColor('#FFECEC')
       }
       if (this.hasRoot && this.liveRoot !== null) {
-        if (this.embedded) {
-          // No Scroll of its own and no fixed height: the card is as tall as
-          // the program, and whatever it sits in does the scrolling. A Scroll
-          // here would take a drag that began on the program and leave the
-          // page behind it unmoved.
-          Column() {
-            ForEach([this.programId], (_id: number) => {
-              this.renderNode(this.liveRoot!, 'root')
-            }, (id: number) => id.toString())
-          }.width('100%')
-        } else {
-          Scroll() {
+        // A snackbar is told to the person now, wherever they have scrolled to: it is drawn over the program, at the bottom of its
+        // window, not at the end of the content where it was written (the end of a long screen is out of sight).
+        Stack({ alignContent: Alignment.Bottom }) {
+          if (this.embedded) {
+            // No Scroll of its own and no fixed height: the card is as tall as
+            // the program, and whatever it sits in does the scrolling. A Scroll
+            // here would take a drag that began on the program and leave the
+            // page behind it unmoved.
             Column() {
               ForEach([this.programId], (_id: number) => {
                 this.renderNode(this.liveRoot!, 'root')
               }, (id: number) => id.toString())
-            }.width('100%')
+            }
+            .width('100%')
+            .padding({ bottom: this.snackbarRoom() })
+          } else {
+            Scroll(this.rootScroller) {
+              Column() {
+                ForEach([this.programId], (_id: number) => {
+                  this.renderNode(this.liveRoot!, 'root')
+                }, (id: number) => id.toString())
+              }
+              .width('100%')
+              // Room under the content for the snackbars, so the last rows can be scrolled out from under them.
+              .padding({ bottom: this.snackbarRoom() })
+            }
+            .width('100%')
+            .height('100%')
+            .onAreaChange((_old: Area, now: Area) => {
+              this.rootTop = Number(now.globalPosition.y)
+              this.rootHeight = Number(now.height)
+            })
+            // Scroll centres its content by default, which leaves a generated
+            // program floating in the middle of the box instead of starting where
+            // a real app would.
+            .align(Alignment.Top)
+          }
+          Column() {
+            ForEach(this.snackbarsOf(this.liveRoot!), (bar: LiveNode) => {
+              this.snackbarBar(bar)
+            }, (bar: LiveNode, index: number) => index.toString() + ':' + bar.text)
           }
           .width('100%')
-          .layoutWeight(1)
-          // Scroll centres its content by default, which leaves a generated
-          // program floating in the middle of the box instead of starting where
-          // a real app would.
-          .align(Alignment.Top)
+          .onAreaChange((_old: Area, now: Area) => {
+            let h = Number(now.height)
+            if (Math.abs(h - this.snackSpace) >= 1) { this.snackSpace = h }
+          })
         }
+        .width('100%')
+        .layoutWeight(this.embedded ? 0 : 1)
       }
     }
     .width('100%')
@@ -1193,8 +1253,8 @@ export struct VeraPreview {
   }
 
   /**
-   * The role a section is drawn as. A summary or content section whose only drawn child is already a frame of its own
-   * (a list group, a card, a table, a timeline, a tile grid) is drawn plain: filling it too would put a card inside a card,
+   * The role a section is drawn as. A summary or content section whose drawn children are all frames of their own
+   * (list groups, cards, tables, timelines, tile grids, banners) is drawn plain: filling it too would put a card inside a card,
    * two edges and two shadows around one thing.
    */
   private sectionLook(node: LiveNode): string {
@@ -1203,10 +1263,12 @@ export struct VeraPreview {
     let framed = 0
     for (let child of node.children) {
       if (child.kind === 'spacer') { continue }
-      if (['listgroup', 'card', 'table', 'timeline', 'tilegrid'].indexOf(child.kind) < 0) { return node.style }
+      if (['listgroup', 'card', 'table', 'timeline', 'tilegrid', 'banner'].indexOf(child.kind) < 0) { return node.style }
       framed++
     }
-    return framed === 1 ? 'plain' : node.style
+    // Two framed children are each their own card: filling the section around them drew a card around both, which is
+    // what happened when a detail card opened under a list.
+    return framed >= 1 ? 'plain' : node.style
   }
 
   private sectionFills(style: string): boolean {
@@ -1225,13 +1287,148 @@ export struct VeraPreview {
   }
 
   /** Vertical padding belongs to the fill, so an unfilled section has none. */
+
+  /** A ui.Snackbar, drawn over the program at the bottom of its window (see programFrame). */
+  @Builder
+  snackbarBar(node: LiveNode) {
+      Row({ space: this.t().gapBase }) {
+        Text(node.text)
+          .fontSize(this.t().sizeBody)
+          .fontFamily(this.textFamily())
+          .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
+          .layoutWeight(1)
+        if (node.value.length > 0) {
+          Button(node.value)
+            .height(this.t().chipHeight)
+            .fontSize(this.t().sizeBody)
+            .fontFamily(this.textFamily())
+            .type(ButtonType.Capsule)
+            .backgroundColor('#00000000')
+            .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
+            .onClick(() => {
+              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
+            })
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .padding(this.t().padBase)
+      .backgroundColor(toneEdge(this.t(), node.style, this.t().inkStrong))
+      .borderRadius(this.t().radiusControl)
+      .margin({ left: this.t().padBase, right: this.t().padBase, bottom: this.t().padBase })
+  }
+
+  /** The space kept free under the program for its snackbars: none when there are none up. */
+  private snackbarRoom(): number {
+    return this.liveRoot !== null && this.snackbarsOf(this.liveRoot).length > 0 ? this.snackSpace : 0
+  }
+
+  /** Every ui.Snackbar in the program's tree, for the window to draw. */
+  private snackbarsOf(node: LiveNode): LiveNode[] {
+    let found: LiveNode[] = []
+    if (node.kind === 'snackbar') { found.push(node) }
+    for (let child of node.children) { found = found.concat(this.snackbarsOf(child)) }
+    return found
+  }
+
+  /**
+   * A row is drawn dimmed only when it is a control that is switched off. A row with no action is information, not a control that is
+   * not available: it is read, so it is drawn as full-strength as any other text.
+   */
+  private rowOpacity(node: LiveNode): number {
+    return node.enabled || node.action.length === 0 ? 1 : 0.5
+  }
+
+  /** The one-button action bars that follow a list row, each with the row it belongs to (see rowChildren). */
+  private rowBar: Map<LiveNode, LiveNode> = new Map<LiveNode, LiveNode>()
+
+  /**
+   * A list group's children without the action bars that hold one button for the row above them: that button is drawn at the
+   * end of the row (rowButton), so a stop with a Navigate button is one line, not a line and a bar. A bar of two buttons stays below.
+   */
+  private rowChildren(node: LiveNode): LiveNode[] {
+    let out: LiveNode[] = []
+    let i = 0
+    while (i < node.children.length) {
+      let row = node.children[i]
+      out.push(row)
+      let next = i + 1 < node.children.length ? node.children[i + 1] : null
+      if (row.kind === 'listitem' && next !== null && next.kind === 'actionbar' && next.children.length === 1 &&
+          next.children[0].kind === 'button') {
+        this.rowBar.set(row, next.children[0])
+        i += 2
+      } else {
+        this.rowBar.delete(row)
+        i++
+      }
+    }
+    return out
+  }
+
+  private rowButton(row: LiveNode): LiveNode[] {
+    let button = this.rowBar.get(row)
+    return button !== undefined ? [button] : []
+  }
+
+  /** What the person typed into a ui.NumberField, until they are done: node by node. */
+  private numberDraft: Map<LiveNode, string> = new Map<LiveNode, string>()
+
+  /** Takes a typed number: whole, within the field's limits; the field is drawn again either way, so it shows the value the program holds. */
+  private commitNumber(node: LiveNode): void {
+    let typed = this.numberDraft.get(node)
+    if (typed === undefined) { return }
+    this.numberDraft.delete(node)
+    let value = Math.round(parseFloat(typed))
+    if (!isNaN(value) && node.action.length > 0) {
+      value = Math.max(node.minimum, Math.min(node.maximum, value))
+      if (value !== node.numberValue) { this.handleAction(node.action, value) }
+    }
+    this.numberEpoch++
+  }
+
+  /** The pane ui.Tabs shows: its selected child, kept inside the children there are. */
+  private tabSelected(node: LiveNode): number {
+    return Math.max(0, Math.min(Math.floor(node.eventValue), node.children.length - 1))
+  }
+
+  private tabPane(node: LiveNode): LiveNode[] {
+    return node.children.length > 0 ? [node.children[this.tabSelected(node)]] : []
+  }
+
   private sectionPadY(style: string): number {
     return this.sectionFills(style) ? this.t().padCard : 0
   }
 
+  /**
+   * Bring `node` into view when a tap has just made it appear (LiveNode.reveal) and it ends below the program's window:
+   * a detail card opened under a list was drawn off screen, and the tap looked like it did nothing. Scrolls no further
+   * than puts its top at the top, so a card taller than the window shows its beginning. Once per appearance.
+   */
+  private revealIfAsked(node: LiveNode, area: Area): void {
+    if (!node.reveal || this.embedded || this.rootHeight <= 0) { return }
+    let height = Number(area.height)
+    if (height <= 0) { return }
+    node.reveal = false
+    let gap = this.t().padBase
+    let top = Number(area.globalPosition.y)
+    let below = top + height - (this.rootTop + this.rootHeight) + gap
+    let room = top - this.rootTop - gap
+    let by = Math.min(below, room)
+    if (by > 0) { this.rootScroller.scrollBy(0, by) }
+  }
+
+  /**
+   * The icon a banner shows. A warning or a danger always shows the warning sign, whatever the program named: the icon
+   * says what kind of message it is, and a clock on "enter the number first" said nothing of the kind.
+   */
+  private bannerIcon(node: LiveNode): string {
+    if (node.style === 'warning' || node.style === 'danger') { return 'warning' }
+    return node.icon
+  }
+
   /** A number, as the program asked for it to be shown: see formatVeraNumber. */
   private formatNumber(node: LiveNode): string {
-    return node.prefix + formatVeraNumber(node.numberValue, node.decimals, node.minimumDigits) + node.suffix
+    return node.prefix + formatVeraNumber(node.numberValue, node.decimals, node.minimumDigits) + unitAfter(node.numberValue, node.suffix)
   }
 
   /**
@@ -1291,6 +1488,40 @@ export struct VeraPreview {
   /** A stat's figure sits a step under the display size, so the title leads and the numbers follow it. */
   private statFigureSize(): number {
     return Math.round(this.renderTextSize('metric') * 0.85)
+  }
+
+  /** The figure size each stat of a group is drawn at (metricChildren); one for the whole row. */
+  private groupFigure: Map<LiveNode, number> = new Map<LiveNode, number>()
+
+  private figureSizeOf(node: LiveNode): number {
+    return this.groupFigure.get(node) ?? this.statFigureSize()
+  }
+
+  /**
+   * A group's stats, each given the one figure size the row is drawn at: the largest at which every figure fits its column.
+   * Shrinking each figure on its own to fit made "250 ml" larger than "7 glasses" beside it. Widths are measured with the
+   * figure's own font, against the row's measured width (layoutWidth, from onAreaChange); until the row has been laid out
+   * once, the figures keep the full size.
+   */
+  private metricChildren(group: LiveNode): LiveNode[] {
+    let base = this.statFigureSize()
+    let size = base
+    if (group.layoutWidth > 0 && group.children.length > 0) {
+      let columns = Math.min(this.fittingColumns(this.metricColumns(group), 104), group.children.length)
+      let ui = this.getUIContext()
+      let cell = ui.vp2px(group.layoutWidth / columns - this.t().padTight * 2)
+      let scale = 1
+      for (let child of group.children) {
+        let text = child.kind === 'numberstat' ? this.formatNumber(child) : child.text
+        if (text.length === 0) { continue }
+        let width = ui.getMeasureUtils().measureText({ textContent: text, fontSize: base,
+          fontWeight: this.t().weightMetric, fontFamily: this.textFamily('metric') })
+        if (width > cell) { scale = Math.min(scale, cell / width) }
+      }
+      size = Math.max(14, Math.floor(base * scale))
+    }
+    for (let child of group.children) { this.groupFigure.set(child, size) }
+    return group.children
   }
 
   /** Each group measures its own available width, including inside another group. */
@@ -1771,6 +2002,7 @@ export struct VeraPreview {
       .border({ width: this.t().borderWidth, color: this.t().lineSoft })
       .borderRadius(this.t().radiusCard)
       .shadow({ radius: this.t().shadowRadius, color: this.t().shadowColor, offsetY: this.t().shadowOffsetY })
+      .onAreaChange((_old: Area, now: Area) => { this.revealIfAsked(node, now) })
     } else if (node.kind === 'stage' || (node.kind === 'transform' && parentKind !== 'stage' && parentKind !== 'transform')) {
       // A scene: every layer is a flat sibling in a centred stack with its own final matrix (see sceneFrame). A Transform
       // outside a Stage is a scene of one layer, with the default viewer distance.
@@ -1811,7 +2043,7 @@ export struct VeraPreview {
       .translate({ x: this.motionPoseOf(node).dx, y: this.motionPoseOf(node).dy })
       .opacity(this.motionPoseOf(node).opacity)
     } else if (node.kind === 'text') {
-      Text(node.text)
+      Text(keepUnits(node.text))
         .fontSize(this.renderTextSize(node.style))
         .fontFamily(this.textFamily(node.style))
         .fontWeight(textWeight(this.t(), node.style))
@@ -1991,6 +2223,7 @@ export struct VeraPreview {
         right: this.sectionFills(this.sectionLook(node)) ? this.t().padBase : 0,
         top: this.t().gapTight, bottom: this.t().gapSection })
       .transition(this.arrival())
+      .onAreaChange((_old: Area, now: Area) => { this.revealIfAsked(node, now) })
     } else if (node.kind === 'sectionheader') {
       Column({ space: 2 }) {
         Row() {
@@ -2043,7 +2276,7 @@ export struct VeraPreview {
             .padding({ left: this.t().padListX, right: this.t().padListX,
                        top: this.t().gapBase, bottom: this.t().gapTight })
         }
-        ForEach(node.children, (child: LiveNode, index: number) => {
+        ForEach(this.rowChildren(node), (child: LiveNode, index: number) => {
           // A hairline between rows, never above the first. Drawn by the group
           // rather than by the row so a row does not have to know whether it is
           // last.
@@ -2070,8 +2303,15 @@ export struct VeraPreview {
       .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'banner') {
       Row({ space: this.t().gapBase }) {
-        if (node.icon.length > 0) {
-          this.iconChip(node.icon, this.t().controlHeight - 8, this.t().surface,
+        // A rail in the tone, so the banner reads as a status at a glance rather than as one more tinted box. Drawn as
+        // its own rounded bar: a left border on a rounded box followed the corners and showed as a bracket.
+        Column()
+          .width(4)
+          .alignSelf(ItemAlign.Stretch)
+          .borderRadius(2)
+          .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
+        if (this.bannerIcon(node).length > 0) {
+          this.iconChip(this.bannerIcon(node), this.t().controlHeight - 8, this.t().surface,
             toneEdge(this.t(), node.style, this.t().primaryInk))
         }
         Column({ space: 2 }) {
@@ -2111,18 +2351,16 @@ export struct VeraPreview {
       .padding(this.t().padBase)
       .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
       .borderRadius(this.t().radiusControl)
-      // A rail in the tone, so the banner reads as a status at a glance rather
-      // than as one more tinted box.
-      .borderWidth({ left: 4 })
-      .borderColor({ left: toneEdge(this.t(), node.style, this.t().primary) })
       .margin({ top: this.t().gapTight, bottom: this.t().gapTight,
                 left: this.compositionOwnsInset(parentKind) ? 0 : this.t().padBase,
                 right: this.compositionOwnsInset(parentKind) ? 0 : this.t().padBase })
+      .onAreaChange((_old: Area, now: Area) => { this.revealIfAsked(node, now) })
     } else if (node.kind === 'emptystate') {
       // State starts empty, so for most programs this is the first thing anyone
       // sees. It used to be a blank column.
       Column({ space: this.t().gapBase }) {
-        if (node.icon.length > 0) {
+        // A widget in a chat reply has no room for the picture: the words say it.
+        if (node.icon.length > 0 && !this.embedded) {
           this.iconChip(node.icon, this.t().controlHeight + 24,
             this.t().primaryFill, this.t().primaryInk)
         }
@@ -2157,7 +2395,7 @@ export struct VeraPreview {
       .width('100%')
       .alignItems(HorizontalAlign.Center)
       .justifyContent(FlexAlign.Center)
-      .padding(this.t().padLoose)
+      .padding(this.embedded ? this.t().padBase : this.t().padLoose)
     } else if (node.kind === 'stat') {
       // Carries no surface of its own: it is meant to sit inside a MetricGroup,
       // which owns the one surface the group shares.
@@ -2183,11 +2421,11 @@ export struct VeraPreview {
         .width('100%')
         .alignItems(VerticalAlign.Center)
         Text(node.text)
-          .fontSize(this.statFigureSize())
-          // One line, shrunk to fit its column: three to a row leave a cell about 100 vp wide.
+          .fontSize(this.figureSizeOf(node))
+          // One line, at the size its group shares (metricChildren), shrunk further only if the estimate was short.
           .maxLines(1)
           .minFontSize(14)
-          .maxFontSize(this.statFigureSize())
+          .maxFontSize(this.figureSizeOf(node))
           .fontFamily(this.textFamily('metric'))
           .fontWeight(this.t().weightMetric)
           .fontColor(toneInk(this.t(), node.style, this.t().ink))
@@ -2211,17 +2449,23 @@ export struct VeraPreview {
         justifyContent: FlexAlign.Start,
         alignItems: ItemAlign.Start
       }) {
-        ForEach(node.children, (child: LiveNode) => {
+        ForEach(this.metricChildren(node), (child: LiveNode) => {
           Column() {
             this.renderNode(child, 'metricgroup')
           }
           .width(Math.floor(100 / this.fittingColumns(this.metricColumns(node), 104)).toString() + '%')
-          // Same keying as renderChildren; see the note there.
-        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+          // Same keying as renderChildren (see the note there), plus the shared figure size: the size lives in a plain map,
+          // so a cell is rebuilt to pick up a new one only because its key changed.
+        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind + ':' + this.figureSizeOf(child).toString())
       }
       .width('100%')
       .padding(densityPad(this.t(), node.style) - this.t().padTight)
       .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+      // The row's width inside its padding, for metricChildren to fit the figures to.
+      .onAreaChange((_old: Area, now: Area) => {
+        let width = Number(now.width) - (densityPad(this.t(), node.style) - this.t().padTight) * 2
+        if (width > 0 && Math.abs(width - node.layoutWidth) >= 1) { node.layoutWidth = width }
+      })
     } else if (node.kind === 'tilegrid') {
       // Two to a row; a tile of span 2 takes the row. Widths are calc() shares of the row less half the gap,
       // so the pair and the wide tile line up at both edges.
@@ -2283,7 +2527,7 @@ export struct VeraPreview {
         .flexShrink(1)
         .padding({ top: 2, bottom: 2 })
     } else if (node.kind === 'clocktext') {
-      Text(node.prefix + this.formatMinutes(node.numberValue) + node.suffix)
+      Text(node.prefix + this.formatMinutes(node.numberValue) + unitAfter(node.numberValue, node.suffix))
         .fontSize(this.renderTextSize(node.style))
         .fontFamily(this.textFamily(node.style))
         .fontWeight(textWeight(this.t(), node.style))
@@ -2317,11 +2561,11 @@ export struct VeraPreview {
         .width('100%')
         .alignItems(VerticalAlign.Center)
         Text(this.formatNumber(node))
-          .fontSize(this.statFigureSize())
+          .fontSize(this.figureSizeOf(node))
           // One line, shrunk to fit its column: "$120.50" in half a screen wrapped its last digit onto a second line.
           .maxLines(1)
           .minFontSize(14)
-          .maxFontSize(this.statFigureSize())
+          .maxFontSize(this.figureSizeOf(node))
           .fontFamily(this.textFamily('metric'))
           .fontWeight(this.t().weightMetric)
           .fontColor(toneInk(this.t(), node.style, this.t().ink))
@@ -2348,36 +2592,50 @@ export struct VeraPreview {
             .fontWeight(Math.max(this.t().weightHeading, 500)).fontColor(this.t().inkStrong).width('100%')
         }
         Row({ space: this.t().gapBase }) {
-          Button('-')
+          // − and + are one pair: the same size and the same tonal look, so neither reads as the more important one.
+          Button('\u2212')
             .fontSize(this.t().sizeBody)
             .fontFamily(this.textFamily())
             .width(this.t().controlHeight - 8)
             .height(this.t().controlHeight - 8)
             .type(ButtonType.Circle)
             .enabled(node.enabled && node.numberValue > node.minimum)
-            .backgroundColor(this.t().secondaryFill)
-            .fontColor(this.t().secondaryInk)
+            .backgroundColor(this.t().primaryFill)
+            .fontColor(this.t().primary)
             .onClick(() => {
               if (node.action.length === 0) { return }
               let next = node.numberValue - 1
               if (next >= node.minimum) { this.handleAction(node.action, next) }
             })
-          Text(this.formatNumber(node))
-            .fontSize(this.renderTextSize('heading'))
-            .fontFamily(this.textFamily('metric'))
-            .fontWeight(this.t().weightHeading)
-            .fontColor(this.t().ink)
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
+          // The value is typed as well as stepped: tap it and write 60, rather than tapping + sixty times. It is taken when the
+          // person is done editing and kept inside the field's own limits.
+          ForEach([this.numberEpoch], (_epoch: number) => {
+            TextInput({ text: this.formatNumber(node) })
+              .type(InputType.Number)
+              .fontSize(this.renderTextSize('heading'))
+              .fontFamily(this.textFamily('metric'))
+              .fontWeight(this.t().weightHeading)
+              .fontColor(this.t().ink)
+              .textAlign(TextAlign.Center)
+              .backgroundColor(Color.Transparent)
+              .borderRadius(0)
+              .padding(0)
+              .layoutWeight(1)
+              .height(this.t().controlHeight - 8)
+              .enabled(node.enabled)
+              .onChange((typed: string) => { this.numberDraft.set(node, typed) })
+              .onSubmit(() => { this.commitNumber(node) })
+              .onEditChange((editing: boolean) => { if (!editing) { this.commitNumber(node) } })
+          }, (epoch: number) => epoch.toString())
           Button('+')
             .fontSize(this.t().sizeBody)
             .fontFamily(this.textFamily())
-            .width(this.t().controlHeight)
-            .height(this.t().controlHeight)
+            .width(this.t().controlHeight - 8)
+            .height(this.t().controlHeight - 8)
             .type(ButtonType.Circle)
             .enabled(node.enabled && node.numberValue < node.maximum)
-            .backgroundColor(this.t().primary)
-            .fontColor(this.t().onPrimary)
+            .backgroundColor(this.t().primaryFill)
+            .fontColor(this.t().primary)
             .onClick(() => {
               if (node.action.length === 0) { return }
               let next = node.numberValue + 1
@@ -2462,7 +2720,7 @@ export struct VeraPreview {
         top: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1,
         bottom: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1
       })
-      .opacity(node.enabled ? 1 : 0.5)
+      .opacity(this.rowOpacity(node))
       .onClick(() => {
         if (node.action.length > 0 && node.enabled) {
           this.handleAction(node.action, node.eventValue)
@@ -2613,7 +2871,7 @@ export struct VeraPreview {
       .alignItems(HorizontalAlign.Start)
       .padding({ top: Math.round((this.timelineMarker() - this.t().sizeBody * 1.3) / 2),
                  bottom: node.style === 'compact' ? this.t().gapBase : this.t().gapLoose })
-      .opacity(node.enabled ? 1 : 0.5)
+      .opacity(this.rowOpacity(node))
       .onClick(() => {
         if (node.action.length > 0 && node.enabled) {
           this.handleAction(node.action, node.eventValue)
@@ -2779,42 +3037,16 @@ export struct VeraPreview {
       }
       .alignItems(VerticalAlign.Center)
     } else if (node.kind === 'snackbar') {
-      // message/actionText/action ride text/value/action -- the same shape
-      // ui.InsetBanner already uses, so decode needed no new case here
-      // either. Meant to come and go behind ui.When, not to persist like a
-      // banner: see the catalogue guidance.
-      Row({ space: this.t().gapBase }) {
-        Text(node.text)
-          .fontSize(this.t().sizeBody)
-          .fontFamily(this.textFamily())
-          .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
-          .layoutWeight(1)
-        if (node.value.length > 0) {
-          Button(node.value)
-            .height(this.t().chipHeight)
-            .fontSize(this.t().sizeBody)
-            .fontFamily(this.textFamily())
-            .type(ButtonType.Capsule)
-            .backgroundColor('#00000000')
-            .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().inkStrong)))
-            .onClick(() => {
-              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
-            })
-        }
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      .padding(this.t().padBase)
-      .backgroundColor(toneEdge(this.t(), node.style, this.t().inkStrong))
-      .borderRadius(this.t().radiusControl)
-      .margin({ top: this.t().gapTight, bottom: this.t().gapTight })
+      // Not in the content: programFrame draws it over the window.
+      Blank().height(0).width(0)
     } else if (node.kind === 'button') {
       Button(node.text.length === 0 ? ' ' : node.text)
-        .height(this.t().controlHeight)
-        .fontSize(this.t().sizeBody)
+        .height(parentKind === 'rowbar' ? this.t().controlHeight - 12 : this.t().controlHeight)
+        .fontSize(parentKind === 'rowbar' ? this.t().sizeCaption : this.t().sizeBody)
         .fontFamily(this.textFamily())
         .enabled(node.enabled)
-        .type(node.style === 'secondary' ? ButtonType.Normal : ButtonType.Capsule)
+        // Every button is a capsule: a square secondary next to a round primary read as two different kinds of control.
+        .type(ButtonType.Capsule)
         .backgroundColor(buttonFill(this.t(), node.style))
         .fontColor(buttonInk(this.t(), node.style))
         .onClick(() => {
@@ -2971,6 +3203,48 @@ export struct VeraPreview {
       }
       .width('100%')
       .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
+    } else if (node.kind === 'tabs') {
+      // One window: a row of tab names, and the selected pane under it. In a chat reply the pane is as tall as it needs, up to a
+      // limit, and scrolls inside the window past it, so the window does not grow with what a pane holds.
+      Column({ space: this.t().gapTight }) {
+        Row({ space: this.t().gapTight }) {
+          ForEach(node.options, (label: string, index: number) => {
+            Text(label)
+              .fontSize(this.t().sizeBody)
+              .fontFamily(this.textFamily())
+              .fontWeight(this.t().weightHeading)
+              .fontColor(index === this.tabSelected(node) ? this.t().onPrimary : this.t().ink)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(TextAlign.Center)
+              .layoutWeight(1)
+              .height(this.t().controlHeight)
+              .borderRadius(this.t().radiusControl)
+              .backgroundColor(index === this.tabSelected(node) ? this.t().primary : this.t().fieldFill)
+              .onClick(() => {
+                if (node.action.length > 0) { this.handleAction(node.action, index) }
+              })
+          }, (label: string, index: number) => index.toString() + ':' + label)
+        }
+        .width('100%')
+        // One Scroll per pane, keyed by the selected tab: a pane opens at its top, not at the offset the last one
+        // was left at. At either end the pane's scroll passes on to what holds it, so a chat keeps scrolling past it.
+        ForEach(this.tabPane(node), (pane: LiveNode) => {
+          Scroll() {
+            Column() {
+              this.renderNode(pane, 'tabs')
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .scrollBar(BarState.Off)
+          .edgeEffect(EdgeEffect.None)
+          .nestedScroll({ scrollForward: NestedScrollMode.SELF_FIRST, scrollBackward: NestedScrollMode.SELF_FIRST })
+          .constraintSize({ maxHeight: this.embedded ? EMBEDDED_WINDOW : 100000 })
+        }, (pane: LiveNode) => this.tabSelected(node).toString())
+      }
+      .width('100%')
+      .padding({ top: this.t().gapTight, bottom: this.t().gapTight })
     } else if (node.kind === 'grid') {
       // Equal columns built from a wrapping Flex rather than ArkUI's Grid: Grid
       // wants an explicit height, while a generated tree grows to whatever the
@@ -3011,6 +3285,10 @@ export struct VeraPreview {
         if (node.value.length > 0) {
           Text(node.value).fontSize(this.t().sizeBody - 1).fontFamily(this.textFamily()).fontColor(this.t().inkSoft)
         }
+        // The row's one action sits at its end, not on a line of its own under it.
+        ForEach(this.rowButton(node), (button: LiveNode) => {
+          this.renderNode(button, 'rowbar')
+        }, (button: LiveNode, index: number) => index.toString())
       }
       .width('100%')
       .padding({ left: this.t().padListX, right: this.t().padListX,
@@ -3029,7 +3307,7 @@ export struct VeraPreview {
         top: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1,
         bottom: parentKind === 'listgroup' ? 0 : this.t().gapTight - 1
       })
-      .opacity(node.enabled ? 1 : 0.5)
+      .opacity(this.rowOpacity(node))
       .onClick(() => {
         if (node.action.length > 0 && node.enabled) {
           this.handleAction(node.action, node.eventValue)

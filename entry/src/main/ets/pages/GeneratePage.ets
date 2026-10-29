@@ -3,6 +3,7 @@ import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
 import fs from '@ohos.file.fs'
 import http from '@ohos.net.http'
 import request from '@ohos.request'
+import window from '@ohos.window'
 import { Version, VersionMetrics, store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
@@ -33,11 +34,12 @@ import { AgentRequest, AgentResult } from '../vera/agent/VeraAgent'
 import { appAgentHost } from '../vera/agent/AgentAppHost'
 import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
+import { app, PrimaryButton, TonalButton, QuietButton } from '../components/AppStyle'
 import { MetricCard, MetricTile, MetricChip, MetricLine } from '../components/MetricCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { ToolCall, ToolTotal, toolCalls, resetToolLog, toolTotals, toolMs } from '../vera/ToolLog'
-import { ServiceNote, serviceNotes, resetServiceHealth, describeService, silent } from '../vera/ServiceHealth'
+import { ServiceNote, serviceNotes, resetServiceHealth, describeService, silent, serviceTrouble } from '../vera/ServiceHealth'
 import { Stage, addStage, appMs, yourMs, byWho, WHO_MODEL, WHO_JEV, WHO_SEARCH, WHO_PHONE, WHO_YOU } from '../vera/RunStages'
 import { compositionFromJson, compositionToJson, editComposition, selectEdit, Composition, CompositionEdit, EditResult } from '../vera/VeraComposition'
 
@@ -215,6 +217,8 @@ struct GeneratePage {
   @State projectId: string = ''
   @State baseVersionId: string = ''
   @State prompt: string = ''
+  /** What a service that did not answer cost this run (ServiceHealth.ets), shown under the status. */
+  @State troubleNote: string = ''
   @State requestHistory: string = ''
   @State baseVersionNumber: number = 0
   @State nextVersionNumber: number = 1
@@ -263,6 +267,10 @@ struct GeneratePage {
   /** The Metrics pane's real width, measured: a percentage inside the Scroll resolves against a wider box than the one drawn. */
   @State metricsWidth: number = 0
   @State compiledVbc2: string = ''
+  /** The running preview's state as it last changed; not @State, as writing it must not redraw the page. */
+  private liveState: string = ''
+  /** What the next compiled program starts from (VeraPreview.seedState): the state at the moment a refine was asked for. */
+  @State carriedState: string = ''
   /**
    * A picture of the screen drawn from the composer's sketch while the real program is still on its way:
    * it builds up as the sketch streams in, and stays up through a fallback generation. Taps are off;
@@ -285,6 +293,21 @@ struct GeneratePage {
   // worth having.
   @State runs: RunRecord[] = []
   @State composerOpen: boolean = false
+  /** The soft keyboard is up (the page shrank): the header gives its room to the preview. See build(). */
+  @State keyboardOpen: boolean = false
+  /** The window the keyboard's height is heard from, and the listener, to stop listening when the page goes. */
+  private keyboardWindow: window.Window | null = null
+  private keyboardListener: (height: number) => void = (height: number) => {
+    let open = height > 0
+    if (open !== this.keyboardOpen) { this.keyboardOpen = open }
+  }
+  /** The full request history, shown under the one-line request when it is tapped. */
+  @State historyOpen: boolean = false
+  @State downloading: boolean = false
+  /** How to set up what is missing (a key, a server address); shown where the preview would be, not in the status line. */
+  @State setupHint: string = ''
+  /** The bytecode last saved as a version: Save is off while the program on screen is the one already saved. */
+  @State savedVbc2: string = ''
   @State tab: string = TAB_PREVIEW
   @State attempts: AttemptMetrics[] = []
   @State totalMs: number = 0
@@ -454,6 +477,10 @@ struct GeneratePage {
   }
 
   private startNew(): void {
+    this.savedVbc2 = ''
+    this.historyOpen = false
+    this.liveState = ''
+    this.carriedState = ''
     this.baseVersionId = ''
     this.baseVersionNumber = 0
     this.baseError = ''
@@ -526,7 +553,20 @@ struct GeneratePage {
     // the preview up under the title bar, and with the refine field pinned at
     // the bottom the page has to give up height, not move.
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)
+    // Whether the keyboard is up is the window's to say. Reading it from the page's height took any lasting drop -- a turn
+    // to landscape, a fold, split screen -- for an open keyboard, for good.
+    window.getLastWindow(context).then((win: window.Window) => {
+      this.keyboardWindow = win
+      win.on('keyboardHeightChange', this.keyboardListener)
+    }).catch((e: Error) => { console.warn('VERA keyboard listener unavailable: ' + e.message) })
     this.loadResources()
+  }
+
+  aboutToDisappear(): void {
+    if (this.keyboardWindow !== null) {
+      try { this.keyboardWindow.off('keyboardHeightChange', this.keyboardListener) } catch (_e) { /* the window is already gone */ }
+      this.keyboardWindow = null
+    }
   }
 
   // The key can arrive from a launch parameter while this page sits in the
@@ -593,14 +633,18 @@ struct GeneratePage {
       // A stub build cannot load the embedding model, so discovery falls back to
       // keywords; that belongs next to the provider line, which is what stays up.
       let note = modelSupportNote()
-      let line = settings.providerLabel() + ' ready (' + settings.getModel() + ', key ' + settings.maskedKey() + ')'
+      let line = 'Ready \u00B7 key ' + settings.maskedKey()
       // joinSentence keeps the punctuation single whether or not the note is
       // present: modelSupportNote ends with '.', the selector note does not.
       line = this.joinSentence(line, note)
       line = this.joinSentence(line, this.selectorNote())
       this.status = line
+      this.setupHint = ''
     } else {
-      this.status = 'No API key. Send one with: aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key> (or --ps cloudKey <key>)'
+      this.status = 'No ' + settings.providerLabel() + ' key set'
+      this.setupHint = 'The key is given when the app is started, and kept after that:\n' +
+        'hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key>\n' +
+        '(or --ps cloudKey <key> --ps apiBase <url> --ps apiModel <model> for another provider)'
     }
   }
 
@@ -635,11 +679,12 @@ struct GeneratePage {
     if (!settings.hasServerUrl()) {
       // Said in full, because the address is not written down anywhere in the
       // app and the person has no other way to learn what is missing.
-      this.status = 'No server address. Pass one at launch: ' +
-        'hdc shell aa start -a EntryAbility -b com.vera.probe.dyn ' +
-        '--ps veraServer http://host:port'
+      this.status = 'No server address set'
+      this.setupHint = 'The address is given when the app is started, and kept after that:\n' +
+        'hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps veraServer http://host:port'
       return
     }
+    this.setupHint = ''
     this.status = 'Checking server...'
     let client = http.createHttp()
     try {
@@ -665,6 +710,13 @@ struct GeneratePage {
   private async checkModel(): Promise<void> {
     let filesDir = this.hostContext().filesDir
     let modelPath = LlamaEngine.defaultModelPath(filesDir)
+    this.setupHint = ''
+    if (!LlamaEngine.modelExists(filesDir) && !settings.hasServerUrl()) {
+      // The model is fetched from vera-server, so with no address there is nothing to fetch it from.
+      this.modelReady = false
+      this.status = 'Model not downloaded'
+      return
+    }
     if (!LlamaEngine.modelExists(filesDir)) {
       // hdc file send is blocked on release-provisioned installs, so the
       // model is fetched from the vera-server /models endpoint instead.
@@ -696,6 +748,7 @@ struct GeneratePage {
       fs.mkdirSync(filesDir + '/models', true)
     } catch (_e) {}
     this.status = 'Downloading model (one-time, ~1.9GB)...'
+    this.downloading = true
     try {
       if (canIUse('SystemCapability.Request.FileTransferAgent')) {
         if (canIUse('SystemCapability.MiscServices.Download')) {
@@ -720,6 +773,8 @@ struct GeneratePage {
       throw new Error('SystemCapability.Request.FileTransferAgent is not supported')
     } catch (e) {
       this.status = 'Model download failed: ' + (e as Error).message
+    } finally {
+      this.downloading = false
     }
   }
 
@@ -780,6 +835,7 @@ struct GeneratePage {
     this.stages = []
     this.services = []
     resetServiceHealth()
+    this.troubleNote = ''
     this.tools = []
     resetToolLog()
     this.serverBytecode = ''
@@ -806,6 +862,7 @@ struct GeneratePage {
     this.stages = []
     this.services = []
     resetServiceHealth()
+    this.troubleNote = ''
     this.tools = []
     resetToolLog()
     let startFields: Record<string, Object> = {}
@@ -906,9 +963,9 @@ struct GeneratePage {
     this.totalMs = Date.now() - this.genStartTime
     // The time the person took to answer a question of the plan is theirs: said apart, not counted as the app's.
     let waited = result.waitedMs()
-    this.status = 'Composed in ' + ((this.totalMs - waited) / 1000).toFixed(1) + ' s' +
-      (waited > 0 ? ' (and ' + (waited / 1000).toFixed(1) + ' s waiting for your answer)' : '') + ' (sketch ' +
-      (composed.sketchMs / 1000).toFixed(1) + ' s, Jev ' + (composed.jevMs / 1000).toFixed(1) + ' s), no generation' +
+    // Where the time went (the plan, the choosing, the sketch) is on the Metrics tab, not in this line.
+    this.status = 'Ready in ' + ((this.totalMs - waited) / 1000).toFixed(1) + ' s' +
+      (waited > 0 ? ' (and ' + (waited / 1000).toFixed(1) + ' s waiting for your answer)' : '') +
       (composed.dropped.length > 0 ? '. Left out: ' + composed.dropped.join('; ') : '')
     let endFields: Record<string, Object> = {}
     endFields['ok'] = true
@@ -978,6 +1035,7 @@ struct GeneratePage {
     this.stages = []
     this.services = []
     resetServiceHealth()
+    this.troubleNote = ''
     this.tools = []
     resetToolLog()
     this.serverBytecode = ''
@@ -1332,6 +1390,7 @@ struct GeneratePage {
     }
     this.stages = stages
     this.services = serviceNotes()
+    this.troubleNote = serviceTrouble()
     this.tools = toolCalls()
   }
 
@@ -1570,6 +1629,8 @@ struct GeneratePage {
   private doRefine(): void {
     let ask = this.refinePrompt.trim()
     if (ask.length === 0 || this.compiledSource.length === 0 || this.generating || this.baseError.length > 0) { return }
+    // What the person typed into the preview is kept through the refine.
+    this.carriedState = this.liveState
     // A change that only adds, removes, replaces or moves a block of a composed screen is made on its
     // record, with no model rewrite; anything else, and any step that does not hold, refines as before.
     if (this.compositionJson.length > 0 && this.mode === MODE_DEEPSEEK && templateSelectEnabled() && settings.hasSelector()) {
@@ -1639,6 +1700,7 @@ struct GeneratePage {
     this.stages = []
     this.services = []
     resetServiceHealth()
+    this.troubleNote = ''
     this.tools = []
     resetToolLog()
     this.serverBytecode = ''
@@ -1692,12 +1754,25 @@ struct GeneratePage {
     if (this.generating || this.compiledSource.length === 0 || !this.hasResult()) { return }
     let note = this.acceptedRequest
     if (note.length > 100) { note = note.substring(0, 100) + '...' }
-    store.createVersion(this.projectId, this.compiledSource, this.compiledVbc2, note,
+    let saved = store.createVersion(this.projectId, this.compiledSource, this.compiledVbc2, note,
       this.requestHistory, this.acceptedOrigin, this.acceptedComposition, this.acceptedRequest, this.baseVersionId,
       this.acceptedMetrics)
-    this.status = 'Saved with compiled bytecode'
+    // Stay here: the next change is a refinement of what was just saved, and the next Save its own version.
+    this.baseVersionId = saved.id
+    this.baseVersionNumber = this.nextVersionNumber
+    this.nextVersionNumber = store.listVersions(this.projectId).length + 1
+    this.savedVbc2 = this.compiledVbc2
+    this.status = 'Saved as version ' + this.baseVersionNumber.toString()
     refreshForms()
-    this.getUIContext().getRouter().back()
+    try {
+      this.getUIContext().getPromptAction().showToast({ message: 'Saved as version ' + this.baseVersionNumber.toString() })
+    } catch (e) {
+      console.error('Show save toast failed: ' + (e as Error).message)
+    }
+  }
+
+  private isSaved(): boolean {
+    return this.hasResult() && this.compiledVbc2 === this.savedVbc2
   }
 
   /** The saved version's origin: the kinds of the composed screen it began as, "+model" when the model finished or rewrote it. */
@@ -1721,24 +1796,6 @@ struct GeneratePage {
     return 'Local'
   }
 
-  private modeSubtitle(): string {
-    if (this.mode === MODE_DEEPSEEK) { return (this.selectedModel.length > 0 ? this.selectedModel : settings.getModel()) + ' - agent loop on device' }
-    if (this.mode === MODE_SERVER) { return serverUrl() }
-    return 'On-device Qwen3-Coder-3B'
-  }
-
-  private modeTint(): string {
-    if (this.mode === MODE_DEEPSEEK) { return '#E8F5E9' }
-    if (this.mode === MODE_SERVER) { return '#E3F2FD' }
-    return '#FFF3E0'
-  }
-
-  private modeInk(): string {
-    if (this.mode === MODE_DEEPSEEK) { return '#2E7D32' }
-    if (this.mode === MODE_SERVER) { return '#1565C0' }
-    return '#E65100'
-  }
-
   /** Labels for the dashscope model picker, in candidate order. */
   private modelPickerLabels(): string[] {
     let labels: string[] = []
@@ -1757,12 +1814,9 @@ struct GeneratePage {
     return -1
   }
 
-  private modelPickerTint(index: number): string {
-    return this.selectedModelIndex() === index ? '#E8F5E9' : '#F0F0F0'
-  }
-
-  private modelPickerInk(index: number): string {
-    return this.selectedModelIndex() === index ? '#2E7D32' : '#666666'
+  /** The selected model is tinted, the others quiet. */
+  private modelPickerLook(index: number): AttributeModifier<ButtonAttribute> {
+    return this.selectedModelIndex() === index ? new TonalButton() : new QuietButton()
   }
 
   /**
@@ -1778,12 +1832,8 @@ struct GeneratePage {
     return this.jevProxyOn ? 'Jev proxy: on' : 'Jev proxy: off'
   }
 
-  private jevProxyTint(): string {
-    return this.jevProxyOn ? '#E8F5E9' : '#F0F0F0'
-  }
-
-  private jevProxyInk(): string {
-    return this.jevProxyOn ? '#2E7D32' : '#666666'
+  private jevProxyLook(): AttributeModifier<ButtonAttribute> {
+    return this.jevProxyOn ? new TonalButton() : new QuietButton()
   }
 
   private toggleJevProxy(): void {
@@ -1798,18 +1848,28 @@ struct GeneratePage {
     this.checkDeepSeek()
   }
 
-  private nextMode(): string {
-    if (this.mode === MODE_DEEPSEEK) { return MODE_SERVER }
-    if (this.mode === MODE_SERVER) { return MODE_LOCAL }
-    return MODE_DEEPSEEK
+  /** One line of the mode menu: a mark on the one in use, the name, and what it runs on. */
+  private modeMenuLabel(mode: string): string {
+    let name = mode === MODE_DEEPSEEK ? settings.providerLabel() + ' \u00B7 ' +
+      (this.selectedModel.length > 0 ? this.selectedModel : settings.getModel()) :
+      (mode === MODE_SERVER ? 'Server' + (settings.hasServerUrl() ? ' \u00B7 ' + serverUrl() : ' \u00B7 no address') :
+        'Local \u00B7 Qwen3-Coder-3B')
+    return (this.mode === mode ? '\u2713  ' : '     ') + name
   }
 
+  private pickMode(mode: string): void {
+    if (this.generating || mode === this.mode) { return }
+    this.mode = mode
+    this.checkProvider()
+  }
+
+  /** The open tab is the tinted one; the others are the page's own colour, so the row reads as one control. */
   private tabTint(name: string): string {
-    return this.tab === name ? '#007DFF' : '#F0F0F0'
+    return this.tab === name ? app.primaryFill : app.secondaryFill
   }
 
   private tabInk(name: string): string {
-    return this.tab === name ? '#FFFFFF' : '#666666'
+    return this.tab === name ? app.primaryInk : app.inkSoft
   }
 
   private canGenerate(): boolean {
@@ -1864,11 +1924,11 @@ struct GeneratePage {
 
   /** The colour of whoever did the work in a stage: the model that writes, Jev, the web search, the phone, the person. */
   whoTone(who: string): string {
-    if (who === WHO_MODEL) { return '#C77700' }
-    if (who === WHO_JEV) { return '#2F6FEB' }
+    if (who === WHO_MODEL) { return app.warningInk }
+    if (who === WHO_JEV) { return app.primary }
     if (who === WHO_SEARCH) { return '#7B3FE4' }
-    if (who === WHO_PHONE) { return '#1F9D4C' }
-    return '#888888'
+    if (who === WHO_PHONE) { return app.successInk }
+    return app.inkMuted
   }
 
   /** One model call without its time (that is on the line's right): what it read, wrote, how fast, what it cost. */
@@ -1894,10 +1954,10 @@ struct GeneratePage {
   private servicesTone(): string {
     let some = false
     for (let n of this.services) {
-      if (silent(n)) { return '#C62828' }
+      if (silent(n)) { return app.dangerInk }
       if (n.failed > 0) { some = true }
     }
-    return some ? '#C77700' : '#2E7D32'
+    return some ? app.warningInk : app.successInk
   }
 
   /**
@@ -1909,7 +1969,7 @@ struct GeneratePage {
     MetricCard({ title: 'Where the time went', value: this.formatMs(appMs(this.stages)) }) {
       if (yourMs(this.stages) > 0) {
         Text('and ' + this.formatMs(yourMs(this.stages)) + ' waiting for your answers, not counted')
-          .fontSize(11).fontColor('#888888').width('100%')
+          .fontSize(11).fontColor(app.inkMuted).width('100%')
       }
       // Who spent it: one chip each, in the order they first appear in the run.
       Flex({ wrap: FlexWrap.Wrap }) {
@@ -1924,17 +1984,25 @@ struct GeneratePage {
     }
   }
 
+  /** What the check of whether a refine changes the structure decided, kept after the status line moves on. */
+  @Builder
+  editCheckPanel() {
+    MetricCard({ title: 'Structure edit check', value: '' }) {
+      Text(this.lastTemplatePick).fontSize(11).fontColor(app.warningInk).width('100%')
+    }
+  }
+
   @Builder
   stageRow(st: Stage, total: number) {
     Column({ space: 3 }) {
       Row({ space: 6 }) {
-        Text(st.name).fontSize(12).fontColor('#222222').layoutWeight(1).maxLines(2)
+        Text(st.name).fontSize(12).fontColor(app.inkStrong).layoutWeight(1).maxLines(2)
         Text(st.who).fontSize(10).fontColor(this.whoTone(st.who))
-        Text(this.formatMs(st.ms)).fontSize(12).fontWeight(FontWeight.Medium).fontColor('#222222')
+        Text(this.formatMs(st.ms)).fontSize(12).fontWeight(FontWeight.Medium).fontColor(app.inkStrong)
       }
       .width('100%')
       Stack({ alignContent: Alignment.Start }) {
-        Row().width('100%').height(4).backgroundColor('#EEF1F5').borderRadius(2)
+        Row().width('100%').height(4).backgroundColor(app.lineSoft).borderRadius(2)
         Row()
           .width(st.who === WHO_YOU || total <= 0 ? '0%' : Math.max(1, Math.min(100, Math.round(st.ms * 100 / total))).toString() + '%')
           .height(4)
@@ -1944,7 +2012,7 @@ struct GeneratePage {
       .width('100%')
       Text((st.who === WHO_YOU ? 'not counted' : (total > 0 ? Math.round(st.ms * 100 / total).toString() + '% of the run' : '')) +
         (st.note.length > 0 ? ' \u00B7 ' + st.note : ''))
-        .fontSize(10).fontColor('#999999').width('100%').maxLines(2)
+        .fontSize(10).fontColor(app.inkMuted).width('100%').maxLines(2)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -1959,13 +2027,13 @@ struct GeneratePage {
   tokensPanel() {
     MetricCard({ title: 'Model calls', value: this.mode === MODE_DEEPSEEK ? '~' + this.formatUsd(this.allCost()) : '' }) {
       Row({ space: 8 }) {
-        MetricTile({ label: 'Input', value: this.allInputTokens() + ' toks', note: 'rules, request, old code' }).layoutWeight(1)
-        MetricTile({ label: 'Cached', value: this.allCachedTokens() + ' toks', note: this.allCachePercentNote() }).layoutWeight(1)
+        MetricTile({ label: 'Input', value: this.allInputTokens() + ' tokens', note: 'rules, request, old code' }).layoutWeight(1)
+        MetricTile({ label: 'Cached', value: this.allCachedTokens() + ' tokens', note: this.allCachePercentNote() }).layoutWeight(1)
       }
       .width('100%')
       Row({ space: 8 }) {
-        MetricTile({ label: 'Fresh', value: this.allFreshTokens() + ' toks', note: 'input at full price' }).layoutWeight(1)
-        MetricTile({ label: 'Output', value: this.allOutputTokens() + ' toks', note: 'text, code and reasoning' }).layoutWeight(1)
+        MetricTile({ label: 'Fresh', value: this.allFreshTokens() + ' tokens', note: 'input at full price' }).layoutWeight(1)
+        MetricTile({ label: 'Output', value: this.allOutputTokens() + ' tokens', note: 'text, code and reasoning' }).layoutWeight(1)
       }
       .width('100%')
       Row({ space: 8 }) {
@@ -1995,12 +2063,12 @@ struct GeneratePage {
     }) {
       if (this.tools.length === 0) {
         Text('No lookups in this run: nothing asked for a phone function, an intent, a component or a search.')
-          .fontSize(11).fontColor('#888888').width('100%')
+          .fontSize(11).fontColor(app.inkMuted).width('100%')
       } else if (this.toolsOpen) {
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(toolTotals(this.tools), (t: ToolTotal) => {
             MetricChip({ text: t.tool + ' \u00D7' + t.count + ' \u00B7 ' + this.formatMs(t.ms) + (t.failed > 0 ? ' \u00B7 ' + t.failed + ' failed' : ''),
-              color: t.failed > 0 ? '#C62828' : '#555555' })
+              color: t.failed > 0 ? app.dangerInk : app.inkSoft })
           }, (t: ToolTotal) => t.tool)
         }
         .width('100%')
@@ -2023,10 +2091,10 @@ struct GeneratePage {
         Row({ space: 8 }) {
           Text(silent(n) ? '\u2716' : (n.failed > 0 ? '!' : '\u2714'))
             .fontSize(12)
-            .fontColor(silent(n) ? '#C62828' : (n.failed > 0 ? '#C77700' : '#2E7D32'))
+            .fontColor(silent(n) ? app.dangerInk : (n.failed > 0 ? app.warningInk : app.successInk))
           Text(describeService(n))
             .fontSize(12)
-            .fontColor(silent(n) ? '#C62828' : (n.failed > 0 ? '#8A5A00' : '#444444'))
+            .fontColor(silent(n) ? app.dangerInk : (n.failed > 0 ? app.warningInk : app.inkStrong))
             .layoutWeight(1)
         }
         .width('100%')
@@ -2089,7 +2157,7 @@ struct GeneratePage {
           MetricTile({ label: 'On device', value: this.formatMs(this.program.compileMs), note: 'whole program' }).layoutWeight(1)
         }
         .width('100%')
-        Text('Earlier runs').fontSize(11).fontColor('#888888').width('100%')
+        Text('Earlier runs').fontSize(11).fontColor(app.inkMuted).width('100%')
         ForEach(this.pastRuns(), (record: RunRecord) => {
           MetricLine({ title: '#' + (this.indexOfRun(record) + 1) + (this.indexOfRun(record) === 0 ? ' generated' : ' refined'),
             right: record.compiled ? '\u2714' : '\u2716', ask: record.request.length > 0 ? record.request : '(no request)',
@@ -2102,19 +2170,41 @@ struct GeneratePage {
   build() {
     Navigation() {
       Column() {
-        if (this.baseError.length > 0) {
+        if (this.baseError.length > 0 && !this.keyboardOpen) {
           Text(this.baseError)
-            .fontSize(13).fontColor('#C62828').padding({ left: 16, right: 16, top: 8 })
-        } else if (this.baseVersionId.length > 0) {
-          Text('Changes apply to version ' + this.baseVersionNumber.toString() +
-            '. Save creates version ' + this.nextVersionNumber.toString() + '.')
-            .fontSize(13).fontColor('#007DFF').padding({ left: 16, right: 16, top: 8 })
+            .fontSize(13).fontColor(app.dangerInk).padding({ left: 16, right: 16, top: 8 })
         }
-        if (this.requestHistory.length > 0) {
+
+        // Out of the way while the keyboard is up: the preview and the box being typed into keep the room.
+        if (!this.keyboardOpen) {
+          Row({ space: 8 }) {
+            Button(this.modeLabel() + ' \u25BE')
+              .attributeModifier(new QuietButton())
+              .fontSize(12)
+              .height(30)
+              .enabled(!this.generating)
+              .bindMenu([
+                { value: this.modeMenuLabel(MODE_DEEPSEEK), action: () => { this.pickMode(MODE_DEEPSEEK) } },
+                { value: this.modeMenuLabel(MODE_SERVER), action: () => { this.pickMode(MODE_SERVER) } },
+                { value: this.modeMenuLabel(MODE_LOCAL), action: () => { this.pickMode(MODE_LOCAL) } }
+              ])
+            Text(this.status)
+              .fontSize(12)
+              .fontColor(this.compiled ? app.successInk : app.inkMuted)
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 8 })
+        }
+
+        // The whole history of a version's requests, opened by tapping the one line of it below.
+        if (!this.keyboardOpen && this.requestHistory.length > 0 && (this.historyOpen || !this.hasResult())) {
           Column({ space: 4 }) {
-            Text('Version request').fontSize(12).fontColor('#888888').width('100%')
+            Text('Version request').fontSize(12).fontColor(app.inkMuted).width('100%')
             Scroll() {
-              Text(this.requestHistory).fontSize(13).fontColor('#333333').width('100%')
+              Text(this.requestHistory).fontSize(13).fontColor(app.inkStrong).width('100%')
                 .copyOption(CopyOptions.LocalDevice)
             }
             .width('100%')
@@ -2124,39 +2214,18 @@ struct GeneratePage {
           .padding({ left: 16, right: 16, top: 8 })
         }
 
-        Row({ space: 8 }) {
-          Button(this.modeLabel())
-            .type(ButtonType.Normal)
-            .fontSize(12)
-            .height(30)
-            .backgroundColor(this.modeTint())
-            .fontColor(this.modeInk())
-            .enabled(!this.generating)
-            .onClick(() => {
-              this.mode = this.nextMode()
-              this.checkProvider()
-            })
-          Text(this.modeSubtitle())
-            .fontSize(11).fontColor('#999999').layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8 })
-
         // The three dashscope models (glm-5.2 and the two deepseek-v4 ones) share
         // one key and base URL, so the choice is the model name alone -- which also
         // flips isDeepSeek() and so the request shape (native thinking for the
         // deepseek models, enable_thinking for glm-5.2). Shown only when the
         // configured endpoint is dashscope; tapping applies and persists.
-        if (this.mode === MODE_DEEPSEEK && settings.isDashscopeProvider() && settings.hasApiKey()) {
+        if (!this.keyboardOpen && this.mode === MODE_DEEPSEEK && settings.isDashscopeProvider() && settings.hasApiKey()) {
           Row({ space: 6 }) {
             ForEach(this.modelPickerLabels(), (label: string, index: number) => {
               Button(label)
-                .type(ButtonType.Normal)
+                .attributeModifier(this.modelPickerLook(index))
                 .fontSize(11)
                 .height(26)
-                .borderRadius(6)
-                .backgroundColor(this.modelPickerTint(index))
-                .fontColor(this.modelPickerInk(index))
                 .enabled(!this.generating)
                 .onClick(() => {
                   settings.applyModelCandidate(index)
@@ -2177,67 +2246,69 @@ struct GeneratePage {
         // Toggle for the on-device Jev proxy (see jevProxyLabel). Offered for any
         // cloud provider with a key, not just dashscope, since the proxy answers
         // the composer's selector questions with whatever chat model is set.
-        if (this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
+        if (!this.keyboardOpen && this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
           Row({ space: 8 }) {
             Button(this.jevProxyLabel())
-              .type(ButtonType.Normal)
+              .attributeModifier(this.jevProxyLook())
               .fontSize(11)
               .height(26)
-              .borderRadius(6)
-              .backgroundColor(this.jevProxyTint())
-              .fontColor(this.jevProxyInk())
               .enabled(!this.generating)
               .onClick(() => { this.toggleJevProxy() })
             Text(this.jevProxyOn ? 'selector via cloud model' :
               (settings.hasSelectorKey() ? 'selector via TypeSafe' : 'no selector — agent route off'))
-              .fontSize(11).fontColor('#999999').layoutWeight(1)
+              .fontSize(11).fontColor(app.inkMuted).layoutWeight(1)
           }
           .width('100%')
           .padding({ left: 16, right: 16, top: 4 })
         }
 
-        // With a running program on screen the original request collapses to a
-        // single line, leaving the height to the preview. Tapping it reopens
-        // the composer to start over from a new request.
+        // With a running program on screen the request is one line, leaving the height to the preview. Tapping it
+        // opens the whole history of the version's requests.
         if (this.hasResult() && !this.composerOpen) {
-          Row({ space: 8 }) {
-            Text(this.acceptedRequest)
-              .fontSize(12)
-              .fontColor('#666666')
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (!this.keyboardOpen) {
+            Row({ space: 8 }) {
+              Row({ space: 4 }) {
+                Text(this.acceptedRequest)
+                  .fontSize(12)
+                  .fontColor(app.inkSoft)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .layoutWeight(1)
+                Text(this.historyOpen ? '\u25B4' : '\u25BE').fontSize(12).fontColor(app.inkMuted)
+              }
               .layoutWeight(1)
-              .onClick(() => { this.composerOpen = true })
-            Button('New')
-              .type(ButtonType.Normal)
-              .fontSize(11)
-              .height(28)
-              .backgroundColor('#F0F0F0')
-              .fontColor('#666666')
-              .enabled(!this.generating)
-              .onClick(() => { this.startNew() })
-            Button('Save')
-              .type(ButtonType.Normal)
-              .fontSize(11)
-              .height(28)
-              .enabled(!this.generating)
-              .onClick(() => { this.doSave() })
+              .onClick(() => { this.historyOpen = !this.historyOpen })
+              Button('New')
+                .attributeModifier(new QuietButton())
+                .fontSize(12)
+                .height(30)
+                .enabled(!this.generating)
+                .onClick(() => { this.startNew() })
+              // The result is ready: saving it is the thing to do.
+              Button(this.isSaved() ? 'Saved' : 'Save')
+                .attributeModifier(new PrimaryButton())
+                .fontSize(12)
+                .height(30)
+                .enabled(!this.generating && !this.isSaved())
+                .onClick(() => { this.doSave() })
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 8 })
           }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8 })
         } else {
           TextArea({ placeholder: this.baseVersionId.length > 0 || this.hasResult() ? 'What to change?' : 'Describe the app you want...', text: this.prompt })
             .onChange((value: string) => { this.prompt = value })
             .enabled(!this.generating && this.baseError.length === 0)
-            .width('100%')
+            .width('calc(100% - 32vp)')
             .height(100)
-            .margin(16)
+            .margin({ left: 16, right: 16, top: 8, bottom: 8 })
 
           Row({ space: 10 }) {
             Button(this.generating ? 'Stop' : (this.baseVersionId.length > 0 || this.hasResult() ? 'Refine' : 'Generate'))
-              .type(ButtonType.Normal)
+              .attributeModifier(new PrimaryButton())
               .layoutWeight(1)
-              .enabled(this.canGenerate() || this.generating)
+              // Off with nothing typed, as Update below is: a tap that does nothing reads as broken.
+              .enabled(this.generating || (this.prompt.trim().length > 0 && this.canGenerate()))
               .onClick(() => {
                 if (this.generating) {
                   this.stopGeneration()
@@ -2245,78 +2316,64 @@ struct GeneratePage {
                   this.doGenerate()
                 }
               })
-            Button('Save')
-              .type(ButtonType.Normal)
+            Button(this.isSaved() ? 'Saved' : 'Save')
+              .attributeModifier(new TonalButton())
               .layoutWeight(1)
-              .enabled(this.hasResult() && !this.generating)
+              .enabled(this.hasResult() && !this.generating && !this.isSaved())
               .onClick(() => { this.doSave() })
           }
           .width('100%')
           .padding({ left: 16, right: 16 })
         }
 
-        Row({ space: 8 }) {
-          Text(this.status)
-            .fontSize(12)
-            .fontColor(this.compiled ? '#34C759' : '#999999')
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('100%')
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 4 })
-
-        if (!this.generating && this.hasResult() && this.generatedSource.trim() !== this.compiledSource.trim()) {
-          Text('The last attempt was not applied. Save keeps the previous successful code and version request.')
-            .fontSize(12).fontColor('#B25000')
-            .padding({ left: 16, right: 16, bottom: 4 })
-        }
-
-        // Experiment only (experiment/jev-template-select branch): survives
-        // the next status change and hilog's ring buffer getting
-        // overwritten -- see ChatMessage.templatePick for the Chat-side
-        // equivalent and why this exists.
-        if (this.lastTemplatePick.length > 0) {
-          Row({ space: 8 }) {
-            Text('Jev: ' + this.lastTemplatePick)
-              .fontSize(11)
-              .fontColor('#8A6D00')
-              .maxLines(3)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (!this.keyboardOpen) {
+          // What a failed service cost (a slower, plainer screen): shown only when something did not answer.
+          if (this.troubleNote.length > 0) {
+            Text(this.troubleNote)
+              .fontSize(12)
+              .fontColor(app.warningInk)
               .width('100%')
+              .padding({ left: 16, right: 16, top: 6 })
+          }
+
+          if (!this.generating && this.hasResult() && this.generatedSource.trim() !== this.compiledSource.trim()) {
+            Text('The last attempt was not applied. Save keeps the previous successful code and version request.')
+              .fontSize(12).fontColor(app.warningInk)
+              .padding({ left: 16, right: 16, top: 6 })
+          }
+
+          Row({ space: 6 }) {
+            Button('Preview')
+              .type(ButtonType.Capsule)
+              .fontSize(12)
+              .fontWeight(this.tab === TAB_PREVIEW ? FontWeight.Medium : FontWeight.Normal)
+              .height(30)
+              .layoutWeight(1)
+              .backgroundColor(this.tabTint(TAB_PREVIEW))
+              .fontColor(this.tabInk(TAB_PREVIEW))
+              .onClick(() => { this.tab = TAB_PREVIEW })
+            Button('Code')
+              .type(ButtonType.Capsule)
+              .fontSize(12)
+              .fontWeight(this.tab === TAB_CODE ? FontWeight.Medium : FontWeight.Normal)
+              .height(30)
+              .layoutWeight(1)
+              .backgroundColor(this.tabTint(TAB_CODE))
+              .fontColor(this.tabInk(TAB_CODE))
+              .onClick(() => { this.tab = TAB_CODE })
+            Button('Metrics')
+              .type(ButtonType.Capsule)
+              .fontSize(12)
+              .fontWeight(this.tab === TAB_METRICS ? FontWeight.Medium : FontWeight.Normal)
+              .height(30)
+              .layoutWeight(1)
+              .backgroundColor(this.tabTint(TAB_METRICS))
+              .fontColor(this.tabInk(TAB_METRICS))
+              .onClick(() => { this.tab = TAB_METRICS })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 0, bottom: 4 })
+          .padding({ left: 16, right: 16, top: 8, bottom: 6 })
         }
-
-        Row({ space: 6 }) {
-          Button('Preview')
-            .type(ButtonType.Normal)
-            .fontSize(12)
-            .height(30)
-            .layoutWeight(1)
-            .backgroundColor(this.tabTint(TAB_PREVIEW))
-            .fontColor(this.tabInk(TAB_PREVIEW))
-            .onClick(() => { this.tab = TAB_PREVIEW })
-          Button('Code')
-            .type(ButtonType.Normal)
-            .fontSize(12)
-            .height(30)
-            .layoutWeight(1)
-            .backgroundColor(this.tabTint(TAB_CODE))
-            .fontColor(this.tabInk(TAB_CODE))
-            .onClick(() => { this.tab = TAB_CODE })
-          Button('Metrics')
-            .type(ButtonType.Normal)
-            .fontSize(12)
-            .height(30)
-            .layoutWeight(1)
-            .backgroundColor(this.tabTint(TAB_METRICS))
-            .fontColor(this.tabInk(TAB_METRICS))
-            .onClick(() => { this.tab = TAB_METRICS })
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, bottom: 6 })
 
         // Compile errors belong to no single pane -- they explain what the
         // status line says, so they stay above all three.
@@ -2325,26 +2382,37 @@ struct GeneratePage {
             Text(this.compileErrors)
               .fontSize(11)
               .fontFamily('monospace')
-              .fontColor('#FF3B30')
+              .fontColor(app.danger)
               .width('100%')
               .padding(8)
           }
-          .width('100%')
+          .width('calc(100% - 32vp)')
           .constraintSize({ maxHeight: 100 })
           .margin({ left: 16, right: 16 })
-          .backgroundColor('#FFF0F0')
+          .backgroundColor(app.dangerFill)
           .borderRadius(8)
         }
 
-        if (this.mode === MODE_LOCAL && !this.modelReady && !this.generating) {
-          Column() {
+        if (this.mode === MODE_LOCAL && !this.modelReady && !this.generating && !this.downloading && !this.keyboardOpen) {
+          // The model (~1.9 GB) is fetched from vera-server, so what is missing is either the address or the download.
+          Column({ space: 8 }) {
             Text('Model not downloaded').fontSize(14).fontWeight(FontWeight.Medium)
-            Text('Switch to Local mode to download the model automatically (one-time, ~1.9GB over WiFi).')
-              .fontSize(12).fontColor('#666666').margin({ top: 4 })
+            Text(settings.hasServerUrl() ?
+              'One-time download of about 1.9 GB from the server, best over WiFi.' :
+              'It is downloaded from vera-server, and no server address is set. Choose Server in the menu to see how to set one.')
+              .fontSize(12).fontColor(app.inkSoft)
+            if (settings.hasServerUrl()) {
+              Button('Download')
+                .attributeModifier(new PrimaryButton())
+                .fontSize(12)
+                .height(32)
+                .onClick(() => { this.checkModel() })
+            }
           }
-          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .width('calc(100% - 32vp)')
           .padding(16)
-          .backgroundColor('#FFF8E0')
+          .backgroundColor(app.warningFill)
           .margin({ left: 16, right: 16, top: 8 })
           .borderRadius(8)
         }
@@ -2358,49 +2426,68 @@ struct GeneratePage {
                 .margin({ bottom: 8 })
             }
             if (this.hasResult()) {
-              VeraPreview({ vbc2: this.compiledVbc2 })
+              VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState,
+                onStateSnapshot: (encoded: string): void => { this.liveState = encoded } })
             } else if (this.generating && this.previewVbc2.length > 0) {
               Text(this.previewNote)
                 .fontSize(12)
-                .fontColor('#8A6D00')
+                .fontColor(app.warningInk)
                 .width('100%')
                 .padding({ left: 12, right: 12, top: 6, bottom: 2 })
               VeraPreview({ previewOnly: true, vbc2: this.previewVbc2 })
             } else {
-              Text(this.generating ? 'Building...' : 'The program will run here once it compiles')
-                .fontSize(13)
-                .fontColor('#BBBBBB')
-                .padding(24)
+              Column({ space: 12 }) {
+                Text(this.generating ? 'Building...' : 'The program will run here once it compiles')
+                  .fontSize(13)
+                  .fontColor(app.inkDisabled)
+                if (!this.generating && this.setupHint.length > 0) {
+                  Text(this.setupHint)
+                    .fontSize(11)
+                    .fontColor(app.inkMuted)
+                    .copyOption(CopyOptions.LocalDevice)
+                }
+              }
+              .alignItems(HorizontalAlign.Start)
+              .padding(24)
             }
           }
-          .width('100%')
+          .width('calc(100% - 24vp)')
           .layoutWeight(1)
           .margin({ left: 12, right: 12, top: 4 })
-          .backgroundColor('#FFFFFF')
-          .border({ width: 1, color: '#D8E1ED' })
+          .backgroundColor(app.surface)
+          .border({ width: 1, color: app.line })
           .borderRadius(10)
           .clip(true)
         } else if (this.tab === TAB_CODE) {
+          // Lines are not wrapped: a wrapped line of code reads as two, and an indent is what shows its nesting. The
+          // source scrolls sideways inside, and down outside.
           Scroll() {
-            Text(!this.generating && this.hasResult() ? this.compiledSource :
-              (this.generatedSource.length > 0 ? this.generatedSource : '(generated source will appear here)'))
-              .fontSize(12)
-              .fontFamily('monospace')
-              .fontColor(this.generatedSource.length > 0 ? '#333333' : '#CCCCCC')
-              .width('100%')
-              .padding(12)
+            Scroll() {
+              Text(!this.generating && this.hasResult() ? this.compiledSource :
+                (this.generatedSource.length > 0 ? this.generatedSource : '(generated source will appear here)'))
+                .fontSize(12)
+                .fontFamily('monospace')
+                .fontColor(this.generatedSource.length > 0 ? app.inkStrong : app.inkDisabled)
+                .padding(12)
+            }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .align(Alignment.TopStart)
           }
-          .width('100%')
+          .width('calc(100% - 24vp)')
           .layoutWeight(1)
           .align(Alignment.Top)
           .margin({ left: 12, right: 12, top: 4 })
-          .backgroundColor('#F5F7FA')
+          .backgroundColor(app.background)
           .borderRadius(10)
         } else {
           Scroll() {
             Column({ space: 10 }) {
               if (this.stages.length > 0) {
                 this.stagesPanel()
+              }
+              if (this.lastTemplatePick.length > 0) {
+                this.editCheckPanel()
               }
               if (this.attempts.length > 0) {
                 this.attemptsPanel()
@@ -2415,7 +2502,7 @@ struct GeneratePage {
                 this.servicesPanel()
               }
               if (this.attempts.length === 0 && this.stages.length === 0) {
-                Text('No run yet').fontSize(13).fontColor('#BBBBBB').width('100%').textAlign(TextAlign.Center).padding({ top: 24 })
+                Text('No run yet').fontSize(13).fontColor(app.inkDisabled).width('100%').textAlign(TextAlign.Center).padding({ top: 24 })
               }
             }
             // The measured width, so that the cards (92% of it) are centred in the pane drawn and not in the wider box a percentage
@@ -2438,7 +2525,7 @@ struct GeneratePage {
           // the right edge.
           .padding({ top: 12, bottom: 12 })
           .margin({ left: 12, right: 12, top: 4 })
-          .backgroundColor('#F5F7FA')
+          .backgroundColor(app.background)
           .borderRadius(10)
         }
 
@@ -2453,7 +2540,7 @@ struct GeneratePage {
               .height(44)
               .enabled(!this.generating)
             Button(this.generating ? 'Stop' : 'Update')
-              .type(ButtonType.Normal)
+              .attributeModifier(new TonalButton())
               .width(92)
               .height(44)
               .enabled(this.generating || (this.refinePrompt.trim().length > 0 && this.canGenerate()))
@@ -2467,7 +2554,7 @@ struct GeneratePage {
           }
           .width('100%')
           .padding({ left: 12, right: 12, top: 8, bottom: 12 })
-          .backgroundColor('#F7F9FC')
+          .backgroundColor(app.background)
         }
       }
       .width('100%')
@@ -2475,5 +2562,6 @@ struct GeneratePage {
     }
     .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.nextVersionNumber.toString() : 'Generate')
     .titleMode(NavigationTitleMode.Mini)
+    .backgroundColor(app.background)
   }
 }

@@ -19,6 +19,7 @@ import { appAgentHost } from '../vera/agent/AgentAppHost'
 import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_NOT_BUILT } from '../vera/agent/VeraBuildRoute'
+import { app, PrimaryButton } from '../components/AppStyle'
 
 const APP_NONE: string = 'none'
 const APP_DESCRIBING: string = 'describing'
@@ -130,10 +131,10 @@ struct StatCell {
     // padding, so a padded node with a layout weight cannot outgrow its parent.
     Column() {
       Column({ space: 2 }) {
-        Text(this.label).fontSize(10).fontColor('#888888').maxLines(1)
-        Text(this.value).fontSize(17).fontWeight(FontWeight.Bold).fontColor('#222222')
+        Text(this.label).fontSize(10).fontColor(app.inkMuted).maxLines(1)
+        Text(this.value).fontSize(17).fontWeight(FontWeight.Bold).fontColor(app.inkStrong)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.note).fontSize(10).fontColor('#999999').maxLines(2)
+        Text(this.note).fontSize(10).fontColor(app.inkMuted).maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .alignItems(HorizontalAlign.Start)
@@ -142,7 +143,7 @@ struct StatCell {
     .layoutWeight(1)
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor(app.surface)
     .borderRadius(8)
   }
 }
@@ -172,22 +173,22 @@ struct StatsPanel {
   build() {
     Column({ space: 8 }) {
       if (this.heading.length > 0) {
-        Text(this.heading).fontSize(11).fontColor('#888888').width('100%')
+        Text(this.heading).fontSize(11).fontColor(app.inkMuted).width('100%')
       }
       if (this.widgetLine.length > 0) {
         Column({ space: 4 }) {
           Text(this.widgetUpdate ? 'Widget request (change to the previous widget)' : 'Widget request')
-            .fontSize(10).fontColor('#888888')
+            .fontSize(10).fontColor(app.inkMuted)
           if (this.widgetCutFrom > 0) {
             Text('Cut to ' + this.widgetLine.length.toString() + ' of ' + this.widgetCutFrom.toString() + ' characters')
-              .fontSize(10).fontColor('#C62828')
+              .fontSize(10).fontColor(app.dangerInk)
           }
-          Text(this.widgetLine).fontSize(12).fontColor('#333333').fontFamily('monospace')
+          Text(this.widgetLine).fontSize(12).fontColor(app.inkStrong).fontFamily('monospace')
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
         .padding(10)
-        .backgroundColor('#FFFFFF')
+        .backgroundColor(app.surface)
         .borderRadius(8)
       }
       Row({ space: 8 }) {
@@ -216,12 +217,12 @@ struct StatsPanel {
           StatCell({ label: 'Web search', value: this.tally.searches.toString() + ' calls',
             note: formatMs(this.tally.searchMs) + ' in all' }).layoutWeight(1)
           StatCell({ label: 'Widgets', value: this.tally.widgets.toString(),
-            note: this.tally.attempts.toString() + ' build attempts' }).layoutWeight(1)
+            note: this.tally.attempts.toString() + (this.tally.attempts === 1 ? ' build attempt' : ' build attempts') }).layoutWeight(1)
         }.width('100%')
       } else if (this.tally.attempts > 0) {
         Row({ space: 8 }) {
           StatCell({ label: 'Widgets', value: this.tally.widgets.toString(),
-            note: this.tally.attempts.toString() + ' build attempts' }).layoutWeight(1)
+            note: this.tally.attempts.toString() + (this.tally.attempts === 1 ? ' build attempt' : ' build attempts') }).layoutWeight(1)
         }.width('100%')
       }
       ForEach(this.attempts, (a: AttemptStat) => {
@@ -230,8 +231,8 @@ struct StatsPanel {
             Text('#' + a.attempt.toString()).fontSize(13).fontWeight(FontWeight.Bold)
             Text(a.success ? '✓' : '✗ ' + a.verdict)
               .fontSize(11)
-              .fontColor(a.success ? '#2E7D32' : '#C62828')
-              .backgroundColor(a.success ? '#E8F8E8' : '#FFECEC')
+              .fontColor(a.success ? app.successInk : app.dangerInk)
+              .backgroundColor(a.success ? app.successFill : app.dangerFill)
               .padding({ left: 8, right: 8, top: 3, bottom: 3 })
               .borderRadius(6)
               .maxLines(2)
@@ -259,13 +260,13 @@ struct StatsPanel {
         }
         .width('100%')
         .padding(10)
-        .backgroundColor('#FFFFFF')
+        .backgroundColor(app.surface)
         .borderRadius(8)
       })
     }
     .width('100%')
     .padding(10)
-    .backgroundColor('#F5F7FA')
+    .backgroundColor(app.background)
     .borderRadius(10)
   }
 }
@@ -290,9 +291,9 @@ struct MessageBubble {
       if (this.msg.before.length > 0) {
         Text(this.msg.before)
           .fontSize(16)
-          .fontColor(this.msg.role === 'user' ? '#FFFFFF' : '#1A1A1A')
+          .fontColor(this.msg.role === 'user' ? app.surface : app.inkStrong)
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .backgroundColor(this.msg.role === 'user' ? '#2F6BFF' : '#FFFFFF')
+          .backgroundColor(this.msg.role === 'user' ? app.primary : app.surface)
           .borderRadius(14)
           .constraintSize({ maxWidth: '85%' })
           .copyOption(CopyOptions.LocalDevice)
@@ -300,9 +301,9 @@ struct MessageBubble {
       if (this.msg.appState === APP_DESCRIBING) {
         Text('Planning a widget...')
           .fontSize(13)
-          .fontColor('#666666')
+          .fontColor(app.inkSoft)
           .padding(12)
-          .backgroundColor('#FFFFFF')
+          .backgroundColor(app.surface)
           .borderRadius(14)
       }
       if (this.msg.appState === APP_BUILDING && this.msg.question.length > 0) {
@@ -315,17 +316,17 @@ struct MessageBubble {
         Row({ space: 8 }) {
           LoadingProgress().width(18).height(18)
           Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Building a widget...')
-            .fontSize(13).fontColor('#666666').layoutWeight(1)
+            .fontSize(13).fontColor(app.inkSoft).layoutWeight(1)
         }
         .padding(12)
-        .backgroundColor('#FFFFFF')
+        .backgroundColor(app.surface)
         .borderRadius(14)
       } else if (this.msg.appState === APP_FAILED) {
         Text('The widget could not be built: ' + this.msg.error.substring(0, 240))
           .fontSize(12)
-          .fontColor('#B3261E')
+          .fontColor(app.dangerInk)
           .padding(10)
-          .backgroundColor('#FFECEC')
+          .backgroundColor(app.dangerFill)
           .borderRadius(10)
           .copyOption(CopyOptions.LocalDevice)
       }
@@ -340,13 +341,13 @@ struct MessageBubble {
           .width('100%')
           .borderRadius(14)
           .clip(true)
-          .backgroundColor('#FFFFFF')
+          .backgroundColor(app.surface)
           .opacity(this.msg.appState === APP_READY ? 1 : 0.6)
         if (this.msg.appState === APP_BUILDING) {
           Row({ space: 8 }) {
             LoadingProgress().width(14).height(14)
             Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Finishing the widget...')
-              .fontSize(12).fontColor('#888888').layoutWeight(1)
+              .fontSize(12).fontColor(app.inkMuted).layoutWeight(1)
           }
           .width('100%')
           .padding({ left: 4, right: 4 })
@@ -355,9 +356,9 @@ struct MessageBubble {
       if (this.msg.after.length > 0) {
         Text(this.msg.after)
           .fontSize(16)
-          .fontColor('#1A1A1A')
+          .fontColor(app.inkStrong)
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          .backgroundColor('#FFFFFF')
+          .backgroundColor(app.surface)
           .borderRadius(14)
           .constraintSize({ maxWidth: '85%' })
           .copyOption(CopyOptions.LocalDevice)
@@ -372,7 +373,7 @@ struct MessageBubble {
       if (this.showStats && this.msg.templatePick.length > 0) {
         Text('Jev: ' + this.msg.templatePick)
           .fontSize(11)
-          .fontColor('#8A6D00')
+          .fontColor(app.warningInk)
           .padding({ left: 12, right: 12, top: 2, bottom: 6 })
       }
       // The program behind the widget, next to the numbers about how it was
@@ -381,8 +382,8 @@ struct MessageBubble {
       if (this.showStats && this.msg.role === 'assistant' && this.msg.source.length > 0) {
         Column({ space: 6 }) {
           Row() {
-            Text('Widget code').fontSize(13).fontColor('#666666').layoutWeight(1)
-            Text(this.showCode ? 'Hide' : 'Show').fontSize(13).fontColor('#2F6BFF')
+            Text('Widget code').fontSize(13).fontColor(app.inkSoft).layoutWeight(1)
+            Text(this.showCode ? 'Hide' : 'Show').fontSize(13).fontColor(app.primary)
           }
           .width('100%')
           .onClick(() => { this.showCode = !this.showCode })
@@ -391,7 +392,7 @@ struct MessageBubble {
               Text(this.msg.source)
                 .fontSize(11)
                 .fontFamily('monospace')
-                .fontColor('#1A1A1A')
+                .fontColor(app.inkStrong)
                 .width('100%')
                 .copyOption(CopyOptions.LocalDevice)
             }
@@ -402,7 +403,7 @@ struct MessageBubble {
         }
         .width('100%')
         .padding(10)
-        .backgroundColor('#FFFFFF')
+        .backgroundColor(app.surface)
         .borderRadius(10)
       }
     }
@@ -774,6 +775,12 @@ struct ChatPage {
       context: WidgetBuildContext): void {
     context.brief = parsed.appDescription
     context.request = parsed.appRequest
+    // A record line written out for a widget the chat already has is about that widget: it is refined, not built again.
+    if (parsed.mode === 'create' && parsed.recordMessageId > 0 &&
+        references.some((ref: WidgetReference): boolean => ref.messageId === parsed.recordMessageId)) {
+      parsed.mode = 'refine'
+      parsed.targetMessageId = parsed.recordMessageId
+    }
     if (parsed.mode === 'refine' || parsed.update) {
       let target: WidgetReference | undefined = parsed.update ? references[references.length - 1] :
         references.find((ref: WidgetReference): boolean => ref.messageId === parsed.targetMessageId)
@@ -903,9 +910,9 @@ struct ChatPage {
         // whole chat; each reply carries its own underneath when this is on.
         Row() {
           Text(this.title.length > 0 ? this.title : 'New chat')
-            .fontSize(13).fontColor('#666666').maxLines(1)
+            .fontSize(13).fontColor(app.inkSoft).maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
-          Text('Stats').fontSize(13).fontColor('#666666').margin({ right: 8 })
+          Text('Stats').fontSize(13).fontColor(app.inkSoft).margin({ right: 8 })
           Toggle({ type: ToggleType.Switch, isOn: this.showStats })
             .onChange((on: boolean) => { this.showStats = on })
         }
@@ -930,12 +937,12 @@ struct ChatPage {
         .scrollBar(BarState.Off)
 
         if (this.status.length > 0) {
-          Text(this.status).fontSize(12).fontColor('#888888').width('100%').padding({ left: 16, right: 16, bottom: 4 })
+          Text(this.status).fontSize(12).fontColor(app.inkMuted).width('100%').padding({ left: 16, right: 16, bottom: 4 })
         } else if (this.idleLine().length > 0) {
           // Idle: show which provider/model a reply will use (plus the stub-build
           // note when there is one), since the chat request reads settings.getModel()
           // and the model is picked on the Generate page.
-          Text(this.idleLine()).fontSize(12).fontColor('#888888').width('100%').padding({ left: 16, right: 16, bottom: 4 })
+          Text(this.idleLine()).fontSize(12).fontColor(app.inkMuted).width('100%').padding({ left: 16, right: 16, bottom: 4 })
         }
 
         Row({ space: 8 }) {
@@ -949,18 +956,17 @@ struct ChatPage {
             .layoutWeight(1)
             .height(44)
           Button('Send')
-            .type(ButtonType.Normal)
-            .borderRadius(10)
+            .attributeModifier(new PrimaryButton())
             .enabled(!this.busy && this.draft.trim().length > 0)
             .onClick(() => { this.send() })
         }
         .width('100%')
         .padding({ left: 12, right: 12, top: 6, bottom: 10 })
-        .backgroundColor('#FFFFFF')
+        .backgroundColor(app.surface)
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('#F3F4F7')
+      .backgroundColor(app.background)
     }
     .title('Chat')
     .titleMode(NavigationTitleMode.Mini)

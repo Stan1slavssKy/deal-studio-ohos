@@ -1,8 +1,10 @@
 import { Project, Version, VersionMetrics, store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { projectIconResource } from '../vera/ProjectIcons'
+import { requestHeadline, changeNote, versionCountText } from '../vera/ProjectText'
 import { projectOperations, ProjectOperationStatus, ProjectShortcutState } from '../vera/ProjectOperations'
 import { common } from '@kit.AbilityKit'
+import { app, PrimaryButton, TonalButton, QuietButton, DangerButton } from '../components/AppStyle'
 
 class RunVersionParams {
   projectId: string = ''
@@ -34,6 +36,8 @@ struct ProjectPage {
   // Shown beside the source: the request a version came from is the thing you
   // actually need when deciding whether to refine it or start again.
   @State viewedPrompt: string = ''
+  @State renaming: boolean = false
+  @State renameText: string = ''
 
   aboutToAppear(): void {
     this.pageVisible = true
@@ -100,6 +104,8 @@ struct ProjectPage {
   }
 
   build() {
+    // The overlays are siblings of the page, not children of its content: their dimming then covers the title bar too.
+    Stack() {
     Navigation() {
       Column() {
         if (this.project !== null) {
@@ -108,32 +114,35 @@ struct ProjectPage {
               .width(56).height(56).objectFit(ImageFit.Contain).margin({ right: 16 })
             Column() {
               Text(this.project!.name).fontSize(22).fontWeight(FontWeight.Bold)
-              Text(this.versions.length.toString() + ' version' + (this.versions.length !== 1 ? 's' : ''))
-                .fontSize(14).fontColor('#999999').margin({ top: 4 })
+              Text(versionCountText(this.versions.length))
+                .fontSize(14).fontColor(app.inkMuted).margin({ top: 4 })
             }.alignItems(HorizontalAlign.Start).layoutWeight(1)
           }
           .width('100%')
           .padding(16)
 
+          // One thing to do first (Generate), the one next to it (Run), and the rest in a menu.
           Row({ space: 10 }) {
             Button('Generate')
-              .type(ButtonType.Normal)
+              .attributeModifier(new PrimaryButton())
               .layoutWeight(1)
               .onClick(() => { this.openGenerate('') })
             Button('Run')
-              .type(ButtonType.Normal)
+              .attributeModifier(new TonalButton())
               .layoutWeight(1)
               .enabled(this.latestRunnableIndex() >= 0)
               .onClick(() => { this.runLatest() })
-            Button(this.shortcutButtonLabel())
-              .type(ButtonType.Normal)
-              .fontSize(14)
-              .enabled(!this.projectOperationPending && this.shortcutState !== ProjectShortcutState.Unknown)
-              .onClick(() => {
-                if (this.shortcutState === ProjectShortcutState.Present) { this.unpinFromHome() }
-                else if (this.shortcutState === ProjectShortcutState.Absent) { this.pinToHome() }
-                else { this.refreshShortcutState() }
-              })
+            Button('\u22EF')
+              .attributeModifier(new TonalButton())
+              .width(52)
+              .fontSize(22)
+              .enabled(!this.projectOperationPending)
+              .bindMenu([
+                { value: this.shortcutButtonLabel(), action: () => { this.onShortcutMenu() },
+                  enabled: this.shortcutMenuEnabled() },
+                { value: 'Rename', action: () => { this.renameText = this.project!.name; this.renaming = true } },
+                { value: 'Delete project', action: () => { this.confirmDeleteProject() } }
+              ])
           }
           .width('100%')
           .padding({ left: 16, right: 16, bottom: 12 })
@@ -141,14 +150,12 @@ struct ProjectPage {
           if (this.versions.length > 0 && this.latestRunnableIndex() !== 0) {
             Text(this.runSelectionNote())
               .fontSize(12)
-              .fontColor('#B25000')
+              .fontColor(app.warningInk)
               .width('100%')
               .padding({ left: 16, right: 16, bottom: 12 })
           }
 
-          Divider().color('#EEEEEE')
-
-          List({ space: 1 }) {
+          List({ space: 12 }) {
             ForEach(this.versions, (v: Version, index: number) => {
               ListItem() {
                 Column() {
@@ -159,54 +166,57 @@ struct ProjectPage {
                       if (v.vbc2.length === 0) {
                         Text('needs compile')
                           .fontSize(11)
-                          .fontColor('#FF9500')
-                          .backgroundColor('#FFF3E0')
+                          .fontColor(app.warningInk)
+                          .backgroundColor(app.warningFill)
                           .borderRadius(4)
                           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                           .margin({ left: 8 })
                       }
                     }
-                    if (v.note.length > 0) {
-                      Text(v.note).fontSize(13).fontColor('#666666').margin({ top: 2 })
+                    // What the app is (the request it began as); and, for a refinement, what this version changed.
+                    if (requestHeadline(v.prompt, v.note).length > 0) {
+                      Text(requestHeadline(v.prompt, v.note)).fontSize(13).fontColor(app.inkStrong).margin({ top: 2 })
+                        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    }
+                    if (changeNote(v.prompt, v.note).length > 0) {
+                      Text('Changed: ' + changeNote(v.prompt, v.note)).fontSize(12).fontColor(app.inkSoft).margin({ top: 2 })
                         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
                     }
                     Text(new Date(v.createdAt).toLocaleString())
-                      .fontSize(12).fontColor('#AAAAAA').margin({ top: 2 })
+                      .fontSize(12).fontColor(app.inkMuted).margin({ top: 2 })
                   }
                   .alignItems(HorizontalAlign.Start)
                   .width('100%')
 
                   Row({ space: 6 }) {
                     Button('Run')
-                      .type(ButtonType.Normal)
+                      .attributeModifier(new TonalButton())
                       .height(32)
-                      .fontSize(13)
+                      .fontSize(12)
+                      .padding({ left: 4, right: 4 })
                       .layoutWeight(1)
                       .enabled(v.vbc2.length > 0)
                       .onClick(() => { this.runVersion(v) })
                     Button('Refine')
-                      .type(ButtonType.Normal)
+                      .attributeModifier(new QuietButton())
                       .height(32)
-                      .fontSize(13)
+                      .fontSize(12)
+                      .padding({ left: 4, right: 4 })
                       .layoutWeight(1)
-                      .backgroundColor('#E0E0E0')
-                      .fontColor('#333333')
                       .onClick(() => { this.openGenerate(v.id) })
-                    Button('Src')
-                      .type(ButtonType.Normal)
+                    Button('Code')
+                      .attributeModifier(new QuietButton())
                       .height(32)
-                      .fontSize(13)
+                      .fontSize(12)
+                      .padding({ left: 4, right: 4 })
                       .layoutWeight(1)
-                      .backgroundColor('#EEEEEE')
-                      .fontColor('#666666')
                       .onClick(() => { this.viewSource(v, this.versions.length - index) })
                     Button('Metrics')
-                      .type(ButtonType.Normal)
+                      .attributeModifier(new QuietButton())
                       .height(32)
-                      .fontSize(13)
+                      .fontSize(12)
+                      .padding({ left: 4, right: 4 })
                       .layoutWeight(1)
-                      .backgroundColor('#EEEEEE')
-                      .fontColor('#666666')
                       .onClick(() => { this.viewMetrics(v, this.versions.length - index) })
                   }
                   .width('100%')
@@ -214,7 +224,9 @@ struct ProjectPage {
                 }
                 .width('100%')
                 .padding(14)
-                .backgroundColor('#FFFFFF')
+                .backgroundColor(app.surface)
+                .borderRadius(12)
+                .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
               }
               .swipeAction({
                 end: {
@@ -224,27 +236,35 @@ struct ProjectPage {
             }, (v: Version) => v.id)
           }
           .width('100%')
+          .padding({ left: 16, right: 16, top: 12 })
           .layoutWeight(1)
         }
 
-        if (this.viewedSource.length > 0) {
-          this.sourceOverlay()
-        }
-        if (this.viewedMetricsVersion !== null) {
-          this.metricsOverlay()
-        }
       }.width('100%').height('100%')
     }
     .title(this.project !== null ? this.project!.name : 'Project')
     .titleMode(NavigationTitleMode.Mini)
+    .backgroundColor(app.background)
+
+    if (this.viewedSource.length > 0) {
+      this.sourceOverlay()
+    }
+    if (this.viewedMetricsVersion !== null) {
+      this.metricsOverlay()
+    }
+    if (this.renaming) {
+      this.renameOverlay()
+    }
+    }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder
   deleteVersionAction(v: Version) {
     Row() {
       Button('Delete')
-        .backgroundColor('#FF3B30')
-        .fontColor('#FFFFFF')
+        .attributeModifier(new DangerButton())
         .height('100%')
         .enabled(!this.projectOperationPending)
         .onClick(() => { this.confirmDeleteVersion(v) })
@@ -274,7 +294,7 @@ struct ProjectPage {
       },
       secondaryButton: {
         value: 'Delete',
-        fontColor: '#FF3B30',
+        fontColor: app.danger,
         action: () => { this.doDeleteVersion(v) }
       }
     })
@@ -363,10 +383,10 @@ struct ProjectPage {
   metricCell(label: string, value: string, note: string) {
     Column() {
       Column({ space: 2 }) {
-        Text(label).fontSize(10).fontColor('#888888').maxLines(1)
-        Text(value).fontSize(17).fontWeight(FontWeight.Bold).fontColor('#222222')
+        Text(label).fontSize(10).fontColor(app.inkMuted).maxLines(1)
+        Text(value).fontSize(17).fontWeight(FontWeight.Bold).fontColor(app.inkStrong)
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(note).fontSize(10).fontColor('#999999').maxLines(2)
+        Text(note).fontSize(10).fontColor(app.inkMuted).maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .alignItems(HorizontalAlign.Start)
@@ -374,7 +394,7 @@ struct ProjectPage {
     }
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Start)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor(app.surface)
     .borderRadius(8)
   }
 
@@ -401,14 +421,14 @@ struct ProjectPage {
     Column({ space: 10 }) {
       Column({ space: 4 }) {
         Text(metrics.provider.length > 0 ? metrics.provider : 'Provider: No data')
-          .fontSize(14).fontWeight(FontWeight.Bold).fontColor('#222222')
+          .fontSize(14).fontWeight(FontWeight.Bold).fontColor(app.inkStrong)
         Text(metrics.model.length > 0 ? metrics.model : 'Model: No data')
-          .fontSize(12).fontColor('#666666').wordBreak(WordBreak.BREAK_ALL)
+          .fontSize(12).fontColor(app.inkSoft).wordBreak(WordBreak.BREAK_ALL)
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
 
-      this.metricSection('Accepted result', 'Saved snapshot', '#2F6FEB')
+      this.metricSection('Accepted result', 'Saved snapshot', app.primary)
       Row({ space: 8 }) {
         this.metricCell('Total time', this.metricTime(metrics.elapsedMs), 'generation and refinements')
         this.metricCell('Estimated cost', metrics.estimatedUsd >= 0 ? '~$' + metrics.estimatedUsd.toFixed(6) : 'No data',
@@ -423,7 +443,7 @@ struct ProjectPage {
       .width('100%')
       .alignItems(VerticalAlign.Top)
 
-      this.metricSection('Token usage', metrics.partial ? 'Partial' : 'Measured', '#1F9D4C')
+      this.metricSection('Token usage', metrics.partial ? 'Partial' : 'Measured', app.successInk)
       Row({ space: 8 }) {
         this.metricCell('Input', this.metricCount(metrics.inputTokens), 'rules, request, old code')
         this.metricCell('Cached', this.metricCount(metrics.cacheHitTokens), 'included in input')
@@ -437,12 +457,12 @@ struct ProjectPage {
 
       Column({ space: 6 }) {
         Text(metrics.partial ? 'Partial metrics' : 'About these metrics')
-          .fontSize(12).fontWeight(FontWeight.Medium).fontColor(metrics.partial ? '#B25000' : '#555555')
+          .fontSize(12).fontWeight(FontWeight.Medium).fontColor(metrics.partial ? app.warningInk : app.inkSoft)
         Text('Work toward the accepted result in this session, including retries. ' +
           'Excludes the base version and later unsuccessful changes.')
-          .fontSize(11).fontColor('#666666')
+          .fontSize(11).fontColor(app.inkSoft)
         Text('Measured usage only, not complete billing. Stage timings and individual attempts were not saved.')
-          .fontSize(11).fontColor('#888888')
+          .fontSize(11).fontColor(app.inkMuted)
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -455,14 +475,15 @@ struct ProjectPage {
   metricsOverlay() {
     if (this.viewedMetricsVersion !== null) {
       Column() {
+      Column() {
         Row() {
           Text('Version ' + this.viewedMetricsNumber.toString() + ' · Metrics')
             .fontSize(18).fontWeight(FontWeight.Bold)
           Blank()
           Button('Close')
+            .attributeModifier(new QuietButton())
             .height(36)
             .fontSize(13)
-            .type(ButtonType.Normal)
             .onClick(() => { this.viewedMetricsVersion = null; this.viewedMetricsNumber = 0 })
         }
         .width('100%')
@@ -476,9 +497,9 @@ struct ProjectPage {
               } else {
                 Column({ space: 6 }) {
                   Text('No saved metrics')
-                    .fontSize(17).fontWeight(FontWeight.Bold).fontColor('#222222')
+                    .fontSize(17).fontWeight(FontWeight.Bold).fontColor(app.inkStrong)
                   Text('Metrics were not saved for this version')
-                    .fontSize(13).fontColor('#888888')
+                    .fontSize(13).fontColor(app.inkMuted)
                 }
                 .alignItems(HorizontalAlign.Start)
                 .padding(12)
@@ -493,16 +514,23 @@ struct ProjectPage {
         .width('100%')
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
-        .backgroundColor('#F5F7FA')
+        .backgroundColor(app.background)
         .borderRadius(10)
       }
       .width('90%')
       .height('80%')
       .padding(18)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor(app.surface)
       .borderRadius(14)
       .shadow({ radius: 10, color: '#40000000' })
-      .position({ x: '5%', y: '10%' })
+      // A tap inside the card is the card's, not a tap on the dimming behind it.
+      .onClick(() => {})
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor('#50000000')
+      .onClick(() => { this.viewedMetricsVersion = null; this.viewedMetricsNumber = 0 })
     }
   }
 
@@ -544,13 +572,14 @@ struct ProjectPage {
   sourceOverlay() {
     if (this.viewedSource.length > 0) {
       Column() {
+      Column() {
         Row() {
-          Text('Version ' + this.viewedVersionNumber.toString()).fontSize(18).fontWeight(FontWeight.Bold)
+          Text('Version ' + this.viewedVersionNumber.toString() + ' \u00B7 Code').fontSize(18).fontWeight(FontWeight.Bold)
           Blank()
           Button('Close')
+            .attributeModifier(new QuietButton())
             .height(36)
             .fontSize(13)
-            .type(ButtonType.Normal)
             .onClick(() => { this.viewedSource = ''; this.viewedPrompt = ''; this.viewedVersionNumber = 0 })
         }
         .width('100%')
@@ -560,22 +589,22 @@ struct ProjectPage {
           Column() {
             if (this.viewedPrompt.length > 0) {
               Text('Version request')
-                .fontSize(12).fontColor('#888888').width('100%').margin({ bottom: 4 })
+                .fontSize(12).fontColor(app.inkMuted).width('100%').margin({ bottom: 4 })
               Text(this.viewedPrompt)
                 .fontSize(14)
-                .fontColor('#222222')
+                .fontColor(app.inkStrong)
                 .width('100%')
                 .padding(10)
-                .backgroundColor('#F3F6FA')
+                .backgroundColor(app.background)
                 .borderRadius(8)
                 .margin({ bottom: 12 })
                 .copyOption(CopyOptions.LocalDevice)
             }
             Text('Source')
-              .fontSize(12).fontColor('#888888').width('100%').margin({ bottom: 4 })
+              .fontSize(12).fontColor(app.inkMuted).width('100%').margin({ bottom: 4 })
             Text(this.viewedSource)
               .fontSize(12)
-              .fontColor('#333333')
+              .fontColor(app.inkStrong)
               .width('100%')
           }
           .width('100%')
@@ -586,10 +615,109 @@ struct ProjectPage {
       .width('90%')
       .height('80%')
       .padding(18)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor(app.surface)
       .borderRadius(14)
       .shadow({ radius: 10, color: '#40000000' })
-      .position({ x: '5%', y: '10%' })
+      .onClick(() => {})
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor('#50000000')
+      .onClick(() => { this.viewedSource = ''; this.viewedPrompt = ''; this.viewedVersionNumber = 0 })
+    }
+  }
+
+  @Builder
+  renameOverlay() {
+    Column() {
+      Column() {
+        Text('Rename').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 })
+        TextInput({ placeholder: 'Project name', text: this.renameText })
+          .onChange((value: string) => { this.renameText = value })
+          .width('100%')
+          .height(44)
+        Row({ space: 12 }) {
+          Button('Cancel')
+            .attributeModifier(new QuietButton())
+            .layoutWeight(1)
+            .onClick(() => { this.renaming = false })
+          Button('Save')
+            .attributeModifier(new PrimaryButton())
+            .layoutWeight(1)
+            .enabled(this.renameText.trim().length > 0)
+            .onClick(() => { this.doRename() })
+        }
+        .width('100%')
+        .margin({ top: 20 })
+      }
+      .width('90%')
+      .padding(24)
+      .backgroundColor(app.surface)
+      .borderRadius(16)
+      .shadow({ radius: 8, color: '#30000000' })
+      .onClick(() => {})
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#50000000')
+    .onClick(() => { this.renaming = false })
+  }
+
+  private doRename(): void {
+    let name = this.renameText.trim()
+    if (name.length === 0 || this.project === null) { return }
+    store.updateProject(this.projectId, name, this.project!.icon)
+    this.renaming = false
+    this.reload()
+    refreshForms()
+  }
+
+  /** A shortcut can be added only to something that runs; one that exists can always be removed. */
+  private shortcutMenuEnabled(): boolean {
+    if (this.projectOperationPending || this.shortcutState === ProjectShortcutState.Unknown) { return false }
+    return this.shortcutState === ProjectShortcutState.Present || this.latestRunnableIndex() >= 0
+  }
+
+  private onShortcutMenu(): void {
+    if (this.shortcutState === ProjectShortcutState.Present) { this.unpinFromHome() }
+    else if (this.shortcutState === ProjectShortcutState.Absent) { this.pinToHome() }
+    else { this.refreshShortcutState() }
+  }
+
+  private confirmDeleteProject(): void {
+    if (this.project === null) { return }
+    this.getUIContext().showAlertDialog({
+      title: 'Delete mini-app?',
+      message: 'Delete "' + this.project!.name + '" and all its saved versions and data? This cannot be undone.',
+      primaryButton: {
+        value: 'Cancel',
+        action: () => {}
+      },
+      secondaryButton: {
+        value: 'Delete',
+        fontColor: app.danger,
+        action: () => { this.doDeleteProject() }
+      }
+    })
+  }
+
+  private async doDeleteProject(): Promise<void> {
+    if (this.projectOperationPending) { return }
+    this.projectOperationPending = true
+    let context = (): common.UIAbilityContext => this.getUIContext().getHostContext() as common.UIAbilityContext
+    const status = await projectOperations.deleteProject(context, this.projectId)
+    this.projectOperationPending = false
+    refreshForms()
+    if (status === ProjectOperationStatus.Success || status === ProjectOperationStatus.NotFound ||
+        status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed) {
+      if (status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed) {
+        this.showProjectMessage('Mini-application was deleted, but its shortcut cannot be removed.')
+      }
+      this.returnToIndex()
+    } else {
+      this.showProjectMessage('Error deleting mini-app.')
     }
   }
 }

@@ -46,7 +46,8 @@ const CHAT_SYSTEM_PROMPT: string =
   'The request is one or two plain sentences, as the person would ask an app builder for it: what it works out, shows or does, ' +
   'every number it starts from (those settled in the conversation and those you suggest in your reply), and anything it does on ' +
   'the phone, such as vibrating, beeping or adding a calendar event -- but nothing about layout, labels, formatting or which ' +
-  'phone function to call. The description is the full brief.\n' +
+  'phone function to call. The widget is built from the request: it has what the request names and nothing else, so whatever ' +
+  'your reply says the widget holds (a checklist, notes, a log, a button) is named in the request. The description is the full brief.\n' +
   'For a revision, use mode "refine" and numeric targetMessageId from the shown widget messageId. ' +
   'Use mode "create" only for an independent new widget. If the intended widget is ambiguous, ask one concise clarification question. ' +
   'Never guess a target. A refinement creates a new widget and retains the previous widget.\n' +
@@ -55,6 +56,8 @@ const CHAT_SYSTEM_PROMPT: string =
   "Do not refer to \"the above\" or omit details that appear elsewhere in the reply. " +
   "Place a brief complete sentence before the marker. Any text after it must also contain complete sentences. " +
   "Use no nested markers or additional markers. Do not show program code.\n" +
+  'Earlier widgets appear in the conversation as lines like "[widget messageId=3, status=ready: ...]". That is the conversation\'s record of a widget, ' +
+  'never something you write: a new widget or a revision is asked for only with the marker above.\n' +
   "When the request needs several similar controls -- a button per stop, a row per item -- put all of them in that one widget " +
   "and list every one in its description. Use one marker for the complete widget.\n" +
   'For mode "refine", describe the whole widget as it ' +
@@ -130,6 +133,8 @@ export class ParsedReply {
   update: boolean = false
   /** The marker carried a JSON payload, the only shape that may appear once and be acted on before the reply ends. */
   structured: boolean = false
+  /** The messageId of the record line the model wrote out in place of a marker (recordAsMarker); 0 when it wrote none. */
+  recordMessageId: number = 0
 }
 
 export class MiniApp {
@@ -215,7 +220,14 @@ function parseMarker(payload: string): ParsedReply {
       description = value['description'] as string
       if (description.trim().length === 0) { throw new Error('Empty widget description.') }
       if (typeof value['request'] === 'string') { out.appRequest = (value['request'] as string).trim() }
-    } catch (e) { out.error = 'Invalid widget marker: ' + (e as Error).message }
+      let record = value['recordOf']
+      if (typeof record === 'number' && Number.isSafeInteger(record as number) && (record as number) > 0) {
+        out.recordMessageId = record as number
+      }
+    } catch (e) {
+      out.error = 'Invalid widget marker: ' + (e as Error).message
+      console.info('VERA-CHAT marker refused (' + out.error + '): ' + description.substring(0, 800))
+    }
   }
   else if (description.toLowerCase().startsWith('update:')) {
     out.update = true
@@ -226,7 +238,49 @@ function parseMarker(payload: string): ParsedReply {
   return out
 }
 
-export function parseReply(raw: string, complete: boolean = false): ParsedReply {
+const RECORD_OPEN: string = '[widget messageId='
+
+/**
+ * The record line of an earlier widget (ChatPage.history shows each one as "[widget messageId=3, status=ready: description]"),
+ * written out by the model in place of a marker: read as the marker it stands for, so the widget is built and the line is not
+ * shown as text. Half a line, while the reply is still arriving, is a marker still being written.
+ *
+ * The line ends at the bracket that closes it, not at the reply's last one, so the text after it stays text. Its messageId
+ * is passed on (recordOf): when it names a widget already in the chat, the line is about that widget and refines it
+ * (ChatPage.startWidget) rather than building a copy.
+ */
+function recordAsMarker(received: string): string {
+  let at = received.indexOf(RECORD_OPEN)
+  if (at < 0 || received.indexOf(APP_OPEN) >= 0) { return received }
+  let colon = received.indexOf(': ', at)
+  if (colon < 0) { return received.substring(0, at) + APP_OPEN }
+  let close = closingBracket(received, at)
+  if (close < 0) { return received.substring(0, at) + APP_OPEN + received.substring(colon + 2) }
+  let payload: Record<string, Object> = {}
+  payload['request'] = ''
+  payload['description'] = received.substring(colon + 2, close).trim()
+  payload['mode'] = 'create'
+  let id = Number(received.substring(at + RECORD_OPEN.length).split(/[^0-9]/)[0])
+  if (Number.isSafeInteger(id) && id > 0) { payload['recordOf'] = id }
+  return received.substring(0, at) + APP_OPEN + JSON.stringify(payload) + APP_CLOSE + received.substring(close + 1)
+}
+
+/** Where the bracket opened at `at` closes, counting the brackets inside it; -1 while it is still open. */
+function closingBracket(text: string, at: number): number {
+  let depth = 0
+  for (let i = at; i < text.length; i++) {
+    let c = text.charAt(i)
+    if (c === '[') { depth++ }
+    else if (c === ']') {
+      depth--
+      if (depth === 0) { return i }
+    }
+  }
+  return -1
+}
+
+export function parseReply(received: string, complete: boolean = false): ParsedReply {
+  let raw = recordAsMarker(received)
   let out = new ParsedReply()
   let open = raw.indexOf(APP_OPEN)
   if (open < 0) {
@@ -258,6 +312,7 @@ export function parseReply(raw: string, complete: boolean = false): ParsedReply 
     out.update = out.update || parsed.update
     out.mode = parsed.mode
     out.targetMessageId = parsed.targetMessageId
+    out.recordMessageId = parsed.recordMessageId
     out.appRequest = parsed.appRequest
     let restStart = close + APP_CLOSE.length
     open = raw.indexOf(APP_OPEN, restStart)

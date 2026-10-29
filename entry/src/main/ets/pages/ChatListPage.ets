@@ -1,5 +1,7 @@
 import { chats, ChatSummary } from '../vera/ChatStore'
 import { formatUsd } from '../vera/VeraChatStats'
+import { app, DangerButton } from '../components/AppStyle'
+import { SymbolGlyphModifier } from '@kit.ArkUI'
 
 class ChatNavParams {
   chatId: string = ''
@@ -46,8 +48,8 @@ struct ChatListPage {
       Column() {
         if (this.list.length === 0) {
           Column() {
-            Text('No chats yet').fontSize(18).fontColor('#999999').margin({ top: 120 })
-            Text('Tap New chat to start one').fontSize(14).fontColor('#BBBBBB').margin({ top: 8 })
+            Text('No chats yet').fontSize(18).fontColor(app.inkMuted).margin({ top: 120 })
+            Text('Tap New chat to start one').fontSize(14).fontColor(app.inkDisabled).margin({ top: 8 })
           }.width('100%').alignItems(HorizontalAlign.Center)
         } else {
           List({ space: 12 }) {
@@ -57,12 +59,12 @@ struct ChatListPage {
                   Text(c.title.length > 0 ? c.title : '(untitled)')
                     .fontSize(17).fontWeight(FontWeight.Medium)
                     .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-                  Text(this.describe(c)).fontSize(12).fontColor('#999999')
+                  Text(this.describe(c)).fontSize(12).fontColor(app.inkMuted)
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Start)
                 .padding(14)
-                .backgroundColor('#FFFFFF')
+                .backgroundColor(app.surface)
                 .borderRadius(12)
                 .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
                 .onClick(() => { this.open(c.id) })
@@ -83,8 +85,10 @@ struct ChatListPage {
     }
     .title('Chats')
     .titleMode(NavigationTitleMode.Mini)
+    .backgroundColor(app.background)
     .toolbarConfiguration([{
       value: 'New chat',
+      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),
       status: ToolbarItemStatus.NORMAL,
       action: () => { this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatPage' })
         .catch((e: Error): void => { console.error('Navigate to chat failed: ' + e.message) }) }
@@ -95,8 +99,7 @@ struct ChatListPage {
   deleteAction(id: string) {
     Row() {
       Button('Delete')
-        .backgroundColor('#FF3B30')
-        .fontColor('#FFFFFF')
+        .attributeModifier(new DangerButton())
         .height('100%')
         .onClick(() => {
           chats.remove(id)

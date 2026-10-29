@@ -259,6 +259,7 @@ export function parseSection(reply: string): FragmentSpec | null {
   }
   let spec = new FragmentSpec('custom', '', classes, fields, '', inits.join(', '), functions, '{\n' + view + '\n}', [], [])
   spec.indexed = false
+  spec.tab = 'More'
   return spec
 }
 
@@ -288,8 +289,17 @@ function quoted(source: string, errors: string): string {
 /** '' when the program compiles and runs, else what went wrong with the lines it points at. */
 function check(source: string): string {
   try {
-    let ran = smokeRun(compileVeraSource(source))
-    return ran.length > 0 ? quoted(source, ran) : ''
+    let compiled = compileVeraSource(source)
+    let ran = smokeRun(compiled)
+    if (ran.length > 0) { return quoted(source, ran) }
+    // A field the section keeps that nothing reads is something the person can set that changes nothing they can see.
+    let unread = compiled.unreadFields.filter((f: string): boolean => f.startsWith('c_'))
+    if (unread.length > 0) {
+      return 'The state field' + (unread.length > 1 ? 's ' : ' ') + unread.join(', ') + (unread.length > 1 ? ' are' : ' is') +
+        ' set by a handler but nothing reads ' + (unread.length > 1 ? 'them' : 'it') + ', so changing ' + (unread.length > 1 ? 'them does' : 'it does') +
+        ' nothing the person can see. Show it or use it in view(), or remove it and whatever sets it.'
+    }
+    return ''
   } catch (e) {
     let message = e instanceof CompileError ? (e as CompileError).message : (e as Error).message
     return quoted(source, message)

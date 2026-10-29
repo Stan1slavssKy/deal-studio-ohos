@@ -58,4 +58,26 @@ assert.equal(sketchOf({}).list.fields[1].decimals, -1)
 const {NEEDS_PROMPT} = loadVera('NeedsPlan')
 assert.match(NEEDS_PROMPT, /"decimals": for a plain number, how many digits after the point to show, 0 to 6/)
 assert.doesNotMatch(NEEDS_PROMPT, /latitude|coordinate/i)
+// The unit after a number reads with that number: one class, two classes; a symbol or an abbreviation is left alone,
+// and the space before a unit never breaks a line.
+{
+  const {unitAfter} = loadVera('VeraUi')
+  const nb = '\u00A0'
+  assert.equal(unitAfter(1, ' classes'), nb + 'class')
+  assert.equal(unitAfter(2, ' classes'), nb + 'classes')
+  assert.equal(unitAfter(1, ' days'), nb + 'day')
+  assert.equal(unitAfter(1, ' boxes'), nb + 'box')
+  assert.equal(unitAfter(1, ' calories'), nb + 'calorie')
+  assert.equal(unitAfter(-1, ' minutes'), nb + 'minute')
+  assert.equal(unitAfter(1, ' ml'), nb + 'ml')
+  assert.equal(unitAfter(1, ' class'), nb + 'class')
+  assert.equal(unitAfter(1, ' km/h'), nb + 'km/h')
+  assert.equal(unitAfter(1, ' fl oz'), nb + 'fl oz')
+  assert.equal(unitAfter(38, ' °C'), nb + '°C')
+  assert.equal(unitAfter(1, '%'), '%')
+  assert.equal(unitAfter(1, ''), '')
+  const {keepUnits} = loadVera('VeraUi')
+  assert.equal(keepUnits('between 20 °C and 25 °C, 5 %'), 'between 20' + nb + '°C and 25' + nb + '°C, 5' + nb + '%')
+  assert.equal(keepUnits('call 112 now'), 'call 112 now')
+}
 console.log('decimals-check: ok')

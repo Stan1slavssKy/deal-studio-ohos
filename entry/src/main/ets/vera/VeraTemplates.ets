@@ -325,6 +325,13 @@ export class FragmentSpec {
    * holds the person's words, so "IDX" in it is not renamed.
    */
   indexed: boolean = true
+  /**
+   * What the block already holds or lets the person set, in words for whoever decides what else the screen needs (Jev's choice of what a
+   * section covers): "the start time of the day", so that no separate input for it is put on the screen. '' when it says nothing beyond criteria.
+   */
+  owns: string = ''
+  /** The name of the block's tab in a widget in a chat reply (one or two words); '' for its kind in words. */
+  tab: string = ''
   constructor(kind: string, criteria: string, supportClass: string, stateFields: StateFieldSpec[],
       initStatements: string, initEntries: string, functions: string, viewBlock: string,
       slots: SlotSpec[], contentFields: ContentFieldSpec[], imports: string[] = [], listFields: ListFieldSpec[] = [],
@@ -362,11 +369,11 @@ class Item {
   detail: string;
   done: boolean;
 }`,
-    [new StateFieldSpec('itemsIDX', 'Item[]'), new StateFieldSpec('lastToggledIDX', 'number')],
+    [new StateFieldSpec('itemsIDX', 'Item[]')],
     `  let itemsIDX: Item[] = [
     __ITEMS_IDX__
   ];`,
-    `itemsIDX: itemsIDX, lastToggledIDX: -1`,
+    `itemsIDX: itemsIDX`,
     `function toggleIDX(state: AppState, index: number): AppState {
   let out: Item[] = [];
   let i: number = 0;
@@ -379,7 +386,7 @@ class Item {
     }
     i = i + 1;
   }
-  return {itemsIDX: out, lastToggledIDX: index__PASSTHROUGH__};
+  return {itemsIDX: out__PASSTHROUGH__};
 }
 
 function doneCountIDX(state: AppState): number {
@@ -1497,7 +1504,7 @@ class Tally {
  * labels, the captions and the currency come from the request.
  */
 function recordLogFragment(): FragmentSpec {
-  return new FragmentSpec(
+  let spec = new FragmentSpec(
     'record_log',
     'A form where the person adds records one at a time, each tagged with one of several named people or categories ' +
     'and an amount (with cents), plus a note; the records are listed newest first and can be removed or cleared. ' +
@@ -1633,14 +1640,15 @@ function balancesIDX(state: AppState): number[] {
         ])
       ]));
     }
+    let compactIDX: boolean = __WIDGET__;
     let formRows: ui.View[] = [];
     if (!plain) { formRows.push(ui.Select("default", "__WHO_LABEL_IDX__", state.labelsIDX, state.draftWhoIDX, "setWhoIDX")); }
     formRows.push(ui.TextField("default", "__AMOUNT_LABEL_IDX__", state.draftAmountIDX, "setAmountIDX", "number"));
     sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
       ui.Column("default", formRows),
-      ui.TextField("default", "Note", state.draftNoteIDX, "setNoteIDX"),
+      ui.When(!compactIDX, ui.TextField("default", "Note", state.draftNoteIDX, "setNoteIDX")),
       ui.ActionBar("end", [
-        ui.Button("danger", "Start over", "clearRecordsIDX", 0, n > 0),
+        ui.When(!compactIDX, ui.Button("danger", "Start over", "clearRecordsIDX", 0, n > 0)),
         ui.Button("secondary", "Remove last", "removeLastRecordIDX", 0, n > 0),
         ui.Button("primary", "Add", "addRecordIDX", 0, typed > 0)
       ])
@@ -1676,6 +1684,7 @@ function balancesIDX(state: AppState): number[] {
     [],
     ['needs_search_or_form', 'needs_multiple_counters', 'needs_logic']
   )
+  return spec
 }
 
 /** Headline numbers worked out from a record_log elsewhere on the screen: the total, the average per person or category, the count. */
@@ -1913,7 +1922,7 @@ function itineraryFragment(): FragmentSpec {
   let calendar: Map<string, string> = new Map<string, string>()
   calendar.set('true', 'yes, each stop can be added to the phone calendar, with buttons to open the calendar and remove the added events')
   calendar.set('false', 'no calendar is asked for')
-  return new FragmentSpec(
+  let spec = new FragmentSpec(
     'itinerary',
     'An ordered list of places or steps with a time window and duration each, which the person marks as reached one by one; ' +
     'it can also open a stop in the maps app and add stops to the phone calendar. A day plan, a tour, a route of stops',
@@ -2070,6 +2079,14 @@ function wipeEventsIDX(state: AppState, ignored: number): AppState {
   return rebuildIDX(state, state.stopsIDX, state.lastIDX, state.pendingIDX, "Removing events...");
 }
 
+function setStartIDX(state: AppState, value: number): AppState {
+  return {stopsIDX: state.stopsIDX, startMinIDX: value, gapIDX: state.gapIDX, startPlaceIDX: state.startPlaceIDX, startLatIDX: state.startLatIDX, startLonIDX: state.startLonIDX, lastIDX: state.lastIDX, pendingIDX: state.pendingIDX, resultIDX: state.resultIDX__PASSTHROUGH__};
+}
+
+function setGapIDX(state: AppState, value: number): AppState {
+  return {stopsIDX: state.stopsIDX, startMinIDX: state.startMinIDX, gapIDX: value, startPlaceIDX: state.startPlaceIDX, startLatIDX: state.startLatIDX, startLonIDX: state.startLonIDX, lastIDX: state.lastIDX, pendingIDX: state.pendingIDX, resultIDX: state.resultIDX__PASSTHROUGH__};
+}
+
 function onWipedIDX(state: AppState, value: string): AppState {
   if (failedIDX(value)) { return rebuildIDX(state, state.stopsIDX, state.lastIDX, state.pendingIDX, value); }
   let out: Stop[] = [];
@@ -2117,6 +2134,10 @@ function onOpenedIDX(state: AppState, value: string): AppState {
       at = at + s.minutes + state.gapIDX;
       j = j + 1;
     }
+    sections.push(ui.Section("content", "", "", [
+      ui.TimeField("default", "Day starts", state.startMinIDX, "setStartIDX"),
+      ui.NumberField("default", "Minutes between stops", state.gapIDX, 0, 180, "setGapIDX")
+    ]));
     let emptyText: string = "Nothing is planned yet.";
     if (limit >= 0 && count > 0) { emptyText = "Nothing fits before " + ui.clockToString(limit) + "."; }
     sections.push(ui.Section("content", "", "", [
@@ -2167,6 +2188,9 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     ['needs_logic', 'needs_search_or_form'],
     ['needs_integration=__NAVIGATE_IDX__|__CALENDAR_IDX__']
   )
+  spec.owns = 'the start time of the day (the person sets it), the minutes between stops (the person sets them), the time each stop starts and ends, and how long each stop takes'
+  spec.tab = 'Itinerary'
+  return spec
 }
 
 /**
