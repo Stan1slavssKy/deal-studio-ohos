@@ -1,11 +1,25 @@
 /**
- * Device-local settings: the DeepSeek API key and the model to call.
+ * Device-local settings: the cloud API key, the model to call and where to call it.
  *
  * The key is written by EntryAbility from a launch parameter, so it never has
  * to be typed on the phone:
  *
  *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn \
  *     --ps deepseekKey sk-...
+ *
+ * `cloudKey` is a provider-neutral alias for the same stored key, for when the
+ * provider is not DeepSeek:
+ *
+ *   hdc shell aa start -a EntryAbility -b com.vera.probe.dyn \
+ *     --ps cloudKey sk-... --ps apiBase https://api.openai.com/v1 --ps apiModel gpt-4o
+ *
+ * `apiBase` and `apiModel` override the DeepSeek defaults and persist like the
+ * key, so a provider switch survives restarts without a rebuild. The engine is
+ * OpenAI-compatible chat-completions: it POSTs {apiBase}/chat/completions with a
+ * Bearer key, so any endpoint that speaks that shape works. DeepSeek-specific
+ * request fields (thinking, reasoning_effort) are sent only when isDeepSeek()
+ * says the configured base URL is DeepSeek's -- otherwise they are omitted, so a
+ * standard OpenAI-compatible provider does not receive fields it does not know.
  *
  * It lives in the app sandbox ({filesDir}/vera/settings.json), not in the HAP
  * and not in this repository. Only maskedKey() is ever shown or logged.
@@ -22,6 +36,22 @@ export const DEFAULT_DEEPSEEK_MODEL: string = 'deepseek-flash'
  * compiler's assignment check was fixed.
  */
 export const DEFAULT_REASONING_EFFORT: string = 'low'
+
+/**
+ * The dashscope OpenAI-compatible endpoint and the three models it fronts that
+ * this app is used with, as model/label pairs across two arrays (ArkTS does not
+ * take to object-literal records, and the rest of the file builds Records by
+ * assignment for the same reason). glm-5.2 is GLM's own model; the two
+ * deepseek-v4 models are DeepSeek models served through dashscope, so
+ * isDeepSeek() is true for them and the request carries DeepSeek's native
+ * thinking block, while glm-5.2 uses enable_thinking / reasoning_effort. All
+ * three share one key and one base URL, so picking among them is setModel alone
+ * -- the base URL is already dashscope when the picker is shown, and the stored
+ * key is shared, so nothing else has to change with the selection.
+ */
+export const DASHSCOPE_BASE_URL: string = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+const MODEL_CANDIDATE_MODELS: string[] = ['glm-5.2', 'deepseek-v4-flash-0731', 'deepseek-v4.1-flash-1017']
+const MODEL_CANDIDATE_LABELS: string[] = ['glm-5.2', 'ds-v4-flash', 'ds-v4.1-flash']
 
 export function readText(path: string): string {
   try {
@@ -86,6 +116,18 @@ export class SettingsStore {
    * DEFAULT_REASONING_EFFORT. Supplied as `--ps reasoningEffort high` (EntryAbility).
    */
   private reasoningEffort: string = ''
+  /**
+   * Whether the composer's selector calls (askJev/selectEdit) route through the
+   * configured cloud model on-device instead of TypeSafe. There is no default;
+   * supplied like the others -- `--ps jevProxy 1` -- and optional in the way the
+   * selector key is not: without it the selector calls go straight to
+   * api.typesafe.ai as they always did, so the proxy is strictly opt-in and
+   * changes nothing about the TypeSafe path. It is a flag, not a URL: the
+   * translation runs in-process (JevProxy.ets), so the cloud base/model/key come
+   * from the existing apiBase/apiModel/cloudKey settings and there is no endpoint
+   * to point at.
+   */
+  private jevProxy: string = ''
   private loaded: boolean = false
 
   init(filesDir: string): void {
@@ -113,6 +155,7 @@ export class SettingsStore {
         this.selectorKey = (obj['selectorKey'] as string) || ''
         this.exaKey = (obj['exaKey'] as string) || ''
         this.reasoningEffort = (obj['reasoningEffort'] as string) || ''
+        this.jevProxy = (obj['jevProxy'] as string) || ''
       } catch (_e) {}
     }
     this.loaded = true
@@ -128,6 +171,7 @@ export class SettingsStore {
     obj['selectorKey'] = this.selectorKey
     obj['exaKey'] = this.exaKey
     obj['reasoningEffort'] = this.reasoningEffort
+    obj['jevProxy'] = this.jevProxy
     try { writeText(this.path(), JSON.stringify(obj)) } catch (_e) {}
   }
 
@@ -157,6 +201,16 @@ export class SettingsStore {
   }
 
   hasSelectorKey(): boolean { return this.getSelectorKey().length > 0 }
+
+  /**
+   * Whether a selector is available at all: the real TypeSafe key, or the
+   * on-device cloud proxy (which uses the cloud key, not the selector key).
+   * The composer's agent route and its structural-edit path are gated on this:
+   * they need *some* selector to answer their choice/noul questions, and when
+   * the proxy is on that selector is the configured cloud model, so the paths
+   * proceed without a TypeSafe key.
+   */
+  hasSelector(): boolean { return this.hasSelectorKey() || this.useJevProxy() }
 
   getExaKey(): string {
     if (!this.loaded) { this.load() }
@@ -188,6 +242,27 @@ export class SettingsStore {
     this.save()
   }
 
+  getJevProxy(): string {
+    if (!this.loaded) { this.load() }
+    return this.jevProxy
+  }
+
+  hasJevProxy(): boolean { return this.getJevProxy().length > 0 }
+
+  setJevProxy(url: string): void {
+    if (!this.loaded) { this.load() }
+    this.jevProxy = url.trim()
+    this.save()
+  }
+
+  /**
+   * Whether askJev/selectEdit should route through the on-device cloud proxy
+   * (JevProxy.ets) instead of TypeSafe. True when `jevProxy` is set to any
+   * non-empty value (`--ps jevProxy 1`); false otherwise, in which case the
+   * selector calls go to api.typesafe.ai unchanged.
+   */
+  useJevProxy(): boolean { return this.getJevProxy().length > 0 }
+
   setApiKey(key: string): void {
     this.apiKey = key.trim()
     this.save()
@@ -206,6 +281,93 @@ export class SettingsStore {
   getBaseUrl(): string {
     if (!this.loaded) { this.load() }
     return this.baseUrl.length > 0 ? this.baseUrl : DEFAULT_DEEPSEEK_BASE_URL
+  }
+
+  setBaseUrl(url: string): void {
+    if (!this.loaded) { this.load() }
+    this.baseUrl = url.trim()
+    this.save()
+  }
+
+  /**
+   * Whether the configured endpoint is dashscope, where the candidate models
+   * live. The picker is shown only when this is true, so the candidates are
+   * always offered against the endpoint that actually fronts them.
+   */
+  isDashscopeProvider(): boolean {
+    return this.getBaseUrl().indexOf('aliyuncs.com') >= 0
+  }
+
+  modelCandidateCount(): number { return MODEL_CANDIDATE_MODELS.length }
+
+  modelCandidateModel(index: number): string { return MODEL_CANDIDATE_MODELS[index] }
+
+  modelCandidateLabel(index: number): string { return MODEL_CANDIDATE_LABELS[index] }
+
+  /** Index of the active model among the candidates, or -1 if it is not one of them. */
+  currentModelIndex(): number {
+    let m = this.getModel()
+    for (let i = 0; i < MODEL_CANDIDATE_MODELS.length; i++) {
+      if (MODEL_CANDIDATE_MODELS[i] === m) { return i }
+    }
+    return -1
+  }
+
+  /**
+   * Pick a candidate by index. Persisted, so it survives restarts and applies to
+   * Chat as well as Generate -- both read getModel() per request. Only the model
+   * changes: the base URL is already dashscope (the picker is shown only when
+   * isDashscopeProvider() is true) and the key is shared across all three.
+   */
+  applyModelCandidate(index: number): void {
+    if (index < 0 || index >= MODEL_CANDIDATE_MODELS.length) { return }
+    this.setModel(MODEL_CANDIDATE_MODELS[index])
+  }
+
+  /**
+   * Whether the active model speaks DeepSeek's request dialect -- the
+   * `thinking` ({type: enabled|disabled}) and `reasoning_effort` fields a plain
+   * OpenAI-compatible endpoint does not know. The request builders send those
+   * only when this is true.
+   *
+   * True when the base URL is DeepSeek's own endpoint OR when the model name is
+   * a DeepSeek model: dashscope serves deepseek-v4-flash-0731 and
+   * deepseek-v4.1-flash-1017 through its OpenAI-compatible endpoint, and those
+   * models accept the same DeepSeek fields as api.deepseek.com does -- so the
+   * original DeepSeek configuration is reused for them regardless of which
+   * endpoint fronts the call. Detected from host + model rather than a separate
+   * flag so that pointing `apiBase`/`apiModel` elsewhere switches the dialect by
+   * itself, with no extra launch parameter to forget.
+   */
+  isDeepSeek(): boolean {
+    if (this.getBaseUrl().indexOf('deepseek.com') >= 0) { return true }
+    return this.getModel().toLowerCase().indexOf('deepseek') >= 0
+  }
+
+  /**
+   * A short, human-friendly name for the configured cloud provider, derived from
+   * the base URL host so the Generate UI's mode chip shows what is actually
+   * configured (e.g. "DashScope", "OpenAI") rather than the hardcoded
+   * "DeepSeek" the cloud path used to say. Falls back to the bare host when no
+   * known host matches, so a self-hosted or uncommon endpoint still reads as
+   * itself rather than as someone else.
+   */
+  providerLabel(): string {
+    let url = this.getBaseUrl()
+    if (url.indexOf('deepseek.com') >= 0) { return 'DeepSeek' }
+    if (url.indexOf('dashscope.aliyuncs.com') >= 0 || url.indexOf('aliyuncs.com') >= 0) { return 'DashScope' }
+    if (url.indexOf('api.openai.com') >= 0) { return 'OpenAI' }
+    if (url.indexOf('bigmodel.cn') >= 0) { return 'GLM' }
+    if (url.indexOf('api.anthropic.com') >= 0) { return 'Anthropic' }
+    // Bare host, stripped of scheme and path, for anything not recognised above.
+    let host = url
+    let scheme = host.indexOf('://')
+    if (scheme >= 0) { host = host.substring(scheme + 3) }
+    let slash = host.indexOf('/')
+    if (slash >= 0) { host = host.substring(0, slash) }
+    if (host.startsWith('api.')) { host = host.substring(4) }
+    if (host.startsWith('www.')) { host = host.substring(4) }
+    return host.length > 0 ? host : 'Cloud'
   }
 
   /** 'sk-...abcd' — enough to tell whether the key arrived, useless if leaked. */
