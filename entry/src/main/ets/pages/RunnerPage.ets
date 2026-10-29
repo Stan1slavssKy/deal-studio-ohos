@@ -2,6 +2,7 @@ import { VeraPreview } from '../components/VeraPreview'
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { common } from '@kit.AbilityKit'
+import { app } from '../components/AppStyle'
 
 @Entry
 @Component
@@ -74,10 +75,10 @@ struct RunnerPage {
         if (this.error.length > 0) {
           Text(this.error)
             .fontSize(14)
-            .fontColor('#CC0000')
+            .fontColor(app.dangerInk)
             .padding(16)
             .width('100%')
-            .backgroundColor('#FFECEC')
+            .backgroundColor(app.dangerFill)
         }
         if (this.vbc2.length > 0) {
           VeraPreview({

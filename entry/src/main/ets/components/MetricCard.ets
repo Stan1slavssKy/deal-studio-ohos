@@ -6,11 +6,13 @@
  * slid centred ones off the right; and padding next to a width pushes the right edge out of the pane (the cells were sliced by it).
  */
 
-const INK: string = '#222222'
-const SOFT: string = '#666666'
-const FAINT: string = '#999999'
-const CARD: string = '#FFFFFF'
-const WELL: string = '#F5F7FA'
+import { app } from './AppStyle'
+
+const INK: string = app.inkStrong
+const SOFT: string = app.inkSoft
+const FAINT: string = app.inkMuted
+const CARD: string = app.surface
+const WELL: string = app.background
 
 /** A white card: `title` and `value` on the head line, a chevron when it opens, and whatever is put inside it. */
 @Component
@@ -107,7 +109,7 @@ export struct MetricLine {
   build() {
     Column({ space: 1 }) {
       Row({ space: 6 }) {
-        Text(this.title).fontSize(12).fontColor(this.bad ? '#C62828' : INK).layoutWeight(1).maxLines(1)
+        Text(this.title).fontSize(12).fontColor(this.bad ? app.dangerInk : INK).layoutWeight(1).maxLines(1)
         Text(this.right).fontSize(12).fontWeight(FontWeight.Medium).fontColor(INK)
       }
       .width('100%')
@@ -115,7 +117,7 @@ export struct MetricLine {
         Text(this.ask).fontSize(11).fontColor(SOFT).width('100%').maxLines(2)
       }
       if (this.detail.length > 0) {
-        Text(this.detail).fontSize(10).fontColor(this.bad ? '#C62828' : FAINT).width('100%').maxLines(3)
+        Text(this.detail).fontSize(10).fontColor(this.bad ? app.dangerInk : FAINT).width('100%').maxLines(3)
       }
     }
     .width('100%')

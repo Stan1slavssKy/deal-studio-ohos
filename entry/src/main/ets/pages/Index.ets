@@ -6,6 +6,7 @@ import { consent } from '../vera/VeraConsentStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { projectIconResource } from '../vera/ProjectIcons'
 import { common } from '@kit.AbilityKit'
+import { app, PrimaryButton, QuietButton, DangerButton } from '../components/AppStyle'
 
 const ICONS: string[] = ['📱', '🎮', '📊', '🧮', '🎯', '📝', '🔧', '🎨', '🌍', '⚡']
 
@@ -70,8 +71,8 @@ struct Index {
       Navigation() {
         if (this.projects.length === 0) {
           Column() {
-            Text('No projects yet').fontSize(18).fontColor('#999999').margin({ top: 120 })
-            Text('Tap New Project to create your first VERA app').fontSize(14).fontColor('#BBBBBB').margin({ top: 8 })
+            Text('No projects yet').fontSize(18).fontColor(app.inkMuted).margin({ top: 120 })
+            Text('Tap New Project to create your first VERA app').fontSize(14).fontColor(app.inkDisabled).margin({ top: 8 })
           }.width('100%').alignItems(HorizontalAlign.Center)
         } else {
           List({ space: 12 }) {
@@ -92,6 +93,7 @@ struct Index {
       }
       .title('VERA')
       .titleMode(NavigationTitleMode.Full)
+      .backgroundColor(app.background)
       .toolbarConfiguration([{
         value: 'Chat',
         symbolIcon: new SymbolGlyphModifier($r('sys.symbol.ellipsis_message')),
@@ -122,20 +124,20 @@ struct Index {
         Text(row.project.name).fontSize(17).fontWeight(FontWeight.Medium).maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (row.summary.request.length > 0) {
-          Text(row.summary.request).fontSize(13).fontColor('#666666').maxLines(1)
+          Text(row.summary.request).fontSize(13).fontColor(app.inkSoft).maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
         Text(versionCountText(row.summary.versions) + ' · ' + new Date(row.summary.updatedAt).toLocaleDateString())
-          .fontSize(12).fontColor('#999999')
+          .fontSize(12).fontColor(app.inkMuted)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(18).fontColor(['#C4C4C4'])
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(18).fontColor([app.inkDisabled])
     }
     .width('100%')
     .padding(14)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor(app.surface)
     .borderRadius(12)
     .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
     .onClick(() => {
@@ -168,7 +170,7 @@ struct Index {
           .height(44)
           .margin({ bottom: 16 })
 
-        Text('Icon').fontSize(14).fontColor('#666666').margin({ bottom: 8 })
+        Text('Icon').fontSize(14).fontColor(app.inkSoft).margin({ bottom: 8 })
         Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
           ForEach(ICONS, (icon: string) => {
             Image(projectIconResource(icon))
@@ -176,7 +178,7 @@ struct Index {
               .height(40)
               .objectFit(ImageFit.Contain)
               .padding(6)
-              .backgroundColor(this.selectedIcon === icon ? '#E0E8FF' : '#00000000')
+              .backgroundColor(this.selectedIcon === icon ? app.primaryFill : '#00000000')
               .borderRadius(8)
               .onClick(() => { this.selectedIcon = icon })
           }, (icon: string) => icon)
@@ -184,13 +186,11 @@ struct Index {
 
         Row({ space: 12 }) {
           Button('Cancel')
-            .type(ButtonType.Normal)
-            .backgroundColor('#E0E0E0')
-            .fontColor('#333333')
+            .attributeModifier(new QuietButton())
             .layoutWeight(1)
             .onClick(() => { this.showCreate = false })
           Button('Create')
-            .type(ButtonType.Normal)
+            .attributeModifier(new PrimaryButton())
             .layoutWeight(1)
             .enabled(this.newName.trim().length > 0)
             .onClick(() => { this.doCreate() })
@@ -200,7 +200,7 @@ struct Index {
       }
       .width('90%')
       .padding(24)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor(app.surface)
       .borderRadius(16)
       .shadow({ radius: 8, color: '#30000000' })
       // A tap inside the card is the card's, not a tap on the dimming behind it.
@@ -217,8 +217,7 @@ struct Index {
   deleteAction(id: string) {
     Row() {
       Button('Delete')
-        .backgroundColor('#FF3B30')
-        .fontColor('#FFFFFF')
+        .attributeModifier(new DangerButton())
         .height('100%')
         .enabled(!this.deletionPending)
         .onClick(() => { this.confirmDelete(id) })
@@ -237,7 +236,7 @@ struct Index {
       },
       secondaryButton: {
         value: 'Delete',
-        fontColor: '#FF3B30',
+        fontColor: app.danger,
         action: () => { this.doDelete(id) }
       }
     })
