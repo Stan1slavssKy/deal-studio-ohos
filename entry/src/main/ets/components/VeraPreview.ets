@@ -209,6 +209,8 @@ export struct VeraPreview {
   private rootScroller: Scroller = new Scroller()
   private rootTop: number = 0
   private rootHeight: number = 0
+  /** How tall the snackbars drawn over the bottom of the window are, in vp: the content ends that far above it (programFrame). */
+  @State snackSpace: number = 0
   private currentState: RuntimeValue | null = null
   /**
    * Set when the screen goes away. An intent answers long after the tap, and
@@ -721,7 +723,7 @@ export struct VeraPreview {
   private seeded(fresh: RuntimeValue): RuntimeValue {
     if (this.seedState.length === 0 || this.previewOnly) { return fresh }
     try {
-      let carried = carryState(fresh, decodeRuntimeValue(JSON.parse(this.seedState) as Object))
+      let carried = carryState(fresh, decodeRuntimeValue(JSON.parse(this.seedState) as Object), this.vm!.classShapes())
       if (this.host !== null) { this.host!.effectsAllowed = false }
       // An entry of an old class may lack a field the new code reads: a view that fails on it means starting clean.
       this.vm!.execute('view', [carried])
@@ -1139,14 +1141,19 @@ export struct VeraPreview {
               ForEach([this.programId], (_id: number) => {
                 this.renderNode(this.liveRoot!, 'root')
               }, (id: number) => id.toString())
-            }.width('100%')
+            }
+            .width('100%')
+            .padding({ bottom: this.snackbarRoom() })
           } else {
             Scroll(this.rootScroller) {
               Column() {
                 ForEach([this.programId], (_id: number) => {
                   this.renderNode(this.liveRoot!, 'root')
                 }, (id: number) => id.toString())
-              }.width('100%')
+              }
+              .width('100%')
+              // Room under the content for the snackbars, so the last rows can be scrolled out from under them.
+              .padding({ bottom: this.snackbarRoom() })
             }
             .width('100%')
             .height('100%')
@@ -1159,9 +1166,16 @@ export struct VeraPreview {
             // a real app would.
             .align(Alignment.Top)
           }
-          ForEach(this.snackbarsOf(this.liveRoot!), (bar: LiveNode) => {
-            this.snackbarBar(bar)
-          }, (bar: LiveNode, index: number) => index.toString() + ':' + bar.text)
+          Column() {
+            ForEach(this.snackbarsOf(this.liveRoot!), (bar: LiveNode) => {
+              this.snackbarBar(bar)
+            }, (bar: LiveNode, index: number) => index.toString() + ':' + bar.text)
+          }
+          .width('100%')
+          .onAreaChange((_old: Area, now: Area) => {
+            let h = Number(now.height)
+            if (Math.abs(h - this.snackSpace) >= 1) { this.snackSpace = h }
+          })
         }
         .width('100%')
         .layoutWeight(this.embedded ? 0 : 1)
@@ -1302,6 +1316,11 @@ export struct VeraPreview {
       .backgroundColor(toneEdge(this.t(), node.style, this.t().inkStrong))
       .borderRadius(this.t().radiusControl)
       .margin({ left: this.t().padBase, right: this.t().padBase, bottom: this.t().padBase })
+  }
+
+  /** The space kept free under the program for its snackbars: none when there are none up. */
+  private snackbarRoom(): number {
+    return this.liveRoot !== null && this.snackbarsOf(this.liveRoot).length > 0 ? this.snackSpace : 0
   }
 
   /** Every ui.Snackbar in the program's tree, for the window to draw. */

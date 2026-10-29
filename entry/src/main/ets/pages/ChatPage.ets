@@ -775,6 +775,12 @@ struct ChatPage {
       context: WidgetBuildContext): void {
     context.brief = parsed.appDescription
     context.request = parsed.appRequest
+    // A record line written out for a widget the chat already has is about that widget: it is refined, not built again.
+    if (parsed.mode === 'create' && parsed.recordMessageId > 0 &&
+        references.some((ref: WidgetReference): boolean => ref.messageId === parsed.recordMessageId)) {
+      parsed.mode = 'refine'
+      parsed.targetMessageId = parsed.recordMessageId
+    }
     if (parsed.mode === 'refine' || parsed.update) {
       let target: WidgetReference | undefined = parsed.update ? references[references.length - 1] :
         references.find((ref: WidgetReference): boolean => ref.messageId === parsed.targetMessageId)

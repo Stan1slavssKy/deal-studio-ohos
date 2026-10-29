@@ -751,5 +751,7 @@ console.log('compose: a chosen section says what it holds')
   assert.equal(kindOf('seconds', 0, 3600, 10).kind, 'count', 'a rest of 0 to 3600 seconds is a length')
   assert.equal(kindOf('minutes', 15, 240, 60).kind, 'count', 'a stop of 15 to 240 minutes is a length')
   assert.equal(kindOf('minutes', 0, 600, 60).kind, 'count', 'a length that does not span the day is a length')
+  const wake = kindOf('minutes', 300, 1439, 420)
+  assert.equal(wake.kind, 'time', 'a wake time of 05:00 to 23:59 is a time of day'); assert.equal(wake.value, 420)
 }
 console.log('compose: a time of day is minutes after midnight, a length is a number')

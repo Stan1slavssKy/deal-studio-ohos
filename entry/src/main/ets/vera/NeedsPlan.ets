@@ -358,8 +358,16 @@ export function capForWidget(plan: NeedsPlan, room: number): string[] {
   }
   let has = (type: string): boolean => kept.some((n: Need): boolean => n.type === type)
   let supplied = (reads: string): boolean => reads.startsWith('entries.') ? has(NEED_ENTRIES) : has(NEED_COUNTDOWN) || has(NEED_STOPWATCH)
+  // A figure's formula names the figures before it by id: one that names a figure cut is cut with it.
+  let readsCut = (n: Need): boolean => {
+    let formula = text(n.raw, 'formula')
+    return formula.length > 0 && cut.some((c: Need): boolean => {
+      let id = c.type === NEED_FIGURE ? text(c.raw, 'id') : ''
+      return id.length > 0 && new RegExp('(^|[^A-Za-z0-9_.])' + id + '(?![A-Za-z0-9_])').test(formula)
+    })
+  }
   let orphan = (n: Need): boolean => {
-    if (n.type === NEED_FIGURE) { return n.reads.some((q: string): boolean => !supplied(q)) }
+    if (n.type === NEED_FIGURE) { return n.reads.some((q: string): boolean => !supplied(q)) || readsCut(n) }
     if (n.type === NEED_ACTION) {
       return (n.on === ON_END && !has(NEED_COUNTDOWN)) || ((n.on === ON_ADDED || n.on === ON_TAP) && !has(NEED_ENTRIES))
     }

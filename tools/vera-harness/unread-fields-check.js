@@ -27,6 +27,17 @@ assert.deepEqual(compileVeraSource(head + set + 'function bump(state: AppState, 
 // Only handing the field on under its own name is not a read: a program whose handlers all just pass `hidden` along has it unread.
 assert.deepEqual(compileVeraSource(head + 'function nudge(state: AppState, v: number): AppState { return {shown: v, hidden: state.hidden}; }\n' +
   view(screen('ui.NumberField("default", "n", state.shown, 0, 9, "nudge")'))).unreadFields, ['hidden'])
+// An entry built from a draft field of the same name reads it: only a new state hands fields on.
+{
+  const draft = 'import * as ui from "std/ui"\n@jsonable\nclass Item { title: string; done: boolean; }\n' +
+    '@jsonable\nclass AppState { title: string; items: Item[]; }\n' +
+    'function init(): AppState { let none: Item[] = []; return {title: "", items: none}; }\n' +
+    'function set_title(state: AppState, v: string): AppState { return {title: v, items: state.items}; }\n' +
+    'function add(state: AppState, v: number): AppState { let item: Item = {title: state.title, done: false}; let out: Item[] = []; ' +
+    'for (let e: Item of state.items) { out.push(e); } out.push(item); return {title: "", items: out}; }\n'
+  assert.deepEqual(compileVeraSource(draft + view(screen('ui.TextField("default", "t", "", "set_title"), ' +
+    'ui.Button("primary", "Add", "add", 0, true), ui.Text("body", ui.numberToString(state.items.length()))'))).unreadFields, [])
+}
 // Handed on under another name, it is read.
 assert.deepEqual(compileVeraSource(head + 'function swap(state: AppState, v: number): AppState { return {shown: state.hidden, hidden: v}; }\n' +
   view(screen('ui.NumberField("default", "n", state.shown, 0, 9, "swap")'))).unreadFields, [])

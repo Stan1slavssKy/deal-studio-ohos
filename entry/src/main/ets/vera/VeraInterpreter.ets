@@ -149,6 +149,17 @@ export class VirtualMachine {
   // Steps executed by the most recent execute() call (reset per call).
   stepsExecuted(): number { return this.steps }
 
+  /** Every class the program builds objects of, with its fields: what an object of an older program must match to be kept. */
+  classShapes(): Map<string, string[]> {
+    let shapes: Map<string, string[]> = new Map<string, string[]>()
+    this.functions.forEach((fn: BytecodeFunction) => {
+      for (let inst of fn.instructions) {
+        if (inst.op === 'make-object' && !shapes.has(inst.classIdentity)) { shapes.set(inst.classIdentity, inst.fields.slice()) }
+      }
+    })
+    return shapes
+  }
+
   execute(entry: string, args: RuntimeValue[] = []): RuntimeValue {
     let fn = this.functions.get(entry)
     if (fn == undefined) {

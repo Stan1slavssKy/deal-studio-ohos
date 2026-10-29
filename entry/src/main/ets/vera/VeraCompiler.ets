@@ -2727,10 +2727,14 @@ function unreadStateFields(app: Application): string[] {
     } else if (e instanceof IndexExpression) { walkExpr((e as IndexExpression).target); walkExpr((e as IndexExpression).index) }
     else if (e instanceof ArrayExpression) { for (let x of (e as ArrayExpression).elements) { walkExpr(x) } }
     else if (e instanceof ObjectExpression) {
-      for (let prop of (e as ObjectExpression).properties) {
-        // {a: state.a}: the field handed on under its own name is not read.
+      // {a: state.a} in a new state is the field handed on under its own name, not read. Only in a new state: an entry built
+      // from a draft field of the same name ({title: state.title, done: false}) reads it. A new state names every field of
+      // the state class and nothing else.
+      let props = (e as ObjectExpression).properties
+      let isState = props.length === fields.length && props.every((p: Property): boolean => fields.indexOf(p.name) >= 0)
+      for (let prop of props) {
         let v = prop.value
-        if (v instanceof SelectExpression && (v as SelectExpression).field === prop.name) { walkExpr((v as SelectExpression).target) }
+        if (isState && v instanceof SelectExpression && (v as SelectExpression).field === prop.name) { walkExpr((v as SelectExpression).target) }
         else { walkExpr(v) }
       }
     } else if (e instanceof LambdaExpression) { walkStmt((e as LambdaExpression).body) }

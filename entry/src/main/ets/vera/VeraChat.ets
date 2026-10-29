@@ -133,6 +133,8 @@ export class ParsedReply {
   update: boolean = false
   /** The marker carried a JSON payload, the only shape that may appear once and be acted on before the reply ends. */
   structured: boolean = false
+  /** The messageId of the record line the model wrote out in place of a marker (recordAsMarker); 0 when it wrote none. */
+  recordMessageId: number = 0
 }
 
 export class MiniApp {
@@ -218,6 +220,10 @@ function parseMarker(payload: string): ParsedReply {
       description = value['description'] as string
       if (description.trim().length === 0) { throw new Error('Empty widget description.') }
       if (typeof value['request'] === 'string') { out.appRequest = (value['request'] as string).trim() }
+      let record = value['recordOf']
+      if (typeof record === 'number' && Number.isSafeInteger(record as number) && (record as number) > 0) {
+        out.recordMessageId = record as number
+      }
     } catch (e) {
       out.error = 'Invalid widget marker: ' + (e as Error).message
       console.info('VERA-CHAT marker refused (' + out.error + '): ' + description.substring(0, 800))
@@ -238,19 +244,39 @@ const RECORD_OPEN: string = '[widget messageId='
  * The record line of an earlier widget (ChatPage.history shows each one as "[widget messageId=3, status=ready: description]"),
  * written out by the model in place of a marker: read as the marker it stands for, so the widget is built and the line is not
  * shown as text. Half a line, while the reply is still arriving, is a marker still being written.
+ *
+ * The line ends at the bracket that closes it, not at the reply's last one, so the text after it stays text. Its messageId
+ * is passed on (recordOf): when it names a widget already in the chat, the line is about that widget and refines it
+ * (ChatPage.startWidget) rather than building a copy.
  */
 function recordAsMarker(received: string): string {
   let at = received.indexOf(RECORD_OPEN)
   if (at < 0 || received.indexOf(APP_OPEN) >= 0) { return received }
   let colon = received.indexOf(': ', at)
   if (colon < 0) { return received.substring(0, at) + APP_OPEN }
-  let close = received.lastIndexOf(']')
-  if (close <= colon) { return received.substring(0, at) + APP_OPEN + received.substring(colon + 2) }
+  let close = closingBracket(received, at)
+  if (close < 0) { return received.substring(0, at) + APP_OPEN + received.substring(colon + 2) }
   let payload: Record<string, Object> = {}
   payload['request'] = ''
   payload['description'] = received.substring(colon + 2, close).trim()
   payload['mode'] = 'create'
+  let id = Number(received.substring(at + RECORD_OPEN.length).split(/[^0-9]/)[0])
+  if (Number.isSafeInteger(id) && id > 0) { payload['recordOf'] = id }
   return received.substring(0, at) + APP_OPEN + JSON.stringify(payload) + APP_CLOSE + received.substring(close + 1)
+}
+
+/** Where the bracket opened at `at` closes, counting the brackets inside it; -1 while it is still open. */
+function closingBracket(text: string, at: number): number {
+  let depth = 0
+  for (let i = at; i < text.length; i++) {
+    let c = text.charAt(i)
+    if (c === '[') { depth++ }
+    else if (c === ']') {
+      depth--
+      if (depth === 0) { return i }
+    }
+  }
+  return -1
 }
 
 export function parseReply(received: string, complete: boolean = false): ParsedReply {
@@ -286,6 +312,7 @@ export function parseReply(received: string, complete: boolean = false): ParsedR
     out.update = out.update || parsed.update
     out.mode = parsed.mode
     out.targetMessageId = parsed.targetMessageId
+    out.recordMessageId = parsed.recordMessageId
     out.appRequest = parsed.appRequest
     let restStart = close + APP_CLOSE.length
     open = raw.indexOf(APP_OPEN, restStart)

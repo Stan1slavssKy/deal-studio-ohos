@@ -174,6 +174,16 @@ console.log('needs-plan words and forms ok')
     {type: 'figure', id: 'a', label: 'A', formula: 'sub'}, {type: 'figure', id: 'b', label: 'B', formula: 'sub'}, {type: 'figure', id: 'c', label: 'C', formula: 'sub'}]})
   assert.deepEqual(np.capForWidget(feeder, 3), [], 'a hidden figure takes no room')
   assert.equal(feeder.needs.length, 4)
+  // A kept figure whose formula names a figure that was cut goes with it, and so on down the line.
+  const chain = plan({title: 'T', needs: [
+    {type: 'content', what: 'a tip', from: 'tip'}, {type: 'content', what: 'a quote', from: 'quote'},
+    {type: 'figure', id: 'perPerson', label: 'Per person', shown: false, formula: 'totalCost / 2'},
+    {type: 'figure', id: 'perPersonDay', label: 'Per day', shown: false, formula: 'perPerson / 3'},
+    {type: 'figure', id: 'totalCostX', label: 'Other', formula: '1'},
+    {type: 'figure', id: 'totalCost', label: 'Total cost', formula: '5'}]})
+  np.capForWidget(chain, 3)
+  assert.deepEqual(chain.needs.map(n => n.raw.id || n.type), ['content', 'content', 'totalCostX'],
+    'a figure reading a cut figure, and one reading that, are cut; a longer id that only starts the same is not')
   assert.match(np.WIDGET_NEEDS_NOTE, /small widget/)
 }
 console.log('needs-plan widget room ok')

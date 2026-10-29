@@ -67,6 +67,18 @@ const after = refined.execute('add', [carried, decodeRuntimeValue(['n', 3])])
 assert.equal(after.fields.get('entries').elements.length, 3)
 refined.execute('view', [after])
 
+// The entry class was reshaped (a field added): the old entries do not fit it and the list starts clean, even though the
+// fresh list is empty and a view that only counts them would pass.
+{
+  const reshaped = vm(newSource.replace('class Entry {\n  amount: number;\n}', 'class Entry {\n  amount: number;\n  minute: number;\n}')
+    .replace('{amount: value}', '{amount: value, minute: 0}'))
+  const kept = carryState(reshaped.execute('init'), decodeRuntimeValue(typed), reshaped.classShapes())
+  assert.equal(kept.fields.get('entries').elements.length, 0, 'entries of a reshaped class are not carried')
+  assert.equal(kept.fields.get('goalText').value, '10', 'the rest is still carried')
+  const same = carryState(refined.execute('init'), decodeRuntimeValue(typed), refined.classShapes())
+  assert.equal(same.fields.get('entries').elements.length, 2, 'entries of the same shape are carried')
+}
+
 // Nothing to carry from: an empty old list leaves the fresh one.
 const empty = carryState(refined.execute('init'), old.execute('init'))
 assert.equal(empty.fields.get('entries').elements.length, 0)

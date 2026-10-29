@@ -141,6 +141,9 @@ function literalOf(spec: FragmentSpec, criteria: string): FragmentSpec {
   let copy = new FragmentSpec(spec.kind, criteria, spec.supportClass, spec.stateFields, spec.initStatements, spec.initEntries,
     spec.functions, spec.viewBlock, [], [], spec.imports)
   copy.indexed = false
+  // A widget names its tabs from these (paneLabel): without them a rebuilt widget's tabs rename themselves.
+  copy.tab = spec.tab
+  copy.owns = spec.owns
   return copy
 }
 
@@ -221,6 +224,9 @@ function literalToObject(spec: FragmentSpec): Record<string, Object> {
   out['functions'] = spec.functions
   out['viewBlock'] = spec.viewBlock
   out['imports'] = spec.imports
+  // Only when set, so a record without them reads as it always did.
+  if (spec.tab.length > 0) { out['tab'] = spec.tab }
+  if (spec.owns.length > 0) { out['owns'] = spec.owns }
   return out
 }
 
@@ -244,6 +250,8 @@ function objectToLiteral(kind: string, o: Record<string, Object>): FragmentSpec 
   let spec = new FragmentSpec(kind, stringOf(o, 'criteria'), stringOf(o, 'supportClass'), fields, stringOf(o, 'initStatements'),
     stringOf(o, 'initEntries'), stringOf(o, 'functions'), stringOf(o, 'viewBlock'), [], [], imports)
   spec.indexed = false
+  spec.tab = stringOf(o, 'tab')
+  spec.owns = stringOf(o, 'owns')
   return spec
 }
 

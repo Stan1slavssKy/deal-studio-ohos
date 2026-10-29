@@ -3,6 +3,7 @@ import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
 import fs from '@ohos.file.fs'
 import http from '@ohos.net.http'
 import request from '@ohos.request'
+import window from '@ohos.window'
 import { Version, VersionMetrics, store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
@@ -294,7 +295,12 @@ struct GeneratePage {
   @State composerOpen: boolean = false
   /** The soft keyboard is up (the page shrank): the header gives its room to the preview. See build(). */
   @State keyboardOpen: boolean = false
-  private pageMax: number = 0
+  /** The window the keyboard's height is heard from, and the listener, to stop listening when the page goes. */
+  private keyboardWindow: window.Window | null = null
+  private keyboardListener: (height: number) => void = (height: number) => {
+    let open = height > 0
+    if (open !== this.keyboardOpen) { this.keyboardOpen = open }
+  }
   /** The full request history, shown under the one-line request when it is tapped. */
   @State historyOpen: boolean = false
   @State downloading: boolean = false
@@ -547,7 +553,20 @@ struct GeneratePage {
     // the preview up under the title bar, and with the refine field pinned at
     // the bottom the page has to give up height, not move.
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)
+    // Whether the keyboard is up is the window's to say. Reading it from the page's height took any lasting drop -- a turn
+    // to landscape, a fold, split screen -- for an open keyboard, for good.
+    window.getLastWindow(context).then((win: window.Window) => {
+      this.keyboardWindow = win
+      win.on('keyboardHeightChange', this.keyboardListener)
+    }).catch((e: Error) => { console.warn('VERA keyboard listener unavailable: ' + e.message) })
     this.loadResources()
+  }
+
+  aboutToDisappear(): void {
+    if (this.keyboardWindow !== null) {
+      try { this.keyboardWindow.off('keyboardHeightChange', this.keyboardListener) } catch (_e) { /* the window is already gone */ }
+      this.keyboardWindow = null
+    }
   }
 
   // The key can arrive from a launch parameter while this page sits in the
@@ -2540,14 +2559,6 @@ struct GeneratePage {
       }
       .width('100%')
       .height('100%')
-      // Under RESIZE the page shrinks when the keyboard comes up: a page well under the tallest it has been is one with
-      // the keyboard on it.
-      .onAreaChange((_old: Area, now: Area) => {
-        let height = Number(now.height)
-        if (height > this.pageMax) { this.pageMax = height }
-        let open = this.pageMax > 0 && height < this.pageMax - 120
-        if (open !== this.keyboardOpen) { this.keyboardOpen = open }
-      })
     }
     .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.nextVersionNumber.toString() : 'Generate')
     .titleMode(NavigationTitleMode.Mini)

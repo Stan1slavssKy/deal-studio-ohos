@@ -258,8 +258,9 @@ export function parseSketch(text: string): Sketch | null {
       if (input.measure === 'money') { input.unit = currencySign(input.unit) }
       // A length of time the sketch called a time ("kind": "time", "measure": "seconds") is a number of seconds or minutes, as it says.
       // Unless it is minutes after midnight, which is what its range says: 0 to 1439 ("Start time" 09:00 is 540). A length of time
-      // (a rest of 0 to 3600 seconds, a stop of 15 to 240 minutes) is a number, as it says.
-      let minutesOfTheDay = input.measure === 'minutes' && input.min <= 0 && input.max >= 1439 && input.max <= 1440
+      // (a rest of 0 to 3600 seconds, a stop of 15 to 240 minutes) is a number, as it says. The range may start later in the
+      // day (a wake time of 05:00 to 23:59 is 300 to 1439): it is the end at midnight that says so.
+      let minutesOfTheDay = input.measure === 'minutes' && input.min < 1439 && input.max >= 1439 && input.max <= 1440
       if (input.kind === 'time' && isTime(input.measure) && !minutesOfTheDay) { input.kind = 'count' }
       // A time of day is minutes since midnight, whatever measure the sketch wrote.
       if (input.kind === 'time') {
@@ -2069,6 +2070,10 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
 
   // Values nothing could work out, with why: refused, or left out at the end when the sketch added them.
   let failed: Map<string, string> = new Map<string, string>()
+  // A figure a chosen section already shows is that section's (what it holds is said to Jev: FragmentSpec.owns): it leaves,
+  // and an input only it read leaves with it, rather than both being put on the screen beside the section. It is still
+  // worked out here, so a figure that stays and reads it keeps a working binding (dropValues).
+  let shownBySection: string[] = []
   for (let i = 0; i < sketch.values.length; i++) {
     let v = sketch.values[i]
     let keys: string[] = []
@@ -2076,12 +2081,8 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     let binding = new Binding()
     let show = answerOf(answers, 'show.' + v.id, SHOWS, comp.answers)
     binding.show = show.length > 0 ? show : (v.format === 'fraction' ? 'progress' : 'stat')
-    // A figure a chosen section already shows is that section's (what it holds is said to Jev: FragmentSpec.owns): it leaves,
-    // and an input only it read leaves with it, rather than both being put on the screen beside the section.
     if (comp.blocks.length > 0 && answerOf(answers, 'within.value.' + v.id, served, comp.answers, COVERED_ABOVE).length > 0) {
-      failed.set(v.id, 'a section shows it')
-      comp.bindings.set(v.id, binding)
-      continue
+      shownBySection.push(v.id)
     }
     if (keys.length === 0 || keys.length >= MAX_CRITERIA) {
       let why = keys.length === 0 ? 'nothing to work it out from' : 'too many ways to work it out'
@@ -2271,7 +2272,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       comp.sketch = withList(comp.sketch, trimmed)
     }
   }
-  dropValues(comp, answers, failed, served)
+  dropValues(comp, answers, failed, served, shownBySection)
   // An input nothing reads does nothing. A number the request did not ask for is the sketch's extra and is
   // left out, and the note says so; one it asked for, a switch or words mean the request wants something
   // the parts do not do with it.
@@ -2324,7 +2325,8 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
  * other value, not the countdown's length, not an item of "other" they were said to cover -- are left out,
  * as an input is; the rest refuse the screen. A value read only by others left out goes with them.
  */
-function dropValues(comp: Composition, answers: Record<string, Object>, failed: Map<string, string>, served: string[]): void {
+function dropValues(comp: Composition, answers: Record<string, Object>, failed: Map<string, string>, served: string[],
+                    shownBySection: string[]): void {
   let sketch = comp.sketch
   // A value worked out from one that cannot be is no better off: its example passed on a number given to it.
   for (let v of sketch.values) {
@@ -2341,6 +2343,11 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     if (answerOf(answers, 'asked.value.' + id, ['added'], comp.answers, ADDED_ABOVE) === 'added') { leaving.push(id) }
     else if (answerOf(answers, 'within.value.' + id, served, comp.answers, COVERED_ABOVE).length > 0) { leaving.push(id); sections.push(id) }
   })
+  // One a section shows that could be worked out leaves too, unless a figure that stays reads it (the loop below
+  // brings it back, still bound).
+  for (let id of shownBySection) {
+    if (!failed.has(id)) { leaving.push(id); sections.push(id) }
+  }
   let covering: string[] = []
   for (let i = 0; i < sketch.other.length; i++) {
     let a = answers['covers.' + i.toString()] as Record<string, Object>
@@ -2400,6 +2407,12 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     }
     else { comp.dropped.push('value "' + label + '": not asked for, and ' + why) }
   })
+  for (let id of shownBySection) {
+    if (failed.has(id) || leaving.indexOf(id) < 0) { continue }
+    let label = labelOf(sketch, id)
+    comp.dropped.push('value "' + label + '": a section shows it')
+    comp.claimed.push('shows ' + label)
+  }
   if (leaving.length === 0) { return }
   for (let id of leaving) { comp.bindings.delete(id) }
   let out = withList(sketch, sketch.list)
@@ -3343,7 +3356,10 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     lapMembers.push('minute: time.hourOfDay() * 60 + time.minuteOfHour()')
     let lapped: Map<string, string> = new Map<string, string>()
     lapped.set('entries', 'out')
+    // A lap moves the entries on, as an Add does: a removal can no longer be undone into its old place.
+    lapped.set('removedEntries', 'none')
     functions.push(fn(['function lapEntry(state: AppState, ignored: number): AppState {',
+      '  let none: LogEntry[] = [];',
       '  let before: number = 0;',
       '  if (state.entries.length() > 0) { before = state.entries[state.entries.length() - 1].' + total!.id + '; }',
       '  let lap: LogEntry = {' + lapMembers.join(', ') + '};',

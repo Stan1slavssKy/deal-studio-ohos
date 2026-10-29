@@ -47,5 +47,10 @@ console.log('chat-prompt-check: ok')
   assert.equal(r.describing, true); assert.equal(r.before, 'Here is a daily card.'); assert.equal(r.appDescription, '')
   r = chat.parseReply('Done. <<app: {"request":"tip","description":"a tip calculator","mode":"create"}>>', true)
   assert.equal(r.appDescription, 'a tip calculator', 'a real marker is as it was')
+  assert.equal(r.recordMessageId, 0)
+  // The line ends at its own closing bracket: text after it, brackets and all, stays text. Its messageId goes with it.
+  r = chat.parseReply('Here.\n\n[widget messageId=3, status=ready: Tip calculator] -- see the [docs](x)', true)
+  assert.equal(r.error, ''); assert.equal(r.appDescription, 'Tip calculator')
+  assert.equal(r.after, '-- see the [docs](x)'); assert.equal(r.recordMessageId, 3); assert.equal(r.mode, 'create')
 }
 console.log('chat-prompt-check: record line read as a marker')
