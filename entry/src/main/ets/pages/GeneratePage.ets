@@ -13,6 +13,7 @@ import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTi
 import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS, SideCall } from '../vera/DeepSeekEngine'
 import { VeraPreview } from '../components/VeraPreview'
 import { settings } from '../vera/SettingsStore'
+import { resetLogprobsProbe } from '../vera/JevProxy'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { ensureUiEmbeddings } from '../vera/VeraUiIndex'
@@ -223,6 +224,18 @@ struct GeneratePage {
   @State generating: boolean = false
   @State modelReady: boolean = false
   @State mode: string = MODE_DEEPSEEK
+  // The model the picker last selected. The subtitle and chip highlights read
+  // this instead of settings.getModel() directly so that tapping a chip (which
+  // changes the stored model at runtime) re-renders them -- settings is not
+  // @State, so a method that only reads it does not re-evaluate when the model
+  // changes. Kept in sync in aboutToAppear, checkDeepSeek and the chip onClick.
+  @State selectedModel: string = ''
+  // Whether the composer's selector calls route through the on-device cloud
+  // proxy (JevProxy.ets) instead of TypeSafe. Like selectedModel, this mirrors a
+  // settings field into @State so the toggle re-renders: settings is not @State,
+  // so a method that only reads useJevProxy() does not re-evaluate when it
+  // flips. Kept in sync in aboutToAppear, checkDeepSeek and the toggle onClick.
+  @State jevProxyOn: boolean = false
   @State attempt: number = 0
   @State compiled: boolean = false
   @State compileErrors: string = ''
@@ -506,6 +519,8 @@ struct GeneratePage {
       }
     }
     settings.init(context.filesDir)
+    this.selectedModel = settings.getModel()
+    this.jevProxyOn = settings.useJevProxy()
     initTrace(context.filesDir)
     // Shrink the page for the keyboard instead of panning it: panning slides
     // the preview up under the title bar, and with the refine field pinned at
@@ -572,15 +587,48 @@ struct GeneratePage {
   }
 
   private checkDeepSeek(): void {
+    this.selectedModel = settings.getModel()
+    this.jevProxyOn = settings.useJevProxy()
     if (settings.hasApiKey()) {
       // A stub build cannot load the embedding model, so discovery falls back to
       // keywords; that belongs next to the provider line, which is what stays up.
       let note = modelSupportNote()
-      this.status = 'DeepSeek ready (' + settings.getModel() + ', key ' + settings.maskedKey() + ')' +
-        (note.length > 0 ? '. ' + note : '')
+      let line = settings.providerLabel() + ' ready (' + settings.getModel() + ', key ' + settings.maskedKey() + ')'
+      // joinSentence keeps the punctuation single whether or not the note is
+      // present: modelSupportNote ends with '.', the selector note does not.
+      line = this.joinSentence(line, note)
+      line = this.joinSentence(line, this.selectorNote())
+      this.status = line
     } else {
-      this.status = 'No API key. Send one with: aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key>'
+      this.status = 'No API key. Send one with: aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey <key> (or --ps cloudKey <key>)'
     }
+  }
+
+  /**
+   * A short suffix for the DeepSeek status line saying which selector answers
+   * the composer's choice/noul questions: the on-device cloud proxy (JevProxy),
+   * the real TypeSafe key, or none -- which is why the agent route and the
+   * structural-edit path are gated off (hasSelector). Reads the @State copy so
+   * it re-renders when the proxy toggle flips.
+   */
+  private selectorNote(): string {
+    if (this.jevProxyOn) { return 'Selector: cloud proxy' }
+    if (settings.hasSelectorKey()) { return 'Selector: TypeSafe' }
+    return 'No selector (agent route off)'
+  }
+
+  /**
+   * Join `more` onto `base` as a new sentence with exactly one separator: a
+   * space when base already ends a sentence (. ! ?), else ". ". The provider
+   * note and modelSupportNote end with a period and the selector note does not,
+   * so a plain ". " join would double it; this keeps the line readable either
+   * way.
+   */
+  private joinSentence(base: string, more: string): string {
+    if (base.length === 0 || more.length === 0) { return base + more }
+    let last = base.charAt(base.length - 1)
+    if (last === '.' || last === '!' || last === '?') { return base + ' ' + more }
+    return base + '. ' + more
   }
 
   private async checkServer(): Promise<void> {
@@ -776,7 +824,7 @@ struct GeneratePage {
     // Not on top of a saved program: with previousSource set this is a change to it (the model edits it).
     let route = new RouteRequest()
     route.mode = this.mode
-    if (this.previousSource.length === 0 && settings.hasSelectorKey()) {
+    if (this.previousSource.length === 0 && settings.hasSelector()) {
       if (this.mode === MODE_DEEPSEEK && composeEnabled()) {
         route.agent = new AgentRequest()
         route.agent.prompt = this.prompt.trim()
@@ -1524,7 +1572,7 @@ struct GeneratePage {
     if (ask.length === 0 || this.compiledSource.length === 0 || this.generating || this.baseError.length > 0) { return }
     // A change that only adds, removes, replaces or moves a block of a composed screen is made on its
     // record, with no model rewrite; anything else, and any step that does not hold, refines as before.
-    if (this.compositionJson.length > 0 && this.mode === MODE_DEEPSEEK && templateSelectEnabled() && settings.hasSelectorKey()) {
+    if (this.compositionJson.length > 0 && this.mode === MODE_DEEPSEEK && templateSelectEnabled() && settings.hasSelector()) {
       this.tryStructuralEdit(ask)
       return
     }
@@ -1668,13 +1716,13 @@ struct GeneratePage {
   }
 
   private modeLabel(): string {
-    if (this.mode === MODE_DEEPSEEK) { return 'DeepSeek' }
+    if (this.mode === MODE_DEEPSEEK) { return settings.providerLabel() }
     if (this.mode === MODE_SERVER) { return 'Server' }
     return 'Local'
   }
 
   private modeSubtitle(): string {
-    if (this.mode === MODE_DEEPSEEK) { return settings.getModel() + ' - agent loop on device' }
+    if (this.mode === MODE_DEEPSEEK) { return (this.selectedModel.length > 0 ? this.selectedModel : settings.getModel()) + ' - agent loop on device' }
     if (this.mode === MODE_SERVER) { return serverUrl() }
     return 'On-device Qwen3-Coder-3B'
   }
@@ -1689,6 +1737,65 @@ struct GeneratePage {
     if (this.mode === MODE_DEEPSEEK) { return '#2E7D32' }
     if (this.mode === MODE_SERVER) { return '#1565C0' }
     return '#E65100'
+  }
+
+  /** Labels for the dashscope model picker, in candidate order. */
+  private modelPickerLabels(): string[] {
+    let labels: string[] = []
+    for (let i = 0; i < settings.modelCandidateCount(); i++) {
+      labels.push(settings.modelCandidateLabel(i))
+    }
+    return labels
+  }
+
+  /** Index of the selected model among the candidates, or -1 if it is not one. */
+  private selectedModelIndex(): number {
+    let m = this.selectedModel.length > 0 ? this.selectedModel : settings.getModel()
+    for (let i = 0; i < settings.modelCandidateCount(); i++) {
+      if (settings.modelCandidateModel(i) === m) { return i }
+    }
+    return -1
+  }
+
+  private modelPickerTint(index: number): string {
+    return this.selectedModelIndex() === index ? '#E8F5E9' : '#F0F0F0'
+  }
+
+  private modelPickerInk(index: number): string {
+    return this.selectedModelIndex() === index ? '#2E7D32' : '#666666'
+  }
+
+  /**
+   * The Jev proxy toggle, like the model picker above it. On routes the
+   * composer's selector calls (askJev/selectEdit) through the configured cloud
+   * model on-device (JevProxy.ets); off sends them to api.typesafe.ai as before,
+   * which needs a separate selector key or the agent route is gated off. The
+   * proxy uses the cloud key (getApiKey), not the selector key, so it is offered
+   * whenever there is a cloud key -- independent of whether the provider is
+   * dashscope (the model picker only shows for dashscope).
+   */
+  private jevProxyLabel(): string {
+    return this.jevProxyOn ? 'Jev proxy: on' : 'Jev proxy: off'
+  }
+
+  private jevProxyTint(): string {
+    return this.jevProxyOn ? '#E8F5E9' : '#F0F0F0'
+  }
+
+  private jevProxyInk(): string {
+    return this.jevProxyOn ? '#2E7D32' : '#666666'
+  }
+
+  private toggleJevProxy(): void {
+    if (this.jevProxyOn) {
+      settings.setJevProxy('')
+      this.jevProxyOn = false
+    } else {
+      settings.setJevProxy('1')
+      this.jevProxyOn = true
+    }
+    // Rebuild the status line so the selector note reflects the new state.
+    this.checkDeepSeek()
   }
 
   private nextMode(): string {
@@ -2034,6 +2141,60 @@ struct GeneratePage {
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 8 })
+
+        // The three dashscope models (glm-5.2 and the two deepseek-v4 ones) share
+        // one key and base URL, so the choice is the model name alone -- which also
+        // flips isDeepSeek() and so the request shape (native thinking for the
+        // deepseek models, enable_thinking for glm-5.2). Shown only when the
+        // configured endpoint is dashscope; tapping applies and persists.
+        if (this.mode === MODE_DEEPSEEK && settings.isDashscopeProvider() && settings.hasApiKey()) {
+          Row({ space: 6 }) {
+            ForEach(this.modelPickerLabels(), (label: string, index: number) => {
+              Button(label)
+                .type(ButtonType.Normal)
+                .fontSize(11)
+                .height(26)
+                .borderRadius(6)
+                .backgroundColor(this.modelPickerTint(index))
+                .fontColor(this.modelPickerInk(index))
+                .enabled(!this.generating)
+                .onClick(() => {
+                  settings.applyModelCandidate(index)
+                  // Whether the proxy can use logprobs is per model (glm-5.2
+                  // supports them on dashscope, deepseek-v4-flash does not), so a
+                  // model switch drops any cached rejection and lets the next
+                  // proxy call re-probe under the new model.
+                  resetLogprobsProbe()
+                  this.selectedModel = settings.getModel()
+                  this.checkDeepSeek()
+                })
+            }, (label: string, index: number) => label + index.toString())
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 4 })
+        }
+
+        // Toggle for the on-device Jev proxy (see jevProxyLabel). Offered for any
+        // cloud provider with a key, not just dashscope, since the proxy answers
+        // the composer's selector questions with whatever chat model is set.
+        if (this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
+          Row({ space: 8 }) {
+            Button(this.jevProxyLabel())
+              .type(ButtonType.Normal)
+              .fontSize(11)
+              .height(26)
+              .borderRadius(6)
+              .backgroundColor(this.jevProxyTint())
+              .fontColor(this.jevProxyInk())
+              .enabled(!this.generating)
+              .onClick(() => { this.toggleJevProxy() })
+            Text(this.jevProxyOn ? 'selector via cloud model' :
+              (settings.hasSelectorKey() ? 'selector via TypeSafe' : 'no selector — agent route off'))
+              .fontSize(11).fontColor('#999999').layoutWeight(1)
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 4 })
+        }
 
         // With a running program on screen the original request collapses to a
         // single line, leaving the height to the preview. Tapping it reopens
