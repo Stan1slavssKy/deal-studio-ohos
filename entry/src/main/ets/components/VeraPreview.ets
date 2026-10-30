@@ -25,7 +25,7 @@ import { ResolvedTheme, resolveTheme, containerFill, toneFill, toneEdge, toneInk
   densityGap, spacerSize, readableInk } from '../vera/VeraTheme'
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
-import { LiveNode, toLive, reconcile, armReveal } from './VeraLiveTree'
+import { LiveNode, toLive, reconcile, armReveal, markIconRoom } from './VeraLiveTree'
 import { carryState } from '../vera/VeraStateCarry'
 import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
   columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
@@ -894,6 +894,7 @@ export struct VeraPreview {
       } else {
         reconcile(this.liveRoot!, root!)
       }
+      if (this.liveRoot !== null) { markIconRoom(this.liveRoot!) }
       this.revision += 1
       this.reconcileTimers(this.previewOnly ? null : root)
       this.reconcileSpin(root)
@@ -3667,6 +3668,9 @@ export struct VeraPreview {
           this.iconChip(node.icon, this.t().controlHeight - 4,
             toneFill(this.t(), node.style, this.t().primaryFill),
             toneInk(this.t(), node.style, this.t().primaryInk))
+        } else if (node.iconRoom) {
+          // Not a Blank: in a Row that grows to take the free width.
+          Column().width(this.t().controlHeight - 4).height(this.t().controlHeight - 4)
         }
         Column({ space: 2 }) {
           Text(node.text).fontSize(this.t().sizeBody + 1).fontFamily(this.textFamily()).width('100%')

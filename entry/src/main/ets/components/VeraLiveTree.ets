@@ -87,6 +87,24 @@ export class LiveNode {
    * so the renderer brings it into view once it has a size. Never traced: reading it must not redraw anything.
    */
   reveal: boolean = false
+  /**
+   * A ListItem with no icon of its own in a ListGroup where another row has one: it keeps the icon's room empty, so every row's
+   * words start at one edge. Without it a care card's rows started at two (Baby fever: "Keep baby hydrated" at the margin, "Check
+   * temperature" beside a clock). Renderer state, set by markIconRoom after each reconcile.
+   */
+  @Trace iconRoom: boolean = false
+}
+
+/** Sets iconRoom on the rows of every ListGroup from here down; see LiveNode.iconRoom. */
+export function markIconRoom(node: LiveNode): void {
+  if (node.kind === 'listgroup') {
+    let any = node.children.some((c: LiveNode): boolean => c.kind === 'listitem' && c.icon.length > 0)
+    for (let c of node.children) {
+      let room = any && c.kind === 'listitem' && c.icon.length === 0
+      if (c.iconRoom !== room) { c.iconRoom = room }
+    }
+  }
+  for (let c of node.children) { markIconRoom(c) }
 }
 
 /** The kinds that are brought into view when a tap makes them appear: what opens, not a row added to a list. */
