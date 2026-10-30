@@ -39,6 +39,7 @@ size: those come from `VeraTheme.ets` and the renderer.
 | `ui.TextField` | Input | Text the user types |
 | `ui.IntField` | Input | A number the user sets with - and + |
 | `ui.TimeField` | Input | A time of day, as minutes since midnight |
+| `ui.DateField` | Input | A calendar date, as a local day number |
 | `ui.Toggle` | Input | On/off switch |
 | `ui.Checkbox` | Input | Tick box |
 | `ui.Slider` | Input | Pick a number in a range |
@@ -279,6 +280,14 @@ A time of day, as minutes since midnight; the handler takes (state, value: int).
 **Handler receives:** `int`
 
 > For a time the person chooses. The value is minutes since midnight, which is the same shape time.hourOfDay() * 60 + time.minuteOfHour() produces, so it compares with the clock directly.
+
+### `ui.DateField(style: string, label: string, value: number, action: string): View`
+
+A calendar date, as a local day number; the handler takes (state, value: number).
+
+**Handler receives:** `number`
+
+> For a date the person chooses -- a due date, a birthday, a trip. The value is the day number time.daysSinceEpoch() returns, so start it at today with time.daysSinceEpoch(), compare it with today directly, and subtract two of them for a count of days. ui.dateToString(day) writes it as "30 Oct 2026" inside another component's text; (day + 4) % 7 is its weekday, 0=Sunday, as time.weekday() counts. Pair it with ui.TimeField for a date and a time.
 
 ### `ui.Toggle(style: string, label: string, checked: boolean, action: string): View`
 

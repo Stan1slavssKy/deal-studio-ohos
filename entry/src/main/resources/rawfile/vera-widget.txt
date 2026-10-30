@@ -22,7 +22,7 @@ Build one compact interaction that serves the supplied description:
 - Preserve every supplied starting value, name, unit, and constraint in init().
 - Use only requested content. Add no unrelated menus, settings, history, counters, or decorative statuses.
 - Show a short empty, invalid-input, refusal, or error message when the interaction needs one.
-- Use ui.NumberField, ui.Slider, ui.Select, ui.Toggle, or ui.TimeField as the input requires.
+- Use ui.NumberField, ui.Slider, ui.Select, ui.Toggle, ui.TimeField, or ui.DateField as the input requires.
 - Use ui.TextField for text, and for an amount the person types (keyboardType "number", read with strings.toNumber). Give units to numeric input labels.
 - Guard zero divisors and invalid ranges before calculation.
 - For a split, require a positive person count and explain any remainder allocation.

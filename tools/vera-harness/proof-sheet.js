@@ -52,6 +52,11 @@ function formattedTime(node) {
     String(total % 60).padStart(2, '0') + (node.suffix || '')
 }
 
+function formattedDate(node) {
+  const d = new Date(Math.floor(node.numberValue || 0) * 86400000)
+  return d.getUTCDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()] + ' ' + d.getUTCFullYear()
+}
+
 function createRenderer(theme, options) {
   const t = theme
   const insetParents = new Set(['hero', 'adaptivecolumns', 'section', 'card', 'column', 'scroll'])
@@ -220,9 +225,9 @@ function createRenderer(theme, options) {
       const inner = stack([text(node.label, 'caption', width, t.inkSoft), {svg, width: pill, height: control}], width, t.gapTight)
       return frame(inner, width, 0, t.gapTight, t.gapTight)
     }
-    if (kind === 'timefield' || kind === 'textfield' || kind === 'field') {
+    if (kind === 'timefield' || kind === 'datefield' || kind === 'textfield' || kind === 'field') {
       const label = text(node.label, 'caption', width, t.inkMuted)
-      const value = kind === 'timefield' ? formattedTime(node) : node.value || node.text || ''
+      const value = kind === 'timefield' ? formattedTime(node) : kind === 'datefield' ? formattedDate(node) : node.value || node.text || ''
       const content = text(value, 'body', Math.max(1, width - t.padBase * 2))
       const height = Math.max(t.controlHeight, content.height + t.padTight * 2)
       return stack([label, {svg: rect(width, height, t.fieldFill ?? t.surfaceRaised, t.radiusControl, t.fieldLine ?? t.lineStrong) + move(content, t.padBase, (height - content.height) / 2), width, height}], width, t.gapTight)
