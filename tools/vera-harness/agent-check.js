@@ -17,7 +17,7 @@ const fixture = (label, file) => fs.readFileSync(path.join(__dirname, 'compose',
 // The sketch arrives in pieces, as DeepSeek streams it; Jev answers with the recorded body.
 function replayHost(label, {jev = fixture(label, 'jev-answer.json'), cancelled = () => false} = {}) {
   const host = new AgentHost()
-  const seen = {status: [], previews: 0, plans: 0, jev: 0}
+  const seen = {status: [], previews: 0, plans: 0, jev: 0, afterJev: 0}
   host.askPlan = async (system, user, onText) => {
     seen.plans++
     assert.match(system, /JSON plan/)
@@ -27,7 +27,7 @@ function replayHost(label, {jev = fixture(label, 'jev-answer.json'), cancelled =
   }
   host.askJev = async body => { seen.jev++; JSON.parse(body); return jev }
   host.status = s => seen.status.push(s)
-  host.preview = vbc2 => { assert.ok(vbc2.length > 0); seen.previews++ }
+  host.preview = vbc2 => { assert.ok(vbc2.length > 0); seen.previews++; if (seen.jev > 0) seen.afterJev++ }
   host.cancelled = cancelled
   return {host, seen}
 }
@@ -43,6 +43,8 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(r.errors, '')
     assert.ok(r.source.includes('function view('))
     assert.ok(seen.previews > 0 && r.previews === seen.previews && r.firstPreviewMs >= 0)
+    // The parts Jev chose are drawn too, not only the plan they were chosen for.
+    assert.equal(seen.afterJev, 1)
     assert.equal(seen.plans, 1)
     assert.equal(seen.jev, 1)
     assert.deepEqual(seen.status, ['Composing...'])

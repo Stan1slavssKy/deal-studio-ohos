@@ -2594,9 +2594,9 @@ struct GeneratePage {
       }
       if (this.previewVbc2.length > 0) {
         Text(this.previewNote).fontSize(12).fontColor(app.warningInk).width('100%')
+        // As tall as the screen it shows, as in Chat: the list scrolls it, and the parts Jev chose are not cut off below a fixed box.
         VeraPreview({ previewOnly: true, vbc2: this.previewVbc2, embedded: true })
           .width('100%')
-          .height(360)
           .borderRadius(12)
           .clip(true)
           .opacity(0.6)
@@ -2647,7 +2647,7 @@ struct GeneratePage {
       if (this.previewVbc2.length > 0 && !this.hasResult()) {
         Text(this.previewNote).fontSize(12).fontColor(app.warningInk).width('100%')
         VeraPreview({ previewOnly: true, vbc2: this.previewVbc2, embedded: true })
-          .width('100%').height(300).borderRadius(12).clip(true).opacity(0.6)
+          .width('100%').borderRadius(12).clip(true).opacity(0.6)
       }
     }
     .width('100%')
