@@ -451,9 +451,9 @@ export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: Resolve
   ctx.scale(fit.scale, fit.scale)
   ctx.beginPath()
   ctx.rect(0, 0, w, h)
+  // No card of its own: a surface among a screen's sections stands on the page like they do, and one that wants a
+  // panel draws it (gfx.rect in "surface").
   ctx.clip()
-  ctx.fillStyle = themeColor(t.surface)
-  ctx.fillRect(0, 0, w, h)
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   for (let o of ops) { paintOp(ctx, o, t) }

@@ -163,6 +163,6 @@ assert.ok(rec.svg().includes('fill="' + light.ink.toLowerCase()) || rec.svg().in
 const nan = G.invokeStdGfx('circle', [NaN, 0, 5].map(n => new VeraNumberValue(n)).concat([new (loadVera('VeraInterpreter').VeraStringValue)('ink')]))
 const blank = createRecorder(100, 100)
 G.paintGfx(blank.ctx, [nan.op], light, 100, 100, 10, 10)
-assert.equal((blank.svg().match(/<path [^>]*fill="#/g) || []).length, 2, 'a shape with a NaN is skipped: only the background and the surface are painted')
+assert.equal((blank.svg().match(/<path [^>]*fill="#/g) || []).length, 1, 'a shape with a NaN is skipped: only the background is painted')
 
 console.log('gfx-check ok')

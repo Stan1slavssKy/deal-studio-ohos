@@ -89,6 +89,11 @@ An event is `[frame, phase, id, x, y]` in the surface's own units, delivered bef
 The elapsed time is the step, not the clock, so a run draws the same frames every time.
 It writes `frame-NNNN.svg` and a `sheet.svg` of them side by side, and prints what each drawn frame held.
 `gfx-check.js` checks std/gfx, the surface's compile-time checks, colours, fitting and finger mapping, the smoke run, and that the sample game plays.
+`surface-mixed-check.js` checks a surface as one block of a form screen (`examples/surface-roulette.vera`: the bank, stake, bet and history are components, the wheel is the surface).
+The Spin button and a tap on the wheel throw the same ball, and the pocket it is drawn in is the number paid.
+The bet is the one the ball was thrown with, even when the form changes while it runs.
+The bank adds up over 400 spins.
+Given a directory, it also writes `roulette-sheet.svg`.
 
 The prompt workflow harness executes application request and repair methods with mocked HTTP responses:
 
