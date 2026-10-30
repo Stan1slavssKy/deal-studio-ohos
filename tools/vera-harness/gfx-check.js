@@ -16,6 +16,7 @@ const {UiHostEnvironment, decodeVeraUi} = loadVera('VeraUi')
 const G = loadVera('VeraGfx')
 const {resolveTheme} = loadVera('VeraTheme')
 const {smokeRun} = loadVera('VeraSmoke')
+const {playSurface} = loadVera('VeraSurfacePlay')
 const {describeCatalogForPrompt, describeComponents, selectUiComponents, catalogKinds} = loadVera('VeraUiCatalog')
 
 const sample = fs.readFileSync(path.join(__dirname, 'examples/surface-catch.vera'), 'utf8')
@@ -164,5 +165,26 @@ const nan = G.invokeStdGfx('circle', [NaN, 0, 5].map(n => new VeraNumberValue(n)
 const blank = createRecorder(100, 100)
 G.paintGfx(blank.ctx, [nan.op], light, 100, 100, 10, 10)
 assert.equal((blank.svg().match(/<path [^>]*fill="#/g) || []).length, 1, 'a shape with a NaN is skipped: only the background is painted')
+
+// A frame handler may ask the phone for something, as a ticker's handler may (a vibration on each breath): on the phone it
+// is run as a handler, and the play check runs it the same way. Only draw() is refused.
+const buzzing = `
+@jsonable class AppState { n: number; buzzes: number; }
+function init(): AppState { return {n: 0, buzzes: 0}; }
+function onBuzzed(state: AppState, answer: string): AppState { return {n: state.n, buzzes: state.buzzes + 1}; }
+function onFrame(state: AppState, ms: number): AppState {
+  if (state.n === 30) { sdk.call("com.example.buzz/entry/EntryAbility/Buzz", [], "onBuzzed"); }
+  return {n: state.n + 1, buzzes: state.buzzes};
+}
+function draw(state: AppState): gfx.Shape[] { return [gfx.circle(10 + state.n % 60, 50, 10, "accent")]; }
+function view(state: AppState): ui.View { return ui.AppTheme("clean", "", [ui.Surface("default", 100, 100, "draw", "onFrame", "")]); }
+`
+assert.equal(playSurface(compileVeraSource(buzzing)), '', 'a frame handler that asks the phone for something plays')
+const drawBuzz = buzzing.replace('function draw(state: AppState): gfx.Shape[] {', 'function draw(state: AppState): gfx.Shape[] {\n  if (state.n === 30) { sdk.call("com.example.buzz/entry/EntryAbility/Buzz", [], "onBuzzed"); }')
+assert.match(playSurface(compileVeraSource(drawBuzz)), /sdk\.call may only be called from a handler/, 'draw() still may not')
+// A circle that only grows and shrinks is a scene that moves (a breathing guide), not one that never changes.
+const breathing = buzzing.replace('if (state.n === 30) { sdk.call("com.example.buzz/entry/EntryAbility/Buzz", [], "onBuzzed"); }', '')
+  .replace('return [gfx.circle(10 + state.n % 60, 50, 10, "accent")];', 'return [gfx.circle(50, 50, 10 + state.n % 30, "accent")];')
+assert.equal(playSurface(compileVeraSource(breathing)), '', 'a circle that only changes its size counts as moving')
 
 console.log('gfx-check ok')
