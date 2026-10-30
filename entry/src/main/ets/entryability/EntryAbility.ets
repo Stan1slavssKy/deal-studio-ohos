@@ -18,6 +18,7 @@ import { requestUiEval } from '../vera/VeraUiEval'
 import { requestUiAb } from '../vera/VeraUiAb'
 import { setComposeEnabled, setComposePlanEnabled, setCustomSectionsEnabled } from '../vera/VeraCompose'
 import { setWholeScreenEnabled } from '../vera/agent/VeraBuildRoute'
+import { setSurfaceRouteEnabled } from '../vera/agent/AgentSurface'
 import { setAlignEnabled, setAlignWide } from '../vera/agent/AgentAlign'
 import { loadCatalogFile } from '../vera/VeraCatalogFile'
 import { startPowerKeyProbe } from '../vera/PowerKeyProbe'
@@ -468,6 +469,12 @@ export default class EntryAbility extends UIAbility {
       let text = String(whole).trim()
       setWholeScreenEnabled(!(text === '0' || text === 'false' || text === 'off'))
       hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE whole screen ' + text + ' from launch parameter')
+    }
+    let surface = params['veraSurface']
+    if (surface !== null && surface !== undefined) {
+      let text = String(surface).trim()
+      setSurfaceRouteEnabled(!(text === '0' || text === 'false' || text === 'off'))
+      hilog.info(DOMAIN, 'VERA', 'VERA-ROUTE surface ' + text + ' from launch parameter')
     }
   }
 

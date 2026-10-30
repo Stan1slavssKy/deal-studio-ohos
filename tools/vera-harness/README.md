@@ -77,6 +77,19 @@ Each new process loads its selected sources again, so a previous build cannot su
 `visual-check.js` records the tested revision, command, decoded trees, and expected-versus-observed checks in JSON.
 Native validation still requires the toolchain described in `CLAUDE.md`.
 
+A `ui.Surface` is drawn by the program itself, frame by frame, so its proofs come from playing it.
+`gfx-run.js` runs `init()`, `view()`, then fixed-step frames with scripted fingers, and draws chosen frames to SVG with `VeraGfx.paintGfx`, the phone's own painter, through the canvas recorder in `gfx-svg.js`:
+
+```bash
+node tools/vera-harness/gfx-run.js tools/vera-harness/examples/surface-catch.vera --frames=480 --dt=16 --every=60 \
+  --box=360x740 --out=/tmp/catch --events='[[5,"down",0,180,600],[6,"up",0,180,600],[100,"down",1,180,590],[160,"move",1,260,590],[260,"up",1,260,590]]'
+```
+
+An event is `[frame, phase, id, x, y]` in the surface's own units, delivered before that frame.
+The elapsed time is the step, not the clock, so a run draws the same frames every time.
+It writes `frame-NNNN.svg` and a `sheet.svg` of them side by side, and prints what each drawn frame held.
+`gfx-check.js` checks std/gfx, the surface's compile-time checks, colours, fitting and finger mapping, the smoke run, and that the sample game plays.
+
 The prompt workflow harness executes application request and repair methods with mocked HTTP responses:
 
 ```bash

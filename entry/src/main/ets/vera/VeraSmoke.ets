@@ -13,6 +13,7 @@ import { VirtualMachine, deserializeVbc2, RuntimeValue, RuntimeTrap, VeraNumberV
   VeraBooleanValue } from './VeraInterpreter'
 import { UiHostEnvironment, decodeVeraUi, VeraUiNode } from './VeraUi'
 import { CompileResult } from './VeraCompiler'
+import { decodeGfx, pointerValue } from './VeraGfx'
 
 /** Twice through the handlers: a list's second entry, a toggle switched back. */
 const PASSES: number = 2
@@ -23,11 +24,18 @@ function countNodes(node: VeraUiNode): number {
   return count
 }
 
-/** What a tap hands a handler: "12" reads as words and as a typed number alike. */
+/** What a tap hands a handler: "12" reads as words and as a typed number alike; a finger lands near a corner. */
 function plainValue(kind: string): RuntimeValue {
   if (kind === 'number') { return new VeraNumberValue(1) }
+  if (kind === 'pointer') { return pointerValue('down', 0, 12, 12) }
   if (kind === 'boolean') { return new VeraBooleanValue(true) }
   return new VeraStringValue('12')
+}
+
+/** Draw every ui.Surface in the frame once, as its first frame on the phone would: a draw() that traps is caught here. */
+function drawSurfaces(vm: VirtualMachine, node: VeraUiNode, state: RuntimeValue): void {
+  if (node.kind === 'surface' && node.label.length > 0) { decodeGfx(vm.execute(node.label, [state])) }
+  for (let child of node.children) { drawSurfaces(vm, child, state) }
 }
 
 function runaway(e: Object): boolean {
@@ -50,6 +58,7 @@ export function smokeRun(compiled: CompileResult, requireContent: boolean = true
     let roots = decodeVeraUi(vm.execute('view', [state]))
     let nodes = 0
     for (let root of roots) { nodes += countNodes(root) }
+    for (let root of roots) { drawSurfaces(vm, root, state) }
     // Nothing to see is a mistake whatever the person types.
     if (requireContent && nodes === 0) { return 'The program compiled, but view() drew nothing' }
     if (requireContent && nodes < 2) { return 'The program compiled, but view() drew an empty screen' }
@@ -75,7 +84,7 @@ export function smokeRun(compiled: CompileResult, requireContent: boolean = true
       }
       tapped.push(name)
       try {
-        decodeVeraUi(vm.execute('view', [state]))
+        for (let root of decodeVeraUi(vm.execute('view', [state]))) { drawSurfaces(vm, root, state) }
       } catch (e) {
         return diagnostic(e as Error, 'drawing the screen' + after(tapped))
       }

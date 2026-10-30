@@ -12,15 +12,19 @@ import { settings } from '../SettingsStore'
 import { trace } from '../VeraTiming'
 
 
-/** `language` is the skill prompt the page generates with (UI catalogue spliced in), for a custom section; '' for none. */
+/**
+ * `language` is the skill prompt the page generates with (UI catalogue spliced in), for a custom section; '' for none.
+ * `surfaceGuide` is rawfile vera-surface-skill.txt, for a game written whole on a ui.Surface; '' for none.
+ */
 export function appAgentHost(status: (text: string) => void, preview: (vbc2: string) => void,
-    cancelled: () => boolean = (): boolean => false, language: string = ''): AgentHost {
+    cancelled: () => boolean = (): boolean => false, language: string = '', surfaceGuide: string = ''): AgentHost {
   let host = new AgentHost()
   host.askPlan = (system: string, user: string, onText: (soFar: string) => void, think: boolean): Promise<string | null> =>
     deepseek.extractSketch(system, user, onText, think)
   host.askJev = (body: string): Promise<string> => askJev(body, settings.getSelectorKey())
   host.fillBlocks = (request: BlockRequest): Promise<BlockFill> => fillSections(request, appBlockCalls(settings.hasExaKey()))
   host.language = language
+  host.surfaceGuide = surfaceGuide
   host.askCode = (system: string, user: string, budget: number, think: boolean): Promise<string | null> =>
     deepseek.extractTemplateContent(system, user, budget, think ? 'A section of its own, thinking' : 'A section of its own', think)
   host.lookup = async (need: string): Promise<string> => {

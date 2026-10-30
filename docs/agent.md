@@ -10,6 +10,45 @@ screen. **The composer's parts and the catalogue's sections are chosen together*
 separate pick of sections and a layout from the request alone (`VeraTemplatePipeline.ets`, "the blocks", since deleted) used to follow the agent, and was
 removed from the route because it never served -- none of the 121 prompts of the table below, none of 22 more on the merged choice.
 
+## Games, toys, simulations, drawings: the surface route
+
+A request that is something moving on its own or touched anywhere -- an arcade game, a tank battle, bouncing balls, a
+drawing pad -- has no word in the plan of needs, and the parts would build it as a screen of buttons pretending to be one.
+So the route asks first (`agent/AgentSurface.ets`, before the agent in `buildScreen`):
+
+1. **Gate.** Only a request with a word that may mean such an app is asked about (`looksLikeSurface`, English and Chinese
+   word lists); a to-do list never pays for the question.
+2. **Brief.** One call to the plan model (`SURFACE_CLASSIFY_PROMPT`, no thinking, JSON): `surface` true or false, and when
+   true a short title and an original design -- goal, controls on a touch screen, objects, collisions, score, lives,
+   levels, the look in hex colours. A named game is taken as its genre and mechanics, never its levels, names or artwork.
+   A "no", or no answer, goes on to the agent as before.
+3. **Write.** The model writes the whole program on one `ui.Surface` (`SURFACE_TOKENS`), shown the generation prompt with its
+   catalogue cut to the surface's few components plus `std/gfx`, and its screen-composition advice replaced by
+   `rawfile/vera-surface-skill.txt`: the shape of a frame-driven program, controls (drag, tap, a stick on the left half
+   with fire on the right), collisions, limits, drawing and glow, and one complete example
+   (`tools/vera-harness/examples/surface-catch.vera`, carried verbatim).
+4. **Check.** Compiled, run once with every handler tapped (`VeraSmoke.ets`, which also draws every surface), then played
+   (`VeraSurfacePlay.ets`): a tap in the middle, drags across it, 240 frames of 16 ms, every frame drawn. A trap, a blank
+   surface or a scene that never changes is quoted back for a repair by edits (`repairProgram` with `checkSurfaceProgram`),
+   at most twice; still failing, the program is written once more with thinking on.
+5. **Served or not built.** A game that could not be written is reported as not built with the reason; the agent is not
+   tried for it. `--ps veraSurface 0` sends every request to the agent, for comparison. Chat widgets never take this route.
+
+Measured (deepseek-flash, 2026-10-30, one run each):
+
+| prompt | where | served in | written | repair rounds | lines |
+|---|---|---|---|---|---|
+| neon arkanoid | host | 23 s | once | 1 (a `.length` without its call) | 531 |
+| tank battle | host | 29 s | once | 1 (a missing local) | 650 |
+| 帮我做一个小时候红白机风格的坦克大战 | host | 21 s | once | 0 | 512 |
+| a drawing pad for kids with a few colours | host | 16 s | once | 1 | 237 |
+| neon arkanoid | phone, Generate screen | 32.6 s | once | -- | -- |
+
+"tic-tac-toe game" is not asked about and goes to the agent. On the phone the brick game plays in the preview at 50-56 fps
+with 8-9 ms of program and painting per frame. The designs and the text on screen come back in English whatever the
+request's language. Frames of the host runs are drawn with `tools/vera-harness/gfx-run.js`. Host check:
+`tools/vera-harness/surface-route-check.js`.
+
 ## Terms
 
 | term | what it is | where |

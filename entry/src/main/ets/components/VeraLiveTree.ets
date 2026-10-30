@@ -25,6 +25,8 @@ import { VeraUiNode } from '../vera/VeraUi'
 export class LiveNode {
   // Renderer measurement is live state, never program or saved state.
   @Trace layoutWidth: number = 0
+  /** ui.Surface with style fill: how tall it is drawn, from where it starts to the bottom of the window. */
+  @Trace layoutHeight: number = 0
   @Trace kind: string = ''
   @Trace style: string = ''
   @Trace text: string = ''

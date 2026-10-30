@@ -77,8 +77,12 @@ export async function settleProgram(source: string, prompt: string, host: AgentH
   return out
 }
 
+/** What decides whether a program passes: its diagnostics, '' when it does. */
+export type ProgramCheck = (source: string) => string
+
+/** `check` is what the program is held to after each round: by default compiling and running once (checkProgram). */
 export async function repairProgram(source: string, errors: string, prompt: string, language: string,
-    ask: CodeAsk): Promise<Repaired> {
+    ask: CodeAsk, check: ProgramCheck = checkProgram): Promise<Repaired> {
   let out = new Repaired()
   let started = Date.now()
   let current = source
@@ -91,7 +95,7 @@ export async function repairProgram(source: string, errors: string, prompt: stri
     let applied = applyRepair(current, reply)
     if (applied.source.length === 0) { problem = 'the edits did not apply: ' + applied.error; continue }
     current = applied.source
-    problem = checkProgram(current)
+    problem = check(current)
   }
   out.ms = Date.now() - started
   if (problem.length > 0) {

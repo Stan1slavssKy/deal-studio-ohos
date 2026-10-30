@@ -11,6 +11,7 @@ import {
   RuntimeTrap,
 } from './VeraInterpreter'
 import { resolveStyle } from './VeraUiCatalog'
+import { invokeStdGfx } from './VeraGfx'
 
 export class VeraUiNode {
   id: number = 0
@@ -458,6 +459,7 @@ export class UiHostEnvironment extends HostEnvironment {
     if (module === 'std/math') { return invokeStdMath(name, args) }
     if (module === 'std/strings') { return invokeStdStrings(name, args) }
     if (module === 'std/sdk') { return this.queueSdk(args) }
+    if (module === 'std/gfx') { return invokeStdGfx(name, args) }
     if (module !== 'std/ui') {
       throw new RuntimeTrap('R0015', `external function unavailable: ${module}.${name}`)
     }
@@ -578,6 +580,17 @@ export class UiHostEnvironment extends HostEnvironment {
           ['eventValue', new VeraNumberValue(argNum(args, 5))],
           ['enabled', new VeraBooleanValue(argBool(args, 6))],
           ['icon', new VeraStringValue(argString(args, 7))],
+        ])
+      case 'Surface':
+        // The surface's own units ride minimum and maximum, the draw function label, the frame handler action and
+        // the pointer handler value: VeraPreview reads them back under those names (see its surface branch).
+        return viewNode('surface', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['minimum', new VeraNumberValue(argNum(args, 1))],
+          ['maximum', new VeraNumberValue(argNum(args, 2))],
+          ['label', new VeraStringValue(argString(args, 3))],
+          ['action', new VeraStringValue(argString(args, 4))],
+          ['value', new VeraStringValue(argString(args, 5))],
         ])
       case 'Ticker':
         return viewNode('ticker', [

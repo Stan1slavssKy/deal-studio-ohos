@@ -21,6 +21,7 @@ size: those come from `VeraTheme.ets` and the renderer.
 | `ui.Scroll` | Layout | Scrolling group |
 | `ui.Grid` | Layout | Lays its children out in N equal columns, wrapping onto new rows |
 | `ui.Canvas` | Layout | One drawing: the ui.Path children share a single 0..100 field and overlap |
+| `ui.Surface` | Drawing | A box the program draws itself every frame with std/gfx shapes |
 | `ui.Spacer` | Layout | Vertical gap |
 | `ui.Divider` | Layout | A horizontal rule |
 | `ui.Text` | Content | A line of text |
@@ -528,6 +529,59 @@ Draws nothing; calls the handler, with 0, on the system back gesture.
 **Handler receives:** `int`
 
 > VERA has no separate navigation stack -- "screens" are just a state.screen-style field and ui.When choosing which View to draw. Add one ui.BackHandler wherever a screen other than the first is showing, so the hardware/system back gesture does something sensible (return to the previous screen, close a dialog) instead of the OS default, which exits the app. Leave it out of the first screen so back still exits normally. Only one should be live at a time; if several are drawn in the same frame the last one decoded wins.
+
+## Drawing frame by frame
+
+*a box the program paints itself*
+
+### `ui.Surface(style: string, width: number, height: number, draw: string, frame: string, pointer: string): View`
+
+A box the program draws itself every frame with std/gfx shapes, in its own units, and that a finger can touch: a game, a drawing pad, a simulation, an animated scene.
+
+**Styles:** `default` `fill`
+
+> For anything that moves continuously or is drawn freely: a game, a ball that bounces, a drawing or signature pad, a physics toy, a clock face that sweeps. Not for lists, forms or charts of data -- those have components. width and height are the surface's own units (say 360 by 640 for a phone-shaped game, 100 by 100 for a square): every position the program draws or receives is in them, and the renderer scales the whole surface to fit, so nothing depends on the size of the phone. draw names function draw(state: AppState): gfx.Shape[] -- it returns the shapes back to front and is called for every frame, so it must only read state. frame names function onFrame(state: AppState, elapsedMs: number): AppState, called before every frame (about 60 a second) with the milliseconds since the last one: move things by speed * elapsedMs / 1000 so the speed does not depend on the phone; pass "" for a surface that only changes when touched. pointer names function onPointer(state: AppState, p: gfx.Pointer): AppState, called when a finger goes down, moves, lifts or is cancelled, with p.x and p.y in surface units; pass "" for none. Style fill makes the surface run from where it starts to the bottom of the screen, for a full-screen game: put the score in the drawing, or a ui.Header above it. Keep what the game needs between frames -- positions, speeds, score, a seed for math.randomBelow -- in AppState, and keep the shapes out of it. A tap is a pointer "down" then "up"; a drag is "down", many "move", then "up".
+
+The renderer calls `frame` at the display's own rate (`@ohos.graphics.displaySync`, at most 100 ms reported per
+frame), then `draw`, and paints the shapes straight into an ArkUI `Canvas`; `view()` is re-run only every 100 ms
+while a surface is running, and the state is saved every 5 s and when a finger lifts. A trap in either function
+stops the loop and shows the error, as a ticker's does. The compiler checks the three functions' signatures
+(`E2106`), and the smoke run before a program is served draws every surface once and hands the pointer handler a
+finger.
+
+### `std/gfx`
+
+Always available as `gfx`. Every position and size is in the surface's own units.
+
+| function | what it draws or returns |
+|---|---|
+| `gfx.rect(x: number, y: number, width: number, height: number, color: string): Shape` | a filled rectangle; x, y is its top-left corner |
+| `gfx.roundRect(x: number, y: number, width: number, height: number, radius: number, color: string): Shape` | a filled rectangle with rounded corners |
+| `gfx.circle(x: number, y: number, radius: number, color: string): Shape` | a filled disc centred on x, y |
+| `gfx.arc(x: number, y: number, radius: number, startDegrees: number, sweepDegrees: number, lineWidth: number, color: string): Shape` | a stroked arc centred on x, y; 0 degrees is twelve o'clock and angles run clockwise; sweep 360 is a ring |
+| `gfx.line(x1: number, y1: number, x2: number, y2: number, lineWidth: number, color: string): Shape` | a straight line with round ends |
+| `gfx.polyline(points: number[], lineWidth: number, color: string): Shape` | a stroked open line through [x0, y0, x1, y1, ...]; for a graph, a trail, a drawn stroke |
+| `gfx.polygon(points: number[], color: string): Shape` | a filled closed shape through [x0, y0, x1, y1, ...]; for a star, a ship, a mountain |
+| `gfx.path(commands: string, color: string): Shape` | a filled SVG path (M L C Q A Z, absolute) in surface units |
+| `gfx.strokePath(commands: string, lineWidth: number, color: string): Shape` | an SVG path drawn as a line rather than filled |
+| `gfx.text(x: number, y: number, size: number, align: string, color: string, text: string, [bold: boolean]): Shape` | one line of text; align is "left", "center" or "right" about x, and y is the middle of the line |
+| `gfx.group(x: number, y: number, rotation: number, scale: number, alpha: number, shapes: Shape[]): Shape` | shapes drawn around their own 0, 0, moved to x, y, turned clockwise by rotation degrees, scaled, and faded by alpha (0..1) |
+| `gfx.rgb(red: number, green: number, blue: number, [alpha: number]): string` | a colour from 0..255 channels and an optional 0..1 alpha, for colours computed at run time |
+| `gfx.distance(x1: number, y1: number, x2: number, y2: number): number` | the distance between two points |
+| `gfx.inside(px: number, py: number, x: number, y: number, width: number, height: number): boolean` | whether point px, py lies in the rectangle x, y, width, height |
+
+`class gfx.Pointer { phase: string; id: number; x: number; y: number }` -- phase is one of
+`down`, `move`, `up`, `cancel`.
+
+A colour is a theme role -- `ink` `soft` `muted` `accent` `accentFill` `onAccent` `background` `surface` `line` `success` `warning` `danger` `white` `black` `clear` -- which follows the preset and dark mode,
+or `"#rrggbb"` / `"#rrggbbaa"`, or what `gfx.rgb` returns. A literal colour outside these, or an align other than
+`left`, `center` or `right`, is diagnostic `E2112`; a computed one that is not a colour is drawn in ink. One
+frame draws at most 4000 shapes, groups nest at most 12 deep and a polyline or polygon
+holds at most 1000 points; past any of them the frame traps with `R0028`.
+
+Host proofs: `tools/vera-harness/gfx-run.js` plays a program's surface with scripted fingers and draws chosen
+frames with the phone's own painter; `tools/vera-harness/gfx-check.js` checks all of the above against
+`tools/vera-harness/examples/surface-catch.vera`.
 
 ## Beyond the components
 
