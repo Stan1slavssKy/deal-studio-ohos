@@ -975,11 +975,15 @@ export struct VeraPreview {
     this.lastFrameAt = now
     this.framing = true
     try {
-      if (this.host !== null) { this.host!.effectsAllowed = false }
+      // A frame handler is a handler, as a ticker's is: it may ask the phone for something when its time comes (a
+      // vibration on each breath, a sound when the ball lands). Drawing may not.
+      if (this.host !== null) { this.host!.effectsAllowed = true }
       for (let node of this.liveSurfaces) {
         if (node.action.length === 0) { continue }
         this.currentState = this.vm!.execute(node.action, [this.currentState!, new VeraNumberValue(elapsed)])
       }
+      if (this.host !== null) { this.host!.effectsAllowed = false }
+      this.drainEffects()
       this.frameSplit[0] += Date.now() - now
       this.paintSurfaces()
       if (now - this.lastViewAt >= SURFACE_VIEW_MS) {
@@ -994,6 +998,11 @@ export struct VeraPreview {
         this.notifyStateSnapshot()
       }
     } catch (e) {
+      if (this.host !== null) {
+        this.host!.effectsAllowed = false
+        // What a frame that trapped half-way asked for is not done, as for a handler that traps.
+        this.host!.pendingEffects = []
+      }
       console.error('VERA-SURFACE frame TRAP err=' + (e as Error).message)
       this.error = 'Frame error: ' + (e as Error).message
       this.stopAllTimers()
@@ -1104,14 +1113,21 @@ export struct VeraPreview {
   private surfaceMove(action: string, value: RuntimeValue): void {
     if (this.vm === null || this.currentState === null) { return }
     try {
-      if (this.host !== null) { this.host!.effectsAllowed = false }
+      // A finger moving is the person's input, as its down and up are.
+      if (this.host !== null) { this.host!.effectsAllowed = true }
       this.currentState = this.vm!.execute(action, [this.currentState!, value])
+      if (this.host !== null) { this.host!.effectsAllowed = false }
+      this.drainEffects()
       // The frame loop paints and refreshes the tree itself; without one, this move is the frame.
       if (this.surfaceSync === null && this.surfaceTimer < 0) {
         this.paintSurfaces()
         if (Date.now() - this.lastViewAt >= SURFACE_VIEW_MS) { this.renderView(false) }
       }
     } catch (e) {
+      if (this.host !== null) {
+        this.host!.effectsAllowed = false
+        this.host!.pendingEffects = []
+      }
       console.error('VERA-SURFACE ' + action + ' TRAP err=' + (e as Error).message)
       this.error = 'Action error: ' + (e as Error).message
       this.stopAllTimers()

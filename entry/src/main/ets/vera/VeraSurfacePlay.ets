@@ -64,13 +64,20 @@ function findSurface(node: VeraUiNode): VeraUiNode | null {
   return null
 }
 
-/** The shapes of a frame as text, to tell whether two frames differ. */
+/**
+ * The shapes of a frame as text, to tell whether two frames differ: everything a shape is drawn from, so a circle that
+ * only grows (a breathing guide), a colour that pulses or a group that fades counts as a change.
+ */
 function fingerprint(ops: GfxOp[]): string {
   let parts: string[] = []
   for (let o of ops) {
+    let points = 0
+    for (let i = 0; i < o.points.length; i++) { points += o.points[i] * (i + 1) }
     parts.push(o.kind + ':' + Math.round(o.x * 10).toString() + ',' + Math.round(o.y * 10).toString() + ',' +
-      Math.round(o.w * 10).toString() + ',' + Math.round(o.h * 10).toString() + ',' + Math.round(o.start).toString() + ',' +
-      o.text + ',' + o.points.length.toString() + '[' + fingerprint(o.children) + ']')
+      Math.round(o.w * 10).toString() + ',' + Math.round(o.h * 10).toString() + ',' + Math.round(o.r * 10).toString() + ',' +
+      Math.round(o.start).toString() + ',' + Math.round(o.sweep).toString() + ',' + Math.round(o.size * 100).toString() + ',' +
+      o.color + ',' + o.text + ',' + o.points.length.toString() + ',' + Math.round(points).toString() +
+      '[' + fingerprint(o.children) + ']')
   }
   return parts.join(';')
 }
@@ -115,6 +122,17 @@ export function playSurface(compiled: CompileResult, requireSurface: boolean = t
   if (!(w > 0) || !(h > 0)) {
     return 'The program compiled, but its ui.Surface is ' + w.toString() + ' by ' + h.toString() + ': width and height must be positive'
   }
+  // Fingers, frames and buttons are handlers on the phone (VeraPreview): they may ask for phone actions, which the play
+  // asks for and drops. Only draw() runs with them refused.
+  let handle = (name: string, value: RuntimeValue): RuntimeValue => {
+    host.effectsAllowed = true
+    try {
+      return vm.execute(name, [state, value])
+    } finally {
+      host.effectsAllowed = false
+      host.pendingEffects = []
+    }
+  }
   let touches = script()
   let first = ''
   let changed = false
@@ -128,11 +146,11 @@ export function playSurface(compiled: CompileResult, requireSurface: boolean = t
       for (let t of touches) {
         if (t.frame !== frame || s.value.length === 0) { continue }
         where = 'in ' + s.value + ' (a finger ' + t.phase + ' at frame ' + frame.toString() + ')'
-        state = vm.execute(s.value, [state, pointerValue(t.phase, t.id, t.x * w, t.y * h)])
+        state = handle(s.value, pointerValue(t.phase, t.id, t.x * w, t.y * h))
       }
       if (s.action.length > 0) {
         where = 'in ' + s.action + ' at frame ' + frame.toString()
-        state = vm.execute(s.action, [state, new VeraNumberValue(PLAY_STEP_MS)])
+        state = handle(s.action, new VeraNumberValue(PLAY_STEP_MS))
       }
       where = 'in ' + s.label + ' at frame ' + frame.toString()
       let drawn = decodeGfx(vm.execute(s.label, [state]))
@@ -144,12 +162,12 @@ export function playSurface(compiled: CompileResult, requireSurface: boolean = t
       for (let b of buttons.slice(0, PRESSED_BUTTONS)) {
         if (changed) { break }
         where = 'in ' + b.action + ' (the button "' + b.text + '")'
-        state = vm.execute(b.action, [state, new VeraNumberValue(b.eventValue)])
+        state = handle(b.action, new VeraNumberValue(b.eventValue))
         let before = fingerprint(decodeGfx(vm.execute(s.label, [state])))
         for (let more = 1; more <= FRAMES_AFTER_PRESS && !changed; more++) {
           frame++
           where = 'in ' + s.action + ' at frame ' + frame.toString() + ', after the button "' + b.text + '"'
-          state = vm.execute(s.action, [state, new VeraNumberValue(PLAY_STEP_MS)])
+          state = handle(s.action, new VeraNumberValue(PLAY_STEP_MS))
           where = 'in ' + s.label + ' at frame ' + frame.toString() + ', after the button "' + b.text + '"'
           let drawn = fingerprint(decodeGfx(vm.execute(s.label, [state])))
           if (drawn !== before || drawn !== first) { changed = true }
