@@ -48,6 +48,13 @@ const TOP_LOGPROBS: number = 20
 const CONNECT_TIMEOUT: number = 5000
 // One question is one short letter reply, but the model can stall; give it room.
 const READ_TIMEOUT: number = 20000
+// How many questions to resolve at once. Each question is an independent short
+// call, so a multi-question batch goes from N×latency (sequential) to roughly
+// ceil(N/limit)×latency. Kept modest: dashscope answers a burst of parallel
+// requests with 429 limit_burst_rate, and while cloudPick's backoff recovers a
+// burst (correctness intact), too high a limit just re-earns 429s. 4 on dashscope
+// stays under the burst ceiling in practice.
+const JEV_CONCURRENCY: number = 4
 
 class TokenProb {
   token: string = ''
@@ -438,14 +445,28 @@ export async function askJevViaCloud(body: string): Promise<string> {
   let questions = questionsRaw as Record<string, Object>
   let keys = Object.keys(questions)
   if (keys.length === 0) { return emptyAnswersBody() }
-  // Sequential, not concurrent: dashscope rejects a burst of parallel requests
-  // with 429 limit_burst_rate, and a question is one short call each, so a brief
-  // spacing keeps the provider happy. Each call still retries on 429 (cloudPick).
-  let results: QAnswer[] = []
-  for (let key of keys) {
-    let q = questions[key] as Record<string, Object>
-    results.push(await answerQuestion(key, q, state, base, model, cloudKey))
+  // Bounded concurrency: each question is one short independent call, so a
+  // multi-question batch resolves in ~ceil(N/JEV_CONCURRENCY) round-trips instead
+  // of N. The bound stays modest (see JEV_CONCURRENCY): dashscope bursts 429 on
+  // too many simultaneous requests, and each call still retries 429 with backoff
+  // (cloudPick), so a burst is recovered, not lost. Answers are keyed, so order
+  // does not affect correctness; temperature=0 keeps each call deterministic.
+  let batchStart = Date.now()
+  let results: QAnswer[] = new Array<QAnswer>(keys.length)
+  let cursor = 0
+  let worker = async (): Promise<void> => {
+    while (true) {
+      let i = cursor
+      cursor++
+      if (i >= keys.length) { return }
+      let q = questions[keys[i]] as Record<string, Object>
+      results[i] = await answerQuestion(keys[i], q, state, base, model, cloudKey)
+    }
   }
+  let slotCount = Math.min(JEV_CONCURRENCY, keys.length)
+  let workers: Promise<void>[] = []
+  for (let w = 0; w < slotCount; w++) { workers.push(worker()) }
+  await Promise.all(workers)
   let answers: Record<string, Object> = {}
   let calibrated = 0
   for (let ans of results) {
@@ -463,7 +484,7 @@ export async function askJevViaCloud(body: string): Promise<string> {
     answers[ans.key] = entry
   }
   console.info('VERA-JEVPROXY batch model=' + model + ' questions=' + results.length.toString() +
-    ' calibrated=' + calibrated.toString())
+    ' calibrated=' + calibrated.toString() + ' elapsedMs=' + (Date.now() - batchStart).toString())
   noteService(SERVICE_JEV, true)
   let wrapper: Record<string, Object> = {}
   wrapper['answers'] = answers
