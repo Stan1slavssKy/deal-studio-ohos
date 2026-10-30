@@ -21,7 +21,7 @@ import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_NOT_BUILT } from '../vera/agent/VeraBuildRoute'
 import { app, PrimaryButton } from '../components/AppStyle'
-import { ChatStarters } from '../components/ChatStarters'
+import { ChatStarters, STARTERS_ZH, STARTERS_EN } from '../components/ChatStarters'
 
 const APP_NONE: string = 'none'
 const APP_DESCRIBING: string = 'describing'
@@ -940,7 +940,7 @@ struct ChatPage {
           // An empty chat offers ready-made first messages; a tap sends one, as if typed.
           if (this.messages.length === 0) {
             ListItem() {
-              ChatStarters({ onPick: (prompt: string): void => {
+              ChatStarters({ zh: STARTERS_ZH, en: STARTERS_EN, onPick: (prompt: string): void => {
                 if (this.busy) { return }
                 this.draft = prompt
                 this.send()

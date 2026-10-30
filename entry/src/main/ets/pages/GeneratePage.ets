@@ -36,6 +36,10 @@ import { drawsSurface, editSurfaceProgram, SurfaceEdit } from '../vera/agent/Age
 import { surfaceRouteEnabled } from '../vera/agent/AgentSurface'
 import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
+import { ChatStarters, APP_STARTERS } from '../components/ChatStarters'
+import { IconPicker, APP_ICONS } from '../components/IconPicker'
+import { projectIconResource } from '../vera/ProjectIcons'
+import { suggestAppName } from '../vera/AppName'
 import { app, PrimaryButton, TonalButton, QuietButton } from '../components/AppStyle'
 import { MetricCard, MetricTile, MetricChip, MetricLine } from '../components/MetricCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
@@ -62,6 +66,8 @@ const MODE_LOCAL: string = 'local'
 
 // The lower half of the screen is one pane at a time: the running program,
 // its source, or the numbers behind the run.
+/** The picture a new app starts with; the Save window lets it be changed. */
+const DEFAULT_APP_ICON: string = APP_ICONS[0]
 const TAB_PREVIEW: string = 'preview'
 const TAB_CODE: string = 'code'
 const TAB_METRICS: string = 'metrics'
@@ -310,6 +316,18 @@ struct GeneratePage {
   @State setupHint: string = ''
   /** The bytecode last saved as a version: Save is off while the program on screen is the one already saved. */
   @State savedVbc2: string = ''
+  /** The window that asks for a new app's name, open from the first Save; the name is what it offers or what was typed. */
+  @State naming: boolean = false
+  @State saveName: string = ''
+  @State saveIcon: string = DEFAULT_APP_ICON
+  /** The pictures to choose from, shown under the name once the picture is tapped. */
+  @State iconsOpen: boolean = false
+  /** The window that asks whether to save before leaving with a result that is not saved. */
+  @State leaving: boolean = false
+  /** Set when Save was chosen in the leaving window: the page closes once the save is done. */
+  private leaveAfterSave: boolean = false
+  /** Set just before the page closes itself, so that the back press it causes is not asked about again. */
+  private closing: boolean = false
   @State tab: string = TAB_PREVIEW
   @State attempts: AttemptMetrics[] = []
   @State totalMs: number = 0
@@ -480,6 +498,11 @@ struct GeneratePage {
     this.acceptedMetrics = this.copyMetrics(this.metricTotals)
   }
 
+  /** A new app has no project yet, so it has no versions; the id is empty until the first Save. */
+  private versionCount(): number {
+    return this.projectId.length === 0 ? 0 : store.listVersions(this.projectId).length
+  }
+
   private startNew(): void {
     this.savedVbc2 = ''
     this.historyOpen = false
@@ -513,7 +536,7 @@ struct GeneratePage {
     this.refinePrompt = ''
     this.lastRequest = ''
     this.composerOpen = true
-    this.nextVersionNumber = store.listVersions(this.projectId).length + 1
+    this.nextVersionNumber = this.versionCount() + 1
   }
 
   private hostContext(): common.Context {
@@ -533,7 +556,7 @@ struct GeneratePage {
     }
     let context = this.hostContext()
     store.init(context.filesDir)
-    let versions = store.listVersions(this.projectId)
+    let versions = this.projectId.length > 0 ? store.listVersions(this.projectId) : []
     this.nextVersionNumber = versions.length + 1
     if (this.baseVersionId.length > 0) {
       let v = store.getVersion(this.projectId, this.baseVersionId)
@@ -1818,8 +1841,84 @@ struct GeneratePage {
     this.status = 'Stopped'
   }
 
+  /** Save: a new app is named first, an app that already exists takes the result as its next version. */
   private doSave(): void {
     if (this.generating || this.compiledSource.length === 0 || !this.hasResult()) { return }
+    if (this.projectId.length === 0) {
+      this.saveName = suggestAppName(this.compiledSource, this.acceptedRequest)
+      this.saveIcon = DEFAULT_APP_ICON
+      this.iconsOpen = false
+      this.naming = true
+      return
+    }
+    this.commitSave()
+    this.afterSave()
+  }
+
+  /** The name was confirmed: the project is made now, with the default picture, and the result is its first version. */
+  private confirmName(): void {
+    let name = this.saveName.trim()
+    if (name.length === 0) { return }
+    let project = store.createProject(name, this.saveIcon)
+    this.projectId = project.id
+    this.naming = false
+    this.commitSave()
+    this.afterSave()
+  }
+
+  private cancelName(): void {
+    this.naming = false
+    this.leaveAfterSave = false
+  }
+
+  private afterSave(): void {
+    if (this.leaveAfterSave) {
+      this.leaveAfterSave = false
+      this.close()
+    }
+  }
+
+  private close(): void {
+    this.closing = true
+    this.getUIContext().getRouter().back()
+  }
+
+  /** A result that no version holds yet: the one thing Save can keep. */
+  private hasUnsavedResult(): boolean {
+    return this.hasResult() && !this.isSaved()
+  }
+
+  /**
+   * Whether leaving would throw something away: an unsaved result, a request typed into either box, or
+   * a generation still running. A request typed is work done, even if nothing was generated from it.
+   */
+  private hasUnsavedWork(): boolean {
+    return this.hasUnsavedResult() || this.prompt.trim().length > 0 || this.refinePrompt.trim().length > 0 ||
+      this.generating
+  }
+
+  /**
+   * Back with work that was never saved asks first, instead of dropping it. A screen with nothing on it,
+   * or with everything saved, goes straight back.
+   */
+  onBackPress(): boolean | void {
+    if (this.closing || this.naming) { return false }
+    if (this.leaving) { this.leaving = false; return true }
+    if (this.hasUnsavedWork()) {
+      this.leaving = true
+      return true
+    }
+    return false
+  }
+
+  private leaveSave(): void {
+    this.leaving = false
+    if (this.generating) { this.stopGeneration() }
+    this.leaveAfterSave = true
+    this.doSave()
+  }
+
+  private commitSave(): void {
     let note = this.acceptedRequest
     if (note.length > 100) { note = note.substring(0, 100) + '...' }
     let saved = store.createVersion(this.projectId, this.compiledSource, this.compiledVbc2, note,
@@ -1828,7 +1927,7 @@ struct GeneratePage {
     // Stay here: the next change is a refinement of what was just saved, and the next Save its own version.
     this.baseVersionId = saved.id
     this.baseVersionNumber = this.nextVersionNumber
-    this.nextVersionNumber = store.listVersions(this.projectId).length + 1
+    this.nextVersionNumber = this.versionCount() + 1
     this.savedVbc2 = this.compiledVbc2
     this.status = 'Saved as version ' + this.baseVersionNumber.toString()
     refreshForms()
@@ -2235,7 +2334,123 @@ struct GeneratePage {
     }
   }
 
+  /** The first Save of a new app: its name, offered from the program and open to change. */
+  @Builder
+  nameOverlay() {
+    Column() {
+      Column() {
+        Text('Save app').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 6 }).width('100%')
+        Text('Tap the picture to change it. Name and picture can be changed later too.')
+          .fontSize(13).fontColor(app.inkMuted).margin({ bottom: 16 }).width('100%')
+        // The picture and the name side by side, as they will sit in the list.
+        Row({ space: 12 }) {
+          Stack({ alignContent: Alignment.BottomEnd }) {
+            Image(projectIconResource(this.saveIcon)).width(48).height(48).objectFit(ImageFit.Contain)
+            Column() {
+              SymbolGlyph($r('sys.symbol.pencil_tip')).fontSize(11).fontColor([app.primaryInk])
+            }
+            .width(20).height(20)
+            .justifyContent(FlexAlign.Center)
+            .backgroundColor(app.surface)
+            .borderRadius(10)
+            .shadow({ radius: 2, color: '#30000000', offsetY: 1 })
+          }
+          .onClick(() => { this.iconsOpen = !this.iconsOpen })
+          TextInput({ placeholder: 'App name', text: this.saveName })
+            .onChange((value: string) => { this.saveName = value })
+            .onSubmit(() => { this.confirmName() })
+            .defaultFocus(true)
+            .selectAll(true)
+            .layoutWeight(1)
+            .height(44)
+        }
+        .width('100%')
+        if (this.iconsOpen) {
+          Column() {
+            IconPicker({ selected: this.saveIcon, onPick: (icon: string): void => { this.saveIcon = icon; this.iconsOpen = false } })
+          }
+          .width('100%')
+          .margin({ top: 12 })
+        }
+        Row({ space: 12 }) {
+          Button('Cancel')
+            .attributeModifier(new QuietButton())
+            .layoutWeight(1)
+            .onClick(() => { this.cancelName() })
+          Button('Save')
+            .attributeModifier(new PrimaryButton())
+            .layoutWeight(1)
+            .enabled(this.saveName.trim().length > 0)
+            .onClick(() => { this.confirmName() })
+        }
+        .width('100%')
+        .margin({ top: 20 })
+      }
+      .width('90%')
+      .padding(24)
+      .backgroundColor(app.surface)
+      .borderRadius(16)
+      .shadow({ radius: 8, color: '#30000000' })
+      // A tap inside the card is the card's, not a tap on the dimming behind it.
+      .onClick(() => {})
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#50000000')
+    .onClick(() => { this.cancelName() })
+  }
+
+  /** Back with a result that is not saved: save it, drop it, or stay. */
+  @Builder
+  leaveOverlay() {
+    Column() {
+      Column() {
+        // With a result there is something to save; with only a request typed, or a run under way, there is not.
+        Text(this.hasUnsavedResult() ? 'Save this app?' : 'Leave without generating?')
+          .fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 6 }).width('100%')
+        Text(this.hasUnsavedResult() ?
+          (this.projectId.length === 0 ? 'It is not saved yet. Leaving now discards it.' :
+            'This version is not saved yet. Leaving now discards it.') :
+          (this.generating ? 'A program is still being built. Leaving now stops it.' :
+            'What you typed has not been used yet. Leaving now discards it.'))
+          .fontSize(13).fontColor(app.inkMuted).margin({ bottom: 20 }).width('100%')
+        if (this.hasUnsavedResult()) {
+          Button('Save')
+            .attributeModifier(new PrimaryButton())
+            .width('100%')
+            .onClick(() => { this.leaveSave() })
+        }
+        Row({ space: 12 }) {
+          Button('Discard')
+            .attributeModifier(new QuietButton())
+            .layoutWeight(1)
+            .onClick(() => { this.leaving = false; if (this.generating) { this.stopGeneration() } this.close() })
+          Button('Keep editing')
+            .attributeModifier(new QuietButton())
+            .layoutWeight(1)
+            .onClick(() => { this.leaving = false })
+        }
+        .width('100%')
+        .margin({ top: this.hasUnsavedResult() ? 12 : 0 })
+      }
+      .width('90%')
+      .padding(24)
+      .backgroundColor(app.surface)
+      .borderRadius(16)
+      .shadow({ radius: 8, color: '#30000000' })
+      .onClick(() => {})
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#50000000')
+    .onClick(() => { this.leaving = false })
+  }
+
   build() {
+    // The windows are siblings of the page, not children of its content: their dimming then covers the title bar too.
+    Stack() {
     Navigation() {
       Column() {
         if (this.baseError.length > 0 && !this.keyboardOpen) {
@@ -2503,6 +2718,20 @@ struct GeneratePage {
                 .width('100%')
                 .padding({ left: 12, right: 12, top: 6, bottom: 2 })
               VeraPreview({ previewOnly: true, vbc2: this.previewVbc2 })
+            } else if (!this.generating && this.baseVersionId.length === 0 && this.prompt.trim().length === 0) {
+              // Nothing asked for yet: ready-made requests to start from, as an empty chat has. A tap fills the box and starts.
+              Scroll() {
+                ChatStarters({ en: APP_STARTERS, flat: true, onPick: (prompt: string): void => {
+                  if (this.generating) { return }
+                  this.prompt = prompt
+                  this.doGenerate()
+                } })
+                  .padding({ left: 8, right: 8, bottom: 8 })
+              }
+              .layoutWeight(1)
+              .width('100%')
+              .scrollBar(BarState.Off)
+              .align(Alignment.Top)
             } else {
               Column({ space: 12 }) {
                 Text(this.generating ? 'Building...' : 'The program will run here once it compiles')
@@ -2628,8 +2857,19 @@ struct GeneratePage {
       .width('100%')
       .height('100%')
     }
-    .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.nextVersionNumber.toString() : 'Generate')
+    .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.nextVersionNumber.toString() :
+      (this.projectId.length === 0 ? 'New app' : 'Generate'))
     .titleMode(NavigationTitleMode.Mini)
     .backgroundColor(app.background)
+
+    if (this.naming) {
+      this.nameOverlay()
+    }
+    if (this.leaving) {
+      this.leaveOverlay()
+    }
+    }
+    .width('100%')
+    .height('100%')
   }
 }

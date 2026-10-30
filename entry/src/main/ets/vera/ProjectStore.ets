@@ -14,6 +14,8 @@ export class ProjectSummary {
   versions: number = 0
   /** The request the latest version began as. */
   request: string = ''
+  /** The program of its latest version that runs, for a picture of it; empty when there is none. */
+  vbc2: string = ''
   /** When it was last worked on: its latest version, or its creation when it has none. */
   updatedAt: number = 0
 }
@@ -208,6 +210,9 @@ export class ProjectStore {
     if (versions.length > 0) {
       summary.updatedAt = Math.max(project.createdAt, versions[0].createdAt)
       summary.request = requestHeadline(versions[0].prompt, versions[0].note)
+      for (let v of versions) {
+        if (v.vbc2.length > 0) { summary.vbc2 = v.vbc2; break }
+      }
     }
     this.summaries.set(project.id, summary)
     return summary

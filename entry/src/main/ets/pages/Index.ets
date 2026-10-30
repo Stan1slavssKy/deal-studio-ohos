@@ -6,9 +6,8 @@ import { consent } from '../vera/VeraConsentStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { projectIconResource } from '../vera/ProjectIcons'
 import { common } from '@kit.AbilityKit'
-import { app, PrimaryButton, QuietButton, DangerButton } from '../components/AppStyle'
-
-const ICONS: string[] = ['📱', '🎮', '📊', '🧮', '🎯', '📝', '🔧', '🎨', '🌍', '⚡']
+import { app, PrimaryButton, DangerButton } from '../components/AppStyle'
+import { VeraPreview } from '../components/VeraPreview'
 
 class ProjectNavParams {
   projectId: string = ''
@@ -20,14 +19,35 @@ class ProjectRow {
   summary: ProjectSummary = new ProjectSummary()
 }
 
+/** The rows, handed to a LazyForEach so only the ones on screen build their picture. */
+class RowSource implements IDataSource {
+  rows: ProjectRow[] = []
+  private listeners: DataChangeListener[] = []
+
+  totalCount(): number { return this.rows.length }
+  getData(index: number): ProjectRow { return this.rows[index] }
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (this.listeners.indexOf(listener) < 0) { this.listeners.push(listener) }
+  }
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const at = this.listeners.indexOf(listener)
+    if (at >= 0) { this.listeners.splice(at, 1) }
+  }
+  replace(rows: ProjectRow[]): void {
+    this.rows = rows
+    for (const l of this.listeners) { l.onDataReloaded() }
+  }
+}
+
+/** How tall the picture of a program is on its row, in vp; the program is drawn at twice this, then halved. */
+const THUMB_HEIGHT: number = 150
+
 @Entry
 @Component
 struct Index {
   @State projects: ProjectRow[] = []
-  @State showCreate: boolean = false
+  private source: RowSource = new RowSource()
   @State deletionPending: boolean = false
-  @State newName: string = ''
-  @State selectedIcon: string = '📱'
 
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext()
@@ -52,6 +72,7 @@ struct Index {
     }
     rows.sort((a: ProjectRow, b: ProjectRow): number => b.summary.updatedAt - a.summary.updatedAt)
     this.projects = rows
+    this.source.replace(rows)
   }
 
   private openChat(): void {
@@ -59,86 +80,116 @@ struct Index {
       .catch((e: Error): void => { console.error('Navigate to chats failed: ' + e.message) })
   }
 
+  /**
+   * A new app starts on the Generate screen with no project behind it: nothing is asked for
+   * and nothing is made until the first Save, which offers a name taken from the program.
+   */
   private openCreate(): void {
-    this.showCreate = true
-    this.newName = ''
-    this.selectedIcon = '📱'
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/GeneratePage' })
+      .catch((e: Error): void => { console.error('Navigate to generate failed: ' + e.message) })
   }
 
   build() {
-    // The dialog is a sibling of the page, not a child of its content: its dimming then covers the title and the toolbar too.
     Stack() {
       Navigation() {
-        if (this.projects.length === 0) {
-          Column() {
-            Text('No projects yet').fontSize(18).fontColor(app.inkMuted).margin({ top: 120 })
-            Text('Tap New Project to create your first VERA app').fontSize(14).fontColor(app.inkDisabled).margin({ top: 8 })
-          }.width('100%').alignItems(HorizontalAlign.Center)
-        } else {
-          List({ space: 12 }) {
-            ForEach(this.projects, (row: ProjectRow) => {
-              ListItem() {
-                this.projectRow(row)
-              }
-              .swipeAction({
-                end: {
-                  builder: () => { this.deleteAction(row.project.id) }
-                }
-              })
-            }, (row: ProjectRow) => row.project.id)
+        List({ space: 12 }) {
+          // The two things to do: talk, or make an app. Everything made so far is listed below.
+          ListItem() {
+            Row({ space: 12 }) {
+              this.entryCard('Chat', 'Ask, plan, get a card', 'sys.symbol.ellipsis_message', false, () => { this.openChat() })
+              this.entryCard('Create app', 'Describe it, run it', 'sys.symbol.plus', true, () => { this.openCreate() })
+            }
+            .width('100%')
           }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8 })
+          if (this.projects.length > 0) {
+            ListItem() {
+              Text('My apps').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkSoft)
+                .width('100%').padding({ left: 4, top: 8 })
+            }
+          }
+          LazyForEach(this.source, (row: ProjectRow) => {
+            ListItem() {
+              this.projectRow(row)
+            }
+            .swipeAction({
+              end: {
+                builder: () => { this.deleteAction(row.project.id) }
+              }
+            })
+          // Keyed by what a row shows, so a rename, a new picture or a saved version redraws it.
+          }, (row: ProjectRow) => row.project.id + '|' + row.project.name + '|' + row.project.icon + '|' +
+            row.summary.versions.toString() + '|' + row.summary.updatedAt.toString())
         }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 8 })
+        .scrollBar(BarState.Off)
       }
-      .title('VERA')
-      .titleMode(NavigationTitleMode.Full)
+      .title(this.homeTitle)
+      .titleMode(NavigationTitleMode.Mini)
+      // The first screen: there is nowhere to go back to.
+      .hideBackButton(true)
       .backgroundColor(app.background)
-      .toolbarConfiguration([{
-        value: 'Chat',
-        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.ellipsis_message')),
-        status: ToolbarItemStatus.NORMAL,
-        action: () => { this.openChat() }
-      }, {
-        value: 'New Project',
-        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),
-        status: ToolbarItemStatus.NORMAL,
-        action: () => { this.openCreate() }
-      }])
-
-      if (this.showCreate) {
-        this.createDialog()
-      }
     }
     .width('100%')
     .height('100%')
   }
 
-  /** One project: what it is (the request it began as), how much work is in it, and when it was last worked on. */
+  /** One of the two ways in: a tall card, the primary one filled. */
+  @Builder
+  entryCard(title: string, hint: string, symbol: string, primary: boolean, go: () => void) {
+    Column({ space: 6 }) {
+      SymbolGlyph($r(symbol)).fontSize(30).fontColor([primary ? app.onPrimary : app.primaryInk])
+      Text(title).fontSize(18).fontWeight(FontWeight.Bold).fontColor(primary ? app.onPrimary : app.inkStrong)
+        .margin({ top: 8 })
+      Text(hint).fontSize(13).fontColor(primary ? app.onPrimary : app.inkSoft).opacity(primary ? 0.85 : 1)
+    }
+    .alignItems(HorizontalAlign.Start)
+    .layoutWeight(1)
+    .padding(16)
+    .height(130)
+    .justifyContent(FlexAlign.End)
+    .borderRadius(16)
+    .backgroundColor(primary ? app.primary : app.surface)
+    .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
+    .onClick(go)
+  }
+
+  /**
+   * One project: a still picture of its latest program on top, then what it is (the request it
+   * began as), how much work is in it, and when it was last worked on. A project with no program
+   * that runs has the picture left out.
+   */
   @Builder
   projectRow(row: ProjectRow) {
-    Row() {
-      Image(projectIconResource(row.project.icon))
-        .width(44).height(44).objectFit(ImageFit.Contain).margin({ right: 14 })
-      Column({ space: 2 }) {
-        Text(row.project.name).fontSize(17).fontWeight(FontWeight.Medium).maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        if (row.summary.request.length > 0) {
-          Text(row.summary.request).fontSize(13).fontColor(app.inkSoft).maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        Text(versionCountText(row.summary.versions) + ' · ' + new Date(row.summary.updatedAt).toLocaleDateString())
-          .fontSize(12).fontColor(app.inkMuted)
+    Column() {
+      if (row.summary.vbc2.length > 0) {
+        this.thumbnail(row.summary.vbc2)
       }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
+      Row() {
+        Image(projectIconResource(row.project.icon))
+          .width(44).height(44).objectFit(ImageFit.Contain).margin({ right: 14 })
+        Column({ space: 2 }) {
+          Text(row.project.name).fontSize(17).fontWeight(FontWeight.Medium).maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (row.summary.request.length > 0) {
+            Text(row.summary.request).fontSize(13).fontColor(app.inkSoft).maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          Text(versionCountText(row.summary.versions) + ' · ' + new Date(row.summary.updatedAt).toLocaleDateString())
+            .fontSize(12).fontColor(app.inkMuted)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
 
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(18).fontColor([app.inkDisabled])
+        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(18).fontColor([app.inkDisabled])
+      }
+      .width('100%')
+      .padding(14)
     }
     .width('100%')
-    .padding(14)
     .backgroundColor(app.surface)
     .borderRadius(12)
+    .clip(true)
     .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
     .onClick(() => {
       let nav = new ProjectNavParams()
@@ -150,6 +201,24 @@ struct Index {
     .bindContextMenu(this.rowMenu(row.project.id), ResponseType.LongPress)
   }
 
+  /**
+   * The program as it starts, drawn by the same renderer with taps and timers off (previewOnly), at
+   * twice the width and half the size so a whole screen's worth of it fits in a short strip.
+   */
+  @Builder
+  thumbnail(vbc2: string) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      VeraPreview({ previewOnly: true, embedded: true, vbc2: vbc2 })
+        .width('200%')
+        .scale({ x: 0.5, y: 0.5, centerX: 0, centerY: 0 })
+        .hitTestBehavior(HitTestMode.None)
+    }
+    .width('100%')
+    .height(THUMB_HEIGHT)
+    .clip(true)
+    .backgroundColor(app.background)
+  }
+
   @Builder
   rowMenu(id: string) {
     Menu() {
@@ -158,59 +227,14 @@ struct Index {
     }
   }
 
+  /** A compact bar, as on the other screens: a small mark and what the screen holds. */
   @Builder
-  createDialog() {
-    Column() {
-      Column() {
-        Text('New Project').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 })
-
-        TextInput({ placeholder: 'Project name', text: this.newName })
-          .onChange((value: string) => { this.newName = value })
-          .width('100%')
-          .height(44)
-          .margin({ bottom: 16 })
-
-        Text('Icon').fontSize(14).fontColor(app.inkSoft).margin({ bottom: 8 })
-        Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-          ForEach(ICONS, (icon: string) => {
-            Image(projectIconResource(icon))
-              .width(40)
-              .height(40)
-              .objectFit(ImageFit.Contain)
-              .padding(6)
-              .backgroundColor(this.selectedIcon === icon ? app.primaryFill : '#00000000')
-              .borderRadius(8)
-              .onClick(() => { this.selectedIcon = icon })
-          }, (icon: string) => icon)
-        }.width('100%')
-
-        Row({ space: 12 }) {
-          Button('Cancel')
-            .attributeModifier(new QuietButton())
-            .layoutWeight(1)
-            .onClick(() => { this.showCreate = false })
-          Button('Create')
-            .attributeModifier(new PrimaryButton())
-            .layoutWeight(1)
-            .enabled(this.newName.trim().length > 0)
-            .onClick(() => { this.doCreate() })
-        }
-        .width('100%')
-        .margin({ top: 20 })
-      }
-      .width('90%')
-      .padding(24)
-      .backgroundColor(app.surface)
-      .borderRadius(16)
-      .shadow({ radius: 8, color: '#30000000' })
-      // A tap inside the card is the card's, not a tap on the dimming behind it.
-      .onClick(() => {})
+  homeTitle() {
+    Row({ space: 8 }) {
+      Image($r('app.media.vera_mark')).width(28).height(28).objectFit(ImageFit.Contain)
+      Text('VERA').fontSize(20).fontWeight(FontWeight.Bold).fontColor(app.inkStrong)
     }
-    .width('100%')
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor('#50000000')
-    .onClick(() => { this.showCreate = false })
+    .padding({ left: 16 })
   }
 
   @Builder
@@ -259,18 +283,5 @@ struct Index {
         console.error('Show deletion error failed: ' + (toastError as Error).message)
       }
     }
-  }
-
-  private doCreate(): void {
-    let name = this.newName.trim()
-    if (name.length === 0) { return }
-    let project = store.createProject(name, this.selectedIcon)
-    this.showCreate = false
-    this.reload()
-    refreshForms()
-    let nav = new ProjectNavParams()
-    nav.projectId = project.id
-    this.getUIContext().getRouter().pushUrl({ url: 'pages/ProjectPage', params: nav })
-      .catch((e: Error): void => { console.error('Navigate to project failed: ' + e.message) })
   }
 }

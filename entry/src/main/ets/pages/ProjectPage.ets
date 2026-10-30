@@ -1,6 +1,7 @@
 import { Project, Version, VersionMetrics, store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { projectIconResource } from '../vera/ProjectIcons'
+import { IconPicker } from '../components/IconPicker'
 import { requestHeadline, changeNote, versionCountText } from '../vera/ProjectText'
 import { projectOperations, ProjectOperationStatus, ProjectShortcutState } from '../vera/ProjectOperations'
 import { common } from '@kit.AbilityKit'
@@ -38,6 +39,8 @@ struct ProjectPage {
   @State viewedPrompt: string = ''
   @State renaming: boolean = false
   @State renameText: string = ''
+  /** The window of pictures, opened by a tap on the app's picture; a tap on one applies it. */
+  @State pickingIcon: boolean = false
 
   aboutToAppear(): void {
     this.pageVisible = true
@@ -110,10 +113,21 @@ struct ProjectPage {
       Column() {
         if (this.project !== null) {
           Row() {
-            Image(projectIconResource(this.project!.icon))
-              .width(56).height(56).objectFit(ImageFit.Contain).margin({ right: 16 })
+            // The picture and the name are the controls for changing them: a pencil says so.
+            Stack({ alignContent: Alignment.BottomEnd }) {
+              Image(projectIconResource(this.project!.icon))
+                .width(56).height(56).objectFit(ImageFit.Contain)
+              this.pencilBadge()
+            }
+            .margin({ right: 16 })
+            .onClick(() => { this.pickingIcon = true })
             Column() {
-              Text(this.project!.name).fontSize(22).fontWeight(FontWeight.Bold)
+              Row({ space: 6 }) {
+                Text(this.project!.name).fontSize(22).fontWeight(FontWeight.Bold)
+                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1)
+                SymbolGlyph($r('sys.symbol.pencil_tip')).fontSize(16).fontColor([app.inkMuted])
+              }
+              .onClick(() => { this.renameText = this.project!.name; this.renaming = true })
               Text(versionCountText(this.versions.length))
                 .fontSize(14).fontColor(app.inkMuted).margin({ top: 4 })
             }.alignItems(HorizontalAlign.Start).layoutWeight(1)
@@ -140,7 +154,6 @@ struct ProjectPage {
               .bindMenu([
                 { value: this.shortcutButtonLabel(), action: () => { this.onShortcutMenu() },
                   enabled: this.shortcutMenuEnabled() },
-                { value: 'Rename', action: () => { this.renameText = this.project!.name; this.renaming = true } },
                 { value: 'Delete project', action: () => { this.confirmDeleteProject() } }
               ])
           }
@@ -254,6 +267,9 @@ struct ProjectPage {
     }
     if (this.renaming) {
       this.renameOverlay()
+    }
+    if (this.pickingIcon) {
+      this.iconOverlay()
     }
     }
     .width('100%')
@@ -632,7 +648,7 @@ struct ProjectPage {
   renameOverlay() {
     Column() {
       Column() {
-        Text('Rename').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 })
+        Text('Rename').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 }).width('100%')
         TextInput({ placeholder: 'Project name', text: this.renameText })
           .onChange((value: string) => { this.renameText = value })
           .width('100%')
@@ -663,6 +679,50 @@ struct ProjectPage {
     .justifyContent(FlexAlign.Center)
     .backgroundColor('#50000000')
     .onClick(() => { this.renaming = false })
+  }
+
+  /** A picture was chosen: it applies at once and the window closes. */
+  private setIcon(icon: string): void {
+    if (this.project === null) { return }
+    this.pickingIcon = false
+    if (icon === this.project!.icon) { return }
+    store.updateProject(this.projectId, this.project!.name, icon)
+    this.reload()
+    refreshForms()
+  }
+
+  /** A small pencil on a corner of the picture. */
+  @Builder
+  pencilBadge() {
+    Column() {
+      SymbolGlyph($r('sys.symbol.pencil_tip')).fontSize(12).fontColor([app.primaryInk])
+    }
+    .width(22).height(22)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(app.surface)
+    .borderRadius(11)
+    .shadow({ radius: 2, color: '#30000000', offsetY: 1 })
+  }
+
+  @Builder
+  iconOverlay() {
+    Column() {
+      Column() {
+        Text('Picture').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 12 }).width('100%')
+        IconPicker({ selected: this.project !== null ? this.project!.icon : '', onPick: (icon: string): void => { this.setIcon(icon) } })
+      }
+      .width('90%')
+      .padding(24)
+      .backgroundColor(app.surface)
+      .borderRadius(16)
+      .shadow({ radius: 8, color: '#30000000' })
+      .onClick(() => {})
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#50000000')
+    .onClick(() => { this.pickingIcon = false })
   }
 
   private doRename(): void {

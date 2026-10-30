@@ -267,6 +267,32 @@ For 旅行计划 the presenter pastes a travel-guide link as the next message wh
 the model asks. Chat cannot open the link itself: the plan comes from the
 model's own knowledge and web search, with the link as context.
 
+## 7. Starting a new app
+
+New Project on the home screen opens the Generate screen at once: no name or
+picture is asked for, and no project exists yet. An empty Generate screen lists
+eight prompts (`APP_STARTERS` in
+`entry/src/main/ets/components/ChatStarters.ets`, English only, as the generator
+wants): sections 1, 2, 3a and 3 above, then the wind-down request
+("I'm in bed, don't know what to do, create an app for me"), then the three chat
+starters of section 6 in English; a tap fills the box and starts generating.
+
+The project is made at the first **Save**, which asks for its name and offers
+one: the title of the program's own `ui.Header`, else the first words of the
+request, else "New app" (`vera/AppName.ets`). The window shows the picture beside the name; a
+tap on the picture opens the ten to choose from (`components/IconPicker.ets`), the
+phone being the one to start with. On the project page the picture and the name
+are the controls too: a tap on either changes it, and a pencil marks them. Saves
+after that are new versions with no question.
+
+**Back** with work that was not saved asks first. With a result that no version
+holds it asks "Save this app?" (Save, Discard, Keep editing), for a new app and
+for a refine of an existing one. With only a request typed into either box, or a
+run under way, there is nothing to save, so it asks "Leave without generating?"
+(Discard, Keep editing). Back from an empty screen, or with everything saved,
+leaves at once, and a new app that was never saved leaves nothing behind in the
+list.
+
 ## What none of the prompts say
 
 None of them mentions `intent`, `calendar`, a bundle name or a parameter. The model
