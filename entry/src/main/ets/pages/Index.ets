@@ -1,287 +1,291 @@
-import { Project, ProjectSummary, store } from '../vera/ProjectStore'
-import { versionCountText } from '../vera/ProjectText'
-import { SymbolGlyphModifier } from '@kit.ArkUI'
-import { projectOperations, ProjectOperationStatus } from '../vera/ProjectOperations'
+import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
+import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
-import { refreshForms } from '../vera/FormUpdater'
 import { projectIconResource } from '../vera/ProjectIcons'
-import { common } from '@kit.AbilityKit'
-import { app, PrimaryButton, DangerButton } from '../components/AppStyle'
-import { VeraPreview } from '../components/VeraPreview'
+import { app } from '../components/AppStyle'
+import { APP_STARTERS, ChatStarter, STARTERS_EN } from '../components/ChatStarters'
+import { ProjectNavParams, ProjectRow, confirmDeleteProject, loadProjectRows, tileTint } from '../components/ProjectRows'
 
-class ProjectNavParams {
-  projectId: string = ''
-}
+/** Width of one label in the Chat / App switch, in vp. */
+const MODE_TAB_WIDTH: number = 112
 
-/** A project and what its row shows of it. */
-class ProjectRow {
-  project: Project = new Project()
-  summary: ProjectSummary = new ProjectSummary()
-}
-
-/** The rows, handed to a LazyForEach so only the ones on screen build their picture. */
-class RowSource implements IDataSource {
-  rows: ProjectRow[] = []
-  private listeners: DataChangeListener[] = []
-
-  totalCount(): number { return this.rows.length }
-  getData(index: number): ProjectRow { return this.rows[index] }
-  registerDataChangeListener(listener: DataChangeListener): void {
-    if (this.listeners.indexOf(listener) < 0) { this.listeners.push(listener) }
-  }
-  unregisterDataChangeListener(listener: DataChangeListener): void {
-    const at = this.listeners.indexOf(listener)
-    if (at >= 0) { this.listeners.splice(at, 1) }
-  }
-  replace(rows: ProjectRow[]): void {
-    this.rows = rows
-    for (const l of this.listeners) { l.onDataReloaded() }
-  }
-}
-
-/** How tall the picture of a program is on its row, in vp; the program is drawn at twice this, then halved. */
-const THUMB_HEIGHT: number = 150
+/** Height of the zone above the box, in vp: the apps in one mode, the ready-made requests in the other, so the centre never moves. */
+const ZONE_HEIGHT: number = 150
 
 @Entry
 @Component
 struct Index {
   @State projects: ProjectRow[] = []
-  private source: RowSource = new RowSource()
-  @State deletionPending: boolean = false
+  /** What the box at the bottom is for: talking, or making an app. */
+  @State makeApp: boolean = true
+  @State draft: string = ''
+  /** The box has the keyboard: the greeting and the zone give up their room to it. */
+  @State typing: boolean = false
 
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext()
     if (context === undefined) { throw new Error('Project library host context is unavailable') }
     store.init(context.filesDir)
     consent.init(context.filesDir)
+    // Shrink the page for the keyboard instead of panning it, so the box and its button stay in view.
+    this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)
     this.reload()
   }
 
   onPageShow(): void {
     this.reload()
+    // Coming back, the box would take the focus again and open the keyboard over the apps; the person taps it when they want it.
+    setTimeout(() => {
+      try { this.getUIContext().getFocusController().clearFocus() } catch (e) { console.warn('VERA clearFocus failed: ' + (e as Error).message) }
+    }, 250)
   }
 
-  /** Newest work first: by when a project's latest version was saved, or when it was made if it has none. */
   private reload(): void {
-    let rows: ProjectRow[] = []
-    for (let project of store.listProjects()) {
-      let row = new ProjectRow()
-      row.project = project
-      row.summary = store.summaryOf(project)
-      rows.push(row)
-    }
-    rows.sort((a: ProjectRow, b: ProjectRow): number => b.summary.updatedAt - a.summary.updatedAt)
-    this.projects = rows
-    this.source.replace(rows)
+    this.projects = loadProjectRows()
   }
 
-  private openChat(): void {
-    this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatPage' })
+  private setMode(makeApp: boolean): void {
+    if (this.makeApp === makeApp) { return }
+    this.getUIContext().animateTo({ duration: 220, curve: Curve.FastOutSlowIn }, () => { this.makeApp = makeApp })
+  }
+
+  /** `run` sends what was typed straight away; otherwise it waits in the box of the next page. */
+  private openChat(prompt: string, run: boolean): void {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatPage', params: { prompt: prompt, run: run ? '1' : '' } })
       .catch((e: Error): void => { console.error('Navigate to chats failed: ' + e.message) })
+  }
+
+  private openHistory(): void {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatListPage' })
+      .catch((e: Error): void => { console.error('Navigate to chat list failed: ' + e.message) })
+  }
+
+  private openApps(): void {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/AppsPage' })
+      .catch((e: Error): void => { console.error('Navigate to apps failed: ' + e.message) })
   }
 
   /**
    * A new app starts on the Generate screen with no project behind it: nothing is asked for
    * and nothing is made until the first Save, which offers a name taken from the program.
    */
-  private openCreate(): void {
-    this.getUIContext().getRouter().pushUrl({ url: 'pages/GeneratePage' })
+  private openCreate(prompt: string, run: boolean): void {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/GeneratePage', params: { prompt: prompt, run: run ? '1' : '' } })
       .catch((e: Error): void => { console.error('Navigate to generate failed: ' + e.message) })
   }
 
+  /** What the box and a ready-made request do: go to the page of the current mode with the text, and start it if there is any. */
+  private submit(text: string): void {
+    let request = text.trim()
+    this.draft = ''
+    if (this.makeApp) { this.openCreate(request, request.length > 0) } else { this.openChat(request, request.length > 0) }
+  }
+
   build() {
-    Stack() {
-      Navigation() {
-        List({ space: 12 }) {
-          // The two things to do: talk, or make an app. Everything made so far is listed below.
-          ListItem() {
-            Row({ space: 12 }) {
-              this.entryCard('Chat', 'Ask, plan, get a card', 'sys.symbol.ellipsis_message', false, () => { this.openChat() })
-              this.entryCard('Create app', 'Describe it, run it', 'sys.symbol.plus', true, () => { this.openCreate() })
-            }
-            .width('100%')
-          }
-          if (this.projects.length > 0) {
-            ListItem() {
-              Text('My apps').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkSoft)
-                .width('100%').padding({ left: 4, top: 8 })
-            }
-          }
-          LazyForEach(this.source, (row: ProjectRow) => {
-            ListItem() {
-              this.projectRow(row)
-            }
-            .swipeAction({
-              end: {
-                builder: () => { this.deleteAction(row.project.id) }
-              }
-            })
-          // Keyed by what a row shows, so a rename, a new picture or a saved version redraws it.
-          }, (row: ProjectRow) => row.project.id + '|' + row.project.name + '|' + row.project.icon + '|' +
-            row.summary.versions.toString() + '|' + row.summary.updatedAt.toString())
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8 })
-        .scrollBar(BarState.Off)
+    Column() {
+      this.topBar()
+      this.middle()
+      if (!this.typing) {
+        this.zone()
       }
-      .title(this.homeTitle)
-      .titleMode(NavigationTitleMode.Mini)
-      // The first screen: there is nowhere to go back to.
-      .hideBackButton(true)
-      .backgroundColor(app.background)
+      this.promptBox()
     }
     .width('100%')
     .height('100%')
+    .backgroundColor(app.background)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
   }
 
-  /** One of the two ways in: a tall card, the primary one filled. */
+  /** The saved chats, at the right. */
   @Builder
-  entryCard(title: string, hint: string, symbol: string, primary: boolean, go: () => void) {
-    Column({ space: 6 }) {
-      SymbolGlyph($r(symbol)).fontSize(30).fontColor([primary ? app.onPrimary : app.primaryInk])
-      Text(title).fontSize(18).fontWeight(FontWeight.Bold).fontColor(primary ? app.onPrimary : app.inkStrong)
-        .margin({ top: 8 })
-      Text(hint).fontSize(13).fontColor(primary ? app.onPrimary : app.inkSoft).opacity(primary ? 0.85 : 1)
+  topBar() {
+    Row({ space: 8 }) {
+      Blank()
+      Button({ type: ButtonType.Circle }) {
+        // The button follows the mode: chats' history for Chat, the apps made so far for App.
+        SymbolGlyph($r(this.makeApp ? 'sys.symbol.square_grid_2x2' : 'sys.symbol.clock')).fontSize(20).fontColor([app.inkStrong])
+      }
+      .width(44).height(44)
+      .backgroundColor(app.secondaryFill)
+      .accessibilityText(this.makeApp ? 'My apps' : 'Chat history')
+      .onClick(() => { if (this.makeApp) { this.openApps() } else { this.openHistory() } })
     }
-    .alignItems(HorizontalAlign.Start)
+    .width('100%')
+    .height(56)
+    .padding({ left: 16, right: 12 })
+  }
+
+  /** The greeting in the middle of the free space, and the switch between the two things to do. */
+  @Builder
+  middle() {
+    Column({ space: 20 }) {
+      if (!this.typing) {
+        Image($r('app.media.vera_mark')).width(52).height(52).objectFit(ImageFit.Contain)
+      }
+      Column({ space: 8 }) {
+        Text(this.makeApp ? 'What shall we make?' : 'How can I help?')
+          .fontSize(30).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).textAlign(TextAlign.Center)
+        if (!this.typing) {
+          Text(this.makeApp ? 'Describe an idea and VERA builds the screens, logic and data.' :
+            'Ask, plan, get a card.')
+            .fontSize(15).fontColor(app.inkSoft).textAlign(TextAlign.Center).constraintSize({ maxWidth: 290 })
+        }
+      }
+      // The white pill slides under the label that is on; the state flips inside animateTo so the pill and the ink move together.
+      Stack({ alignContent: Alignment.TopStart }) {
+        Row()
+          .width(MODE_TAB_WIDTH).height(40).borderRadius(20)
+          .backgroundColor(app.surface)
+          .shadow({ radius: 2, color: '#20000000', offsetY: 1 })
+          .translate({ x: this.makeApp ? MODE_TAB_WIDTH + 2 : 0 })
+        Row({ space: 2 }) {
+          this.modeTab('Chat', 'sys.symbol.ellipsis_message', !this.makeApp, () => { this.setMode(false) })
+          this.modeTab('App', 'sys.symbol.plus', this.makeApp, () => { this.setMode(true) })
+        }
+      }
+      .padding(4)
+      .borderRadius(24)
+      .backgroundColor(app.secondaryFill)
+      .margin({ top: 8 })
+    }
     .layoutWeight(1)
-    .padding(16)
-    .height(130)
-    .justifyContent(FlexAlign.End)
-    .borderRadius(16)
-    .backgroundColor(primary ? app.primary : app.surface)
-    .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
+    .width('100%')
+    .padding({ left: 24, right: 24 })
+    .justifyContent(FlexAlign.Center)
+  }
+
+  @Builder
+  modeTab(label: string, symbol: string, on: boolean, go: () => void) {
+    Row({ space: 6 }) {
+      SymbolGlyph($r(symbol)).fontSize(18).fontColor([on ? app.inkStrong : app.inkSoft])
+      Text(label).fontSize(15).fontWeight(FontWeight.Medium).fontColor(on ? app.inkStrong : app.inkSoft)
+    }
+    .width(MODE_TAB_WIDTH)
+    .height(40)
+    .justifyContent(FlexAlign.Center)
     .onClick(go)
   }
 
-  /**
-   * One project: a still picture of its latest program on top, then what it is (the request it
-   * began as), how much work is in it, and when it was last worked on. A project with no program
-   * that runs has the picture left out.
-   */
+  /** The apps made so far in the app mode, else ready-made requests to start from; the same height either way. */
   @Builder
-  projectRow(row: ProjectRow) {
+  zone() {
     Column() {
-      if (row.summary.vbc2.length > 0) {
-        this.thumbnail(row.summary.vbc2)
+      if (this.makeApp && this.projects.length > 0) {
+        this.appsStrip()
+      } else {
+        this.starterChips(this.makeApp ? APP_STARTERS : STARTERS_EN)
       }
-      Row() {
-        Image(projectIconResource(row.project.icon))
-          .width(44).height(44).objectFit(ImageFit.Contain).margin({ right: 14 })
-        Column({ space: 2 }) {
-          Text(row.project.name).fontSize(17).fontWeight(FontWeight.Medium).maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          if (row.summary.request.length > 0) {
-            Text(row.summary.request).fontSize(13).fontColor(app.inkSoft).maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          Text(versionCountText(row.summary.versions) + ' · ' + new Date(row.summary.updatedAt).toLocaleDateString())
-            .fontSize(12).fontColor(app.inkMuted)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-
-        SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(18).fontColor([app.inkDisabled])
-      }
-      .width('100%')
-      .padding(14)
     }
     .width('100%')
-    .backgroundColor(app.surface)
-    .borderRadius(12)
-    .clip(true)
-    .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
+    .height(ZONE_HEIGHT)
+    .justifyContent(FlexAlign.Start)
+  }
+
+  /** A row of icons: a press opens one, a long press offers to delete it, "All" lists them with their pictures. */
+  @Builder
+  appsStrip() {
+    Column({ space: 10 }) {
+      Row() {
+        Text('My apps').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).layoutWeight(1)
+        Text('All ' + this.projects.length.toString()).fontSize(14).fontWeight(FontWeight.Medium)
+          .fontColor(app.primaryInk)
+          .height(44).padding({ left: 12, right: 4 }).align(Alignment.Center)
+          .onClick(() => { this.openApps() })
+      }
+      .width('100%').height(24).padding({ left: 16, right: 12 })
+      Scroll() {
+        Row({ space: 8 }) {
+          ForEach(this.projects, (row: ProjectRow) => {
+            this.appTile(row)
+          }, (row: ProjectRow) => row.project.id + '|' + row.project.name + '|' + row.project.icon)
+        }
+        .padding({ left: 12, right: 12 })
+        .alignItems(VerticalAlign.Top)
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .width('100%')
+    }
+  }
+
+  /** What to try: titles of ready-made requests, one tap sends one. */
+  @Builder
+  starterChips(starters: ChatStarter[]) {
+    Column({ space: 10 }) {
+      Text(this.makeApp ? 'Try one of these' : 'Or start with').fontSize(15).fontWeight(FontWeight.Medium)
+        .fontColor(app.inkStrong).width('100%').height(24).padding({ left: 16 })
+      Scroll() {
+        Row({ space: 8 }) {
+          ForEach(starters, (starter: ChatStarter) => {
+            Text(starter.title).fontSize(14).fontColor(app.inkStrong).maxLines(1)
+              .height(40).padding({ left: 16, right: 16 }).borderRadius(20)
+              .backgroundColor(app.surface).borderWidth(1).borderColor(app.line)
+              .onClick(() => { this.submit(starter.prompt) })
+          }, (starter: ChatStarter) => starter.id)
+        }
+        .padding({ left: 12, right: 12 })
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .align(Alignment.TopStart)
+      .width('100%')
+    }
+  }
+
+  @Builder
+  appTile(row: ProjectRow) {
+    Column({ space: 8 }) {
+      Image(projectIconResource(row.project.icon)).width(40).height(40).objectFit(ImageFit.Contain)
+        .width(60).height(60).padding(10).borderRadius(18).backgroundColor(tileTint(row.project.id))
+      Text(row.project.name).fontSize(12).fontColor(app.inkStrong).maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis }).textAlign(TextAlign.Center)
+        .width('100%').height(32)
+    }
+    .width(76)
     .onClick(() => {
       let nav = new ProjectNavParams()
       nav.projectId = row.project.id
       this.getUIContext().getRouter().pushUrl({ url: 'pages/ProjectPage', params: nav })
         .catch((e: Error): void => { console.error('Navigate to project failed: ' + e.message) })
     })
-    // A swipe is not a thing anyone is told about: the press that opens a menu is.
-    .bindContextMenu(this.rowMenu(row.project.id), ResponseType.LongPress)
+    // The press that asks is its own confirmation: nothing is deleted before the dialog is answered.
+    .gesture(LongPressGesture({ repeat: false }).onAction(() => {
+      confirmDeleteProject(this.getUIContext(), row.project.id, () => { this.reload() })
+    }))
   }
 
-  /**
-   * The program as it starts, drawn by the same renderer with taps and timers off (previewOnly), at
-   * twice the width and half the size so a whole screen's worth of it fits in a short strip.
-   */
+  /** The request: a rounded card that floats above the bottom edge, with the send button at its corner. */
   @Builder
-  thumbnail(vbc2: string) {
-    Stack({ alignContent: Alignment.TopStart }) {
-      VeraPreview({ previewOnly: true, embedded: true, vbc2: vbc2 })
-        .width('200%')
-        .scale({ x: 0.5, y: 0.5, centerX: 0, centerY: 0 })
-        .hitTestBehavior(HitTestMode.None)
-    }
-    .width('100%')
-    .height(THUMB_HEIGHT)
-    .clip(true)
-    .backgroundColor(app.background)
-  }
-
-  @Builder
-  rowMenu(id: string) {
-    Menu() {
-      MenuItem({ content: 'Delete project', symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')) })
-        .onClick(() => { this.confirmDelete(id) })
-    }
-  }
-
-  /** A compact bar, as on the other screens: a small mark and what the screen holds. */
-  @Builder
-  homeTitle() {
-    Row({ space: 8 }) {
-      Image($r('app.media.vera_mark')).width(28).height(28).objectFit(ImageFit.Contain)
-      Text('VERA').fontSize(20).fontWeight(FontWeight.Bold).fontColor(app.inkStrong)
-    }
-    .padding({ left: 16 })
-  }
-
-  @Builder
-  deleteAction(id: string) {
-    Row() {
-      Button('Delete')
-        .attributeModifier(new DangerButton())
-        .height('100%')
-        .enabled(!this.deletionPending)
-        .onClick(() => { this.confirmDelete(id) })
-    }.height('100%').padding({ left: 8 })
-  }
-
-  private confirmDelete(id: string): void {
-    let project = store.getProject(id)
-    if (project === null) { return }
-    this.getUIContext().showAlertDialog({
-      title: 'Delete mini-app?',
-      message: 'Delete "' + project.name + '" and all its saved versions and data? This cannot be undone.',
-      primaryButton: {
-        value: 'Cancel',
-        action: () => {}
-      },
-      secondaryButton: {
-        value: 'Delete',
-        fontColor: app.danger,
-        action: () => { this.doDelete(id) }
+  promptBox() {
+    Column({ space: 8 }) {
+      TextArea({ placeholder: this.makeApp ? 'Describe the app…' : 'Write a message…', text: this.draft })
+        .fontSize(16).fontColor(app.inkStrong).backgroundColor(Color.Transparent)
+        .height(64).padding({ left: 6, right: 6 })
+        .enterKeyType(EnterKeyType.Send)
+        .onChange((value: string) => { this.draft = value })
+        .onSubmit(() => { this.submit(this.draft) })
+        .onFocus(() => { this.getUIContext().animateTo({ duration: 180 }, () => { this.typing = true }) })
+        .onBlur(() => { this.getUIContext().animateTo({ duration: 180 }, () => { this.typing = false }) })
+      Row() {
+        Blank()
+        // Pale while there is nothing to send, as on the Generate screen; a press then just opens the page.
+        Button({ type: ButtonType.Circle }) {
+          SymbolGlyph($r('sys.symbol.arrow_up')).fontSize(20).fontColor([app.onPrimary])
+        }
+        .width(44).height(44)
+        .backgroundColor(app.primary)
+        .opacity(this.draft.trim().length > 0 ? 1 : 0.4)
+        .accessibilityText(this.makeApp ? 'Create app' : 'Send')
+        .onClick(() => { this.submit(this.draft) })
       }
-    })
-  }
-
-  private async doDelete(id: string): Promise<void> {
-    if (this.deletionPending) { return }
-    this.deletionPending = true
-    let context = (): common.UIAbilityContext => this.getUIContext().getHostContext() as common.UIAbilityContext
-    const status = await projectOperations.deleteProject(context, id)
-    this.deletionPending = false
-    this.reload()
-    refreshForms()
-    if (status !== ProjectOperationStatus.Success) {
-      const message = status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed ?
-        'Mini-application was deleted, but its shortcut cannot be removed.' : 'Error deleting mini-app.'
-      try {
-        this.getUIContext().getPromptAction().showToast({ message: message })
-      } catch (toastError) {
-        console.error('Show deletion error failed: ' + (toastError as Error).message)
-      }
+      .width('100%')
     }
+    .margin({ left: 12, right: 12, bottom: 24 })
+    .padding({ top: 10, left: 10, right: 10, bottom: 10 })
+    .borderRadius(26)
+    .backgroundColor(app.surface)
+    .borderWidth(1)
+    .borderColor(app.line)
+    .shadow({ radius: 20, color: '#12000000', offsetY: 4 })
   }
 }

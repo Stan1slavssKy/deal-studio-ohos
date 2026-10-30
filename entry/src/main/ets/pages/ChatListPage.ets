@@ -1,10 +1,11 @@
 import { chats, ChatSummary } from '../vera/ChatStore'
-import { formatUsd } from '../vera/VeraChatStats'
 import { app, DangerButton, TonalButton } from '../components/AppStyle'
 import { SymbolGlyphModifier } from '@kit.ArkUI'
 
 class ChatNavParams {
   chatId: string = ''
+  /** Set so the chat's clock button goes back to this list instead of opening a second one. */
+  fromList: string = '1'
 }
 
 /** The chats that fall in one period: today, yesterday, the week, the month, or an older month. */
@@ -144,9 +145,8 @@ struct ChatListPage {
     let when = timeOnly || startOfDay(c.updatedAt) === startOfDay(Date.now())
       ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
       : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    let parts: string[] = [when, c.messages.toString() + ' messages']
+    let parts: string[] = [when, c.messages.toString() + (c.messages === 1 ? ' message' : ' messages')]
     if (c.widgets > 0) { parts.push(c.widgets.toString() + (c.widgets === 1 ? ' widget' : ' widgets')) }
-    if (c.costUsd > 0) { parts.push('~' + formatUsd(c.costUsd)) }
     return parts.join(' · ')
   }
 
@@ -197,7 +197,7 @@ struct ChatListPage {
       value: 'New chat',
       symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),
       status: ToolbarItemStatus.NORMAL,
-      action: () => { this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatPage' })
+      action: () => { this.getUIContext().getRouter().pushUrl({ url: 'pages/ChatPage', params: new ChatNavParams() })
         .catch((e: Error): void => { console.error('Navigate to chat failed: ' + e.message) }) }
     }])
   }

@@ -1,3 +1,4 @@
+import { copyText } from '../components/Clipboard'
 import common from '@ohos.app.ability.common'
 import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
 import fs from '@ohos.file.fs'
@@ -40,7 +41,7 @@ import { SymbolGlyphModifier } from '@kit.ArkUI'
 import { ChatStarters, APP_STARTERS } from '../components/ChatStarters'
 import { IconPicker, APP_ICONS } from '../components/IconPicker'
 import { projectIconResource } from '../vera/ProjectIcons'
-import { suggestAppName } from '../vera/AppName'
+import { suggestAppName, suggestAppIcon } from '../vera/AppName'
 import { app, PrimaryButton, TonalButton, QuietButton } from '../components/AppStyle'
 import { MetricCard, MetricTile, MetricChip, MetricLine } from '../components/MetricCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
@@ -230,6 +231,8 @@ struct GeneratePage {
   @State projectId: string = ''
   @State baseVersionId: string = ''
   @State prompt: string = ''
+  /** Set by the home screen when it sent the request rather than only filling the box. */
+  private runOnOpen: boolean = false
   /** What a service that did not answer cost this run (ServiceHealth.ets), shown under the status. */
   @State troubleNote: string = ''
   @State requestHistory: string = ''
@@ -308,6 +311,8 @@ struct GeneratePage {
   @State composerOpen: boolean = false
   /** The soft keyboard is up (the page shrank): the header gives its room to the preview. See build(). */
   @State keyboardOpen: boolean = false
+  /** The request box itself has the focus (as against a field of the program). */
+  @State composerFocused: boolean = false
   /** The window the keyboard's height is heard from, and the listener, to stop listening when the page goes. */
   private keyboardWindow: window.Window | null = null
   private keyboardListener: (height: number) => void = (height: number) => {
@@ -337,6 +342,8 @@ struct GeneratePage {
   /** What the one box holds, the settings and the details are open. */
   @State draft: string = ''
   @State settingsOpen: boolean = false
+  /** The selector route switch is for working on the app, not for making one: folded away until asked for. */
+  @State advancedOpen: boolean = false
   /** The program alone over the whole screen, with the box under it; see fullscreenPane. */
   @State fullscreen: boolean = false
   /** Full screen with the request box folded away; see composer. */
@@ -580,6 +587,9 @@ struct GeneratePage {
     if (params !== null && params !== undefined) {
       this.projectId = params['projectId'] || ''
       this.baseVersionId = params['baseVersionId'] || ''
+      // A request typed on the home screen waits in the box for the person to send it.
+      this.prompt = params['prompt'] || ''
+      this.runOnOpen = (params['run'] || '').length > 0 && this.prompt.trim().length > 0
     }
     let context = this.hostContext()
     store.init(context.filesDir)
@@ -625,7 +635,10 @@ struct GeneratePage {
       this.keyboardWindow = win
       win.on('keyboardHeightChange', this.keyboardListener)
     }).catch((e: Error) => { console.warn('VERA keyboard listener unavailable: ' + e.message) })
-    this.loadResources()
+    this.loadResources().then((): void => {
+      // The request came with "send it": it goes now that the prompt and the catalogue are loaded.
+      if (this.runOnOpen) { this.runOnOpen = false; this.doGenerate() }
+    }).catch((_e: Error): void => {})
   }
 
   aboutToDisappear(): void {
@@ -1885,7 +1898,8 @@ struct GeneratePage {
     if (this.generating || this.compiledSource.length === 0 || !this.hasResult()) { return }
     if (this.projectId.length === 0) {
       this.saveName = suggestAppName(this.compiledSource, this.acceptedRequest)
-      this.saveIcon = DEFAULT_APP_ICON
+      let icon = suggestAppIcon(this.saveName, this.acceptedRequest)
+      this.saveIcon = icon.length > 0 && APP_ICONS.indexOf(icon) >= 0 ? icon : DEFAULT_APP_ICON
       this.iconsOpen = false
       this.naming = true
       return
@@ -2574,6 +2588,8 @@ struct GeneratePage {
         text: this.draft })
         .onChange((value: string) => { this.draft = value })
         .onSubmit(() => { this.send() })
+        .onFocus(() => { this.composerFocused = true })
+        .onBlur(() => { this.composerFocused = false })
         .layoutWeight(1)
         .height(44)
         .fontSize(16)
@@ -2740,8 +2756,10 @@ struct GeneratePage {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
         Column({ space: 2 }) {
-          Text(this.isSaved() ? 'Saved' : 'Ready').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong)
-          Text(this.resultNote()).fontSize(12).fontColor(this.compiled ? app.successInk : app.inkMuted).maxLines(2)
+          // One line of status: the button beside it already says whether this is saved.
+          Text(this.resultNote().length > 0 ? this.resultNote() : (this.isSaved() ? 'Saved' : 'Ready'))
+            .fontSize(15).fontWeight(FontWeight.Medium)
+            .fontColor(this.compiled ? app.successInk : app.inkStrong).maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
         .alignItems(HorizontalAlign.Start)
@@ -2766,11 +2784,14 @@ struct GeneratePage {
             .layoutWeight(1)
             // Selecting text takes the tap, so only the open history can be copied; closed, the tap opens it.
             .copyOption(this.requestOpen ? CopyOptions.LocalDevice : CopyOptions.None)
-          Text(this.requestOpen ? '\u25B4' : '\u25BE').fontSize(12).fontColor(app.inkMuted)
+          if (this.requestExpands()) {
+            SymbolGlyph($r(this.requestOpen ? 'sys.symbol.chevron_up' : 'sys.symbol.chevron_down')).fontSize(20).fontColor([app.inkMuted])
+          }
         }
         .width('100%')
+        .constraintSize({ minHeight: 40 })
         .alignItems(this.requestOpen ? VerticalAlign.Top : VerticalAlign.Center)
-        .onClick(() => { this.requestOpen = !this.requestOpen })
+        .onClick(() => { if (this.requestExpands()) { this.requestOpen = !this.requestOpen } })
       }
 
       if (this.generatedSource.trim() !== this.compiledSource.trim()) {
@@ -2851,6 +2872,12 @@ struct GeneratePage {
         })
       } else {
         // Lines are not wrapped: a wrapped line of code reads as two, and an indent is what shows its nesting.
+        Button('Copy code')
+          .attributeModifier(new QuietButton())
+          .height(32).fontSize(12)
+          .margin({ left: 10, top: 6, bottom: 4 })
+          .alignSelf(ItemAlign.Start)
+          .onClick(() => { copyText(this.getUIContext(), this.compiledSource) })
         Scroll() {
           Text(this.compiledSource)
             .fontSize(12).fontFamily('monospace').fontColor(app.inkStrong).padding(10)
@@ -2915,6 +2942,11 @@ struct GeneratePage {
 
       // Toggle for the on-device Jev proxy (see jevProxyLabel). Offered for any cloud provider with a key.
       if (this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
+        Text(this.advancedOpen ? 'Advanced \u25B4' : 'Advanced \u25BE').fontSize(12).fontColor(app.inkMuted)
+          .padding({ top: 4, bottom: 4 })
+          .onClick(() => { this.advancedOpen = !this.advancedOpen })
+      }
+      if (this.advancedOpen && this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
         Row({ space: 8 }) {
           Button(this.jevProxyLabel())
             .attributeModifier(this.jevProxyLook())
@@ -2974,6 +3006,11 @@ struct GeneratePage {
     this.scrollDown()
   }
 
+  /** The request line has more to show when there is a history of requests or the text does not fit on one line. */
+  private requestExpands(): boolean {
+    return (this.requestHistory.length > 0 && this.requestHistory !== this.acceptedRequest) || this.acceptedRequest.length > 34
+  }
+
   /** What the card says under its title: the run's own last words, or the version when nothing has run yet. */
   private resultNote(): string {
     return this.runs.length > 0 ? this.status : (this.baseVersionNumber > 0 ? 'Version ' + this.baseVersionNumber.toString() : '')
@@ -2999,6 +3036,8 @@ struct GeneratePage {
   }
 
   private startFresh(): void {
+    // "New" means a new app: it is no longer a version of the project this page was opened from.
+    this.projectId = ''
     this.startNew()
     this.runs = []
     this.program = new RunTotals()
@@ -3067,7 +3106,9 @@ struct GeneratePage {
         }
 
         // Full screen can fold the box away, leaving the program the whole screen; a round button brings it back.
-        if (!(this.fullscreen && this.composerHidden && this.hasResult())) {
+        // While a field of the program has the keyboard, the box would only take room from the program.
+        if (!(this.fullscreen && this.composerHidden && this.hasResult()) &&
+          !(this.keyboardOpen && !this.composerFocused && this.hasResult())) {
           this.composer()
         }
       }
@@ -3075,8 +3116,8 @@ struct GeneratePage {
       .height('100%')
       .backgroundColor(app.background)
     }
-    .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.nextVersionNumber.toString() :
-      (this.projectId.length === 0 ? 'New app' : 'Generate'))
+    .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.baseVersionNumber.toString() :
+      (this.projectId.length === 0 ? 'New app' : 'New version'))
     .titleMode(NavigationTitleMode.Mini)
     .hideTitleBar(this.fullscreen && this.hasResult())
     .backgroundColor(app.background)

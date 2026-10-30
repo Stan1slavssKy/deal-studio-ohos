@@ -1,3 +1,4 @@
+import { copyText } from '../components/Clipboard'
 import { Project, Version, VersionMetrics, store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { projectIconResource } from '../vera/ProjectIcons'
@@ -137,7 +138,7 @@ struct ProjectPage {
 
           // One thing to do first (Generate), the one next to it (Run), and the rest in a menu.
           Row({ space: 10 }) {
-            Button('Generate')
+            Button('New version')
               .attributeModifier(new PrimaryButton())
               .layoutWeight(1)
               .onClick(() => { this.openGenerate('') })
@@ -454,7 +455,8 @@ struct ProjectPage {
       .alignItems(VerticalAlign.Top)
       Row({ space: 8 }) {
         this.metricCell('Runs', this.metricCount(metrics.runs), 'generation and refinements')
-        this.metricCell('Model attempts', this.metricCount(metrics.attempts), 'including failed retries')
+        this.metricCell('Model attempts', this.metricCount(metrics.attempts),
+          metrics.attempts === 0 ? 'none: built from ready-made parts' : 'including failed retries')
       }
       .width('100%')
       .alignItems(VerticalAlign.Top)
@@ -592,6 +594,12 @@ struct ProjectPage {
         Row() {
           Text('Version ' + this.viewedVersionNumber.toString() + ' \u00B7 Code').fontSize(18).fontWeight(FontWeight.Bold)
           Blank()
+          Button('Copy')
+            .attributeModifier(new QuietButton())
+            .height(36)
+            .fontSize(13)
+            .margin({ right: 8 })
+            .onClick(() => { copyText(this.getUIContext(), this.viewedSource) })
           Button('Close')
             .attributeModifier(new QuietButton())
             .height(36)
@@ -618,10 +626,17 @@ struct ProjectPage {
             }
             Text('Source')
               .fontSize(12).fontColor(app.inkMuted).width('100%').margin({ bottom: 4 })
-            Text(this.viewedSource)
-              .fontSize(12)
-              .fontColor(app.inkStrong)
-              .width('100%')
+            // Lines are not wrapped: an indent is what shows the nesting.
+            Scroll() {
+              Text(this.viewedSource)
+                .fontSize(12)
+                .fontFamily('monospace')
+                .fontColor(app.inkStrong)
+            }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .align(Alignment.TopStart)
+            .width('100%')
           }
           .width('100%')
         }
@@ -651,6 +666,8 @@ struct ProjectPage {
         Text('Rename').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 }).width('100%')
         TextInput({ placeholder: 'Project name', text: this.renameText })
           .onChange((value: string) => { this.renameText = value })
+          .defaultFocus(true)
+          .onSubmit(() => { this.doRename() })
           .width('100%')
           .height(44)
         Row({ space: 12 }) {

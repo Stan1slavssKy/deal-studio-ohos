@@ -466,7 +466,8 @@ export async function chatReply(history: ChatTurn[], onText: (soFar: string) => 
       if (discoveries < MAX_DISCOVERY_CALLS) { tools = toolSchemas(false) }
       if (canSearch && searches < MAX_SEARCHES) { tools = tools.concat(searchToolSchema()) }
     }
-    let said = reply
+    // Text from before a tool call and text from after it are different paragraphs.
+    let said = reply.length > 0 ? reply + '\n\n' : ''
     let requestedAt = Date.now()
     let step = await streamStep(messages, tools, (soFar: string): void => { onText(said + soFar) })
     logTurn('chat', round + 1, step.timing)
@@ -482,7 +483,7 @@ export async function chatReply(history: ChatTurn[], onText: (soFar: string) => 
     stats.cachedTokens = stats.cachedTokens + step.cachedTokens
     stats.outputTokens = stats.outputTokens + step.outputTokens
     if (stats.ttftMs === 0 && step.firstAt > 0) { stats.ttftMs = step.firstAt - requestedAt }
-    reply = reply + step.content
+    if (step.content.length > 0) { reply = said + step.content }
     if (tools.length === 0 || step.calls.length === 0) { break }
     round++
     messages.push(assistantCallsMessage(step))

@@ -49,3 +49,27 @@ export function suggestAppName(source: string, request: string): string {
   let fromRequest = nameFromRequest(request)
   return fromRequest.length > 0 ? fromRequest : DEFAULT_APP_NAME
 }
+
+/** Words that point at a picture; the first group with a hit wins, so the more specific ones come first. */
+const ICON_WORDS: string[][] = [
+  ['🎮', 'game', 'quiz', 'puzzle', 'score', 'dice', 'play'],
+  ['🌍', 'trip', 'travel', 'layover', 'flight', 'weather', 'world', 'lake', 'city', 'itinerary', 'translat'],
+  ['🧮', 'calculat', 'convert', 'split', 'tip ', 'shared cost', 'budget', 'math'],
+  ['🎯', 'goal', 'focus', 'study', 'habit', 'streak', 'target'],
+  ['📊', 'tracker', 'counter', 'stats', 'expense', 'ledger', 'log', 'water', 'coffee', 'calorie', 'fever', 'chart'],
+  ['📝', 'note', 'todo', 'to-do', 'plan', 'journal', 'remind', 'pill', 'medicine', 'checklist', 'list'],
+  ['🎨', 'color', 'colour', 'draw', 'paint', 'wind down', 'relax', 'sleep'],
+  ['⚡', 'battery', 'energy', 'power', 'charge', 'quick', 'timer', 'stopwatch'],
+  ['🔧', 'tool', 'fix', 'settings', 'manager']
+]
+
+/** The picture a new app starts with, picked from its name and request; '' when nothing in them points at one. */
+export function suggestAppIcon(name: string, request: string): string {
+  let text = (name + ' ' + request).toLowerCase() + ' '
+  for (let group of ICON_WORDS) {
+    for (let i = 1; i < group.length; i++) {
+      if (text.indexOf(group[i]) >= 0) { return group[0] }
+    }
+  }
+  return ''
+}
