@@ -2701,8 +2701,7 @@ struct GeneratePage {
         .layoutWeight(1)
         .height(44)
         .fontSize(16)
-        .borderRadius(22)
-        .backgroundColor(app.background)
+        .backgroundColor(Color.Transparent)
         .enabled(!this.generating && this.baseError.length === 0)
       this.actionButton()
     }
