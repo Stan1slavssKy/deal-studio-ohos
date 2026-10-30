@@ -152,6 +152,41 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     r = await run([broken, good])
     assert.ok(r.section !== null && r.attempts === 2, r.failed)
     assert.match(asks[1].user, /It failed:[\s\S]*c_cuont/)
+    // A section that fails is mended by edits, asked for with a small budget, not written again.
+    {
+      const fix = '<<<<<<< SEARCH\n  return {c_count: state.c_cuont + 1__PASSTHROUGH__};\n=======\n  return {c_count: state.c_count + 1__PASSTHROUGH__};\n>>>>>>> REPLACE'
+      r = await run([broken, fix])
+      assert.ok(r.section !== null && r.attempts === 2, r.failed)
+      assert.match(asks[1].user, /Mend your section by edits/)
+      assert.match(asks[1].user, /c_cuont/)
+      assert.ok(asks[1].budget < asks[0].budget, 'edits are asked for with less room than a whole section')
+      assert.match(c.assembleProgram(comp, [], r.section), /return \{c_count: state\.c_count \+ 1, /)
+      // Edits whose SEARCH is not in the section mend nothing: the next try writes the section whole.
+      const miss = '<<<<<<< SEARCH\n  return {nothing: like this};\n=======\n  return state;\n>>>>>>> REPLACE'
+      r = await run([broken, miss, good])
+      assert.ok(r.section !== null && r.attempts === 3, r.failed)
+      assert.match(asks[2].user, /Write the whole section again/)
+      assert.match(asks[2].user, /c_cuont/)
+      // An answer with no blocks is a whole section after all; one that is neither mends nothing, and a whole try follows.
+      r = await run([broken, good])
+      assert.ok(r.section !== null)
+      r = await run([broken, 'I changed c_cuont to c_count.', good])
+      assert.ok(r.section !== null && r.attempts === 3, r.failed)
+      assert.match(asks[2].user, /Write the whole section again/)
+      assert.equal(asks[2].think, false)
+      // A need declined in the edits' answer goes with the section they make.
+      const two = Object.assign(new CustomRequest(), {needs: ['a counter', 'a photo'], prompt: 'p', compose: s => c.assembleProgram(comp, [], s)})
+      const answers = [broken, fix + '\n<cannot need="a photo">This phone gives apps no camera here.</cannot>']
+      const declined = await writeSection(two, 'L', async () => answers.shift())
+      assert.ok(declined.section !== null)
+      assert.equal(declined.declined.get('a photo'), 'This phone gives apps no camera here.')
+      // The thinking try, after the three edit rounds, writes the section whole; the edit rounds do not use up the quick tries.
+      r = await run([broken, broken.replace('c_cuont', 'c_cnt'), broken.replace('c_cuont', 'c_cnut'), broken.replace('c_cuont', 'c_cotn'), good])
+      assert.deepEqual(asks.map(a => a.think), [false, false, false, false, true])
+      assert.deepEqual(asks.map(a => /Mend your section by edits/.test(a.user)), [false, true, true, true, false])
+      assert.match(asks[4].user, /Write the whole section again/)
+      assert.ok(r.section !== null && r.thought)
+    }
     // A field the section keeps and nothing reads is an input that changes nothing: it is sent back, saying which.
     {
       const unread = section('function c_bump(state: AppState, value: number): AppState {\n  return {c_count: state.c_count + 1, c_ghost: value__PASSTHROUGH__};\n}\n' +
@@ -223,12 +258,13 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.equal(asks.length, 1)
     // The quick tries and their repairs fail: one more, thinking, with a larger budget; then it is refused.
     const differs = n => broken + '\n// ' + n
-    r = await run([differs(1), differs(2), differs(3), differs(4)])
+    // The first try, three edit rounds (answered here with whole sections), then the thinking one; then it is refused.
+    r = await run([differs(1), differs(2), differs(3), differs(4), differs(5)])
     assert.equal(r.section, null)
-    assert.equal(r.attempts, 4)
-    assert.deepEqual(asks.map(a => a.think), [false, false, false, true])
-    assert.ok(asks[3].budget > asks[0].budget)
-    r = await run([differs(1), differs(2), differs(3), good])
+    assert.equal(r.attempts, 5)
+    assert.deepEqual(asks.map(a => a.think), [false, false, false, false, true])
+    assert.ok(asks[4].budget > asks[0].budget)
+    r = await run([differs(1), differs(2), differs(3), differs(4), good])
     assert.ok(r.section !== null && r.thought)
     // The same reply twice is the same failure twice: the next try is the thinking one, not a third quick one.
     r = await run([broken, broken, good])

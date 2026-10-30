@@ -17,6 +17,7 @@ import { smokeRun } from '../VeraSmoke'
 import { playSurface } from '../VeraSurfacePlay'
 import { isScene } from '../VeraCompose'
 import { SCENE_GUIDE, SCENE_TOKENS } from './AgentScene'
+import { applyRepair, SEARCH_MARK, SPLIT_MARK, REPLACE_MARK } from '../VeraRepair'
 
 /**
  * Asks the model for code: (system prompt, request, most tokens to write, whether it thinks first) -> its reply, or null
@@ -30,6 +31,17 @@ export const SECTION_TOKENS: number = 6000
 export const SCREEN_TOKENS: number = 8000
 
 const REPAIRS: number = 2
+/**
+ * A section that fails is mended by edits to it, at most this many rounds, before it is written whole again: rewriting it
+ * cost 10-18 s a try (3500-5300 tokens) to change a line or two (Timetable on the phone: 69 s, 61 of them four tries).
+ */
+const EDIT_ROUNDS: number = 3
+/** Every ask of one section: whole tries, edit rounds and the thinking try together. */
+const MAX_ASKS: number = 7
+/** Room for edits that mend what failed to compile or run, or a rule broken: a few blocks of a few lines. */
+const EDIT_TOKENS: number = 2000
+/** Room for edits that add what Jev reads the section as not doing: a function and a few lines of view. */
+const EDIT_NEED_TOKENS: number = 4000
 /** A thinking reply spends tokens on its reasoning before the section: this many times the budget. */
 const THINKING_ROOM: number = 3
 
@@ -52,6 +64,24 @@ const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE 
   '- Show each piece of information once: no heading and caption that say the same thing, and no second view (a table, "splits") of entries the program already lists in rows.\n' +
   '- Never write a phone number, address or other real-world contact the request did not give: a made-up number (such as +1 800 555 0100) looks real to the person. ' +
   'Show a field for the person to fill in, or say to call their local emergency number.\n'
+
+/** How a section is mended: SEARCH/REPLACE blocks against its own text (VeraRepair.ets applies them). */
+const SECTION_EDIT_RULES: string = 'Mend your section by edits, not by writing it again. Write one block per change:\n' +
+  SEARCH_MARK + '\n' +
+  'lines copied exactly from your section above\n' +
+  SPLIT_MARK + '\n' +
+  'the lines that replace them\n' +
+  REPLACE_MARK + '\n' +
+  'Each SEARCH part must match exactly one place in your section -- not in the program so far -- so copy whole lines, with ' +
+  'enough of them to be unique; to add a function or a field, replace a nearby line with itself and the new lines. Fix what ' +
+  'failed and anything else that would fail the same way. Write nothing outside the blocks, except <cannot need="...">...' +
+  '</cannot> for a need this phone cannot do.'
+
+/** The <cannot need="...">...</cannot> tags of an answer, to go with the section its edits make. */
+function cannotTags(answer: string): string {
+  let tags = answer.match(new RegExp('<cannot\\s+need\\s*=\\s*"[^"]*"\\s*>[\\s\\S]*?</cannot>', 'g'))
+  return tags === null ? '' : '\n' + tags.join('\n')
+}
 
 /** What <cannot> holds: it is shown to the person on the screen, in place of what could not be built. */
 const CANNOT_FORM: string = 'one short sentence for the person using the app, in plain words about their phone and its apps: ' +
@@ -279,6 +309,10 @@ export function parseSection(reply: string): FragmentSpec | null {
 const FIXES: string[][] = [
   ['expected View, found View[]', 'a list of views is not one view: wrap it as ui.Column("default", theList)'],
   ['expected View[], found View', 'one view is not a list: put it in brackets, [theView]'],
+  ['hands its handler a boolean', 'a Checkbox or Toggle tells its handler only true or false, not which one was tapped: for one per ' +
+    'item of a loop, use ui.Cell or ui.Button with the item\'s index as its value, so the handler takes (state, value: number) and ' +
+    'flips that item'],
+  ['found ?', 'there is no ?: in VERA: declare the value with let, then set it in an if/else before the line that uses it'],
   ['expected :, found of', 'a for-of loop names the element type: for (let q: C_Question of state.c_questions) { ... } -- there is no other loop over a list'],
   ['expected :, found in', 'there is no for-in loop: for (let q: C_Question of state.c_questions) { ... } names the element type and loops over a list']
 ]
@@ -351,20 +385,60 @@ export async function writeSection(request: CustomRequest, language: string, ask
   let previous = ''
   let lastMissed = ''
   let runnable: FragmentSpec | null = null
-  // The first try and its repairs without thinking, then one more with it: slower, for what the quick tries got wrong.
-  for (let attempt = 0; attempt <= REPAIRS + 1; attempt++) {
+  // The section the next answer's edits apply to, '' when the next answer is to be a whole section.
+  let mending = ''
+  let editBudget: number = EDIT_TOKENS
+  let editRounds = 0
+  let wholes = 0
+  let lastProblem = ''
+  // The first try written whole, then mended by edits (cheap: 2-4 s against 10-18 s for a whole one), a quick whole try when
+  // edits do not apply, and last the thinking try written whole: slower, for what the rest got wrong. Edit rounds do not use
+  // up the quick tries: counted as tries, two of them sent the next straight to a 33 s thinking try (Timetable on the phone).
+  for (let attempt = 0; attempt < MAX_ASKS; attempt++) {
     throwIfCancelled(cancellation)
-    let think = attempt > REPAIRS
+    let editing = mending.length > 0
+    let think = !editing && wholes > 0 && (editRounds >= EDIT_ROUNDS || wholes > REPAIRS)
+    if (!editing) { wholes++ }
     result.attempts = attempt + 1
     result.thought = think
+    let tryStart = Date.now()
     let budget: number = (request.whole || truncated) ? SCREEN_TOKENS : (scene ? SCENE_TOKENS : SECTION_TOKENS)
     throwIfCancelled(cancellation)
-    let reply: string | null = await ask(system, user, think ? budget * THINKING_ROOM : budget, think)
+    let answer: string | null = await ask(system, user, editing ? editBudget : (think ? budget * THINKING_ROOM : budget), think)
     throwIfCancelled(cancellation)
-    if (reply === null) { result.failed = 'no answer for the custom section'; break }
+    if (answer === null) { result.failed = 'no answer for the custom section'; break }
+    let reply: string = answer
+    let mode = 'whole'
+    // Edits are applied to the section they were written against; an answer with no blocks is a whole section after all, and
+    // one that is neither edits nor a section mends nothing, as edits that do not apply.
+    let refused = editing && between(answer, 'cannot') !== null
+    let blocks = editing && !refused && answer.indexOf(SEARCH_MARK) >= 0
+    if (editing && !refused && !blocks && parseSection(answer) === null) {
+      result.failed = 'custom section: the answer to the edits asked for was neither edits nor a section'
+      console.info('VERA-CUSTOM attempt=' + (attempt + 1).toString() + ' mode=edit ms=' + (Date.now() - tryStart).toString() +
+        ' failed=' + result.failed)
+      user = asked + '\n\nYour section was:\n' + mending + '\n\nIt failed:\n' + lastProblem + '\n\nWrite the whole section again, fixed, in the same form.'
+      mending = ''
+      continue
+    }
+    if (blocks) {
+      let applied = applyRepair(mending, answer)
+      if (applied.source.length === 0) {
+        // Edits that do not apply mend nothing: the next try writes the section whole, told what failed before.
+        result.failed = 'custom section: the edits did not apply: ' + applied.error
+        console.info('VERA-CUSTOM attempt=' + (attempt + 1).toString() + ' mode=edit ms=' + (Date.now() - tryStart).toString() +
+          ' failed=' + result.failed.substring(0, 300))
+        user = asked + '\n\nYour section was:\n' + mending + '\n\nIt failed:\n' + lastProblem + '\n\nWrite the whole section again, fixed, in the same form.'
+        mending = ''
+        continue
+      }
+      reply = applied.source + cannotTags(answer)
+      mode = 'edit'
+    }
+    mending = ''
     truncated = reply.indexOf('</view>') < 0 && reply.indexOf('<cannot') < 0
     // The same reply twice is the same failure twice (temperature 0): the next try is the thinking one.
-    if (reply === previous && attempt <= REPAIRS) { attempt = REPAIRS }
+    if (reply === previous && !think) { editRounds = EDIT_ROUNDS; wholes = REPAIRS + 1 }
     previous = reply
     let cannot = between(reply, 'cannot')
     if (cannot !== null) { result.cannot = cannot; result.failed = 'custom section cannot: ' + cannot; break }
@@ -419,13 +493,28 @@ export async function writeSection(request: CustomRequest, language: string, ask
       problem = 'Read against the request, it does not do: ' + missed.join('; ') + '. It must really do that, used as written. ' +
         'If this phone cannot, keep the rest of the section and add, for each need it cannot do, <cannot need="the need, copied exactly">' +
         CANNOT_FORM + '</cannot> beside it -- not an explanation inside the screen.'
+      editBudget = EDIT_NEED_TOKENS
     } else {
+      // A line that does not compile or run is mended in a few lines; a list or clock of its own, or a made-up phone call, is
+      // a change of structure: 2000 tokens cut such edits off half way (Grades & GPA on the phone).
+      editBudget = section !== null && calls.length === 0 && again.length === 0 ? EDIT_TOKENS : EDIT_NEED_TOKENS
       // The first two lines: the diagnostic and the line of the program it points at, so the trace says what was written.
       result.failed = 'custom section: ' + (truncated ? 'cut off at the token limit; ' : '') + problem.split('\n').slice(0, 2).join(' | ')
     }
-    console.info('VERA-CUSTOM attempt=' + (attempt + 1).toString() + ' think=' + think.toString() + ' truncated=' + truncated.toString() +
-      ' failed=' + result.failed.substring(0, 600))
-    user = asked + '\n\nYour section was:\n' + reply + '\n\nIt failed:\n' + problem + '\n\nWrite the whole section again, fixed, in the same form.'
+    console.info('VERA-CUSTOM attempt=' + (attempt + 1).toString() + ' mode=' + mode + ' think=' + think.toString() + ' truncated=' +
+      truncated.toString() + ' ms=' + (Date.now() - tryStart).toString() + ' failed=' + result.failed.substring(0, 600))
+    lastProblem = problem
+    // A section in the form asked for is mended by edits while rounds are left and the next try is a quick one; one cut off
+    // or not in the form, and the thinking try, are written whole.
+    // The thinking try was the last.
+    if (think) { break }
+    if (section !== null && !truncated && editRounds < EDIT_ROUNDS) {
+      editRounds++
+      mending = reply
+      user = asked + '\n\nYour section:\n' + reply + '\n\nIt failed:\n' + problem + '\n\n' + SECTION_EDIT_RULES
+    } else {
+      user = asked + '\n\nYour section was:\n' + reply + '\n\nIt failed:\n' + problem + '\n\nWrite the whole section again, fixed, in the same form.'
+    }
   }
   throwIfCancelled(cancellation)
   if (result.section === null && result.cannot.length === 0 && best !== null) {

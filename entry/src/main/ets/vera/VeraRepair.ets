@@ -10,9 +10,9 @@
 
 import { extractVeraSource } from './DeepSeekEngine'
 
-const SEARCH_MARK: string = '<<<<<<< SEARCH'
-const SPLIT_MARK: string = '======='
-const REPLACE_MARK: string = '>>>>>>> REPLACE'
+export const SEARCH_MARK: string = '<<<<<<< SEARCH'
+export const SPLIT_MARK: string = '======='
+export const REPLACE_MARK: string = '>>>>>>> REPLACE'
 
 const EDIT_RULES: string =
   'Answer with edits only, not the whole program. Write one block per change:\n' +
