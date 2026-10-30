@@ -133,18 +133,20 @@ function withoutDeadInputs(comp: Composition, values: Map<string, string>[], pla
 export async function runAgent(request: AgentRequest, host: AgentHost): Promise<AgentResult> {
   let result = new AgentResult()
   let started = Date.now()
-  host.status(request.widget ? 'Sketching the widget...' : 'Composing...')
-  let composed = await composeNeeds(request.prompt, host.askPlan, host.askJev, (partial: Sketch): void => {
-    if (host.cancelled()) { return }
-    let source = provisionalProgram(partial, request.widget)
-    if (source.length === 0) { return }
+  // The picture of the screen while it is being made: the plan as it streams, then the parts and sections Jev chose, then
+  // those sections with their content. Each is a whole program; one that does not compile is skipped and the next replaces it.
+  let preview = (source: string): void => {
+    if (host.cancelled() || source.length === 0) { return }
     try {
       host.preview(compileVeraSource(source).vbc2)
       result.previews++
       if (result.firstPreviewMs === 0) { result.firstPreviewMs = Date.now() - started }
     } catch (_e) {
-      // A partial plan that does not compile is skipped; the next one replaces it.
     }
+  }
+  host.status(request.widget ? 'Sketching the widget...' : 'Composing...')
+  let composed = await composeNeeds(request.prompt, host.askPlan, host.askJev, (partial: Sketch): void => {
+    preview(provisionalProgram(partial, request.widget))
   }, request.widget, async (sketch: Sketch): Promise<string> => {
     if (host.cancelled()) { return '' }
     let settled = await askBlocking(request.prompt, sketch.questions, host.askJev, (q: AgentQuestion): Promise<PersonAnswer> => {
@@ -178,6 +180,8 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
   // their holes, before the program is assembled.
   if (composed.composition !== null && !host.cancelled()) {
     let comp: Composition = composed.composition!
+    // What Jev chose, drawn before anything is written for it: the sections show their placeholder content.
+    preview(assembleProgram(comp))
     let values: Map<string, string>[] = []
     let ready = true
     if (comp.blocks.length > 0) {
@@ -232,6 +236,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
     // The plan, and what nothing ready does in it: one section the model writes into the program the rest makes.
     let plan = screenPlan(comp, values)
     result.screen = plan
+    if (ready && comp.blocks.length > 0) { preview(assemblePlan(plan, true)) }
     // What was left out because a section is said to do it is checked against the screen the sections make.
     let claimStart = Date.now()
     if (ready && comp.claimed.length > 0 && !host.cancelled()) {

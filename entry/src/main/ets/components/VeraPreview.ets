@@ -429,12 +429,18 @@ export struct VeraPreview {
   }
 
   private load(): void {
+    // A preview follows a screen being made: each program it is handed is the same screen a little further on, so its tree
+    // is reconciled into the one already drawn. Replacing it rebuilt the whole screen for every piece of the plan, and
+    // the screen flickered while it grew.
+    let keep = this.previewOnly && this.liveRoot !== null && this.vbc2.length > 0
     this.stopAllTimers()
     this.vm = null
     this.currentState = null
-    this.liveRoot = null
-    this.hasRoot = false
-    this.programId += 1
+    if (!keep) {
+      this.liveRoot = null
+      this.hasRoot = false
+      this.programId += 1
+    }
     this.error = ''
     if (this.vbc2.length === 0) { return }
     try {
