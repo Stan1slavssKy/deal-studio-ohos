@@ -36,6 +36,7 @@ import { drawsSurface, editSurfaceProgram, SurfaceEdit } from '../vera/agent/Age
 import { surfaceRouteEnabled } from '../vera/agent/AgentSurface'
 import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
+import { SymbolGlyphModifier } from '@kit.ArkUI'
 import { ChatStarters, APP_STARTERS } from '../components/ChatStarters'
 import { IconPicker, APP_ICONS } from '../components/IconPicker'
 import { projectIconResource } from '../vera/ProjectIcons'
@@ -233,7 +234,7 @@ struct GeneratePage {
   @State baseError: string = ''
   @State generatedSource: string = ''
   @State status: string = ''
-  @State generating: boolean = false
+  @State @Watch('threadMoved') generating: boolean = false
   @State modelReady: boolean = false
   @State mode: string = MODE_DEEPSEEK
   // The model the picker last selected. The subtitle and chip highlights read
@@ -329,6 +330,12 @@ struct GeneratePage {
   /** Set just before the page closes itself, so that the back press it causes is not asked about again. */
   private closing: boolean = false
   @State tab: string = TAB_PREVIEW
+  /** What the one box holds, the settings and the details are open. */
+  @State draft: string = ''
+  @State settingsOpen: boolean = false
+  /** The result card's request line is open to the whole history of requests. */
+  @State requestOpen: boolean = false
+  private scroller: Scroller = new Scroller()
   @State attempts: AttemptMetrics[] = []
   @State totalMs: number = 0
   private systemPrompt: string = ''
@@ -503,6 +510,11 @@ struct GeneratePage {
     return this.projectId.length === 0 ? 0 : store.listVersions(this.projectId).length
   }
 
+  /** A run began or ended: the end of the thread is where the new card is. */
+  private threadMoved(): void {
+    this.scrollDown()
+  }
+
   private startNew(): void {
     this.savedVbc2 = ''
     this.historyOpen = false
@@ -568,6 +580,18 @@ struct GeneratePage {
         this.compositionJson = v.composition
         this.templateKinds = v.origin.replace('+model', '').split(',').filter((kind: string): boolean => kind.length > 0)
         this.modelWrote = v.origin.endsWith('+model')
+        // The saved program stands in the thread as the result to change, already saved.
+        if (v.vbc2.length > 0) {
+          this.compiledSource = v.source
+          this.generatedSource = v.source
+          this.compiledVbc2 = v.vbc2
+          this.savedVbc2 = v.vbc2
+          this.compiled = true
+          this.acceptedRequest = v.lastPrompt.length > 0 ? v.lastPrompt : v.note
+          this.acceptedComposition = v.composition
+          this.acceptedOrigin = v.origin
+          this.status = 'Version ' + this.baseVersionNumber.toString()
+        }
       } else {
         this.baseError = 'The selected version is unavailable or has no source. Return to the version list.'
       }
@@ -1893,8 +1917,7 @@ struct GeneratePage {
    * a generation still running. A request typed is work done, even if nothing was generated from it.
    */
   private hasUnsavedWork(): boolean {
-    return this.hasUnsavedResult() || this.prompt.trim().length > 0 || this.refinePrompt.trim().length > 0 ||
-      this.generating
+    return this.hasUnsavedResult() || this.draft.trim().length > 0 || this.generating
   }
 
   /**
@@ -2448,419 +2471,446 @@ struct GeneratePage {
     .onClick(() => { this.leaving = false })
   }
 
+  /** While a run is going: what it is doing now, the agent's question if it asks one, and the sketch of the screen. */
+  @Builder
+  buildCard() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        LoadingProgress().width(18).height(18)
+        Text(this.status.length > 0 ? this.status : 'Building...')
+          .fontSize(13).fontColor(app.inkSoft).layoutWeight(1).maxLines(3)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .width('100%')
+      if (this.pendingRequest.length > 0) {
+        Text(this.pendingRequest).fontSize(13).fontColor(app.inkMuted).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+      }
+      if (this.questionText.length > 0) {
+        QuestionCard({ question: this.questionText, options: this.questionOptions, fallback: this.questionFallback,
+          onPick: (index: number): void => { this.settleQuestion(index) },
+          onTyped: (text: string): void => { this.settleQuestion(text) } })
+      }
+      if (this.previewVbc2.length > 0) {
+        Text(this.previewNote).fontSize(12).fontColor(app.warningInk).width('100%')
+        VeraPreview({ previewOnly: true, vbc2: this.previewVbc2, embedded: true })
+          .width('100%')
+          .height(360)
+          .borderRadius(12)
+          .clip(true)
+          .opacity(0.6)
+      }
+    }
+    .width('100%')
+    .padding(12)
+    .backgroundColor(app.surface)
+    .borderRadius(14)
+  }
+
+  /** A run that gave no program: why, the compiler's words, and what a service that did not answer cost. */
+  @Builder
+  failedCard() {
+    Column({ space: 8 }) {
+      Text(this.status.length > 0 ? this.status : 'Nothing was built')
+        .fontSize(13).fontColor(app.warningInk).width('100%').copyOption(CopyOptions.LocalDevice)
+      if (this.compileErrors.length > 0) {
+        Scroll() {
+          Text(this.compileErrors).fontSize(11).fontFamily('monospace').fontColor(app.danger).width('100%').padding(8)
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 140 })
+        .backgroundColor(app.dangerFill)
+        .borderRadius(8)
+      }
+      if (this.troubleNote.length > 0) {
+        Text(this.troubleNote).fontSize(12).fontColor(app.warningInk).width('100%')
+      }
+      if (this.setupHint.length > 0) {
+        Text(this.setupHint).fontSize(11).fontColor(app.inkMuted).width('100%').copyOption(CopyOptions.LocalDevice)
+      }
+      if (this.previewVbc2.length > 0 && !this.hasResult()) {
+        Text(this.previewNote).fontSize(12).fontColor(app.warningInk).width('100%')
+        VeraPreview({ previewOnly: true, vbc2: this.previewVbc2, embedded: true })
+          .width('100%').height(300).borderRadius(12).clip(true).opacity(0.6)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(12)
+    .backgroundColor(app.surface)
+    .borderRadius(14)
+  }
+
+  /** The program that runs, over the whole space: its status and Save on top, then Preview, Code or Metrics. */
+  @Builder
+  resultPane() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        Column({ space: 2 }) {
+          Text(this.isSaved() ? 'Saved' : 'Ready').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong)
+          Text(this.resultNote()).fontSize(12).fontColor(this.compiled ? app.successInk : app.inkMuted).maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Button(this.isSaved() ? 'Saved' : 'Save')
+          .attributeModifier(new PrimaryButton())
+          .fontSize(13)
+          .height(34)
+          .enabled(!this.generating && !this.isSaved())
+          .onClick(() => { this.doSave() })
+      }
+      .width('100%')
+
+      // What was asked, in one line; tapped, every request that led here.
+      if (this.acceptedRequest.length > 0) {
+        Row({ space: 4 }) {
+          Text(this.requestOpen && this.requestHistory.length > 0 ? this.requestHistory : this.acceptedRequest)
+            .fontSize(13)
+            .fontColor(app.inkSoft)
+            .maxLines(this.requestOpen ? 12 : 1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+            // Selecting text takes the tap, so only the open history can be copied; closed, the tap opens it.
+            .copyOption(this.requestOpen ? CopyOptions.LocalDevice : CopyOptions.None)
+          Text(this.requestOpen ? '\u25B4' : '\u25BE').fontSize(12).fontColor(app.inkMuted)
+        }
+        .width('100%')
+        .alignItems(this.requestOpen ? VerticalAlign.Top : VerticalAlign.Center)
+        .onClick(() => { this.requestOpen = !this.requestOpen })
+      }
+
+      if (this.generatedSource.trim() !== this.compiledSource.trim()) {
+        Text('The last attempt was not applied. Save keeps the previous successful code and version request.')
+          .fontSize(12).fontColor(app.warningInk).width('100%')
+      }
+
+      Row({ space: 6 }) {
+        this.tabButton('Preview', TAB_PREVIEW)
+        this.tabButton('Code', TAB_CODE)
+        this.tabButton('Metrics', TAB_METRICS)
+      }
+      .width('100%')
+
+      Stack() {
+        // Kept built under the other tabs, hidden, so what was typed into the running program is still there on return.
+        VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState,
+          onStateSnapshot: (encoded: string): void => { this.liveState = encoded } })
+          .width('100%')
+          .height('100%')
+          .visibility(this.tab === TAB_PREVIEW ? Visibility.Visible : Visibility.Hidden)
+        if (this.tab !== TAB_PREVIEW) {
+          Scroll() {
+            this.detailsPanel()
+          }
+          .width('100%')
+          .height('100%')
+          .align(Alignment.Top)
+          .scrollBar(BarState.Off)
+          .padding({ top: 8, bottom: 8, left: 4, right: 4 })
+        }
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .backgroundColor(app.surface)
+      .borderRadius(12)
+      .clip(true)
+      .border({ width: 1, color: app.line })
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+  }
+
+  /** One of the card's tabs. */
+  @Builder
+  tabButton(label: string, name: string) {
+    Button(label)
+      .type(ButtonType.Capsule).fontSize(12).height(30).layoutWeight(1)
+      .fontWeight(this.tab === name ? FontWeight.Medium : FontWeight.Normal)
+      .backgroundColor(this.tabTint(name)).fontColor(this.tabInk(name))
+      .onClick(() => { this.tab = name })
+  }
+
+  /** The source or the figures of the run, under the tab that was chosen. */
+  @Builder
+  detailsPanel() {
+    Column({ space: 8 }) {
+      if (this.tab === TAB_METRICS) {
+        Column({ space: 10 }) {
+          if (this.stages.length > 0) { this.stagesPanel() }
+          if (this.lastTemplatePick.length > 0) { this.editCheckPanel() }
+          if (this.attempts.length > 0) { this.attemptsPanel() }
+          if (this.mode !== MODE_SERVER && (this.sideCalls.length > 0 || this.attempts.length > 0)) { this.tokensPanel() }
+          if (this.stages.length > 0 || this.attempts.length > 0 || this.tools.length > 0) { this.toolsPanel() }
+          if (this.services.length > 0) { this.servicesPanel() }
+          if (this.attempts.length === 0 && this.stages.length === 0) {
+            Text('No run yet').fontSize(13).fontColor(app.inkDisabled).width('100%').textAlign(TextAlign.Center).padding({ top: 12 })
+          }
+        }
+        // The measured width, so that the cards (92% of it) are centred in the pane drawn and not in the wider box a percentage
+        // resolves against; before the first measure the percentage stands in.
+        .width(this.metricsWidth > 0 ? this.metricsWidth : '100%')
+        .alignItems(HorizontalAlign.Center)
+        .onAreaChange((_old: Area, area: Area): void => {
+          let w = Number(area.width)
+          if (w > 0 && Math.abs(w - this.metricsWidth) > 0.5) { this.metricsWidth = w }
+        })
+      } else {
+        // Lines are not wrapped: a wrapped line of code reads as two, and an indent is what shows its nesting.
+        Scroll() {
+          Text(this.compiledSource)
+            .fontSize(12).fontFamily('monospace').fontColor(app.inkStrong).padding(10)
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .align(Alignment.TopStart)
+        .width('100%')
+        .backgroundColor(app.background)
+        .borderRadius(10)
+      }
+    }
+    .width('100%')
+  }
+
+  /** The engine's settings, out of the way until the title bar's gear is tapped: provider, model, selector. */
+  @Builder
+  settingsPanel() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        Button(this.modeLabel() + ' ▾')
+          .attributeModifier(new QuietButton())
+          .fontSize(12)
+          .height(30)
+          .enabled(!this.generating)
+          .bindMenu([
+            { value: this.modeMenuLabel(MODE_DEEPSEEK), action: () => { this.pickMode(MODE_DEEPSEEK) } },
+            { value: this.modeMenuLabel(MODE_SERVER), action: () => { this.pickMode(MODE_SERVER) } },
+            { value: this.modeMenuLabel(MODE_LOCAL), action: () => { this.pickMode(MODE_LOCAL) } }
+          ])
+        Text(this.status)
+          .fontSize(12)
+          .fontColor(this.compiled ? app.successInk : app.inkMuted)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      }
+      .width('100%')
+
+      // The three dashscope models (glm-5.2 and the two deepseek-v4 ones) share one key and base URL, so the choice is
+      // the model name alone -- which also flips isDeepSeek() and so the request shape. Shown only when the configured
+      // endpoint is dashscope; tapping applies and persists.
+      if (this.mode === MODE_DEEPSEEK && settings.isDashscopeProvider() && settings.hasApiKey()) {
+        Row({ space: 6 }) {
+          ForEach(this.modelPickerLabels(), (label: string, index: number) => {
+            Button(label)
+              .attributeModifier(this.modelPickerLook(index))
+              .fontSize(11)
+              .height(26)
+              .enabled(!this.generating)
+              .onClick(() => {
+                settings.applyModelCandidate(index)
+                // Whether the proxy can use logprobs is per model, so a switch drops any cached rejection.
+                resetLogprobsProbe()
+                this.selectedModel = settings.getModel()
+                this.checkDeepSeek()
+              })
+          }, (label: string, index: number) => label + index.toString())
+        }
+        .width('100%')
+      }
+
+      // Toggle for the on-device Jev proxy (see jevProxyLabel). Offered for any cloud provider with a key.
+      if (this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
+        Row({ space: 8 }) {
+          Button(this.jevProxyLabel())
+            .attributeModifier(this.jevProxyLook())
+            .fontSize(11)
+            .height(26)
+            .enabled(!this.generating)
+            .onClick(() => { this.toggleJevProxy() })
+          Text(this.jevProxyOn ? 'selector via cloud model' :
+            (settings.hasSelectorKey() ? 'selector via TypeSafe' : 'no selector — agent route off'))
+            .fontSize(11).fontColor(app.inkMuted).layoutWeight(1)
+        }
+        .width('100%')
+      }
+    }
+    .width('100%')
+    .padding(12)
+    .backgroundColor(app.surface)
+    .borderRadius(14)
+  }
+
+  @Builder
+  modelCard() {
+    // The model (~1.9 GB) is fetched from vera-server, so what is missing is either the address or the download.
+    Column({ space: 8 }) {
+      Text('Model not downloaded').fontSize(14).fontWeight(FontWeight.Medium)
+      Text(settings.hasServerUrl() ?
+        'One-time download of about 1.9 GB from the server, best over WiFi.' :
+        'It is downloaded from vera-server, and no server address is set. Choose Server in the settings to see how to set one.')
+        .fontSize(12).fontColor(app.inkSoft)
+      if (settings.hasServerUrl()) {
+        Button('Download')
+          .attributeModifier(new PrimaryButton())
+          .fontSize(12)
+          .height(32)
+          .onClick(() => { this.checkModel() })
+      }
+    }
+    .alignItems(HorizontalAlign.Start)
+    .width('100%')
+    .padding(16)
+    .backgroundColor(app.warningFill)
+    .borderRadius(14)
+  }
+
+  /** Sends what was typed: a request for an app while there is none, a change to it once there is. */
+  private send(): void {
+    let text = this.draft.trim()
+    if (text.length === 0 || this.generating) { return }
+    this.draft = ''
+    if (this.hasResult()) {
+      this.refinePrompt = text
+      this.doRefine()
+    } else {
+      this.prompt = text
+      this.doGenerate()
+    }
+    this.scrollDown()
+  }
+
+  /** What the card says under its title: the run's own last words, or the version when nothing has run yet. */
+  private resultNote(): string {
+    return this.runs.length > 0 ? this.status : (this.baseVersionNumber > 0 ? 'Version ' + this.baseVersionNumber.toString() : '')
+  }
+
+  private scrollDown(): void {
+    setTimeout(() => { this.scroller.scrollEdge(Edge.Bottom) }, 80)
+  }
+
+  /** New starts the thread over; with a result that was never saved it asks first. */
+  private confirmNew(): void {
+    if (this.generating) { return }
+    if (!this.hasUnsavedResult()) {
+      this.startFresh()
+      return
+    }
+    this.getUIContext().showAlertDialog({
+      title: 'Start a new app?',
+      message: 'The app on screen is not saved and will be lost.',
+      primaryButton: { value: 'Cancel', action: () => {} },
+      secondaryButton: { value: 'Start new', fontColor: app.danger, action: () => { this.startFresh() } }
+    })
+  }
+
+  private startFresh(): void {
+    this.startNew()
+    this.runs = []
+    this.program = new RunTotals()
+    this.attempts = []
+    this.stages = []
+    this.status = ''
+    this.draft = ''
+    this.tab = TAB_PREVIEW
+    this.requestOpen = false
+    this.composerOpen = false
+    this.scroller.scrollEdge(Edge.Top)
+  }
+
+  /** The thread is a list of turns: the person's requests, and under the last one what is being built or was built. */
   build() {
     // The windows are siblings of the page, not children of its content: their dimming then covers the title bar too.
     Stack() {
     Navigation() {
       Column() {
-        if (this.baseError.length > 0 && !this.keyboardOpen) {
-          Text(this.baseError)
-            .fontSize(13).fontColor(app.dangerInk).padding({ left: 16, right: 16, top: 8 })
+        if (this.baseError.length > 0) {
+          Text(this.baseError).fontSize(13).fontColor(app.dangerInk).width('100%').padding({ left: 16, right: 16, top: 8 })
         }
-
-        // Out of the way while the keyboard is up: the preview and the box being typed into keep the room.
-        if (!this.keyboardOpen) {
-          Row({ space: 8 }) {
-            Button(this.modeLabel() + ' \u25BE')
-              .attributeModifier(new QuietButton())
-              .fontSize(12)
-              .height(30)
-              .enabled(!this.generating)
-              .bindMenu([
-                { value: this.modeMenuLabel(MODE_DEEPSEEK), action: () => { this.pickMode(MODE_DEEPSEEK) } },
-                { value: this.modeMenuLabel(MODE_SERVER), action: () => { this.pickMode(MODE_SERVER) } },
-                { value: this.modeMenuLabel(MODE_LOCAL), action: () => { this.pickMode(MODE_LOCAL) } }
-              ])
-            Text(this.status)
-              .fontSize(12)
-              .fontColor(this.compiled ? app.successInk : app.inkMuted)
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8 })
-        }
-
-        // The whole history of a version's requests, opened by tapping the one line of it below.
-        if (!this.keyboardOpen && this.requestHistory.length > 0 && (this.historyOpen || !this.hasResult())) {
-          Column({ space: 4 }) {
-            Text('Version request').fontSize(12).fontColor(app.inkMuted).width('100%')
-            Scroll() {
-              Text(this.requestHistory).fontSize(13).fontColor(app.inkStrong).width('100%')
-                .copyOption(CopyOptions.LocalDevice)
-            }
+        if (this.settingsOpen) {
+          Column() { this.settingsPanel() }
             .width('100%')
-            .constraintSize({ maxHeight: 110 })
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8 })
+            .padding({ left: 12, right: 12, top: 8 })
         }
-
-        // The three dashscope models (glm-5.2 and the two deepseek-v4 ones) share
-        // one key and base URL, so the choice is the model name alone -- which also
-        // flips isDeepSeek() and so the request shape (native thinking for the
-        // deepseek models, enable_thinking for glm-5.2). Shown only when the
-        // configured endpoint is dashscope; tapping applies and persists.
-        if (!this.keyboardOpen && this.mode === MODE_DEEPSEEK && settings.isDashscopeProvider() && settings.hasApiKey()) {
-          Row({ space: 6 }) {
-            ForEach(this.modelPickerLabels(), (label: string, index: number) => {
-              Button(label)
-                .attributeModifier(this.modelPickerLook(index))
-                .fontSize(11)
-                .height(26)
-                .enabled(!this.generating)
-                .onClick(() => {
-                  settings.applyModelCandidate(index)
-                  // Whether the proxy can use logprobs is per model (glm-5.2
-                  // supports them on dashscope, deepseek-v4-flash does not), so a
-                  // model switch drops any cached rejection and lets the next
-                  // proxy call re-probe under the new model.
-                  resetLogprobsProbe()
-                  this.selectedModel = settings.getModel()
-                  this.checkDeepSeek()
-                })
-            }, (label: string, index: number) => label + index.toString())
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 4 })
-        }
-
-        // Toggle for the on-device Jev proxy (see jevProxyLabel). Offered for any
-        // cloud provider with a key, not just dashscope, since the proxy answers
-        // the composer's selector questions with whatever chat model is set.
-        if (!this.keyboardOpen && this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
-          Row({ space: 8 }) {
-            Button(this.jevProxyLabel())
-              .attributeModifier(this.jevProxyLook())
-              .fontSize(11)
-              .height(26)
-              .enabled(!this.generating)
-              .onClick(() => { this.toggleJevProxy() })
-            Text(this.jevProxyOn ? 'selector via cloud model' :
-              (settings.hasSelectorKey() ? 'selector via TypeSafe' : 'no selector — agent route off'))
-              .fontSize(11).fontColor(app.inkMuted).layoutWeight(1)
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 4 })
-        }
-
-        // With a running program on screen the request is one line, leaving the height to the preview. Tapping it
-        // opens the whole history of the version's requests.
-        if (this.hasResult() && !this.composerOpen) {
-          if (!this.keyboardOpen) {
-            Row({ space: 8 }) {
-              Row({ space: 4 }) {
-                Text(this.acceptedRequest)
-                  .fontSize(12)
-                  .fontColor(app.inkSoft)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .layoutWeight(1)
-                Text(this.historyOpen ? '\u25B4' : '\u25BE').fontSize(12).fontColor(app.inkMuted)
-              }
-              .layoutWeight(1)
-              .onClick(() => { this.historyOpen = !this.historyOpen })
-              Button('New')
-                .attributeModifier(new QuietButton())
-                .fontSize(12)
-                .height(30)
-                .enabled(!this.generating)
-                .onClick(() => { this.startNew() })
-              // The result is ready: saving it is the thing to do.
-              Button(this.isSaved() ? 'Saved' : 'Save')
-                .attributeModifier(new PrimaryButton())
-                .fontSize(12)
-                .height(30)
-                .enabled(!this.generating && !this.isSaved())
-                .onClick(() => { this.doSave() })
-            }
-            .width('100%')
-            .padding({ left: 16, right: 16, top: 8 })
-          }
+        // A program that runs takes the whole space between the bar and the box, as the whole of the screen it is; before
+        // and while it is built, and when it was not, the page is a thread of cards.
+        if (!this.generating && this.hasResult()) {
+          this.resultPane()
         } else {
-          TextArea({ placeholder: this.baseVersionId.length > 0 || this.hasResult() ? 'What to change?' : 'Describe the app you want...', text: this.prompt })
-            .onChange((value: string) => { this.prompt = value })
+        List({ space: 10, scroller: this.scroller }) {
+          // Nothing asked for yet: ready-made requests to start from, as an empty chat has. A tap sends one.
+          if (this.runs.length === 0 && !this.generating && this.baseVersionId.length === 0 && !this.hasResult()) {
+            ListItem() {
+              ChatStarters({ en: APP_STARTERS, flat: true, onPick: (prompt: string): void => {
+                if (this.generating) { return }
+                this.prompt = prompt
+                this.doGenerate()
+              } })
+            }
+            if (this.setupHint.length > 0) {
+              ListItem() {
+                Text(this.setupHint).fontSize(12).fontColor(app.inkMuted).padding({ left: 4, right: 4 })
+                  .copyOption(CopyOptions.LocalDevice)
+              }
+            }
+          }
+          if (this.generating) {
+            ListItem() { this.buildCard() }
+          } else if (this.runs.length > 0 && !this.compiled) {
+            ListItem() { this.failedCard() }
+          }
+          if (this.mode === MODE_LOCAL && !this.modelReady && !this.generating && !this.downloading) {
+            ListItem() { this.modelCard() }
+          }
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .scrollBar(BarState.Off)
+        }
+
+        // The one box: the first message asks for an app, the ones after it ask for a change to it.
+        Row({ space: 8 }) {
+          TextInput({ placeholder: this.hasResult() || this.baseVersionId.length > 0 ? 'What to change?' : 'Describe the app you want...',
+            text: this.draft })
+            .onChange((value: string) => { this.draft = value })
+            .onSubmit(() => { this.send() })
+            .layoutWeight(1)
+            .height(44)
             .enabled(!this.generating && this.baseError.length === 0)
-            .width('calc(100% - 32vp)')
-            .height(100)
-            .margin({ left: 16, right: 16, top: 8, bottom: 8 })
-
-          Row({ space: 10 }) {
-            Button(this.generating ? 'Stop' : (this.baseVersionId.length > 0 || this.hasResult() ? 'Refine' : 'Generate'))
-              .attributeModifier(new PrimaryButton())
-              .layoutWeight(1)
-              // Off with nothing typed, as Update below is: a tap that does nothing reads as broken.
-              .enabled(this.generating || (this.prompt.trim().length > 0 && this.canGenerate()))
-              .onClick(() => {
-                if (this.generating) {
-                  this.stopGeneration()
-                } else {
-                  this.doGenerate()
-                }
-              })
-            Button(this.isSaved() ? 'Saved' : 'Save')
-              .attributeModifier(new TonalButton())
-              .layoutWeight(1)
-              .enabled(this.hasResult() && !this.generating && !this.isSaved())
-              .onClick(() => { this.doSave() })
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16 })
+          Button(this.generating ? 'Stop' : 'Send')
+            .attributeModifier(new PrimaryButton())
+            .enabled(this.generating || (this.draft.trim().length > 0 && this.canGenerate()))
+            .onClick(() => {
+              if (this.generating) {
+                this.stopGeneration()
+              } else {
+                this.send()
+              }
+            })
         }
-
-        if (!this.keyboardOpen) {
-          // What a failed service cost (a slower, plainer screen): shown only when something did not answer.
-          if (this.troubleNote.length > 0) {
-            Text(this.troubleNote)
-              .fontSize(12)
-              .fontColor(app.warningInk)
-              .width('100%')
-              .padding({ left: 16, right: 16, top: 6 })
-          }
-
-          if (!this.generating && this.hasResult() && this.generatedSource.trim() !== this.compiledSource.trim()) {
-            Text('The last attempt was not applied. Save keeps the previous successful code and version request.')
-              .fontSize(12).fontColor(app.warningInk)
-              .padding({ left: 16, right: 16, top: 6 })
-          }
-
-          Row({ space: 6 }) {
-            Button('Preview')
-              .type(ButtonType.Capsule)
-              .fontSize(12)
-              .fontWeight(this.tab === TAB_PREVIEW ? FontWeight.Medium : FontWeight.Normal)
-              .height(30)
-              .layoutWeight(1)
-              .backgroundColor(this.tabTint(TAB_PREVIEW))
-              .fontColor(this.tabInk(TAB_PREVIEW))
-              .onClick(() => { this.tab = TAB_PREVIEW })
-            Button('Code')
-              .type(ButtonType.Capsule)
-              .fontSize(12)
-              .fontWeight(this.tab === TAB_CODE ? FontWeight.Medium : FontWeight.Normal)
-              .height(30)
-              .layoutWeight(1)
-              .backgroundColor(this.tabTint(TAB_CODE))
-              .fontColor(this.tabInk(TAB_CODE))
-              .onClick(() => { this.tab = TAB_CODE })
-            Button('Metrics')
-              .type(ButtonType.Capsule)
-              .fontSize(12)
-              .fontWeight(this.tab === TAB_METRICS ? FontWeight.Medium : FontWeight.Normal)
-              .height(30)
-              .layoutWeight(1)
-              .backgroundColor(this.tabTint(TAB_METRICS))
-              .fontColor(this.tabInk(TAB_METRICS))
-              .onClick(() => { this.tab = TAB_METRICS })
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8, bottom: 6 })
-        }
-
-        // Compile errors belong to no single pane -- they explain what the
-        // status line says, so they stay above all three.
-        if (this.compileErrors.length > 0) {
-          Scroll() {
-            Text(this.compileErrors)
-              .fontSize(11)
-              .fontFamily('monospace')
-              .fontColor(app.danger)
-              .width('100%')
-              .padding(8)
-          }
-          .width('calc(100% - 32vp)')
-          .constraintSize({ maxHeight: 100 })
-          .margin({ left: 16, right: 16 })
-          .backgroundColor(app.dangerFill)
-          .borderRadius(8)
-        }
-
-        if (this.mode === MODE_LOCAL && !this.modelReady && !this.generating && !this.downloading && !this.keyboardOpen) {
-          // The model (~1.9 GB) is fetched from vera-server, so what is missing is either the address or the download.
-          Column({ space: 8 }) {
-            Text('Model not downloaded').fontSize(14).fontWeight(FontWeight.Medium)
-            Text(settings.hasServerUrl() ?
-              'One-time download of about 1.9 GB from the server, best over WiFi.' :
-              'It is downloaded from vera-server, and no server address is set. Choose Server in the menu to see how to set one.')
-              .fontSize(12).fontColor(app.inkSoft)
-            if (settings.hasServerUrl()) {
-              Button('Download')
-                .attributeModifier(new PrimaryButton())
-                .fontSize(12)
-                .height(32)
-                .onClick(() => { this.checkModel() })
-            }
-          }
-          .alignItems(HorizontalAlign.Start)
-          .width('calc(100% - 32vp)')
-          .padding(16)
-          .backgroundColor(app.warningFill)
-          .margin({ left: 16, right: 16, top: 8 })
-          .borderRadius(8)
-        }
-
-        if (this.tab === TAB_PREVIEW) {
-          Column() {
-            if (this.questionText.length > 0) {
-              QuestionCard({ question: this.questionText, options: this.questionOptions, fallback: this.questionFallback,
-                onPick: (index: number): void => { this.settleQuestion(index) },
-                onTyped: (text: string): void => { this.settleQuestion(text) } })
-                .margin({ bottom: 8 })
-            }
-            if (this.hasResult()) {
-              VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState,
-                onStateSnapshot: (encoded: string): void => { this.liveState = encoded } })
-            } else if (this.generating && this.previewVbc2.length > 0) {
-              Text(this.previewNote)
-                .fontSize(12)
-                .fontColor(app.warningInk)
-                .width('100%')
-                .padding({ left: 12, right: 12, top: 6, bottom: 2 })
-              VeraPreview({ previewOnly: true, vbc2: this.previewVbc2 })
-            } else if (!this.generating && this.baseVersionId.length === 0 && this.prompt.trim().length === 0) {
-              // Nothing asked for yet: ready-made requests to start from, as an empty chat has. A tap fills the box and starts.
-              Scroll() {
-                ChatStarters({ en: APP_STARTERS, flat: true, onPick: (prompt: string): void => {
-                  if (this.generating) { return }
-                  this.prompt = prompt
-                  this.doGenerate()
-                } })
-                  .padding({ left: 8, right: 8, bottom: 8 })
-              }
-              .layoutWeight(1)
-              .width('100%')
-              .scrollBar(BarState.Off)
-              .align(Alignment.Top)
-            } else {
-              Column({ space: 12 }) {
-                Text(this.generating ? 'Building...' : 'The program will run here once it compiles')
-                  .fontSize(13)
-                  .fontColor(app.inkDisabled)
-                if (!this.generating && this.setupHint.length > 0) {
-                  Text(this.setupHint)
-                    .fontSize(11)
-                    .fontColor(app.inkMuted)
-                    .copyOption(CopyOptions.LocalDevice)
-                }
-              }
-              .alignItems(HorizontalAlign.Start)
-              .padding(24)
-            }
-          }
-          .width('calc(100% - 24vp)')
-          .layoutWeight(1)
-          .margin({ left: 12, right: 12, top: 4 })
-          .backgroundColor(app.surface)
-          .border({ width: 1, color: app.line })
-          .borderRadius(10)
-          .clip(true)
-        } else if (this.tab === TAB_CODE) {
-          // Lines are not wrapped: a wrapped line of code reads as two, and an indent is what shows its nesting. The
-          // source scrolls sideways inside, and down outside.
-          Scroll() {
-            Scroll() {
-              Text(!this.generating && this.hasResult() ? this.compiledSource :
-                (this.generatedSource.length > 0 ? this.generatedSource : '(generated source will appear here)'))
-                .fontSize(12)
-                .fontFamily('monospace')
-                .fontColor(this.generatedSource.length > 0 ? app.inkStrong : app.inkDisabled)
-                .padding(12)
-            }
-            .scrollable(ScrollDirection.Horizontal)
-            .scrollBar(BarState.Off)
-            .align(Alignment.TopStart)
-          }
-          .width('calc(100% - 24vp)')
-          .layoutWeight(1)
-          .align(Alignment.Top)
-          .margin({ left: 12, right: 12, top: 4 })
-          .backgroundColor(app.background)
-          .borderRadius(10)
-        } else {
-          Scroll() {
-            Column({ space: 10 }) {
-              if (this.stages.length > 0) {
-                this.stagesPanel()
-              }
-              if (this.lastTemplatePick.length > 0) {
-                this.editCheckPanel()
-              }
-              if (this.attempts.length > 0) {
-                this.attemptsPanel()
-              }
-              if (this.mode !== MODE_SERVER && (this.sideCalls.length > 0 || this.attempts.length > 0)) {
-                this.tokensPanel()
-              }
-              if (this.stages.length > 0 || this.attempts.length > 0 || this.tools.length > 0) {
-                this.toolsPanel()
-              }
-              if (this.services.length > 0) {
-                this.servicesPanel()
-              }
-              if (this.attempts.length === 0 && this.stages.length === 0) {
-                Text('No run yet').fontSize(13).fontColor(app.inkDisabled).width('100%').textAlign(TextAlign.Center).padding({ top: 24 })
-              }
-            }
-            // The measured width, so that the cards (92% of it) are centred in the pane drawn and not in the wider box a percentage
-            // resolves against; before the first measure the percentage stands in.
-            .width(this.metricsWidth > 0 ? this.metricsWidth : '100%')
-            .alignItems(HorizontalAlign.Center)
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .align(Alignment.Top)
-          .onAreaChange((_old: Area, area: Area): void => {
-            let w = Number(area.width)
-            if (w > 0 && Math.abs(w - this.metricsWidth) > 0.5) { this.metricsWidth = w }
-          })
-          // The bar is drawn over the content, and the rightmost tile in every
-          // row ends up sliced by it.
-          .scrollBar(BarState.Off)
-          // Vertical only: a percentage width resolves against the parent's
-          // whole box, so any horizontal padding here pushes every card past
-          // the right edge.
-          .padding({ top: 12, bottom: 12 })
-          .margin({ left: 12, right: 12, top: 4 })
-          .backgroundColor(app.background)
-          .borderRadius(10)
-        }
-
-        // Pinned under whichever pane is open: reading the source is exactly
-        // when you want to ask for a change, so the bar does not belong to the
-        // preview alone.
-        if (this.hasResult()) {
-          Row({ space: 8 }) {
-            TextInput({ placeholder: 'What to change?', text: this.refinePrompt })
-              .onChange((value: string) => { this.refinePrompt = value })
-              .layoutWeight(1)
-              .height(44)
-              .enabled(!this.generating)
-            Button(this.generating ? 'Stop' : 'Update')
-              .attributeModifier(new TonalButton())
-              .width(92)
-              .height(44)
-              .enabled(this.generating || (this.refinePrompt.trim().length > 0 && this.canGenerate()))
-              .onClick(() => {
-                if (this.generating) {
-                  this.stopGeneration()
-                } else {
-                  this.doRefine()
-                }
-              })
-          }
-          .width('100%')
-          .padding({ left: 12, right: 12, top: 8, bottom: 12 })
-          .backgroundColor(app.background)
-        }
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 6, bottom: 10 })
+        .backgroundColor(app.surface)
       }
       .width('100%')
       .height('100%')
+      .backgroundColor(app.background)
     }
     .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.nextVersionNumber.toString() :
       (this.projectId.length === 0 ? 'New app' : 'Generate'))
     .titleMode(NavigationTitleMode.Mini)
     .backgroundColor(app.background)
+    .menus([{
+      value: 'Settings',
+      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.gearshape')),
+      action: () => { this.settingsOpen = !this.settingsOpen }
+    }, {
+      value: 'New',
+      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),
+      action: () => { this.confirmNew() }
+    }])
 
     if (this.naming) {
       this.nameOverlay()
