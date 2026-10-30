@@ -1,4 +1,5 @@
 import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
+import window from '@ohos.window'
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { projectIconResource } from '../vera/ProjectIcons'
@@ -28,8 +29,17 @@ struct Index {
   /** What the box at the bottom is for: talking, or making an app. */
   @State makeApp: boolean = true
   @State draft: string = ''
-  /** The box has the keyboard: the greeting and the zone give up their room to it. */
+  /**
+   * The keyboard is up: the greeting and the zone give up their room to it. Read from the window, not from the box's focus:
+   * coming back to the page the box takes the focus again with no keyboard, and the greeting and the requests stayed hidden.
+   */
   @State typing: boolean = false
+  /** The window the keyboard's height is heard from, and the listener, to stop listening when the page goes. */
+  private keyboardWindow: window.Window | null = null
+  private keyboardListener: (height: number) => void = (height: number) => {
+    let open = height > 0
+    if (open !== this.typing) { this.getUIContext().animateTo({ duration: 180 }, () => { this.typing = open }) }
+  }
   /** The apps made so far are open on a shelf in place of the requests and the box. */
   @State showApps: boolean = false
 
@@ -40,7 +50,18 @@ struct Index {
     consent.init(context.filesDir)
     // Shrink the page for the keyboard instead of panning it, so the box and its button stay in view.
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)
+    window.getLastWindow(context).then((win: window.Window) => {
+      this.keyboardWindow = win
+      win.on('keyboardHeightChange', this.keyboardListener)
+    }).catch((e: Error) => { console.warn('VERA keyboard listener unavailable: ' + e.message) })
     this.reload()
+  }
+
+  aboutToDisappear(): void {
+    if (this.keyboardWindow !== null) {
+      try { this.keyboardWindow.off('keyboardHeightChange', this.keyboardListener) } catch (_e) { /* the window is already gone */ }
+      this.keyboardWindow = null
+    }
   }
 
   onPageShow(): void {
@@ -324,8 +345,6 @@ struct Index {
         .enableKeyboardOnFocus(false)
         .onChange((value: string) => { this.draft = value })
         .onSubmit(() => { this.submit(this.draft) })
-        .onFocus(() => { this.getUIContext().animateTo({ duration: 180 }, () => { this.typing = true }) })
-        .onBlur(() => { this.getUIContext().animateTo({ duration: 180 }, () => { this.typing = false }) })
       Row() {
         Blank()
         // Pale while there is nothing to send, as on the Generate screen; a press then just opens the page.
