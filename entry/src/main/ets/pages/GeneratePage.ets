@@ -1,3 +1,4 @@
+import { copyText } from '../components/Clipboard'
 import common from '@ohos.app.ability.common'
 import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
 import fs from '@ohos.file.fs'
@@ -36,6 +37,11 @@ import { drawsSurface, editSurfaceProgram, SurfaceEdit } from '../vera/agent/Age
 import { surfaceRouteEnabled } from '../vera/agent/AgentSurface'
 import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
+import { SymbolGlyphModifier } from '@kit.ArkUI'
+import { ChatStarters, APP_STARTERS } from '../components/ChatStarters'
+import { IconPicker, APP_ICONS } from '../components/IconPicker'
+import { projectIconResource } from '../vera/ProjectIcons'
+import { suggestAppName, suggestAppIcon } from '../vera/AppName'
 import { app, PrimaryButton, TonalButton, QuietButton } from '../components/AppStyle'
 import { MetricCard, MetricTile, MetricChip, MetricLine } from '../components/MetricCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
@@ -62,7 +68,13 @@ const MODE_LOCAL: string = 'local'
 
 // The lower half of the screen is one pane at a time: the running program,
 // its source, or the numbers behind the run.
+/** The picture a new app starts with; the Save window lets it be changed. */
+const DEFAULT_APP_ICON: string = APP_ICONS[0]
 const TAB_PREVIEW: string = 'preview'
+/** The fold button, in full screen: the same size and place folded and unfolded. */
+const FOLD_SIZE: number = 44
+/** What a program is given under it when the fold button lies over it: the button, its margin and a little more. */
+const FOLD_ROOM: number = 76
 const TAB_CODE: string = 'code'
 const TAB_METRICS: string = 'metrics'
 
@@ -219,6 +231,10 @@ struct GeneratePage {
   @State projectId: string = ''
   @State baseVersionId: string = ''
   @State prompt: string = ''
+  /** Set by the home screen when it sent the request rather than only filling the box. */
+  private runOnOpen: boolean = false
+  /** The prompt and the catalogue are read; a request sent before that waits for it (runOnOpen). */
+  private resourcesLoaded: boolean = false
   /** What a service that did not answer cost this run (ServiceHealth.ets), shown under the status. */
   @State troubleNote: string = ''
   @State requestHistory: string = ''
@@ -227,7 +243,7 @@ struct GeneratePage {
   @State baseError: string = ''
   @State generatedSource: string = ''
   @State status: string = ''
-  @State generating: boolean = false
+  @State @Watch('threadMoved') generating: boolean = false
   @State modelReady: boolean = false
   @State mode: string = MODE_DEEPSEEK
   // The model the picker last selected. The subtitle and chip highlights read
@@ -297,6 +313,8 @@ struct GeneratePage {
   @State composerOpen: boolean = false
   /** The soft keyboard is up (the page shrank): the header gives its room to the preview. See build(). */
   @State keyboardOpen: boolean = false
+  /** The request box itself has the focus (as against a field of the program). */
+  @State composerFocused: boolean = false
   /** The window the keyboard's height is heard from, and the listener, to stop listening when the page goes. */
   private keyboardWindow: window.Window | null = null
   private keyboardListener: (height: number) => void = (height: number) => {
@@ -310,7 +328,31 @@ struct GeneratePage {
   @State setupHint: string = ''
   /** The bytecode last saved as a version: Save is off while the program on screen is the one already saved. */
   @State savedVbc2: string = ''
+  /** The window that asks for a new app's name, open from the first Save; the name is what it offers or what was typed. */
+  @State naming: boolean = false
+  @State saveName: string = ''
+  @State saveIcon: string = DEFAULT_APP_ICON
+  /** The pictures to choose from, shown under the name once the picture is tapped. */
+  @State iconsOpen: boolean = false
+  /** The window that asks whether to save before leaving with a result that is not saved. */
+  @State leaving: boolean = false
+  /** Set when Save was chosen in the leaving window: the page closes once the save is done. */
+  private leaveAfterSave: boolean = false
+  /** Set just before the page closes itself, so that the back press it causes is not asked about again. */
+  private closing: boolean = false
   @State tab: string = TAB_PREVIEW
+  /** What the one box holds, the settings and the details are open. */
+  @State draft: string = ''
+  @State settingsOpen: boolean = false
+  /** The selector route switch is for working on the app, not for making one: folded away until asked for. */
+  @State advancedOpen: boolean = false
+  /** The program alone over the whole screen, with the box under it; see fullscreenPane. */
+  @State fullscreen: boolean = false
+  /** Full screen with the request box folded away; see composer. */
+  @State composerHidden: boolean = false
+  /** The result card's request line is open to the whole history of requests. */
+  @State requestOpen: boolean = false
+  private scroller: Scroller = new Scroller()
   @State attempts: AttemptMetrics[] = []
   @State totalMs: number = 0
   private systemPrompt: string = ''
@@ -480,6 +522,16 @@ struct GeneratePage {
     this.acceptedMetrics = this.copyMetrics(this.metricTotals)
   }
 
+  /** A new app has no project yet, so it has no versions; the id is empty until the first Save. */
+  private versionCount(): number {
+    return this.projectId.length === 0 ? 0 : store.listVersions(this.projectId).length
+  }
+
+  /** A run began or ended: the end of the thread is where the new card is. */
+  private threadMoved(): void {
+    this.scrollDown()
+  }
+
   private startNew(): void {
     this.savedVbc2 = ''
     this.historyOpen = false
@@ -513,7 +565,7 @@ struct GeneratePage {
     this.refinePrompt = ''
     this.lastRequest = ''
     this.composerOpen = true
-    this.nextVersionNumber = store.listVersions(this.projectId).length + 1
+    this.nextVersionNumber = this.versionCount() + 1
   }
 
   private hostContext(): common.Context {
@@ -530,10 +582,13 @@ struct GeneratePage {
     if (params !== null && params !== undefined) {
       this.projectId = params['projectId'] || ''
       this.baseVersionId = params['baseVersionId'] || ''
+      // A request typed on the home screen waits in the box for the person to send it.
+      this.prompt = params['prompt'] || ''
+      this.runOnOpen = (params['run'] || '').length > 0 && this.prompt.trim().length > 0
     }
     let context = this.hostContext()
     store.init(context.filesDir)
-    let versions = store.listVersions(this.projectId)
+    let versions = this.projectId.length > 0 ? store.listVersions(this.projectId) : []
     this.nextVersionNumber = versions.length + 1
     if (this.baseVersionId.length > 0) {
       let v = store.getVersion(this.projectId, this.baseVersionId)
@@ -545,6 +600,18 @@ struct GeneratePage {
         this.compositionJson = v.composition
         this.templateKinds = v.origin.replace('+model', '').split(',').filter((kind: string): boolean => kind.length > 0)
         this.modelWrote = v.origin.endsWith('+model')
+        // The saved program stands in the thread as the result to change, already saved.
+        if (v.vbc2.length > 0) {
+          this.compiledSource = v.source
+          this.generatedSource = v.source
+          this.compiledVbc2 = v.vbc2
+          this.savedVbc2 = v.vbc2
+          this.compiled = true
+          this.acceptedRequest = v.lastPrompt.length > 0 ? v.lastPrompt : v.note
+          this.acceptedComposition = v.composition
+          this.acceptedOrigin = v.origin
+          this.status = 'Version ' + this.baseVersionNumber.toString()
+        }
       } else {
         this.baseError = 'The selected version is unavailable or has no source. Return to the version list.'
       }
@@ -563,7 +630,10 @@ struct GeneratePage {
       this.keyboardWindow = win
       win.on('keyboardHeightChange', this.keyboardListener)
     }).catch((e: Error) => { console.warn('VERA keyboard listener unavailable: ' + e.message) })
-    this.loadResources()
+    this.loadResources().then((): void => {
+      // The request came with "send it": it goes now that the prompt and the catalogue are loaded.
+      if (this.runOnOpen) { this.runOnOpen = false; this.doGenerate() }
+    }).catch((_e: Error): void => {})
   }
 
   aboutToDisappear(): void {
@@ -622,6 +692,7 @@ struct GeneratePage {
     } catch (e) {
       this.status = 'Failed to load resources: ' + (e as Error).message
     }
+    this.resourcesLoaded = true
     this.checkProvider()
   }
 
@@ -821,6 +892,8 @@ struct GeneratePage {
 
   private doGenerate(): void {
     if (this.prompt.trim().length === 0 || this.baseError.length > 0 || this.generating) { return }
+    // Sent before the prompt and the catalogue were read: it goes when they are (aboutToAppear).
+    if (!this.resourcesLoaded) { this.runOnOpen = true; return }
     if (this.compiledSource.length > 0) { this.previousSource = this.compiledSource }
     if (this.mode === MODE_SERVER) {
       if (!settings.hasServerUrl()) { this.checkServer(); return }
@@ -1818,8 +1891,88 @@ struct GeneratePage {
     this.status = 'Stopped'
   }
 
+  /** Save: a new app is named first, an app that already exists takes the result as its next version. */
   private doSave(): void {
     if (this.generating || this.compiledSource.length === 0 || !this.hasResult()) { return }
+    if (this.projectId.length === 0) {
+      this.saveName = suggestAppName(this.compiledSource, this.acceptedRequest)
+      let icon = suggestAppIcon(this.saveName, this.acceptedRequest)
+      this.saveIcon = icon.length > 0 && APP_ICONS.indexOf(icon) >= 0 ? icon : DEFAULT_APP_ICON
+      this.iconsOpen = false
+      this.naming = true
+      return
+    }
+    this.commitSave()
+    this.afterSave()
+  }
+
+  /** The name was confirmed: the project is made now, with the default picture, and the result is its first version. */
+  private confirmName(): void {
+    let name = this.saveName.trim()
+    if (name.length === 0) { return }
+    let project = store.createProject(name, this.saveIcon)
+    this.projectId = project.id
+    this.naming = false
+    this.commitSave()
+    this.afterSave()
+  }
+
+  private cancelName(): void {
+    this.naming = false
+    this.leaveAfterSave = false
+  }
+
+  private afterSave(): void {
+    if (this.leaveAfterSave) {
+      this.leaveAfterSave = false
+      this.close()
+    }
+  }
+
+  private close(): void {
+    this.closing = true
+    this.getUIContext().getRouter().back()
+  }
+
+  /** A result that no version holds yet: the one thing Save can keep. */
+  private hasUnsavedResult(): boolean {
+    return this.hasResult() && !this.isSaved()
+  }
+
+  /**
+   * Whether leaving would throw something away: an unsaved result, a request typed into either box, or
+   * a generation still running. A request typed is work done, even if nothing was generated from it.
+   */
+  private hasUnsavedWork(): boolean {
+    return this.hasUnsavedResult() || this.draft.trim().length > 0 || this.generating
+  }
+
+  /**
+   * Back with work that was never saved asks first, instead of dropping it. A screen with nothing on it,
+   * or with everything saved, goes straight back.
+   */
+  onBackPress(): boolean | void {
+    if (this.closing) { return false }
+    // The naming window is on top: Back closes it and keeps the result, instead of leaving the page with it.
+    if (this.naming) { this.cancelName(); return true }
+    if (this.leaving) { this.leaving = false; return true }
+    // Through the same way out as the button, so what was typed into the program goes with it.
+    if (this.fullscreen) { this.setFullscreen(false); return true }
+    if (this.hasUnsavedWork()) {
+      this.leaving = true
+      return true
+    }
+    return false
+  }
+
+  private leaveSave(): void {
+    this.leaving = false
+    if (this.generating) { this.stopGeneration() }
+    this.leaveAfterSave = true
+    this.doSave()
+  }
+
+  private commitSave(): void {
     let note = this.acceptedRequest
     if (note.length > 100) { note = note.substring(0, 100) + '...' }
     let saved = store.createVersion(this.projectId, this.compiledSource, this.compiledVbc2, note,
@@ -1828,7 +1981,7 @@ struct GeneratePage {
     // Stay here: the next change is a refinement of what was just saved, and the next Save its own version.
     this.baseVersionId = saved.id
     this.baseVersionNumber = this.nextVersionNumber
-    this.nextVersionNumber = store.listVersions(this.projectId).length + 1
+    this.nextVersionNumber = this.versionCount() + 1
     this.savedVbc2 = this.compiledVbc2
     this.status = 'Saved as version ' + this.baseVersionNumber.toString()
     refreshForms()
@@ -2235,401 +2388,763 @@ struct GeneratePage {
     }
   }
 
-  build() {
-    Navigation() {
+  /** The first Save of a new app: its name, offered from the program and open to change. */
+  @Builder
+  nameOverlay() {
+    Column() {
       Column() {
-        if (this.baseError.length > 0 && !this.keyboardOpen) {
-          Text(this.baseError)
-            .fontSize(13).fontColor(app.dangerInk).padding({ left: 16, right: 16, top: 8 })
-        }
-
-        // Out of the way while the keyboard is up: the preview and the box being typed into keep the room.
-        if (!this.keyboardOpen) {
-          Row({ space: 8 }) {
-            Button(this.modeLabel() + ' \u25BE')
-              .attributeModifier(new QuietButton())
-              .fontSize(12)
-              .height(30)
-              .enabled(!this.generating)
-              .bindMenu([
-                { value: this.modeMenuLabel(MODE_DEEPSEEK), action: () => { this.pickMode(MODE_DEEPSEEK) } },
-                { value: this.modeMenuLabel(MODE_SERVER), action: () => { this.pickMode(MODE_SERVER) } },
-                { value: this.modeMenuLabel(MODE_LOCAL), action: () => { this.pickMode(MODE_LOCAL) } }
-              ])
-            Text(this.status)
-              .fontSize(12)
-              .fontColor(this.compiled ? app.successInk : app.inkMuted)
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8 })
-        }
-
-        // The whole history of a version's requests, opened by tapping the one line of it below.
-        if (!this.keyboardOpen && this.requestHistory.length > 0 && (this.historyOpen || !this.hasResult())) {
-          Column({ space: 4 }) {
-            Text('Version request').fontSize(12).fontColor(app.inkMuted).width('100%')
-            Scroll() {
-              Text(this.requestHistory).fontSize(13).fontColor(app.inkStrong).width('100%')
-                .copyOption(CopyOptions.LocalDevice)
+        Text('Save app').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 6 }).width('100%')
+        Text('Tap the picture to change it. Name and picture can be changed later too.')
+          .fontSize(13).fontColor(app.inkMuted).margin({ bottom: 16 }).width('100%')
+        // The picture and the name side by side, as they will sit in the list.
+        Row({ space: 12 }) {
+          Stack({ alignContent: Alignment.BottomEnd }) {
+            Image(projectIconResource(this.saveIcon)).width(48).height(48).objectFit(ImageFit.Contain)
+            Column() {
+              SymbolGlyph($r('sys.symbol.pencil_tip')).fontSize(11).fontColor([app.primaryInk])
             }
+            .width(20).height(20)
+            .justifyContent(FlexAlign.Center)
+            .backgroundColor(app.surface)
+            .borderRadius(10)
+            .shadow({ radius: 2, color: '#30000000', offsetY: 1 })
+          }
+          .onClick(() => { this.iconsOpen = !this.iconsOpen })
+          TextInput({ placeholder: 'App name', text: this.saveName })
+            .onChange((value: string) => { this.saveName = value })
+            .onSubmit(() => { this.confirmName() })
+            .defaultFocus(true)
+            .selectAll(true)
+            .layoutWeight(1)
+            .height(44)
+        }
+        .width('100%')
+        if (this.iconsOpen) {
+          Column() {
+            IconPicker({ selected: this.saveIcon, onPick: (icon: string): void => { this.saveIcon = icon; this.iconsOpen = false } })
+          }
+          .width('100%')
+          .margin({ top: 12 })
+        }
+        Row({ space: 12 }) {
+          Button('Cancel')
+            .attributeModifier(new QuietButton())
+            .layoutWeight(1)
+            .onClick(() => { this.cancelName() })
+          Button('Save')
+            .attributeModifier(new PrimaryButton())
+            .layoutWeight(1)
+            .enabled(this.saveName.trim().length > 0)
+            .onClick(() => { this.confirmName() })
+        }
+        .width('100%')
+        .margin({ top: 20 })
+      }
+      .width('90%')
+      .padding(24)
+      .backgroundColor(app.surface)
+      .borderRadius(16)
+      .shadow({ radius: 8, color: '#30000000' })
+      // A tap inside the card is the card's, not a tap on the dimming behind it.
+      .onClick(() => {})
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#50000000')
+    .onClick(() => { this.cancelName() })
+  }
+
+  /** Back with a result that is not saved: save it, drop it, or stay. */
+  @Builder
+  leaveOverlay() {
+    Column() {
+      Column() {
+        // With a result there is something to save; with only a request typed, or a run under way, there is not.
+        Text(this.hasUnsavedResult() ? 'Save this app?' : 'Leave without generating?')
+          .fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 6 }).width('100%')
+        Text(this.hasUnsavedResult() ?
+          (this.projectId.length === 0 ? 'It is not saved yet. Leaving now discards it.' :
+            'This version is not saved yet. Leaving now discards it.') :
+          (this.generating ? 'A program is still being built. Leaving now stops it.' :
+            'What you typed has not been used yet. Leaving now discards it.'))
+          .fontSize(13).fontColor(app.inkMuted).margin({ bottom: 20 }).width('100%')
+        if (this.hasUnsavedResult()) {
+          Button('Save')
+            .attributeModifier(new PrimaryButton())
             .width('100%')
-            .constraintSize({ maxHeight: 110 })
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8 })
+            .onClick(() => { this.leaveSave() })
         }
-
-        // The three dashscope models (glm-5.2 and the two deepseek-v4 ones) share
-        // one key and base URL, so the choice is the model name alone -- which also
-        // flips isDeepSeek() and so the request shape (native thinking for the
-        // deepseek models, enable_thinking for glm-5.2). Shown only when the
-        // configured endpoint is dashscope; tapping applies and persists.
-        if (!this.keyboardOpen && this.mode === MODE_DEEPSEEK && settings.isDashscopeProvider() && settings.hasApiKey()) {
-          Row({ space: 6 }) {
-            ForEach(this.modelPickerLabels(), (label: string, index: number) => {
-              Button(label)
-                .attributeModifier(this.modelPickerLook(index))
-                .fontSize(11)
-                .height(26)
-                .enabled(!this.generating)
-                .onClick(() => {
-                  settings.applyModelCandidate(index)
-                  // Whether the proxy can use logprobs is per model (glm-5.2
-                  // supports them on dashscope, deepseek-v4-flash does not), so a
-                  // model switch drops any cached rejection and lets the next
-                  // proxy call re-probe under the new model.
-                  resetLogprobsProbe()
-                  this.selectedModel = settings.getModel()
-                  this.checkDeepSeek()
-                })
-            }, (label: string, index: number) => label + index.toString())
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 4 })
+        Row({ space: 12 }) {
+          Button('Discard')
+            .attributeModifier(new QuietButton())
+            .layoutWeight(1)
+            .onClick(() => { this.leaving = false; if (this.generating) { this.stopGeneration() } this.close() })
+          Button('Keep editing')
+            .attributeModifier(new QuietButton())
+            .layoutWeight(1)
+            .onClick(() => { this.leaving = false })
         }
+        .width('100%')
+        .margin({ top: this.hasUnsavedResult() ? 12 : 0 })
+      }
+      .width('90%')
+      .padding(24)
+      .backgroundColor(app.surface)
+      .borderRadius(16)
+      .shadow({ radius: 8, color: '#30000000' })
+      .onClick(() => {})
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#50000000')
+    .onClick(() => { this.leaving = false })
+  }
 
-        // Toggle for the on-device Jev proxy (see jevProxyLabel). Offered for any
-        // cloud provider with a key, not just dashscope, since the proxy answers
-        // the composer's selector questions with whatever chat model is set.
-        if (!this.keyboardOpen && this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
+  /** While a run is going: what it is doing now, the agent's question if it asks one, and the sketch of the screen. */
+  @Builder
+  buildCard() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        LoadingProgress().width(18).height(18)
+        Text(this.status.length > 0 ? this.status : 'Building...')
+          .fontSize(13).fontColor(app.inkSoft).layoutWeight(1).maxLines(3)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .width('100%')
+      if (this.pendingRequest.length > 0) {
+        Text(this.pendingRequest).fontSize(13).fontColor(app.inkMuted).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+      }
+      if (this.questionText.length > 0) {
+        QuestionCard({ question: this.questionText, options: this.questionOptions, fallback: this.questionFallback,
+          onPick: (index: number): void => { this.settleQuestion(index) },
+          onTyped: (text: string): void => { this.settleQuestion(text) } })
+      }
+      if (this.previewVbc2.length > 0) {
+        Text(this.previewNote).fontSize(12).fontColor(app.warningInk).width('100%')
+        VeraPreview({ previewOnly: true, vbc2: this.previewVbc2, embedded: true })
+          .width('100%')
+          .height(360)
+          .borderRadius(12)
+          .clip(true)
+          .opacity(0.6)
+      }
+    }
+    .width('100%')
+    .padding(12)
+    .backgroundColor(app.surface)
+    .borderRadius(14)
+  }
+
+  /** The compiler's words, what a service that did not answer cost, and what is missing to set up; nothing when there is none. */
+  @Builder
+  failureDetails() {
+    if (this.compileErrors.length > 0) {
+      Scroll() {
+        Text(this.compileErrors).fontSize(11).fontFamily('monospace').fontColor(app.danger).width('100%').padding(8)
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: 140 })
+      .backgroundColor(app.dangerFill)
+      .borderRadius(8)
+    }
+    if (this.troubleNote.length > 0) {
+      Text(this.troubleNote).fontSize(12).fontColor(app.warningInk).width('100%')
+    }
+    if (this.setupHint.length > 0) {
+      Text(this.setupHint).fontSize(11).fontColor(app.inkMuted).width('100%').copyOption(CopyOptions.LocalDevice)
+    }
+  }
+
+  /** A run that gave no program: why, the compiler's words, and what a service that did not answer cost. */
+  @Builder
+  failedCard() {
+    Column({ space: 8 }) {
+      Text(this.status.length > 0 ? this.status : 'Nothing was built')
+        .fontSize(13).fontColor(app.warningInk).width('100%').copyOption(CopyOptions.LocalDevice)
+      this.failureDetails()
+      if (this.previewVbc2.length > 0 && !this.hasResult()) {
+        Text(this.previewNote).fontSize(12).fontColor(app.warningInk).width('100%')
+        VeraPreview({ previewOnly: true, vbc2: this.previewVbc2, embedded: true })
+          .width('100%').height(300).borderRadius(12).clip(true).opacity(0.6)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(12)
+    .backgroundColor(app.surface)
+    .borderRadius(14)
+  }
+
+  /**
+   * The one box: the first message asks for an app, the ones after it ask for a change to it. It floats over the page as a
+   * rounded card with a shadow and a margin on every side, so that it reads as something laid over the program and not as
+   * its bottom edge. One round button on its right does whatever is next: send, or stop while a run is going. In full
+   * screen a button at its left folds the box away, and the button that brings it back is that same button, in the same
+   * place.
+   */
+  @Builder
+  composer() {
+    Row({ space: 8 }) {
+      if (this.fullscreen && this.hasResult()) {
+        this.foldButton(true)
+      }
+      TextInput({ placeholder: this.hasResult() || this.baseVersionId.length > 0 ? 'What to change?' : 'Describe the app you want...',
+        text: this.draft })
+        .onChange((value: string) => { this.draft = value })
+        .onSubmit(() => { this.send() })
+        // The box is enabled again when a run ends and takes the focus back; that must not open the keyboard over the
+        // result. A tap on the box still does.
+        .enableKeyboardOnFocus(false)
+        .onFocus(() => { this.composerFocused = true })
+        .onBlur(() => { this.composerFocused = false })
+        .layoutWeight(1)
+        .height(44)
+        .fontSize(16)
+        .borderRadius(22)
+        .backgroundColor(app.background)
+        .enabled(!this.generating && this.baseError.length === 0)
+      this.actionButton()
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: 12, right: 12, top: 8, bottom: 10 })
+    .padding(6)
+    .backgroundColor(app.surface)
+    .borderRadius(30)
+    .border({ width: 1, color: app.line })
+    .shadow({ radius: 16, color: '#33000000', offsetY: -2 })
+  }
+
+  /** The round button on the right of the box; see composer. */
+  @Builder
+  actionButton() {
+    if (this.generating) {
+      this.roundButton('sys.symbol.square_fill', app.primary, app.onPrimary, true, () => { this.stopGeneration() })
+    } else {
+      this.roundButton('sys.symbol.arrow_up', app.primary, app.onPrimary, this.draft.trim().length > 0 && this.canGenerate(),
+        () => { this.send() })
+    }
+  }
+
+  @Builder
+  roundButton(symbol: string, fill: ResourceColor, ink: ResourceColor, enabled: boolean, tap: () => void) {
+    Button({ type: ButtonType.Circle }) {
+      SymbolGlyph($r(symbol)).fontSize(22).fontColor([ink])
+    }
+    .width(44)
+    .height(44)
+    .backgroundColor(fill)
+    .opacity(enabled ? 1 : 0.4)
+    .enabled(enabled)
+    .onClick(tap)
+  }
+
+  /**
+   * Folds the box away in full screen, and brings it back: one button with the arrow turned over. Both places are the same
+   * point of the screen, so a second tap undoes the first without the hand moving.
+   */
+  @Builder
+  foldButton(fold: boolean) {
+    Button({ type: ButtonType.Circle }) {
+      SymbolGlyph($r(fold ? 'sys.symbol.chevron_down' : 'sys.symbol.chevron_up')).fontSize(18).fontColor([app.secondaryInk])
+    }
+    .width(FOLD_SIZE)
+    .height(FOLD_SIZE)
+    .backgroundColor(app.secondaryFill)
+    // Over the program it needs a shadow to be seen; in the box it sits on the box.
+    .shadow(fold ? { radius: 0 } : { radius: 8, color: '#40000000', offsetY: 2 })
+    .onClick(() => { this.composerHidden = fold })
+  }
+
+  /** The title bar's buttons: the program full screen once there is one, the settings, a new app. */
+  private barMenus(): NavigationMenuItem[] {
+    let items: NavigationMenuItem[] = []
+    if (this.hasResult() && !this.generating) {
+      items.push({
+        value: 'Full screen',
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.arrow_up_left_and_arrow_down_right')),
+        action: () => { this.setFullscreen(true) }
+      })
+    }
+    items.push({
+      value: 'Settings',
+      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.gearshape')),
+      action: () => { this.settingsOpen = !this.settingsOpen }
+    })
+    items.push({
+      value: 'New',
+      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),
+      action: () => { this.confirmNew() }
+    })
+    return items
+  }
+
+  /** What was typed into the program goes with it to the other view, which draws a program of its own. */
+  private setFullscreen(on: boolean): void {
+    this.carriedState = this.liveState
+    this.tab = TAB_PREVIEW
+    this.composerHidden = false
+    this.fullscreen = on
+  }
+
+  /**
+   * Full screen: nothing but the program, and the box under it for the next request. While a change is being made the
+   * program stays as it was, with what the run is doing in a small label over it, and the agent's question under it.
+   */
+  @Builder
+  fullscreenPane() {
+    Column() {
+      Stack({ alignContent: Alignment.TopEnd }) {
+        // With the box folded, the round button lies over the bottom corner: the program gets room to scroll clear of it.
+        VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState, bottomRoom: this.composerHidden ? FOLD_ROOM : 0,
+          onStateSnapshot: (encoded: string): void => { this.liveState = encoded } })
+          .width('100%')
+          .height('100%')
+        Row({ space: 8 }) {
+          // Save without leaving full screen: a name is asked for the first time, as ever; greyed out once it is saved.
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.save'))
+              .fontSize(18).fontColor([this.isSaved() ? app.inkDisabled : app.primaryInk])
+          }
+          .width(36)
+          .height(36)
+          .backgroundColor(app.surface)
+          .shadow({ radius: 4, color: '#26000000', offsetY: 1 })
+          .enabled(!this.generating && !this.isSaved())
+          .opacity(this.generating ? 0.5 : 1)
+          .onClick(() => { this.doSave() })
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.arrow_down_right_and_arrow_up_left')).fontSize(18).fontColor([app.secondaryInk])
+          }
+          .width(36)
+          .height(36)
+          .backgroundColor(app.surface)
+          .shadow({ radius: 4, color: '#26000000', offsetY: 1 })
+          .onClick(() => { this.setFullscreen(false) })
+        }
+        .margin({ top: 8, right: 8 })
+        if (this.generating || !this.compiled) {
           Row({ space: 8 }) {
-            Button(this.jevProxyLabel())
-              .attributeModifier(this.jevProxyLook())
+            if (this.generating) { LoadingProgress().width(16).height(16) }
+            Text(this.status.length > 0 ? this.status : 'Working...')
+              .fontSize(12).fontColor(this.generating ? app.inkSoft : app.warningInk).maxLines(3)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .backgroundColor(app.surface)
+          .borderRadius(12)
+          .shadow({ radius: 4, color: '#26000000', offsetY: 1 })
+          // Left of the collapse button, not over it.
+          .constraintSize({ maxWidth: '75%' })
+          .margin({ top: 12, right: 100 })
+        }
+        if (this.composerHidden) {
+          // Where the fold button was in the box: margin 12 and the box's border and padding in, margin 10 and the same up.
+          Column() { this.foldButton(false) }
+            .position({ left: 19, bottom: 17 })
+        }
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .clip(true)
+      if (this.questionText.length > 0) {
+        QuestionCard({ question: this.questionText, options: this.questionOptions, fallback: this.questionFallback,
+          onPick: (index: number): void => { this.settleQuestion(index) },
+          onTyped: (text: string): void => { this.settleQuestion(text) } })
+          .margin({ left: 12, right: 12, top: 8 })
+      }
+    }
+    .width('100%')
+    .layoutWeight(1)
+  }
+
+  /** The program that runs, over the whole space: its status and Save on top, then Preview, Code or Metrics. */
+  @Builder
+  resultPane() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        Column({ space: 2 }) {
+          // One line of status: the button beside it already says whether this is saved.
+          Text(this.resultNote().length > 0 ? this.resultNote() : (this.isSaved() ? 'Saved' : 'Ready'))
+            .fontSize(15).fontWeight(FontWeight.Medium)
+            .fontColor(this.compiled ? app.successInk : app.inkStrong).maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Button(this.isSaved() ? 'Saved' : 'Save')
+          .attributeModifier(new PrimaryButton())
+          .fontSize(13)
+          .height(34)
+          .enabled(!this.generating && !this.isSaved())
+          .onClick(() => { this.doSave() })
+      }
+      .width('100%')
+
+      // What was asked, in one line; tapped, every request that led here.
+      if (this.acceptedRequest.length > 0) {
+        Row({ space: 4 }) {
+          Text(this.requestOpen && this.requestHistory.length > 0 ? this.requestHistory : this.acceptedRequest)
+            .fontSize(13)
+            .fontColor(app.inkSoft)
+            .maxLines(this.requestOpen ? 12 : 1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+            // Selecting text takes the tap, so only the open history can be copied; closed, the tap opens it.
+            .copyOption(this.requestOpen ? CopyOptions.LocalDevice : CopyOptions.None)
+          if (this.requestExpands()) {
+            SymbolGlyph($r(this.requestOpen ? 'sys.symbol.chevron_up' : 'sys.symbol.chevron_down')).fontSize(20).fontColor([app.inkMuted])
+          }
+        }
+        .width('100%')
+        .constraintSize({ minHeight: 40 })
+        .alignItems(this.requestOpen ? VerticalAlign.Top : VerticalAlign.Center)
+        .onClick(() => { if (this.requestExpands()) { this.requestOpen = !this.requestOpen } })
+      }
+
+      if (this.generatedSource.trim() !== this.compiledSource.trim()) {
+        Text('The last attempt was not applied. Save keeps the previous successful code and version request.')
+          .fontSize(12).fontColor(app.warningInk).width('100%')
+        // And why: the program that stays is the old one, and its errors are the only place to read them.
+        this.failureDetails()
+      }
+
+      Row({ space: 6 }) {
+        this.tabButton('Preview', TAB_PREVIEW)
+        this.tabButton('Code', TAB_CODE)
+        this.tabButton('Metrics', TAB_METRICS)
+      }
+      .width('100%')
+
+      Stack() {
+        // Kept built under the other tabs, hidden, so what was typed into the running program is still there on return.
+        VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState,
+          onStateSnapshot: (encoded: string): void => { this.liveState = encoded } })
+          .width('100%')
+          .height('100%')
+          .visibility(this.tab === TAB_PREVIEW ? Visibility.Visible : Visibility.Hidden)
+        if (this.tab !== TAB_PREVIEW) {
+          Scroll() {
+            this.detailsPanel()
+          }
+          .width('100%')
+          .height('100%')
+          .align(Alignment.Top)
+          .scrollBar(BarState.Off)
+          .padding({ top: 8, bottom: 8, left: 4, right: 4 })
+        }
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .backgroundColor(app.surface)
+      .borderRadius(12)
+      .clip(true)
+      .border({ width: 1, color: app.line })
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+  }
+
+  /** One of the card's tabs. */
+  @Builder
+  tabButton(label: string, name: string) {
+    Button(label)
+      .type(ButtonType.Capsule).fontSize(12).height(30).layoutWeight(1)
+      .fontWeight(this.tab === name ? FontWeight.Medium : FontWeight.Normal)
+      .backgroundColor(this.tabTint(name)).fontColor(this.tabInk(name))
+      .onClick(() => { this.tab = name })
+  }
+
+  /** The source or the figures of the run, under the tab that was chosen. */
+  @Builder
+  detailsPanel() {
+    Column({ space: 8 }) {
+      if (this.tab === TAB_METRICS) {
+        Column({ space: 10 }) {
+          if (this.stages.length > 0) { this.stagesPanel() }
+          if (this.lastTemplatePick.length > 0) { this.editCheckPanel() }
+          if (this.attempts.length > 0) { this.attemptsPanel() }
+          if (this.mode !== MODE_SERVER && (this.sideCalls.length > 0 || this.attempts.length > 0)) { this.tokensPanel() }
+          if (this.stages.length > 0 || this.attempts.length > 0 || this.tools.length > 0) { this.toolsPanel() }
+          if (this.services.length > 0) { this.servicesPanel() }
+          if (this.attempts.length === 0 && this.stages.length === 0) {
+            Text('No run yet').fontSize(13).fontColor(app.inkDisabled).width('100%').textAlign(TextAlign.Center).padding({ top: 12 })
+          }
+        }
+        // The measured width, so that the cards (92% of it) are centred in the pane drawn and not in the wider box a percentage
+        // resolves against; before the first measure the percentage stands in.
+        .width(this.metricsWidth > 0 ? this.metricsWidth : '100%')
+        .alignItems(HorizontalAlign.Center)
+        .onAreaChange((_old: Area, area: Area): void => {
+          let w = Number(area.width)
+          if (w > 0 && Math.abs(w - this.metricsWidth) > 0.5) { this.metricsWidth = w }
+        })
+      } else {
+        // Lines are not wrapped: a wrapped line of code reads as two, and an indent is what shows its nesting.
+        Button('Copy code')
+          .attributeModifier(new QuietButton())
+          .height(32).fontSize(12)
+          .margin({ left: 10, top: 6, bottom: 4 })
+          .alignSelf(ItemAlign.Start)
+          .onClick(() => { copyText(this.getUIContext(), this.compiledSource) })
+        Scroll() {
+          Text(this.compiledSource)
+            .fontSize(12).fontFamily('monospace').fontColor(app.inkStrong).padding(10)
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .align(Alignment.TopStart)
+        .width('100%')
+        .backgroundColor(app.background)
+        .borderRadius(10)
+      }
+    }
+    .width('100%')
+  }
+
+  /** The engine's settings, out of the way until the title bar's gear is tapped: provider, model, selector. */
+  @Builder
+  settingsPanel() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        Button(this.modeLabel() + ' ▾')
+          .attributeModifier(new QuietButton())
+          .fontSize(12)
+          .height(30)
+          .enabled(!this.generating)
+          .bindMenu([
+            { value: this.modeMenuLabel(MODE_DEEPSEEK), action: () => { this.pickMode(MODE_DEEPSEEK) } },
+            { value: this.modeMenuLabel(MODE_SERVER), action: () => { this.pickMode(MODE_SERVER) } },
+            { value: this.modeMenuLabel(MODE_LOCAL), action: () => { this.pickMode(MODE_LOCAL) } }
+          ])
+        Text(this.status)
+          .fontSize(12)
+          .fontColor(this.compiled ? app.successInk : app.inkMuted)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      }
+      .width('100%')
+
+      // The three dashscope models (glm-5.2 and the two deepseek-v4 ones) share one key and base URL, so the choice is
+      // the model name alone -- which also flips isDeepSeek() and so the request shape. Shown only when the configured
+      // endpoint is dashscope; tapping applies and persists.
+      if (this.mode === MODE_DEEPSEEK && settings.isDashscopeProvider() && settings.hasApiKey()) {
+        Row({ space: 6 }) {
+          ForEach(this.modelPickerLabels(), (label: string, index: number) => {
+            Button(label)
+              .attributeModifier(this.modelPickerLook(index))
               .fontSize(11)
               .height(26)
               .enabled(!this.generating)
-              .onClick(() => { this.toggleJevProxy() })
-            Text(this.jevProxyOn ? 'selector via cloud model' :
-              (settings.hasSelectorKey() ? 'selector via TypeSafe' : 'no selector — agent route off'))
-              .fontSize(11).fontColor(app.inkMuted).layoutWeight(1)
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 4 })
+              .onClick(() => {
+                settings.applyModelCandidate(index)
+                // Whether the proxy can use logprobs is per model, so a switch drops any cached rejection.
+                resetLogprobsProbe()
+                this.selectedModel = settings.getModel()
+                this.checkDeepSeek()
+              })
+          }, (label: string, index: number) => label + index.toString())
         }
+        .width('100%')
+      }
 
-        // With a running program on screen the request is one line, leaving the height to the preview. Tapping it
-        // opens the whole history of the version's requests.
-        if (this.hasResult() && !this.composerOpen) {
-          if (!this.keyboardOpen) {
-            Row({ space: 8 }) {
-              Row({ space: 4 }) {
-                Text(this.acceptedRequest)
-                  .fontSize(12)
-                  .fontColor(app.inkSoft)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .layoutWeight(1)
-                Text(this.historyOpen ? '\u25B4' : '\u25BE').fontSize(12).fontColor(app.inkMuted)
-              }
-              .layoutWeight(1)
-              .onClick(() => { this.historyOpen = !this.historyOpen })
-              Button('New')
-                .attributeModifier(new QuietButton())
-                .fontSize(12)
-                .height(30)
-                .enabled(!this.generating)
-                .onClick(() => { this.startNew() })
-              // The result is ready: saving it is the thing to do.
-              Button(this.isSaved() ? 'Saved' : 'Save')
-                .attributeModifier(new PrimaryButton())
-                .fontSize(12)
-                .height(30)
-                .enabled(!this.generating && !this.isSaved())
-                .onClick(() => { this.doSave() })
-            }
+      // Toggle for the on-device Jev proxy (see jevProxyLabel). Offered for any cloud provider with a key.
+      if (this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
+        Text(this.advancedOpen ? 'Advanced \u25B4' : 'Advanced \u25BE').fontSize(12).fontColor(app.inkMuted)
+          .padding({ top: 4, bottom: 4 })
+          .onClick(() => { this.advancedOpen = !this.advancedOpen })
+      }
+      if (this.advancedOpen && this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
+        Row({ space: 8 }) {
+          Button(this.jevProxyLabel())
+            .attributeModifier(this.jevProxyLook())
+            .fontSize(11)
+            .height(26)
+            .enabled(!this.generating)
+            .onClick(() => { this.toggleJevProxy() })
+          Text(this.jevProxyOn ? 'selector via cloud model' :
+            (settings.hasSelectorKey() ? 'selector via TypeSafe' : 'no selector — agent route off'))
+            .fontSize(11).fontColor(app.inkMuted).layoutWeight(1)
+        }
+        .width('100%')
+      }
+    }
+    .width('100%')
+    .padding(12)
+    .backgroundColor(app.surface)
+    .borderRadius(14)
+  }
+
+  @Builder
+  modelCard() {
+    // The model (~1.9 GB) is fetched from vera-server, so what is missing is either the address or the download.
+    Column({ space: 8 }) {
+      Text('Model not downloaded').fontSize(14).fontWeight(FontWeight.Medium)
+      Text(settings.hasServerUrl() ?
+        'One-time download of about 1.9 GB from the server, best over WiFi.' :
+        'It is downloaded from vera-server, and no server address is set. Choose Server in the settings to see how to set one.')
+        .fontSize(12).fontColor(app.inkSoft)
+      if (settings.hasServerUrl()) {
+        Button('Download')
+          .attributeModifier(new PrimaryButton())
+          .fontSize(12)
+          .height(32)
+          .onClick(() => { this.checkModel() })
+      }
+    }
+    .alignItems(HorizontalAlign.Start)
+    .width('100%')
+    .padding(16)
+    .backgroundColor(app.warningFill)
+    .borderRadius(14)
+  }
+
+  /** Sends what was typed: a request for an app while there is none, a change to it once there is. */
+  private send(): void {
+    let text = this.draft.trim()
+    if (text.length === 0 || this.generating) { return }
+    if (this.hasResult()) {
+      this.refinePrompt = text
+      this.doRefine()
+    } else {
+      this.prompt = text
+      this.doGenerate()
+    }
+    // Emptied only once the request has gone: with no key, no model or no server it did not, and the words stay to be sent
+    // when that is put right.
+    if (this.generating || this.runOnOpen) { this.draft = '' }
+    this.scrollDown()
+  }
+
+  /** The request line has more to show when there is a history of requests or the text does not fit on one line. */
+  private requestExpands(): boolean {
+    return (this.requestHistory.length > 0 && this.requestHistory !== this.acceptedRequest) || this.acceptedRequest.length > 34
+  }
+
+  /** What the card says under its title: the run's own last words, or the version when nothing has run yet. */
+  private resultNote(): string {
+    return this.runs.length > 0 ? this.status : (this.baseVersionNumber > 0 ? 'Version ' + this.baseVersionNumber.toString() : '')
+  }
+
+  private scrollDown(): void {
+    setTimeout(() => { this.scroller.scrollEdge(Edge.Bottom) }, 80)
+  }
+
+  /** New starts the thread over; with a result that was never saved it asks first. */
+  private confirmNew(): void {
+    if (this.generating) { return }
+    if (!this.hasUnsavedResult()) {
+      this.startFresh()
+      return
+    }
+    this.getUIContext().showAlertDialog({
+      title: 'Start a new app?',
+      message: 'The app on screen is not saved and will be lost.',
+      primaryButton: { value: 'Cancel', action: () => {} },
+      secondaryButton: { value: 'Start new', fontColor: app.danger, action: () => { this.startFresh() } }
+    })
+  }
+
+  private startFresh(): void {
+    // "New" means a new app: it is no longer a version of the project this page was opened from.
+    this.projectId = ''
+    this.startNew()
+    this.runs = []
+    this.program = new RunTotals()
+    this.attempts = []
+    this.stages = []
+    this.status = ''
+    this.draft = ''
+    this.tab = TAB_PREVIEW
+    this.fullscreen = false
+    this.requestOpen = false
+    this.composerOpen = false
+    this.scroller.scrollEdge(Edge.Top)
+  }
+
+  /** The thread is a list of turns: the person's requests, and under the last one what is being built or was built. */
+  build() {
+    // The windows are siblings of the page, not children of its content: their dimming then covers the title bar too.
+    Stack() {
+    Navigation() {
+      Column() {
+        if (this.baseError.length > 0 && !this.fullscreen) {
+          Text(this.baseError).fontSize(13).fontColor(app.dangerInk).width('100%').padding({ left: 16, right: 16, top: 8 })
+        }
+        if (this.settingsOpen && !this.fullscreen) {
+          Column() { this.settingsPanel() }
             .width('100%')
-            .padding({ left: 16, right: 16, top: 8 })
-          }
+            .padding({ left: 12, right: 12, top: 8 })
+        }
+        // A program that runs takes the whole space between the bar and the box, as the whole of the screen it is; before
+        // and while it is built, and when it was not, the page is a thread of cards.
+        if (this.fullscreen && this.hasResult()) {
+          this.fullscreenPane()
+        } else if (!this.generating && this.hasResult()) {
+          this.resultPane()
         } else {
-          TextArea({ placeholder: this.baseVersionId.length > 0 || this.hasResult() ? 'What to change?' : 'Describe the app you want...', text: this.prompt })
-            .onChange((value: string) => { this.prompt = value })
-            .enabled(!this.generating && this.baseError.length === 0)
-            .width('calc(100% - 32vp)')
-            .height(100)
-            .margin({ left: 16, right: 16, top: 8, bottom: 8 })
-
-          Row({ space: 10 }) {
-            Button(this.generating ? 'Stop' : (this.baseVersionId.length > 0 || this.hasResult() ? 'Refine' : 'Generate'))
-              .attributeModifier(new PrimaryButton())
-              .layoutWeight(1)
-              // Off with nothing typed, as Update below is: a tap that does nothing reads as broken.
-              .enabled(this.generating || (this.prompt.trim().length > 0 && this.canGenerate()))
-              .onClick(() => {
-                if (this.generating) {
-                  this.stopGeneration()
-                } else {
-                  this.doGenerate()
-                }
-              })
-            Button(this.isSaved() ? 'Saved' : 'Save')
-              .attributeModifier(new TonalButton())
-              .layoutWeight(1)
-              .enabled(this.hasResult() && !this.generating && !this.isSaved())
-              .onClick(() => { this.doSave() })
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16 })
-        }
-
-        if (!this.keyboardOpen) {
-          // What a failed service cost (a slower, plainer screen): shown only when something did not answer.
-          if (this.troubleNote.length > 0) {
-            Text(this.troubleNote)
-              .fontSize(12)
-              .fontColor(app.warningInk)
-              .width('100%')
-              .padding({ left: 16, right: 16, top: 6 })
-          }
-
-          if (!this.generating && this.hasResult() && this.generatedSource.trim() !== this.compiledSource.trim()) {
-            Text('The last attempt was not applied. Save keeps the previous successful code and version request.')
-              .fontSize(12).fontColor(app.warningInk)
-              .padding({ left: 16, right: 16, top: 6 })
-          }
-
-          Row({ space: 6 }) {
-            Button('Preview')
-              .type(ButtonType.Capsule)
-              .fontSize(12)
-              .fontWeight(this.tab === TAB_PREVIEW ? FontWeight.Medium : FontWeight.Normal)
-              .height(30)
-              .layoutWeight(1)
-              .backgroundColor(this.tabTint(TAB_PREVIEW))
-              .fontColor(this.tabInk(TAB_PREVIEW))
-              .onClick(() => { this.tab = TAB_PREVIEW })
-            Button('Code')
-              .type(ButtonType.Capsule)
-              .fontSize(12)
-              .fontWeight(this.tab === TAB_CODE ? FontWeight.Medium : FontWeight.Normal)
-              .height(30)
-              .layoutWeight(1)
-              .backgroundColor(this.tabTint(TAB_CODE))
-              .fontColor(this.tabInk(TAB_CODE))
-              .onClick(() => { this.tab = TAB_CODE })
-            Button('Metrics')
-              .type(ButtonType.Capsule)
-              .fontSize(12)
-              .fontWeight(this.tab === TAB_METRICS ? FontWeight.Medium : FontWeight.Normal)
-              .height(30)
-              .layoutWeight(1)
-              .backgroundColor(this.tabTint(TAB_METRICS))
-              .fontColor(this.tabInk(TAB_METRICS))
-              .onClick(() => { this.tab = TAB_METRICS })
-          }
-          .width('100%')
-          .padding({ left: 16, right: 16, top: 8, bottom: 6 })
-        }
-
-        // Compile errors belong to no single pane -- they explain what the
-        // status line says, so they stay above all three.
-        if (this.compileErrors.length > 0) {
-          Scroll() {
-            Text(this.compileErrors)
-              .fontSize(11)
-              .fontFamily('monospace')
-              .fontColor(app.danger)
-              .width('100%')
-              .padding(8)
-          }
-          .width('calc(100% - 32vp)')
-          .constraintSize({ maxHeight: 100 })
-          .margin({ left: 16, right: 16 })
-          .backgroundColor(app.dangerFill)
-          .borderRadius(8)
-        }
-
-        if (this.mode === MODE_LOCAL && !this.modelReady && !this.generating && !this.downloading && !this.keyboardOpen) {
-          // The model (~1.9 GB) is fetched from vera-server, so what is missing is either the address or the download.
-          Column({ space: 8 }) {
-            Text('Model not downloaded').fontSize(14).fontWeight(FontWeight.Medium)
-            Text(settings.hasServerUrl() ?
-              'One-time download of about 1.9 GB from the server, best over WiFi.' :
-              'It is downloaded from vera-server, and no server address is set. Choose Server in the menu to see how to set one.')
-              .fontSize(12).fontColor(app.inkSoft)
-            if (settings.hasServerUrl()) {
-              Button('Download')
-                .attributeModifier(new PrimaryButton())
-                .fontSize(12)
-                .height(32)
-                .onClick(() => { this.checkModel() })
+        List({ space: 10, scroller: this.scroller }) {
+          // Nothing asked for yet: ready-made requests to start from, as an empty chat has. A tap sends one.
+          if (this.runs.length === 0 && !this.generating && this.baseVersionId.length === 0 && !this.hasResult()) {
+            ListItem() {
+              ChatStarters({ en: APP_STARTERS, flat: true, onPick: (prompt: string): void => {
+                if (this.generating) { return }
+                this.prompt = prompt
+                this.doGenerate()
+              } })
+            }
+            if (this.setupHint.length > 0) {
+              ListItem() {
+                Text(this.setupHint).fontSize(12).fontColor(app.inkMuted).padding({ left: 4, right: 4 })
+                  .copyOption(CopyOptions.LocalDevice)
+              }
             }
           }
-          .alignItems(HorizontalAlign.Start)
-          .width('calc(100% - 32vp)')
-          .padding(16)
-          .backgroundColor(app.warningFill)
-          .margin({ left: 16, right: 16, top: 8 })
-          .borderRadius(8)
+          if (this.generating) {
+            ListItem() { this.buildCard() }
+          } else if (this.runs.length > 0 && !this.compiled) {
+            ListItem() { this.failedCard() }
+          }
+          if (this.mode === MODE_LOCAL && !this.modelReady && !this.generating && !this.downloading) {
+            ListItem() { this.modelCard() }
+          }
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .scrollBar(BarState.Off)
         }
 
-        if (this.tab === TAB_PREVIEW) {
-          Column() {
-            if (this.questionText.length > 0) {
-              QuestionCard({ question: this.questionText, options: this.questionOptions, fallback: this.questionFallback,
-                onPick: (index: number): void => { this.settleQuestion(index) },
-                onTyped: (text: string): void => { this.settleQuestion(text) } })
-                .margin({ bottom: 8 })
-            }
-            if (this.hasResult()) {
-              VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState,
-                onStateSnapshot: (encoded: string): void => { this.liveState = encoded } })
-            } else if (this.generating && this.previewVbc2.length > 0) {
-              Text(this.previewNote)
-                .fontSize(12)
-                .fontColor(app.warningInk)
-                .width('100%')
-                .padding({ left: 12, right: 12, top: 6, bottom: 2 })
-              VeraPreview({ previewOnly: true, vbc2: this.previewVbc2 })
-            } else {
-              Column({ space: 12 }) {
-                Text(this.generating ? 'Building...' : 'The program will run here once it compiles')
-                  .fontSize(13)
-                  .fontColor(app.inkDisabled)
-                if (!this.generating && this.setupHint.length > 0) {
-                  Text(this.setupHint)
-                    .fontSize(11)
-                    .fontColor(app.inkMuted)
-                    .copyOption(CopyOptions.LocalDevice)
-                }
-              }
-              .alignItems(HorizontalAlign.Start)
-              .padding(24)
-            }
-          }
-          .width('calc(100% - 24vp)')
-          .layoutWeight(1)
-          .margin({ left: 12, right: 12, top: 4 })
-          .backgroundColor(app.surface)
-          .border({ width: 1, color: app.line })
-          .borderRadius(10)
-          .clip(true)
-        } else if (this.tab === TAB_CODE) {
-          // Lines are not wrapped: a wrapped line of code reads as two, and an indent is what shows its nesting. The
-          // source scrolls sideways inside, and down outside.
-          Scroll() {
-            Scroll() {
-              Text(!this.generating && this.hasResult() ? this.compiledSource :
-                (this.generatedSource.length > 0 ? this.generatedSource : '(generated source will appear here)'))
-                .fontSize(12)
-                .fontFamily('monospace')
-                .fontColor(this.generatedSource.length > 0 ? app.inkStrong : app.inkDisabled)
-                .padding(12)
-            }
-            .scrollable(ScrollDirection.Horizontal)
-            .scrollBar(BarState.Off)
-            .align(Alignment.TopStart)
-          }
-          .width('calc(100% - 24vp)')
-          .layoutWeight(1)
-          .align(Alignment.Top)
-          .margin({ left: 12, right: 12, top: 4 })
-          .backgroundColor(app.background)
-          .borderRadius(10)
-        } else {
-          Scroll() {
-            Column({ space: 10 }) {
-              if (this.stages.length > 0) {
-                this.stagesPanel()
-              }
-              if (this.lastTemplatePick.length > 0) {
-                this.editCheckPanel()
-              }
-              if (this.attempts.length > 0) {
-                this.attemptsPanel()
-              }
-              if (this.mode !== MODE_SERVER && (this.sideCalls.length > 0 || this.attempts.length > 0)) {
-                this.tokensPanel()
-              }
-              if (this.stages.length > 0 || this.attempts.length > 0 || this.tools.length > 0) {
-                this.toolsPanel()
-              }
-              if (this.services.length > 0) {
-                this.servicesPanel()
-              }
-              if (this.attempts.length === 0 && this.stages.length === 0) {
-                Text('No run yet').fontSize(13).fontColor(app.inkDisabled).width('100%').textAlign(TextAlign.Center).padding({ top: 24 })
-              }
-            }
-            // The measured width, so that the cards (92% of it) are centred in the pane drawn and not in the wider box a percentage
-            // resolves against; before the first measure the percentage stands in.
-            .width(this.metricsWidth > 0 ? this.metricsWidth : '100%')
-            .alignItems(HorizontalAlign.Center)
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .align(Alignment.Top)
-          .onAreaChange((_old: Area, area: Area): void => {
-            let w = Number(area.width)
-            if (w > 0 && Math.abs(w - this.metricsWidth) > 0.5) { this.metricsWidth = w }
-          })
-          // The bar is drawn over the content, and the rightmost tile in every
-          // row ends up sliced by it.
-          .scrollBar(BarState.Off)
-          // Vertical only: a percentage width resolves against the parent's
-          // whole box, so any horizontal padding here pushes every card past
-          // the right edge.
-          .padding({ top: 12, bottom: 12 })
-          .margin({ left: 12, right: 12, top: 4 })
-          .backgroundColor(app.background)
-          .borderRadius(10)
-        }
-
-        // Pinned under whichever pane is open: reading the source is exactly
-        // when you want to ask for a change, so the bar does not belong to the
-        // preview alone.
-        if (this.hasResult()) {
-          Row({ space: 8 }) {
-            TextInput({ placeholder: 'What to change?', text: this.refinePrompt })
-              .onChange((value: string) => { this.refinePrompt = value })
-              .layoutWeight(1)
-              .height(44)
-              .enabled(!this.generating)
-            Button(this.generating ? 'Stop' : 'Update')
-              .attributeModifier(new TonalButton())
-              .width(92)
-              .height(44)
-              .enabled(this.generating || (this.refinePrompt.trim().length > 0 && this.canGenerate()))
-              .onClick(() => {
-                if (this.generating) {
-                  this.stopGeneration()
-                } else {
-                  this.doRefine()
-                }
-              })
-          }
-          .width('100%')
-          .padding({ left: 12, right: 12, top: 8, bottom: 12 })
-          .backgroundColor(app.background)
+        // Full screen can fold the box away, leaving the program the whole screen; a round button brings it back.
+        // While a field of the program has the keyboard, the box would only take room from the program.
+        if (!(this.fullscreen && this.composerHidden && this.hasResult()) &&
+          !(this.keyboardOpen && !this.composerFocused && this.hasResult())) {
+          this.composer()
         }
       }
       .width('100%')
       .height('100%')
+      .backgroundColor(app.background)
     }
-    .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.nextVersionNumber.toString() : 'Generate')
+    .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.baseVersionNumber.toString() :
+      (this.projectId.length === 0 ? 'New app' : 'New version'))
     .titleMode(NavigationTitleMode.Mini)
+    .hideTitleBar(this.fullscreen && this.hasResult())
     .backgroundColor(app.background)
+    .menus(this.barMenus())
+
+    if (this.naming) {
+      this.nameOverlay()
+    }
+    if (this.leaving) {
+      this.leaveOverlay()
+    }
+    }
+    .width('100%')
+    .height('100%')
   }
 }

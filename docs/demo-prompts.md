@@ -158,7 +158,7 @@ check by ear and by eye. It is one button press, not a loop.
 ## 5. Chat with widgets (a separate screen)
 
 Unlike the four above this is not typed into the Generate screen. It is the
-**Chat** button on the project list (`pages/ChatPage`): an ordinary assistant
+**Chat** side of the switch on the home screen (`pages/ChatPage`): an ordinary assistant
 conversation in which a reply can carry a live mini-application, generated while
 the person waits and drawn inside the conversation, the way a chat answer can
 embed an interactive component instead of describing one.
@@ -222,9 +222,10 @@ fixed-height (420 vp) card under the message. Widget builds are queued, one at a
   the address, hours and a Directions button. The image address must be one the
   search returned; the one in the run above was checked against Exa's own
   results. Without the key there is no search and no photo.
-- **Saved chats and stats.** The Chat button opens the list of saved chats (newest
-  first, with message count, widgets and estimated cost; swipe a row to delete
-  it) and a New chat button. A chat is saved as it goes, including each widget's
+- **Saved chats and stats.** Chat on the home screen opens a new chat; the clock
+  icon in its header, or the clock at the top right of the home screen in Chat
+  mode, opens the list of saved chats (newest first, with message count,
+  widgets and estimated cost; swipe a row to delete it) and a New chat button. A chat is saved as it goes, including each widget's
   program and its own state (`{filesDir}/vera/chats`, and `chat-<id>/` for widget
   state), so reopening it, even after the app was stopped, shows the same
   conversation and the same widgets. A widget that was still being built when
@@ -244,8 +245,65 @@ fixed-height (420 vp) card under the message. Widget builds are queued, one at a
   Generated layouts are not checked for fit, so a label can wrap badly ("Thursd /
   ay" in a half-width tile).
 
-Run on a phone (debug-signed as a system app, DeepSeek key stored): the Chat
-button on the project list opens the screen.
+Run on a phone (debug-signed as a system app, DeepSeek key stored): Chat on the
+home screen opens the screen.
+
+## 6. Chat starters and the home screen
+
+The home screen has a Chat / App switch, a box at the bottom and, above the
+box, the three starters below as cards in a row (`HOME_STARTERS` in
+`entry/src/main/ets/components/ChatStarters.ets`). A card sends its English
+prompt in the mode that is on: to a new chat in Chat, to a new app in App. What
+is typed into the box goes the same way. "My apps ›" at the right of the cards'
+header hides the box and opens a horizontal shelf of the saved apps with large
+icons; the cross or Back closes it. The button at the top right opens the
+saved chats in Chat mode and the My apps list in App mode.
+
+A new, empty chat shows a list of ready-made first messages ("prompt
+starters"). A tap sends one as if it had been typed; the list goes away once
+the chat has a message, and the chat is saved like any other. An EN / 中文
+switch above the list picks the language; it is kept while the app runs. The
+prompts live in `STARTERS_ZH` and `STARTERS_EN` in
+`entry/src/main/ets/components/ChatStarters.ets`.
+
+| starter | 中文 | EN |
+|---|---|---|
+| 旅行计划 / Trip plan | 我们一家三口要去西湖玩一天，帮忙计划行程。 | We are a family of three going to West Lake for a day. Help us plan the itinerary. |
+| 宝宝护理 / Baby fever | 我宝宝发烧了，37.5度。帮我创建宝宝发热护理卡片与服务。 | My baby has a fever of 37.5°C. Create a baby fever care card and services for me. |
+| 吃药提醒 / Pills | 帮我创建一张吃药卡，提醒我每天吃药。 | Create a medicine card that reminds me to take my pills every day. |
+
+For 旅行计划 the presenter pastes a travel-guide link as the next message when
+the model asks. Chat cannot open the link itself: the plan comes from the
+model's own knowledge and web search, with the link as context.
+
+## 7. Starting a new app
+
+On the App side of the home screen, the box (or a card) opens the Generate
+screen at once: no name or picture is asked for, and no project exists yet; the
+"+" on the Generate screen starts another. An empty Generate screen lists
+ready-made prompts by group (`APP_STARTERS` in
+`entry/src/main/ets/components/ChatStarters.ets`, English only, as the generator
+wants): sections 1, 2, 3a and 3 above, the wind-down request ("I'm in bed, don't
+know what to do, create an app for me"), the three chat starters of section 6 in
+English, then short one-sentence briefs (water, pantry, feeding, homework,
+chores, reading, service, fuel, filters, 2048, minesweeper); a tap fills the box
+and starts generating.
+
+The project is made at the first **Save**, which asks for its name and offers
+one: the title of the program's own `ui.Header`, else the first words of the
+request, else "New app" (`vera/AppName.ets`). The window shows the picture beside the name; a
+tap on the picture opens the ten to choose from (`components/IconPicker.ets`), the
+phone being the one to start with. On the project page the picture and the name
+are the controls too: a tap on either changes it, and a pencil marks them. Saves
+after that are new versions with no question.
+
+**Back** with work that was not saved asks first. With a result that no version
+holds it asks "Save this app?" (Save, Discard, Keep editing), for a new app and
+for a refine of an existing one. With only a request typed into either box, or a
+run under way, there is nothing to save, so it asks "Leave without generating?"
+(Discard, Keep editing). Back from an empty screen, or with everything saved,
+leaves at once, and a new app that was never saved leaves nothing behind in the
+list.
 
 ## What none of the prompts say
 

@@ -181,6 +181,11 @@ export struct VeraPreview {
    */
   @Prop embedded: boolean = false
   /**
+   * Room kept under the program, in vp, so that its last rows can be scrolled clear of something the host lays over its
+   * bottom corner (the full-screen button). Not used when embedded.
+   */
+  @Prop bottomRoom: number = 0
+  /**
    * Bumped by the hosting page's onBackPressed() every time the system back
    * gesture should be handed to the program. A counter rather than a boolean:
    * the value itself carries no meaning, only the fact that it changed, so two
@@ -1462,8 +1467,9 @@ export struct VeraPreview {
                 }, (id: number) => id.toString())
               }
               .width('100%')
-              // Room under the content for the snackbars, so the last rows can be scrolled out from under them.
-              .padding({ bottom: this.snackbarRoom() })
+              // Room under the content for the snackbars, so the last rows can be scrolled out from under them, and for
+              // what the host lays over the corner.
+              .padding({ bottom: this.snackbarRoom() + this.bottomRoom })
             }
             .width('100%')
             .height('100%')

@@ -1,4 +1,5 @@
 import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
+import { SymbolGlyphModifier } from '@kit.ArkUI'
 import common from '@ohos.app.ability.common'
 import { VeraPreview } from '../components/VeraPreview'
 import { loadRawfileText } from '../vera/LlamaEngine'
@@ -19,7 +20,8 @@ import { appAgentHost } from '../vera/agent/AgentAppHost'
 import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_NOT_BUILT } from '../vera/agent/VeraBuildRoute'
-import { app, PrimaryButton } from '../components/AppStyle'
+import { app, TonalButton } from '../components/AppStyle'
+import { ChatStarters, STARTERS_ZH, STARTERS_EN } from '../components/ChatStarters'
 
 const APP_NONE: string = 'none'
 const APP_DESCRIBING: string = 'describing'
@@ -446,6 +448,9 @@ struct ChatPage {
     return context
   }
 
+  /** The chat as last written (or as opened), to tell whether leaving has anything to save. */
+  private lastSavedJson: string = ''
+
   aboutToAppear(): void {
     let dir = this.hostContext().filesDir
     settings.init(dir)
@@ -457,10 +462,18 @@ struct ChatPage {
     initTrace(dir)
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)
     let params = this.getUIContext().getRouter().getParams() as Record<string, string>
+    let runOnOpen = false
     if (params !== null && params !== undefined && (params['chatId'] || '').length > 0) {
       this.openChat(params['chatId'])
+    } else if (params !== null && params !== undefined) {
+      // A message typed on the home screen waits in the box for the person to send it.
+      this.draft = params['prompt'] || ''
+      runOnOpen = (params['run'] || '').length > 0 && this.draft.trim().length > 0
     }
-    this.loadResources().catch((_e: Error): void => {})
+    this.loadResources().then((): void => {
+      // The message came with "send it": it goes now that the prompts are loaded.
+      if (runOnOpen) { this.send().catch((_e: Error): void => {}) }
+    }).catch((_e: Error): void => {})
   }
 
   aboutToDisappear(): void {
@@ -492,9 +505,7 @@ struct ChatPage {
    */
   private idleLine(): string {
     let note = modelSupportNote()
-    if (settings.hasApiKey()) {
-      return note.length > 0 ? this.readyLine() + ' · ' + note : this.readyLine()
-    }
+    // Provider, model and key are for working on the app: the line speaks only when something needs saying.
     return note
   }
 
@@ -540,6 +551,8 @@ struct ChatPage {
       restored.push(msg)
     }
     this.messages = restored
+    // What opening it would write back: if nothing changes, leaving writes nothing.
+    this.lastSavedJson = JSON.stringify(this.storedChat())
   }
 
   /** Writes the chat down. Called whenever something finishes, and on leaving. */
@@ -549,6 +562,15 @@ struct ChatPage {
       this.chatId = chats.newId()
       this.createdAt = Date.now()
     }
+    let chat = this.storedChat()
+    // Looking at a chat is not changing it: only a changed chat is written, which moves it up the list.
+    let json = JSON.stringify(chat)
+    if (json === this.lastSavedJson) { return }
+    chats.save(chat)
+    this.lastSavedJson = json
+  }
+
+  private storedChat(): StoredChat {
     let chat = new StoredChat()
     chat.id = this.chatId
     chat.title = this.title
@@ -582,7 +604,7 @@ struct ChatPage {
       sm.templatePick = m.templatePick
       chat.messages.push(sm)
     }
-    chats.save(chat)
+    return chat
   }
 
   private async loadResources(): Promise<void> {
@@ -674,6 +696,32 @@ struct ChatPage {
       msg.appState = APP_DESCRIBING
     }
     this.scrollDown()
+  }
+
+  /**
+   * The saved chats. This page is replaced by the list rather than covered by
+   * it, so Back from a chat opened there returns to the list, and from the
+   * list to the projects. The chat is saved on the way out, as on Back.
+   */
+  private openHistory(): void {
+    let params = this.getUIContext().getRouter().getParams() as Record<string, string>
+    if (params !== null && params !== undefined && (params['fromList'] || '').length > 0) {
+      // The list is already underneath: going back to it is the same as opening it.
+      this.getUIContext().getRouter().back()
+      return
+    }
+    this.getUIContext().getRouter().replaceUrl({ url: 'pages/ChatListPage' })
+      .catch((e: Error): void => { console.error('Navigate to chat list failed: ' + e.message) })
+  }
+
+  /** Asks the last message again: it is taken back out of the thread and sent as if just typed. */
+  private retryLast(): void {
+    if (this.busy || this.messages.length === 0) { return }
+    let last = this.messages[this.messages.length - 1]
+    if (last.role !== 'user') { return }
+    this.messages = this.messages.slice(0, this.messages.length - 1)
+    this.draft = last.before
+    this.send().catch((_e: Error): void => {})
   }
 
   private async send(): Promise<void> {
@@ -925,11 +973,36 @@ struct ChatPage {
               StatsPanel({ tally: tallyOf(this.messages), attempts: [], heading: 'Whole chat' })
             }
           }
+          // An empty chat offers ready-made first messages; a tap sends one, as if typed.
+          if (this.messages.length === 0) {
+            ListItem() {
+              ChatStarters({ zh: STARTERS_ZH, en: STARTERS_EN, onPick: (prompt: string): void => {
+                if (this.busy) { return }
+                this.draft = prompt
+                this.send()
+              } })
+            }
+          }
           ForEach(this.messages, (m: ChatMessage) => {
             ListItem() {
               MessageBubble({ msg: m, showStats: this.showStats, chatId: this.chatId })
             }
           }, (m: ChatMessage) => m.id.toString())
+          // A question with nothing under it (the chat was closed before the answer came): say so, and offer to ask again.
+          if (!this.busy && this.messages.length > 0 && this.messages[this.messages.length - 1].role === 'user') {
+            ListItem() {
+              Row({ space: 12 }) {
+                Text('No answer was saved for this message.').fontSize(14).fontColor(app.inkSoft).layoutWeight(1)
+                Button('Retry')
+                  .attributeModifier(new TonalButton())
+                  .onClick(() => { this.retryLast() })
+              }
+              .width('100%')
+              .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+              .borderRadius(12)
+              .backgroundColor(app.surface)
+            }
+          }
         }
         .layoutWeight(1)
         .width('100%')
@@ -955,10 +1028,14 @@ struct ChatPage {
             .onSubmit(() => { this.send() })
             .layoutWeight(1)
             .height(44)
-          Button('Send')
-            .attributeModifier(new PrimaryButton())
-            .enabled(!this.busy && this.draft.trim().length > 0)
-            .onClick(() => { this.send() })
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.arrow_up')).fontSize(20).fontColor([app.onPrimary])
+          }
+          .width(44).height(44)
+          .backgroundColor(app.primary)
+          .opacity(!this.busy && this.draft.trim().length > 0 ? 1 : 0.4)
+          .accessibilityText('Send')
+          .onClick(() => { this.send() })
         }
         .width('100%')
         .padding({ left: 12, right: 12, top: 6, bottom: 10 })
@@ -970,5 +1047,10 @@ struct ChatPage {
     }
     .title('Chat')
     .titleMode(NavigationTitleMode.Mini)
+    .menus([{
+      value: 'History',
+      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.clock')),
+      action: () => { this.openHistory() }
+    }])
   }
 }

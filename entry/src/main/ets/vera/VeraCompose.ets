@@ -230,7 +230,7 @@ const RESERVED_IDS: string[] = ['state', 'value', 'elapsedMs', 'running', 'finis
   'elapsed', 'duration', 'view', 'init', 'ui', 'math', 'strings', 'sdk', 'time', 'entries', 'entryCount', 'entryTotal',
   'draftText', 'draftNumberText', 'entry', 'out', 'rows', 'i', 'e', 'emptyEntries', 'total', 'next', 'startAt',
   'effectNote', 'share', 'countdownSeconds', 'addEntry', 'removeEntry', 'ignored', 'onEntryAnswer', 'answered', 'marked',
-  'note', 'sub', 'undoRemove', 'removedEntries', 'removedAt', 'gone', 'none']
+  'note', 'sub', 'undoRemove', 'expireUndo', 'removedEntries', 'removedAt', 'gone', 'none']
 
 /** The sketch from the model's reply, or null when it is not one. Ids that cannot be names are dropped. */
 export function parseSketch(text: string): Sketch | null {
@@ -3430,6 +3430,9 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   restored.set('entries', 'out')
   restored.set('removedEntries', 'none')
   restored.set('removedAt', '-1')
+  let expired: Map<string, string> = new Map<string, string>()
+  expired.set('removedEntries', 'none')
+  expired.set('removedAt', '-1')
   functions.push(fn(['function undoRemove(state: AppState, ignored: number): AppState {',
     '  if (state.removedEntries.length() === 0) { return state; }',
     '  let out: LogEntry[] = [];',
@@ -3442,6 +3445,12 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     '  }',
     '  if (state.removedAt >= state.entries.length()) { out.push(state.removedEntries[0]); }',
     '  return ' + changed(fields, restored) + ';',
+    '}']))
+
+  // "Removed / Undo" is for the moment after a removal: it goes by itself, also when the program is opened later.
+  functions.push(fn(['function expireUndo(state: AppState, elapsedMs: number): AppState {',
+    '  let none: LogEntry[] = [];',
+    '  return ' + changed(fields, expired) + ';',
     '}']))
 
   let form: string[] = []
@@ -3511,7 +3520,10 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     'ui.When(entryCount === 0, ui.EmptyState("default", "Nothing added yet", ' +
     quote(laps ? 'Start the stopwatch and tap Lap.' : (form.length > 1 ? 'Fill in the fields above and tap Add.' : 'Tap Add to add one.')) + ', "", "", "list"))',
     'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))',
-    'ui.When(state.removedEntries.length() > 0, ui.Snackbar("default", "Removed", "Undo", "undoRemove"))']
+    'ui.When(state.removedEntries.length() > 0, ui.Snackbar("default", "Removed", "Undo", "undoRemove"))',
+    // The interval moves with the number of entries: a second removal while the first Undo shows must start the six seconds again,
+    // and a ticker that is running is left alone unless its interval changed (VeraPreview.reconcileTimers).
+    'ui.Ticker("default", "undoClock", 6000 + state.entries.length() % 7, state.removedEntries.length() > 0, "expireUndo")']
   if (comp.widget) {
     for (let node of form.concat(listNodes)) { view.push('sets.push(' + node + ');') }
   } else {

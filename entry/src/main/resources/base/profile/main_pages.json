@@ -5,6 +5,7 @@
     "pages/RunnerPage",
     "pages/GeneratePage",
     "pages/ChatPage",
-    "pages/ChatListPage"
+    "pages/ChatListPage",
+    "pages/AppsPage"
   ]
 }

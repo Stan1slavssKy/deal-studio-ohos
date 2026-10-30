@@ -1,6 +1,9 @@
+import { copyText } from '../components/Clipboard'
 import { Project, Version, VersionMetrics, store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { projectIconResource } from '../vera/ProjectIcons'
+import { IconPicker } from '../components/IconPicker'
+import { confirmDeleteProject } from '../components/ProjectRows'
 import { requestHeadline, changeNote, versionCountText } from '../vera/ProjectText'
 import { projectOperations, ProjectOperationStatus, ProjectShortcutState } from '../vera/ProjectOperations'
 import { common } from '@kit.AbilityKit'
@@ -38,6 +41,8 @@ struct ProjectPage {
   @State viewedPrompt: string = ''
   @State renaming: boolean = false
   @State renameText: string = ''
+  /** The window of pictures, opened by a tap on the app's picture; a tap on one applies it. */
+  @State pickingIcon: boolean = false
 
   aboutToAppear(): void {
     this.pageVisible = true
@@ -110,10 +115,21 @@ struct ProjectPage {
       Column() {
         if (this.project !== null) {
           Row() {
-            Image(projectIconResource(this.project!.icon))
-              .width(56).height(56).objectFit(ImageFit.Contain).margin({ right: 16 })
+            // The picture and the name are the controls for changing them: a pencil says so.
+            Stack({ alignContent: Alignment.BottomEnd }) {
+              Image(projectIconResource(this.project!.icon))
+                .width(56).height(56).objectFit(ImageFit.Contain)
+              this.pencilBadge()
+            }
+            .margin({ right: 16 })
+            .onClick(() => { this.pickingIcon = true })
             Column() {
-              Text(this.project!.name).fontSize(22).fontWeight(FontWeight.Bold)
+              Row({ space: 6 }) {
+                Text(this.project!.name).fontSize(22).fontWeight(FontWeight.Bold)
+                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).flexShrink(1)
+                SymbolGlyph($r('sys.symbol.pencil_tip')).fontSize(16).fontColor([app.inkMuted])
+              }
+              .onClick(() => { this.renameText = this.project!.name; this.renaming = true })
               Text(versionCountText(this.versions.length))
                 .fontSize(14).fontColor(app.inkMuted).margin({ top: 4 })
             }.alignItems(HorizontalAlign.Start).layoutWeight(1)
@@ -123,7 +139,7 @@ struct ProjectPage {
 
           // One thing to do first (Generate), the one next to it (Run), and the rest in a menu.
           Row({ space: 10 }) {
-            Button('Generate')
+            Button('New version')
               .attributeModifier(new PrimaryButton())
               .layoutWeight(1)
               .onClick(() => { this.openGenerate('') })
@@ -140,8 +156,7 @@ struct ProjectPage {
               .bindMenu([
                 { value: this.shortcutButtonLabel(), action: () => { this.onShortcutMenu() },
                   enabled: this.shortcutMenuEnabled() },
-                { value: 'Rename', action: () => { this.renameText = this.project!.name; this.renaming = true } },
-                { value: 'Delete project', action: () => { this.confirmDeleteProject() } }
+                { value: 'Delete project', action: () => { this.askDeleteProject() } }
               ])
           }
           .width('100%')
@@ -254,6 +269,9 @@ struct ProjectPage {
     }
     if (this.renaming) {
       this.renameOverlay()
+    }
+    if (this.pickingIcon) {
+      this.iconOverlay()
     }
     }
     .width('100%')
@@ -438,7 +456,8 @@ struct ProjectPage {
       .alignItems(VerticalAlign.Top)
       Row({ space: 8 }) {
         this.metricCell('Runs', this.metricCount(metrics.runs), 'generation and refinements')
-        this.metricCell('Model attempts', this.metricCount(metrics.attempts), 'including failed retries')
+        this.metricCell('Model attempts', this.metricCount(metrics.attempts),
+          metrics.attempts === 0 ? 'none: built from ready-made parts' : 'including failed retries')
       }
       .width('100%')
       .alignItems(VerticalAlign.Top)
@@ -576,6 +595,12 @@ struct ProjectPage {
         Row() {
           Text('Version ' + this.viewedVersionNumber.toString() + ' \u00B7 Code').fontSize(18).fontWeight(FontWeight.Bold)
           Blank()
+          Button('Copy')
+            .attributeModifier(new QuietButton())
+            .height(36)
+            .fontSize(13)
+            .margin({ right: 8 })
+            .onClick(() => { copyText(this.getUIContext(), this.viewedSource) })
           Button('Close')
             .attributeModifier(new QuietButton())
             .height(36)
@@ -602,10 +627,17 @@ struct ProjectPage {
             }
             Text('Source')
               .fontSize(12).fontColor(app.inkMuted).width('100%').margin({ bottom: 4 })
-            Text(this.viewedSource)
-              .fontSize(12)
-              .fontColor(app.inkStrong)
-              .width('100%')
+            // Lines are not wrapped: an indent is what shows the nesting.
+            Scroll() {
+              Text(this.viewedSource)
+                .fontSize(12)
+                .fontFamily('monospace')
+                .fontColor(app.inkStrong)
+            }
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .align(Alignment.TopStart)
+            .width('100%')
           }
           .width('100%')
         }
@@ -632,9 +664,11 @@ struct ProjectPage {
   renameOverlay() {
     Column() {
       Column() {
-        Text('Rename').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 })
+        Text('Rename').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 16 }).width('100%')
         TextInput({ placeholder: 'Project name', text: this.renameText })
           .onChange((value: string) => { this.renameText = value })
+          .defaultFocus(true)
+          .onSubmit(() => { this.doRename() })
           .width('100%')
           .height(44)
         Row({ space: 12 }) {
@@ -665,6 +699,50 @@ struct ProjectPage {
     .onClick(() => { this.renaming = false })
   }
 
+  /** A picture was chosen: it applies at once and the window closes. */
+  private setIcon(icon: string): void {
+    if (this.project === null) { return }
+    this.pickingIcon = false
+    if (icon === this.project!.icon) { return }
+    store.updateProject(this.projectId, this.project!.name, icon)
+    this.reload()
+    refreshForms()
+  }
+
+  /** A small pencil on a corner of the picture. */
+  @Builder
+  pencilBadge() {
+    Column() {
+      SymbolGlyph($r('sys.symbol.pencil_tip')).fontSize(12).fontColor([app.primaryInk])
+    }
+    .width(22).height(22)
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(app.surface)
+    .borderRadius(11)
+    .shadow({ radius: 2, color: '#30000000', offsetY: 1 })
+  }
+
+  @Builder
+  iconOverlay() {
+    Column() {
+      Column() {
+        Text('Picture').fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 12 }).width('100%')
+        IconPicker({ selected: this.project !== null ? this.project!.icon : '', onPick: (icon: string): void => { this.setIcon(icon) } })
+      }
+      .width('90%')
+      .padding(24)
+      .backgroundColor(app.surface)
+      .borderRadius(16)
+      .shadow({ radius: 8, color: '#30000000' })
+      .onClick(() => {})
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor('#50000000')
+    .onClick(() => { this.pickingIcon = false })
+  }
+
   private doRename(): void {
     let name = this.renameText.trim()
     if (name.length === 0 || this.project === null) { return }
@@ -686,38 +764,10 @@ struct ProjectPage {
     else { this.refreshShortcutState() }
   }
 
-  private confirmDeleteProject(): void {
+  private askDeleteProject(): void {
     if (this.project === null) { return }
-    this.getUIContext().showAlertDialog({
-      title: 'Delete mini-app?',
-      message: 'Delete "' + this.project!.name + '" and all its saved versions and data? This cannot be undone.',
-      primaryButton: {
-        value: 'Cancel',
-        action: () => {}
-      },
-      secondaryButton: {
-        value: 'Delete',
-        fontColor: app.danger,
-        action: () => { this.doDeleteProject() }
-      }
+    confirmDeleteProject(this.getUIContext(), this.projectId, (deleted: boolean): void => {
+      if (deleted) { this.returnToIndex() }
     })
-  }
-
-  private async doDeleteProject(): Promise<void> {
-    if (this.projectOperationPending) { return }
-    this.projectOperationPending = true
-    let context = (): common.UIAbilityContext => this.getUIContext().getHostContext() as common.UIAbilityContext
-    const status = await projectOperations.deleteProject(context, this.projectId)
-    this.projectOperationPending = false
-    refreshForms()
-    if (status === ProjectOperationStatus.Success || status === ProjectOperationStatus.NotFound ||
-        status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed) {
-      if (status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed) {
-        this.showProjectMessage('Mini-application was deleted, but its shortcut cannot be removed.')
-      }
-      this.returnToIndex()
-    } else {
-      this.showProjectMessage('Error deleting mini-app.')
-    }
   }
 }
