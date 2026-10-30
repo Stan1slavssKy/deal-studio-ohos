@@ -87,6 +87,24 @@ Measured on the phone (Generate screen, deepseek, 2026-10-30, one run each):
 
 Host check: `tools/vera-harness/scene-hole-check.js` (mocked model).
 
+A scene is only for a request that asks for something drawn, animated, moving or touched in its own words. The
+classifier says so, and when it was asked and said `none` the plan's scenes are built as ordinary needs
+(`sceneAllowed`, `plainScenes`): before that, "coin flip to decide who goes first, with a count of heads and tails" came
+back from the classifier as `part` and from the plan as a tumbling coin, and took 48 s. Ordinary requests on the phone
+(2026-10-30, one run each):
+
+| request | classifier | scene | served in |
+|---|---|---|---|
+| a sign-up form for a yoga class with name, email and a level choice | asked ("sign"), none | no | 6.3 s |
+| spinning class schedule for the week with times and instructors | asked ("spinning"), none | no | 9.4 s |
+| tip calculator: bill amount, tip percent and number of people | not asked | no | 2.8 s |
+| water reminder every 2 hours with a log of glasses drunk today | not asked | no | 18.3 s |
+| coin flip to decide who goes first, with a count of heads and tails | none (was part) | built as an ordinary need | 22.1 s (was 48.3 s) |
+| a breathing exercise timer with an animated circle that grows and shrinks | part | yes, beside the countdown | 13.7-50.6 s |
+
+A gate word costs one classifier call of about 1.6 s. The breathing circle reads the countdown's phase but its label said
+"Done" while it ran.
+
 ### Changing a game or a scene
 
 A change typed under a program that draws on a `ui.Surface` (the Generate screen's refine, `editSurface` in

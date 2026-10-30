@@ -11,7 +11,7 @@
 
 import { Sketch, SketchInput, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
   listNeeds, clockOptions, listOptions, choice, askReady, LIST_SECTIONS, PART } from './VeraCompose'
-import { NeedsPlan, Need, NEEDS_PROMPT, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
+import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
   needOf } from './NeedsPlan'
 
 /**
@@ -208,7 +208,7 @@ export function sceneNote(scene: string): string {
  */
 export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoices: JevAsk,
     onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false,
-    review: PlanReview | null = null, scene: string = ''): Promise<ComposeResult> {
+    review: PlanReview | null = null, scene: string = '', sceneAllowed: boolean = true): Promise<ComposeResult> {
   let result = new ComposeResult()
   let started = Date.now()
   // What the plan is told besides the request: a widget's room, and the scene the route was told part of the screen is.
@@ -235,6 +235,13 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     text = redrawn.text
   }
   result.sketch = text
+  // The route asked whether anything here is drawn and was told no: a scene the plan made up anyway (a coin flip that
+  // asked for no animation) is built as any other need.
+  let unscened = sceneAllowed ? 0 : plainScenes(plan)
+  if (unscened > 0) {
+    let redone = sketchFrom(plan)
+    if (redone !== null) { redone!.questions = sketch.questions; sketch = redone! }
+  }
   // What the model added that the request does not ask for (a note, a reminder nobody named) is not built.
   let unasked = dropUnasked(plan, prompt)
   // A widget has room for a few things: the plan was asked to keep to them, and what it did not is cut here.
@@ -258,6 +265,7 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
   }
   let composed = await composeFromSketch(result, prompt, sketch, askChoices, widget, answers, skipped)
   if (startedOn.length > 0) { composed.note += '; ' + startedOn + ', as the request says' }
+  if (unscened > 0) { composed.note += '; no scene: the request asks for nothing drawn, so ' + unscened.toString() + ' is built as any other need' }
   if (unasked.length > 0) {
     composed.note += '; not in the request, so not built: ' + unasked.join('; ')
     for (let words of unasked) { composed.dropped.push('not in the request: ' + words) }

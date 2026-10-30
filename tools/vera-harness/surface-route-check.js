@@ -110,7 +110,9 @@ const brief = JSON.stringify({surface: true, title: 'Star Catch', design: 'Catch
 
   // The model says it is not a game: the agent builds it, as before.
   host = mockHost({brief: JSON.stringify({surface: false, title: '', design: ''}), code: []})
-  outcome = await route.buildScreen(request('score keeper for a board game'), host)
+  const told = request('score keeper for a board game')
+  outcome = await route.buildScreen(told, host)
+  assert.equal(told.agent.sceneAllowed, false, 'a "no" keeps the plan from making a scene')
   assert.deepEqual(host.calls.plan.slice(0, 2), ['surface', 'needs'], 'a "no" goes on to the agent\'s plan')
   assert.ok(host.calls.code.every(c => !c.system.includes('FULL-CANVAS APPS')), 'and the game writer is not asked')
 

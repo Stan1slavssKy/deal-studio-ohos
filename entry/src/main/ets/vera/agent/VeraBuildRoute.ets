@@ -22,7 +22,7 @@ import { settleProgram } from './AgentRepair'
 import { compositionFromPlan, rebuilds } from '../VeraComposition'
 import { addStage, WHO_MODEL, WHO_PHONE } from '../RunStages'
 import { toolCount, toolSpanSince } from '../ToolLog'
-import { briefSurface, writeSurfaceApp, SURFACE_WHOLE, SURFACE_PART } from './AgentSurface'
+import { briefSurface, writeSurfaceApp, SURFACE_WHOLE, SURFACE_PART, SURFACE_NONE } from './AgentSurface'
 
 /** The agent's program is the result. */
 export const OUTCOME_AGENT: string = 'agent'
@@ -127,6 +127,7 @@ async function buildSurface(request: RouteRequest, host: AgentHost): Promise<Rou
   if (brief === null || brief.kind !== SURFACE_WHOLE) {
     // The question was asked and answered no, part or not at all: its time is the agent's first stage.
     if (brief !== null && brief.kind === SURFACE_PART) { request.agent!.scene = brief.scene }
+    if (brief !== null && brief.kind === SURFACE_NONE) { request.agent!.sceneAllowed = false }
     return null
   }
   let outcome = new RouteOutcome()

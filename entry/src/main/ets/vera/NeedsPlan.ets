@@ -132,7 +132,9 @@ export const NEEDS_PROMPT: string =
   'A need that only helps fill in another need, such as a list of choices for a field, belongs to that need and is not a need of its own. ' +
   'A scene is a picture the app draws itself that moves on its own or is touched anywhere on it: a wheel that spins, a ball that rolls, ' +
   'dice that tumble, a drawing or signature area, a physics toy, an animated dial. A chart, a progress bar or a ring that only shows a figure is ' +
-  'never a scene. What a scene decides and everything that changes with it -- the result, the winner, a balance or score it pays into, the ' +
+  'never a scene, and a scene is planned only when the request asks for something drawn, animated, moving or touched in its own ' +
+  'words: a coin flip or a dice roll that does not ask for an animation is built from the other types. ' +
+  'What a scene decides and everything that changes with it -- the result, the winner, a balance or score it pays into, the ' +
   'results so far -- belongs to that scene, written in its what, and is never also a figure, entries or an action; the inputs the person sets ' +
   'for it (a stake, a choice) stay inputs. When what the person draws or signs is kept with each record (a signature on a receipt, ' +
   'a sketch on a note), the records belong to the scene as well: no entries need for them, and the scene\'s what names what each ' +
@@ -347,6 +349,15 @@ export function dropUnasked(plan: NeedsPlan, request: string): string[] {
   }
   plan.needs = kept
   return dropped
+}
+
+/** Every scene of the plan made a need of type other, with the same words; returns how many there were. */
+export function plainScenes(plan: NeedsPlan): number {
+  let n = 0
+  for (let need of plan.needs) {
+    if (need.type === NEED_SCENE) { need.type = NEED_OTHER; n++ }
+  }
+  return n
 }
 
 /** How many things a widget in a chat reply has room for: it is about 360 by 420 vp and does not scroll. */

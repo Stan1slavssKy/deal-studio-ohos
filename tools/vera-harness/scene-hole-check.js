@@ -49,6 +49,12 @@ const program = section => c.assembleProgram(comp, [], section)
   assert.equal(sketch.other.length, 2)
   assert.ok(c.isScene(sketch.other[0]) && !c.isScene(sketch.other[1]))
   assert.match(N.NEEDS_PROMPT, /"type": "scene"/)
+  // When the route was told nothing is drawn, the plan's scenes are built as ordinary needs (a coin flip that asked for
+  // no animation came back from the plan as a tumbling coin).
+  const told = N.parseNeedsPlan(JSON.stringify({title: 'Coin', needs: [{type: 'scene', what: 'a coin that tumbles', from: 'coin flip'}]}))
+  assert.equal(N.plainScenes(told), 1)
+  assert.equal(told.needs[0].type, 'other')
+  assert.ok(!N.sketchFrom(told).other.some(n => c.isScene(n)))
 
   // The composer asks Jev nothing about a scene and sends it to the written section; Align never offers it a section.
   const questions = JSON.parse(c.buildComposeRequest('roulette', sketch)).questions
