@@ -1118,13 +1118,14 @@ struct GeneratePage {
     // Where the time went (the plan, the choosing, the sketch) is on the Metrics tab, not in this line.
     this.status = 'Ready in ' + ((this.totalMs - waited) / 1000).toFixed(1) + ' s' +
       (waited > 0 ? ' (and ' + (waited / 1000).toFixed(1) + ' s waiting for your answer)' : '') +
-      (composed.dropped.length > 0 ? '. Left out: ' + composed.dropped.join('; ') : '')
+      (composed.dropped.length > 0 ? ' · ' + composed.dropped.length.toString() + (composed.dropped.length === 1 ? ' part' : ' parts') + ' not included' : '')
     let endFields: Record<string, Object> = {}
     endFields['ok'] = true
     endFields['attempt'] = 0
     endFields['totalMs'] = this.totalMs
     endFields['waitedMs'] = waited
     endFields['via'] = 'compose'
+    endFields['dropped'] = composed.dropped.join('; ')
     trace('gen-end', endFields)
     this.closeRun(true, 0)
   }
