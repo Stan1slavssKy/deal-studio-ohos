@@ -278,6 +278,10 @@ export function parseSection(reply: string): FragmentSpec | null {
 const FIXES: string[][] = [
   ['expected View, found View[]', 'a list of views is not one view: wrap it as ui.Column("default", theList)'],
   ['expected View[], found View', 'one view is not a list: put it in brackets, [theView]'],
+  ['hands its handler a boolean', 'a Checkbox or Toggle tells its handler only true or false, not which one was tapped: for one per ' +
+    'item of a loop, use ui.Cell or ui.Button with the item\'s index as its value, so the handler takes (state, value: number) and ' +
+    'flips that item'],
+  ['found ?', 'there is no ?: in VERA: declare the value with let, then set it in an if/else before the line that uses it'],
   ['expected :, found of', 'a for-of loop names the element type: for (let q: C_Question of state.c_questions) { ... } -- there is no other loop over a list'],
   ['expected :, found in', 'there is no for-in loop: for (let q: C_Question of state.c_questions) { ... } names the element type and loops over a list']
 ]

@@ -202,11 +202,15 @@ export const CATALOG: ComponentSpec[] = [
   new ComponentSpec('Toggle', 'toggle',
     [style('toggle'), new PropSpec('label', 'string'), new PropSpec('checked', 'boolean'),
       new PropSpec('action', 'string')],
-    'on/off switch; the handler takes (state, value: boolean)', 'boolean'),
+    'on/off switch; the handler takes (state, value: boolean)', 'boolean',
+    'The handler is told only on or off, never which switch: for one per item of a list, see ui.Checkbox.'),
   new ComponentSpec('Checkbox', 'checkbox',
     [style('checkbox'), new PropSpec('label', 'string'), new PropSpec('checked', 'boolean'),
       new PropSpec('action', 'string')],
-    'tick box; the handler takes (state, value: boolean)', 'boolean'),
+    'tick box; the handler takes (state, value: boolean)', 'boolean',
+    'The handler is told only ticked or not, never which box: one handler for a box per item of a loop (a day of the week, a ' +
+    'row) cannot tell them apart. For a pick per item use ui.Cell or ui.Button with the item\'s index as its value -- the handler ' +
+    'takes (state, value: number) and flips that item -- a Cell in the "accent" style or a "primary" Button when the item is picked.'),
   new ComponentSpec('Slider', 'slider',
     [style('slider'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
       new PropSpec('minimum', 'number'), new PropSpec('maximum', 'number'),
