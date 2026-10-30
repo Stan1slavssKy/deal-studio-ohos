@@ -1,0 +1,376 @@
+// A hand-written mixed screen: a roulette table whose bank, stake, bet and history are ordinary form components,
+// with the wheel and the ball on a ui.Surface between them. Both halves read and write the same AppState: the
+// Spin button and a tap on the wheel start the same spin, the frame handler runs the wheel and the ball, and the
+// pocket the ball falls into pays out into the bank the form shows. tools/vera-harness/surface-mixed-check.js
+// plays it and draws the frames; it is the proof that a surface can be one block of a screen and not the screen.
+
+@jsonable
+class Wheel {
+  angle: number;
+  speed: number;
+  ball: number;
+  ballSpeed: number;
+  ballR: number;
+  pocket: number;
+  phase: string;
+  stake: number;
+  kind: number;
+  pick: number;
+}
+
+@jsonable
+class Spin {
+  number: number;
+  bet: string;
+  stake: number;
+  paid: number;
+}
+
+@jsonable
+class AppState {
+  wheel: Wheel;
+  bank: number;
+  stakeText: string;
+  kind: number;
+  pick: number;
+  seed: number;
+  history: Spin[];
+  message: string;
+}
+
+function wheelOrder(): number[] {
+  return [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9,
+    22, 18, 29, 7, 28, 12, 35, 3, 26];
+}
+
+function betKinds(): string[] {
+  return ["Red", "Black", "Odd", "Even", "1 to 18", "19 to 36", "One number"];
+}
+
+function isRed(n: number): boolean {
+  let reds: number[] = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+  for (let r: number of reds) {
+    if (r === n) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function colourName(n: number): string {
+  if (n === 0) {
+    return "green";
+  }
+  if (isRed(n)) {
+    return "red";
+  }
+  return "black";
+}
+
+function betName(kind: number, pick: number): string {
+  if (kind === 6) {
+    return "Number " + ui.numberToString(pick);
+  }
+  return betKinds()[kind];
+}
+
+// What a bet pays back for a winning number, stake included; 0 when it loses.
+function payout(kind: number, pick: number, n: number, stake: number): number {
+  if (kind === 6) {
+    if (n === pick) {
+      return stake * 36;
+    }
+    return 0;
+  }
+  if (n === 0) {
+    return 0;
+  }
+  let wins: boolean = false;
+  if (kind === 0) {
+    wins = isRed(n);
+  } else if (kind === 1) {
+    wins = !isRed(n);
+  } else if (kind === 2) {
+    wins = n % 2 === 1;
+  } else if (kind === 3) {
+    wins = n % 2 === 0;
+  } else if (kind === 4) {
+    wins = n <= 18;
+  } else {
+    wins = n >= 19;
+  }
+  if (wins) {
+    return stake * 2;
+  }
+  return 0;
+}
+
+function stakeOf(state: AppState): number {
+  return math.floor(strings.toNumber(strings.trim(state.stakeText), 0));
+}
+
+function wrap(a: number): number {
+  return a - 360 * math.floor(a / 360);
+}
+
+function init(): AppState {
+  let history: Spin[] = [];
+  return {wheel: {angle: 0, speed: 0, ball: 0, ballSpeed: 0, ballR: 114, pocket: -1, phase: "idle", stake: 0, kind: 0, pick: 0},
+    bank: 500, stakeText: "10", kind: 0, pick: 17, seed: 20261030, history: history, message: ""};
+}
+
+function withWheel(state: AppState, wheel: Wheel, seed: number, bank: number, history: Spin[], message: string): AppState {
+  return {wheel: wheel, bank: bank, stakeText: state.stakeText, kind: state.kind, pick: state.pick, seed: seed,
+    history: history, message: message};
+}
+
+function spinning(state: AppState): boolean {
+  return state.wheel.phase === "spinning" || state.wheel.phase === "dropping";
+}
+
+// The stake leaves the bank when the ball is thrown; the pocket decides what comes back.
+function spin(state: AppState, value: number): AppState {
+  if (spinning(state)) {
+    return state;
+  }
+  let stake: number = stakeOf(state);
+  if (stake <= 0) {
+    return withWheel(state, state.wheel, state.seed, state.bank, state.history, "Type a stake first.");
+  }
+  if (stake > state.bank) {
+    return withWheel(state, state.wheel, state.seed, state.bank, state.history,
+      "The bank holds $" + ui.numberToString(state.bank) + ".");
+  }
+  let seed: number = math.randomStep(state.seed);
+  let wheelSpeed: number = 90 + math.randomBelow(seed, 60);
+  seed = math.randomStep(seed);
+  let ballSpeed: number = 720 + math.randomBelow(seed, 360);
+  seed = math.randomStep(seed);
+  let start: number = math.randomBelow(seed, 360);
+  // The bet is fixed when the ball is thrown: the form stays live while it runs, and what is typed now is the next bet.
+  let w: Wheel = {angle: state.wheel.angle, speed: wheelSpeed, ball: start, ballSpeed: -ballSpeed, ballR: 156,
+    pocket: -1, phase: "spinning", stake: stake, kind: state.kind, pick: state.pick};
+  return withWheel(state, w, seed, state.bank - stake, state.history, "");
+}
+
+function onFrame(state: AppState, elapsedMs: number): AppState {
+  let w: Wheel = state.wheel;
+  if (w.phase === "idle") {
+    return state;
+  }
+  let dt: number = math.min(elapsedMs, 50) / 1000;
+  let angle: number = wrap(w.angle + w.speed * dt);
+  let speed: number = math.max(0, w.speed - 10 * dt);
+  if (w.phase === "settled") {
+    if (speed === 0) {
+      return withWheel(state, {angle: angle, speed: 0, ball: w.ball, ballSpeed: 0, ballR: w.ballR, pocket: w.pocket,
+        phase: "idle", stake: w.stake, kind: w.kind, pick: w.pick}, state.seed, state.bank, state.history, state.message);
+    }
+    return withWheel(state, {angle: angle, speed: speed, ball: w.ball, ballSpeed: 0, ballR: w.ballR, pocket: w.pocket,
+      phase: "settled", stake: w.stake, kind: w.kind, pick: w.pick}, state.seed, state.bank, state.history, state.message);
+  }
+
+  // The ball runs against the wheel and slows; below a speed it leaves the rim and spirals into the pockets.
+  let ballSpeed: number = w.ballSpeed + 150 * dt;
+  let ball: number = wrap(w.ball + ballSpeed * dt);
+  let ballR: number = w.ballR;
+  let phase: string = w.phase;
+  if (phase === "spinning" && ballSpeed > -280) {
+    phase = "dropping";
+  }
+  if (phase === "dropping") {
+    ballR = ballR - 44 * dt;
+  }
+  if (ballR > 114) {
+    return withWheel(state, {angle: angle, speed: speed, ball: ball, ballSpeed: ballSpeed, ballR: ballR, pocket: -1,
+      phase: phase, stake: w.stake, kind: w.kind, pick: w.pick}, state.seed, state.bank, state.history, state.message);
+  }
+
+  // Into a pocket: from now on the ball turns with the wheel.
+  let step: number = 360 / 37;
+  let index: number = math.round(wrap(ball - angle) / step) % 37;
+  let n: number = wheelOrder()[index];
+  let stake: number = w.stake;
+  let paid: number = payout(w.kind, w.pick, n, stake);
+  let history: Spin[] = [{number: n, bet: betName(w.kind, w.pick), stake: stake, paid: paid}];
+  for (let h: Spin of state.history) {
+    if (history.length() < 8) {
+      history.push(h);
+    }
+  }
+  let message: string = ui.numberToString(n) + " " + colourName(n) + ". ";
+  if (paid > 0) {
+    message = message + "You win $" + ui.numberToString(paid - stake) + ".";
+  } else {
+    message = message + "The house takes $" + ui.numberToString(stake) + ".";
+  }
+  return withWheel(state, {angle: angle, speed: speed, ball: index * step, ballSpeed: 0, ballR: 114, pocket: n,
+    phase: "settled", stake: w.stake, kind: w.kind, pick: w.pick}, state.seed, state.bank + paid, history, message);
+}
+
+// A tap on the wheel throws the ball, as the Spin button does.
+function onPointer(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase === "up" && gfx.distance(p.x, p.y, 180, 180) < 170) {
+    return spin(state, 0);
+  }
+  return state;
+}
+
+function setStake(state: AppState, v: string): AppState {
+  return {wheel: state.wheel, bank: state.bank, stakeText: v, kind: state.kind, pick: state.pick, seed: state.seed,
+    history: state.history, message: state.message};
+}
+
+function chip(state: AppState, value: number): AppState {
+  return setStake(state, ui.numberToString(value));
+}
+
+function setKind(state: AppState, index: number): AppState {
+  return {wheel: state.wheel, bank: state.bank, stakeText: state.stakeText, kind: index, pick: state.pick,
+    seed: state.seed, history: state.history, message: state.message};
+}
+
+function setPick(state: AppState, value: number): AppState {
+  return {wheel: state.wheel, bank: state.bank, stakeText: state.stakeText, kind: state.kind, pick: math.round(value),
+    seed: state.seed, history: state.history, message: state.message};
+}
+
+function refill(state: AppState, value: number): AppState {
+  let history: Spin[] = [];
+  return {wheel: state.wheel, bank: 500, stakeText: "10", kind: state.kind, pick: state.pick, seed: state.seed,
+    history: history, message: ""};
+}
+
+function pocketColour(n: number): string {
+  if (n === 0) {
+    return "#1f8a4c";
+  }
+  if (isRed(n)) {
+    return "#c62828";
+  }
+  return "#1b1b1f";
+}
+
+// x and y of a point r out from the centre at a clockwise angle from twelve o'clock.
+function px(a: number, r: number): number {
+  return r * math.sin(a * math.pi() / 180);
+}
+
+function py(a: number, r: number): number {
+  return 0 - r * math.cos(a * math.pi() / 180);
+}
+
+function draw(state: AppState): gfx.Shape[] {
+  let w: Wheel = state.wheel;
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.circle(180, 180, 178, "#5a3418"));
+  shapes.push(gfx.circle(180, 180, 166, "#7a4a24"));
+  shapes.push(gfx.arc(180, 180, 160, 0, 360, 3, "#c9a25c"));
+  shapes.push(gfx.circle(180, 180, 146, "#2b1a0e"));
+
+  let step: number = 360 / 37;
+  let order: number[] = wheelOrder();
+  let wheel: gfx.Shape[] = [];
+  let i: number = 0;
+  while (i < 37) {
+    let a0: number = (i - 0.5) * step;
+    let a1: number = (i + 0.5) * step;
+    let n: number = order[i];
+    wheel.push(gfx.polygon([px(a0, 144), py(a0, 144), px(a1, 144), py(a1, 144), px(a1, 124), py(a1, 124),
+      px(a0, 124), py(a0, 124)], pocketColour(n)));
+    wheel.push(gfx.group(px(i * step, 134), py(i * step, 134), i * step, 1, 1,
+      [gfx.text(0, 0, 11, "center", "white", ui.numberToString(n), true)]));
+    wheel.push(gfx.line(px(a0, 144), py(a0, 144), px(a0, 124), py(a0, 124), 1.5, "#c9a25c"));
+    i = i + 1;
+  }
+  wheel.push(gfx.arc(0, 0, 114, 0, 360, 20, "#3a2414"));
+  wheel.push(gfx.arc(0, 0, 124, 0, 360, 1.5, "#c9a25c"));
+  i = 0;
+  while (i < 37) {
+    let a: number = (i - 0.5) * step;
+    wheel.push(gfx.line(px(a, 124), py(a, 124), px(a, 104), py(a, 104), 1.5, "#c9a25c"));
+    i = i + 1;
+  }
+  wheel.push(gfx.circle(0, 0, 104, "#6b3f1f"));
+  wheel.push(gfx.circle(0, 0, 70, "#8a5a2e"));
+  wheel.push(gfx.arc(0, 0, 70, 0, 360, 2, "#c9a25c"));
+  let k: number = 0;
+  while (k < 4) {
+    wheel.push(gfx.line(px(k * 90, 18), py(k * 90, 18), px(k * 90, 58), py(k * 90, 58), 6, "#d8b46a"));
+    wheel.push(gfx.circle(px(k * 90, 58), py(k * 90, 58), 6, "#d8b46a"));
+    k = k + 1;
+  }
+  wheel.push(gfx.circle(0, 0, 20, "#d8b46a"));
+  shapes.push(gfx.group(180, 180, w.angle, 1, 1, wheel));
+
+  if (w.phase !== "idle" || w.pocket >= 0) {
+    let a: number = w.ball;
+    if (w.phase === "settled" || w.phase === "idle") {
+      a = w.angle + w.ball;
+    }
+    shapes.push(gfx.circle(180 + px(a, w.ballR) + 1.5, 180 + py(a, w.ballR) + 2, 6.5, "#00000055"));
+    shapes.push(gfx.circle(180 + px(a, w.ballR), 180 + py(a, w.ballR), 6.5, "#f4f4f4"));
+    shapes.push(gfx.circle(180 + px(a, w.ballR) - 2, 180 + py(a, w.ballR) - 2, 2, "white"));
+  }
+
+  if (w.phase === "settled" || (w.phase === "idle" && w.pocket >= 0)) {
+    shapes.push(gfx.circle(180, 180, 30, pocketColour(w.pocket)));
+    shapes.push(gfx.arc(180, 180, 30, 0, 360, 2, "#d8b46a"));
+    shapes.push(gfx.text(180, 181, 24, "center", "white", ui.numberToString(w.pocket), true));
+  } else if (w.phase === "idle") {
+    shapes.push(gfx.text(180, 181, 12, "center", "#2b1a0e", "TAP", true));
+  }
+  return shapes;
+}
+
+function historyRows(state: AppState): ui.View[] {
+  let rows: ui.View[] = [];
+  for (let h: Spin of state.history) {
+    let tone: string = "danger";
+    let result: string = "-$" + ui.numberToString(h.stake);
+    if (h.paid > 0) {
+      tone = "success";
+      result = "+$" + ui.numberToString(h.paid - h.stake);
+    }
+    rows.push(ui.ListItem(tone, ui.numberToString(h.number) + " " + colourName(h.number),
+      h.bet + ", $" + ui.numberToString(h.stake), result, "", 0, true, ""));
+  }
+  return rows;
+}
+
+function view(state: AppState): ui.View {
+  let busy: boolean = spinning(state);
+  let tone: string = "danger";
+  if (strings.contains(state.message, "win")) {
+    tone = "success";
+  } else if (!strings.contains(state.message, "house")) {
+    tone = "warning";
+  }
+  return ui.AppTheme("editorial", "#1f6b45", [
+    ui.Column("default", [
+      ui.Header("default", "Roulette", "SINGLE ZERO", "Place a bet, then spin the wheel or tap it.", ""),
+      ui.MetricGroup("default", 3, [
+        ui.NumberStat("accent", "Bank", state.bank, "$", "", 0, "", ""),
+        ui.NumberStat("default", "Stake", stakeOf(state), "$", "", 0, "", ""),
+        ui.NumberStat("default", "Spins", state.history.length(), "", "", 0, "last 8 kept", "")
+      ]),
+      ui.Surface("default", 360, 360, "draw", "onFrame", "onPointer"),
+      ui.When(state.message !== "", ui.InsetBanner(tone, "", state.message, "", "", "")),
+      ui.Section("content", "Your bet", "", [
+        ui.Select("default", "Bet on", betKinds(), state.kind, "setKind"),
+        ui.When(state.kind === 6, ui.Slider("default", "Number " + ui.numberToString(state.pick), state.pick, 0, 36, "setPick")),
+        ui.TextField("default", "Stake in dollars", state.stakeText, "setStake", "number"),
+        ui.ActionBar("default", [
+          ui.Button("primary", "Spin", "spin", 0, !busy),
+          ui.Button("secondary", "$10", "chip", 10, !busy),
+          ui.Button("secondary", "$50", "chip", 50, !busy)
+        ]),
+        ui.When(state.bank <= 0 && !busy, ui.ActionBar("default", [ui.Button("danger", "Start again with $500", "refill", 0, true)]))
+      ]),
+      ui.Section("supporting", "Last spins", "", [
+        ui.When(state.history.length() === 0, ui.EmptyState("muted", "No spins yet", "Your results will appear here.", "", "", "")),
+        ui.When(state.history.length() > 0, ui.ListGroup("default", "", historyRows(state)))
+      ])
+    ])
+  ]);
+}

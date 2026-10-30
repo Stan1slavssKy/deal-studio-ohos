@@ -31,6 +31,7 @@ import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, mult
   columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
 import matrix4 from '@ohos.matrix4'
 import displaySync from '@ohos.graphics.displaySync'
+import uiObserver from '@ohos.arkui.observer'
 import { decodeGfx, paintGfx, pointerValue, gfxFit, gfxToSurface, gfxNaturalHeight } from '../vera/VeraGfx'
 
 /**
@@ -99,6 +100,8 @@ class SurfaceBox {
   ready: boolean = false
   width: number = 0
   height: number = 0
+  // Some of it is on screen. One scrolled away keeps its frame handler running but is neither drawn nor painted.
+  visible: boolean = true
 }
 
 /**
@@ -322,6 +325,12 @@ export struct VeraPreview {
   private frameCount: number = 0
   private frameWork: number = 0
   private frameWorst: number = 0
+  // Where the frames' time went since the last report: the frame handlers, draw() and its decoding, the painting,
+  // and the view refreshes in between.
+  private frameSplit: number[] = [0, 0, 0, 0]
+  // The router page this preview is on is covered by another; its frame loop stops until the page shows again.
+  private pageHidden: boolean = false
+  private pageListener: ((info: uiObserver.RouterPageInfo) => void) | null = null
   private frameReportAt: number = 0
 
   // Kinds renderNode has a branch for. Checked against the catalogue on mount so
@@ -347,7 +356,35 @@ export struct VeraPreview {
       this.error = 'Renderer is missing: ' + missing.join(', ')
     }
     this.watchDarkMode()
+    this.watchPage()
     this.load()
+  }
+
+  /**
+   * A page pushed over this one leaves this component alive, and a surface's frame loop with it: a game in the
+   * Generate preview, or a proof opened over another, went on drawing underneath and halved the frame rate of the
+   * one on top. The loop stops while this preview's own router page is hidden and starts again when it shows.
+   */
+  private watchPage(): void {
+    let page = this.queryRouterPageInfo()
+    if (page === undefined) { return }
+    let pageId = page.pageId
+    let listener = (info: uiObserver.RouterPageInfo): void => {
+      if (info.pageId !== pageId || this.disposed) { return }
+      if (info.state === uiObserver.RouterPageState.ON_PAGE_HIDE && !this.pageHidden) {
+        this.pageHidden = true
+        this.stopSurfaceLoop()
+      } else if (info.state === uiObserver.RouterPageState.ON_PAGE_SHOW && this.pageHidden) {
+        this.pageHidden = false
+        this.reconcileSurfaces(true)
+      }
+    }
+    try {
+      this.getUIContext().getUIObserver().on('routerPageUpdate', listener)
+      this.pageListener = listener
+    } catch (e) {
+      console.warn('VERA-SURFACE no page observer: ' + (e as Error).message)
+    }
   }
 
   onProgramChanged(): void {
@@ -737,6 +774,14 @@ export struct VeraPreview {
     this.stopAllTimers()
     // A running surface saves every few seconds; the frames since the last save would otherwise be lost.
     if (this.liveSurfaces.length > 0 && !this.previewOnly) { this.persistState() }
+    if (this.pageListener !== null) {
+      try {
+        this.getUIContext().getUIObserver().off('routerPageUpdate', this.pageListener!)
+      } catch (e) {
+        console.info('VERA-SURFACE page observer off failed: ' + (e as Error).message)
+      }
+      this.pageListener = null
+    }
     // The same applies to the dark-mode listener: it holds this component, and
     // its callback re-enters the VM.
     if (this.darkListener !== null) {
@@ -863,7 +908,7 @@ export struct VeraPreview {
     this.liveSurfaces = found
     let animated = false
     for (let node of found) { if (node.action.length > 0) { animated = true } }
-    if (animated && !this.previewOnly && this.error.length === 0) { this.startSurfaceLoop() } else { this.stopSurfaceLoop() }
+    if (animated && !this.previewOnly && !this.pageHidden && this.error.length === 0) { this.startSurfaceLoop() } else { this.stopSurfaceLoop() }
     if (paint) { this.paintSurfaces() }
   }
 
@@ -880,6 +925,12 @@ export struct VeraPreview {
     if (this.surfaceSync !== null || this.surfaceTimer >= 0) { return }
     this.lastFrameAt = 0
     this.lastSurfaceSave = Date.now()
+    console.info('VERA-SURFACE loop start')
+    this.frameReportAt = 0
+    this.frameCount = 0
+    this.frameWork = 0
+    this.frameWorst = 0
+    this.frameSplit = [0, 0, 0, 0]
     try {
       let sync = displaySync.create()
       let range: ExpectedFrameRateRange = { expected: 60, min: 30, max: 120 }
@@ -894,6 +945,7 @@ export struct VeraPreview {
   }
 
   private stopSurfaceLoop(): void {
+    if (this.surfaceSync !== null || this.surfaceTimer >= 0) { console.info('VERA-SURFACE loop stop') }
     if (this.surfaceSync !== null) {
       try {
         this.surfaceSync!.stop()
@@ -923,8 +975,13 @@ export struct VeraPreview {
         if (node.action.length === 0) { continue }
         this.currentState = this.vm!.execute(node.action, [this.currentState!, new VeraNumberValue(elapsed)])
       }
+      this.frameSplit[0] += Date.now() - now
       this.paintSurfaces()
-      if (now - this.lastViewAt >= SURFACE_VIEW_MS) { this.renderView(false) }
+      if (now - this.lastViewAt >= SURFACE_VIEW_MS) {
+        let viewAt = Date.now()
+        this.renderView(false)
+        this.frameSplit[3] += Date.now() - viewAt
+      }
       this.countFrame(now, Date.now() - now)
       if (now - this.lastSurfaceSave >= SURFACE_SAVE_MS) {
         this.lastSurfaceSave = now
@@ -951,8 +1008,11 @@ export struct VeraPreview {
     if (work > this.frameWorst) { this.frameWorst = work }
     if (now - this.frameReportAt < 2000) { return }
     let seconds = (now - this.frameReportAt) / 1000
+    let per = (i: number): string => (this.frameSplit[i] / this.frameCount).toFixed(1)
     console.info('VERA-SURFACE fps=' + (this.frameCount / seconds).toFixed(1) +
-      ' workMs avg=' + (this.frameWork / this.frameCount).toFixed(1) + ' max=' + this.frameWorst.toString())
+      ' workMs avg=' + (this.frameWork / this.frameCount).toFixed(1) + ' max=' + this.frameWorst.toString() +
+      ' frame=' + per(0) + ' draw=' + per(1) + ' paint=' + per(2) + ' view=' + per(3))
+    this.frameSplit = [0, 0, 0, 0]
     this.frameReportAt = now
     this.frameCount = 0
     this.frameWork = 0
@@ -966,12 +1026,16 @@ export struct VeraPreview {
   /** Ask the program what this surface shows now and paint it; nothing until its canvas is ready and has a size. */
   private paintSurface(node: LiveNode): void {
     let box = this.surfaces.get(node)
-    if (box === undefined || !box.ready || box.width <= 0 || box.height <= 0) { return }
+    if (box === undefined || !box.ready || !box.visible || box.width <= 0 || box.height <= 0) { return }
     if (this.vm === null || this.currentState === null || node.label.length === 0) { return }
     try {
       if (this.host !== null) { this.host!.effectsAllowed = false }
+      let drawAt = Date.now()
       let ops = decodeGfx(this.vm!.execute(node.label, [this.currentState!]))
-      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum)
+      let paintAt = Date.now()
+      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum, this.getUIContext().vp2px(1))
+      this.frameSplit[1] += paintAt - drawAt
+      this.frameSplit[2] += Date.now() - paintAt
     } catch (e) {
       console.error('VERA-SURFACE draw TRAP err=' + (e as Error).message)
       this.error = 'Draw error: ' + (e as Error).message
@@ -3814,6 +3878,11 @@ export struct VeraPreview {
           this.paintSurface(node)
         })
         .onAreaChange((_old: Area, now: Area) => { this.surfaceArea(node, now) })
+        .onVisibleAreaChange([0.0, 0.01], (visible: boolean, ratio: number) => {
+          let box = this.surfaceBox(node)
+          box.visible = visible && ratio > 0
+          if (box.visible) { this.paintSurface(node) }
+        })
         .onTouch((event: TouchEvent) => { this.surfaceTouch(node, event) })
         // A drag on a surface that takes fingers is the program's, not the page's: without a pan gesture of its
         // own the screen around it scrolls under the finger. One that takes none lets the page scroll through it.

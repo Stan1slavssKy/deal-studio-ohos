@@ -8,7 +8,7 @@
  * which a part and a section of the catalogue both give.
  */
 
-import { Sketch, parseSketch } from './VeraCompose'
+import { Sketch, parseSketch, SCENE_MARK } from './VeraCompose'
 
 export const NEED_FIGURE: string = 'figure'
 export const NEED_COUNTDOWN: string = 'countdown'
@@ -17,7 +17,9 @@ export const NEED_ENTRIES: string = 'entries'
 export const NEED_CONTENT: string = 'content'
 export const NEED_ACTION: string = 'action'
 export const NEED_OTHER: string = 'other'
-const NEED_TYPES: string[] = [NEED_FIGURE, NEED_COUNTDOWN, NEED_STOPWATCH, NEED_ENTRIES, NEED_CONTENT, NEED_ACTION, NEED_OTHER]
+/** A picture the app draws itself every frame, moving on its own or touched anywhere: written as a ui.Surface in the section hole. */
+export const NEED_SCENE: string = 'scene'
+const NEED_TYPES: string[] = [NEED_FIGURE, NEED_COUNTDOWN, NEED_STOPWATCH, NEED_ENTRIES, NEED_CONTENT, NEED_ACTION, NEED_SCENE, NEED_OTHER]
 
 /** The moments an action can be tied to, for the choice of what does a need (NeedsChoose.ets). */
 export const ON_END: string = 'countdown_end'
@@ -88,6 +90,8 @@ export const NEEDS_PROMPT: string =
   '   {"type": "action", "id": camelCase, "when": the moment, "what": what the phone does, "asked": true if the request asks for it, false if you add it,\n' +
   '    "on": "countdown_end" | "entry_added" | "row_tap" | "button" | "time" | "other",\n' +
   '    "from": the words of the request that ask for it, copied exactly},\n' +
+  '   {"type": "scene", "what": in plain words what is drawn, what moves on its own or follows the finger, how it starts and stops, ' +
+  'and what it decides or changes, "from": the words of the request that ask for it, copied exactly},\n' +
   '   {"type": "other", "what": a few words}],\n' +
   ' "questions": [at most 2, usually none: {"id": camelCase, "ask": a short question for the person, "options": 2 to 4 short answers,\n' +
   '   "default": the index of the answer this plan assumes}]}\n' +
@@ -126,6 +130,15 @@ export const NEEDS_PROMPT: string =
   'never also entries. What is written for the request (content) shows its own progress and counts: no figure counts its items, ' +
   'and entries.count and entries.total are only for entries the person adds. ' +
   'A need that only helps fill in another need, such as a list of choices for a field, belongs to that need and is not a need of its own. ' +
+  'A scene is a picture the app draws itself that moves on its own or is touched anywhere on it: a wheel that spins, a ball that rolls, ' +
+  'dice that tumble, a drawing or signature area, a physics toy, an animated dial. A chart, a progress bar or a ring that only shows a figure is ' +
+  'never a scene, and a scene is planned only when the request asks for something drawn, animated, moving or touched in its own ' +
+  'words: a coin flip or a dice roll that does not ask for an animation is built from the other types. ' +
+  'What a scene decides and everything that changes with it -- the result, the winner, a balance or score it pays into, the ' +
+  'results so far -- belongs to that scene, written in its what, and is never also a figure, entries or an action; the inputs the person sets ' +
+  'for it (a stake, a choice) stay inputs. When what the person draws or signs is kept with each record (a signature on a receipt, ' +
+  'a sketch on a note), the records belong to the scene as well: no entries need for them, and the scene\'s what names what each ' +
+  'record keeps; a drawing is kept as its strokes and shown again from them, never as an image or a file. ' +
   'Labels are short: three words at most. ' +
   'When the request does not say which place, person, thing or period it is about and what the app shows depends on it, that goes first in questions ' +
   '(not units, looks or anything a default does well): the app is made for the answer, and the person is not made to type it into the app for ' +
@@ -195,7 +208,7 @@ export function parseNeedsPlan(reply: string): NeedsPlan | null {
       need.from = text(raw, 'from')
     } else {
       need.words = text(raw, 'what')
-      if (type === NEED_CONTENT) { need.from = text(raw, 'from') }
+      if (type === NEED_CONTENT || type === NEED_SCENE) { need.from = text(raw, 'from') }
     }
     plan.needs.push(need)
   }
@@ -251,6 +264,9 @@ export function sketchFrom(plan: NeedsPlan): Sketch | null {
       ready.push(n.words)
     } else if (n.type === NEED_ACTION) {
       events.push(r)
+    } else if (n.type === NEED_SCENE) {
+      // Marked, so it goes to the written section as a scene: nothing of the catalogue or the parts draws one.
+      other.push(SCENE_MARK + n.words)
     } else {
       other.push(n.words)
     }
@@ -333,6 +349,15 @@ export function dropUnasked(plan: NeedsPlan, request: string): string[] {
   }
   plan.needs = kept
   return dropped
+}
+
+/** Every scene of the plan made a need of type other, with the same words; returns how many there were. */
+export function plainScenes(plan: NeedsPlan): number {
+  let n = 0
+  for (let need of plan.needs) {
+    if (need.type === NEED_SCENE) { need.type = NEED_OTHER; n++ }
+  }
+  return n
 }
 
 /** How many things a widget in a chat reply has room for: it is about 360 by 420 vp and does not scroll. */

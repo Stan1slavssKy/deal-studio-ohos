@@ -11,7 +11,7 @@
 
 import { Sketch, SketchInput, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
   listNeeds, clockOptions, listOptions, choice, askReady, LIST_SECTIONS, PART } from './VeraCompose'
-import { NeedsPlan, Need, NEEDS_PROMPT, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
+import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
   needOf } from './NeedsPlan'
 
 /**
@@ -195,15 +195,25 @@ async function drawPlan(askPlan: SketchAsk, prompt: string, onSketch: (partial: 
 }
 
 /**
+ * Added to the request the plan is drawn from when the route was told part of the screen is a scene (AgentSurface.ets): the
+ * plan model on its own makes a spinning wheel a figure and a button.
+ */
+export function sceneNote(scene: string): string {
+  return '\n\nPart of this screen is a scene, one need of type scene: ' + scene
+}
+
+/**
  * The whole of composing a new screen, from the plan of needs: the plan, the person's answers to what it asks, Jev's choice of
  * a section or a part for each need, then the composer's own choices (widgets, formulas, effects, moments) over what is left.
  */
 export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoices: JevAsk,
     onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false,
-    review: PlanReview | null = null): Promise<ComposeResult> {
+    review: PlanReview | null = null, scene: string = '', sceneAllowed: boolean = true): Promise<ComposeResult> {
   let result = new ComposeResult()
   let started = Date.now()
-  let drawn = await drawPlan(askPlan, prompt, onSketch, widget ? WIDGET_NEEDS_NOTE : '')
+  // What the plan is told besides the request: a widget's room, and the scene the route was told part of the screen is.
+  let note = (widget ? WIDGET_NEEDS_NOTE : '') + (scene.length > 0 ? sceneNote(scene) : '')
+  let drawn = await drawPlan(askPlan, prompt, onSketch, note)
   result.sketchMs = Date.now() - started
   result.planTries = drawn.tries
   if (drawn.plan === null) { result.note = 'no usable plan after ' + drawn.tries.toString() + ' tries'; return result }
@@ -214,7 +224,7 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
   if (settled.length > 0) {
     prompt = prompt + '\n\n' + settled
     let again = Date.now()
-    let redrawn = await drawPlan(askPlan, prompt, onSketch, widget ? WIDGET_NEEDS_NOTE : '')
+    let redrawn = await drawPlan(askPlan, prompt, onSketch, note)
     result.sketchMs += Date.now() - again
     result.replanned = true
     result.planTries += redrawn.tries
@@ -225,6 +235,13 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     text = redrawn.text
   }
   result.sketch = text
+  // The route asked whether anything here is drawn and was told no: a scene the plan made up anyway (a coin flip that
+  // asked for no animation) is built as any other need.
+  let unscened = sceneAllowed ? 0 : plainScenes(plan)
+  if (unscened > 0) {
+    let redone = sketchFrom(plan)
+    if (redone !== null) { redone!.questions = sketch.questions; sketch = redone! }
+  }
   // What the model added that the request does not ask for (a note, a reminder nobody named) is not built.
   let unasked = dropUnasked(plan, prompt)
   // A widget has room for a few things: the plan was asked to keep to them, and what it did not is cut here.
@@ -248,6 +265,7 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
   }
   let composed = await composeFromSketch(result, prompt, sketch, askChoices, widget, answers, skipped)
   if (startedOn.length > 0) { composed.note += '; ' + startedOn + ', as the request says' }
+  if (unscened > 0) { composed.note += '; no scene: the request asks for nothing drawn, so ' + unscened.toString() + ' is built as any other need' }
   if (unasked.length > 0) {
     composed.note += '; not in the request, so not built: ' + unasked.join('; ')
     for (let words of unasked) { composed.dropped.push('not in the request: ' + words) }

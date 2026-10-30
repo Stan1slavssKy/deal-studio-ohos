@@ -32,6 +32,8 @@ import { sdkEvalRequested, runSdkEval } from '../vera/VeraSdkEval'
 import { composeEnabled, ComposeResult } from '../vera/VeraCompose'
 import { AgentRequest, AgentResult } from '../vera/agent/VeraAgent'
 import { appAgentHost } from '../vera/agent/AgentAppHost'
+import { drawsSurface, editSurfaceProgram, SurfaceEdit } from '../vera/agent/AgentSurfaceEdit'
+import { surfaceRouteEnabled } from '../vera/agent/AgentSurface'
 import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
 import { app, PrimaryButton, TonalButton, QuietButton } from '../components/AppStyle'
@@ -1691,6 +1693,11 @@ struct GeneratePage {
     // Refine from the last program that compiled, not from generatedSource --
     // a failed attempt leaves its broken text in there.
     this.previousSource = this.compiledSource
+    // A game or a scene is changed by edits, with its guide, and played before it is served (AgentSurfaceEdit.ets).
+    if (this.mode === MODE_DEEPSEEK && surfaceRouteEnabled() && drawsSurface(this.compiledSource)) {
+      this.editSurface(ask, continuing)
+      return
+    }
     if (this.mode === MODE_SERVER) {
       if (!settings.hasServerUrl()) { this.checkServer(); return }
       this.doServerGenerate(ask)
@@ -1720,6 +1727,60 @@ struct GeneratePage {
     this.lastRequest = ask
     this.status = 'Refining (attempt 1/' + MAX_RETRIES + ')...'
     this.startAttemptOne(ask, 'Refining')
+  }
+
+  /**
+   * A change to a program that draws on a ui.Surface: edits made with the guide it was written with, played before they
+   * are served. One that does not pass leaves the program on the screen as it was, saying why.
+   */
+  private async editSurface(ask: string, continuing: boolean): Promise<void> {
+    if (!continuing) { this.prepareRequest(ask) }
+    this.generating = true
+    this.cancelRequested = false
+    let run = continuing ? this.runId : ++this.runId
+    if (!continuing) { this.genStartTime = Date.now() }
+    this.metricTotals.partial = true
+    let host = appAgentHost((text: string): void => { if (run === this.runId) { this.status = text } },
+      (_vbc2: string): void => {}, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate, this.surfaceGuide)
+    let base = this.compiledSource
+    let made: SurfaceEdit = await this.metricWork(run,
+      (): Promise<SurfaceEdit> => editSurfaceProgram(base, ask, this.requestHistory, host))
+    if (run !== this.runId) { return }
+    let fields: Record<string, Object> = {}
+    fields['change'] = ask
+    fields['game'] = made.game
+    fields['attempts'] = made.attempts
+    fields['rounds'] = made.rounds
+    fields['edits'] = made.edits
+    fields['ms'] = made.ms
+    fields['failed'] = made.failed
+    fields['lines'] = base.split('\n').length
+    fields['source'] = made.source
+    trace('surface-edit', fields)
+    this.generating = false
+    this.totalMs = Date.now() - this.genStartTime
+    if (made.source.length === 0) {
+      this.metricTotals.partial = true
+      this.finishMetrics(run)
+      this.status = 'Could not make this change, the app is as it was: ' + made.failed
+      return
+    }
+    this.startRun(ask)
+    this.lastRequest = ask
+    this.previousSource = base
+    this.generatedSource = made.source
+    this.compiledSource = made.source
+    this.compiledVbc2 = made.vbc2
+    // The program is no longer what the record rebuilds.
+    this.compositionJson = ''
+    this.modelWrote = true
+    this.acceptRequest()
+    this.compiled = true
+    this.compileErrors = ''
+    this.refinePrompt = ''
+    this.status = 'Changed in ' + (this.totalMs / 1000).toFixed(1) + ' s' +
+      (made.edits > 0 ? ' by ' + made.edits.toString() + ' edit(s)' : ', written again') +
+      (made.rounds > 0 ? ', ' + made.rounds.toString() + ' repair round(s)' : '') + ', played before serving'
   }
 
   /** The open question goes with its default: stopping or starting again must not leave the agent waiting. */

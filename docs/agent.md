@@ -18,10 +18,12 @@ So the route asks first (`agent/AgentSurface.ets`, before the agent in `buildScr
 
 1. **Gate.** Only a request with a word that may mean such an app is asked about (`looksLikeSurface`, English and Chinese
    word lists); a to-do list never pays for the question.
-2. **Brief.** One call to the plan model (`SURFACE_CLASSIFY_PROMPT`, no thinking, JSON): `surface` true or false, and when
-   true a short title and an original design -- goal, controls on a touch screen, objects, collisions, score, lives,
-   levels, the look in hex colours. A named game is taken as its genre and mechanics, never its levels, names or artwork.
-   A "no", or no answer, goes on to the agent as before.
+2. **Brief.** One call to the plan model (`SURFACE_CLASSIFY_PROMPT`, no thinking, JSON): `surface` is `whole`, `part` or
+   `none`. For `whole`, a short title and an original design -- goal, controls on a touch screen, objects, collisions,
+   score, lives, levels, the look in hex colours. A named game is taken as its genre and mechanics, never its levels,
+   names or artwork. For `part` (a roulette wheel beside the bets, dice above a score sheet, a signature pad on a form),
+   a sentence of the scene, which goes to the agent with the request: see the next section. A `none`, or no answer,
+   goes on to the agent as before.
 3. **Write.** The model writes the whole program on one `ui.Surface` (`SURFACE_TOKENS`), shown the generation prompt with its
    catalogue cut to the surface's few components plus `std/gfx`, and its screen-composition advice replaced by
    `rawfile/vera-surface-skill.txt`: the shape of a frame-driven program, controls (drag, tap, a stick on the left half
@@ -48,6 +50,82 @@ Measured (deepseek-flash, 2026-10-30, one run each):
 with 8-9 ms of program and painting per frame. The designs and the text on screen come back in English whatever the
 request's language. Frames of the host runs are drawn with `tools/vera-harness/gfx-run.js`. Host check:
 `tools/vera-harness/surface-route-check.js`.
+
+### A scene inside a screen
+
+A screen of forms and lists with one drawn, moving or touched picture among them is the agent's, with the picture as a
+block of its own:
+
+1. **Plan.** The plan of needs has a type `scene` (`NeedsPlan.ets`): what is drawn, what moves or is touched, what sets
+   it moving, what it decides or changes. What a scene decides -- the number it lands on, a balance it pays into, the
+   results so far, the records a signature is kept with -- belongs to the scene, not to figures or entries; the inputs
+   the person sets for it stay inputs. A drawing is kept as its strokes, never as an image. When the route's classifier
+   said `part`, its sentence is added to the request the plan is drawn from (`sceneNote`).
+2. **Route.** A scene is carried as an item of `other` marked with `SCENE_MARK` (`VeraCompose.ets`): Jev is not asked
+   whether a part covers it or whether it was asked for, Align never offers it a section, and it goes straight to the
+   written section with the needs it changes (`comp.custom`).
+3. **Write.** The section writer (`AgentCustom.ets`) is shown `SCENE_GUIDE` (`agent/AgentScene.ets`) with a worked
+   example in the section's own form, a prize wheel, and has `SCENE_TOKENS` to write in. The guide's rules come from a
+   roulette table written by hand and from the generations below: controls are components beside the surface, never
+   drawn; the bet is copied into the scene's own fields when it starts and settled from those; the pocket a ball rests
+   in is worked out in the wheel's frame, and a ball on a wheel is drawn at the wheel's angle plus its offset.
+4. **Check.** The section is played before it is served (`playSurface(compiled, true, true)`): fingers on the surface
+   first, and when they move nothing, each button on the screen pressed in turn with two more seconds of frames.
+
+The renderer side, from the hand-written roulette (`tools/vera-harness/examples/surface-roulette.vera`): a surface
+whose page is covered stops its loop (the router page observer), one scrolled out of view runs its frame handler but is
+not drawn, a surface stands on the page with no card of its own, and a path string is drawn under the screen's density,
+since ArkUI reads one in pixels.
+
+Measured on the phone (Generate screen, deepseek, 2026-10-30, one run each):
+
+| request | ready in | what came out |
+|---|---|---|
+| virtual casino roulette: bids, current bank, etc are forms, but they are accompanied with an animation of the roulette and ball | 29-30 s | three runs as the guide grew. 1: the number paid was worked out from the ball's angle alone, so the ball rested on another pocket. 2: the ball and the wheel snapped to the same angle on landing, the ball over pocket 0. 3: ball, number and bank agree (a $10 red bet on 25 took the bank from 500 to 510); the bet was locked in when the ball was thrown in all three |
+| dice roller for board games: choose how many dice, roll them with a tumbling animation, and keep a history of the totals | 28.5 s | the dice tumble and settle, the total matches the faces, a row is added to the history; the total follows the faces while they tumble |
+| delivery receipt: recipient name, number of parcels, and a signature pad where the recipient signs with a finger, then save the receipt to a list | 20.7 / not built / 32.1 s | 1: a list part with a "Signature" text field beside the pad; 2: not built, the plan asked for the signature "captured as an image" and Jev read every try as not doing it; 3: name, parcels, the pad, Save receipt and the list of receipts, saved as a row |
+
+Host check: `tools/vera-harness/scene-hole-check.js` (mocked model).
+
+A scene is only for a request that asks for something drawn, animated, moving or touched in its own words. The
+classifier says so, and when it was asked and said `none` the plan's scenes are built as ordinary needs
+(`sceneAllowed`, `plainScenes`): before that, "coin flip to decide who goes first, with a count of heads and tails" came
+back from the classifier as `part` and from the plan as a tumbling coin, and took 48 s. Ordinary requests on the phone
+(2026-10-30, one run each):
+
+| request | classifier | scene | served in |
+|---|---|---|---|
+| a sign-up form for a yoga class with name, email and a level choice | asked ("sign"), none | no | 6.3 s |
+| spinning class schedule for the week with times and instructors | asked ("spinning"), none | no | 9.4 s |
+| tip calculator: bill amount, tip percent and number of people | not asked | no | 2.8 s |
+| water reminder every 2 hours with a log of glasses drunk today | not asked | no | 18.3 s |
+| coin flip to decide who goes first, with a count of heads and tails | none (was part) | built as an ordinary need | 22.1 s (was 48.3 s) |
+| a breathing exercise timer with an animated circle that grows and shrinks | part | yes, beside the countdown | 13.7-50.6 s |
+
+A gate word costs one classifier call of about 1.6 s. The breathing circle reads the countdown's phase but its label said
+"Done" while it ran.
+
+### Changing a game or a scene
+
+A change typed under a program that draws on a `ui.Surface` (the Generate screen's refine, `editSurface` in
+`GeneratePage.ets`) does not go to the general refine, which rewrote the whole program from a prompt that knows neither
+guide and served it after one run. `agent/AgentSurfaceEdit.ets` shows the model the program, what it was made for and the
+change, with the game guide (a surface that fills the screen) or the scene guide (one among sections, told that the
+section's `__PASSTHROUGH__` is written out and that a new setting the scene settles from is copied in when it starts); the
+model answers with SEARCH/REPLACE edits (a whole program only when most of it changes). The result is played as a new one
+is -- fingers, and for a scene each button pressed -- and repaired by edits against that, at most twice; then asked once
+more with thinking on. A change that does not pass leaves the program on the screen as it was and says why. A structural
+edit of a composed screen (add, remove, move a block) is still tried first; one it hands on comes here. The change is
+traced (`surface-edit`).
+
+Measured (deepseek-flash, host, 2026-10-30, one run each):
+
+| program | change | before (general refine, phone) | now |
+|---|---|---|---|
+| neon arkanoid, 470 lines | make the paddle wider and every tenth brick drops a power-up that splits the ball into three balls | 72 s, rewritten to 571 lines, not played | 29 s: 12 edits, one repair round after the play, 573 lines; played for 90 s on the host: wider paddle, the ball splits into up to four |
+| examples/surface-roulette.vera, 377 lines | add a bet on a dozen that pays 2 to 1, and highlight the winning pocket | -- | 9-10 s, 10-12 edits, no repair; the new bet and the highlight work, but both runs settle the dozen wrongly: the first from the form while the ball runs, the second (with the rule about copying it in) from the previous spin's copy. Played, it passes; only a rule of the game itself catches that |
+
+Host check: `tools/vera-harness/surface-edit-check.js` (mocked model).
 
 ## Terms
 

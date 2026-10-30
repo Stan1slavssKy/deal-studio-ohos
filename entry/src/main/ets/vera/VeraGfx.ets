@@ -433,14 +433,17 @@ const RAD: number = Math.PI / 180
 
 /**
  * Draw one frame of a surface into a box of boxW x boxH vp. The box is filled with the theme's background, the
- * surface's w x h units are fitted into it (gfxFit) and filled with the theme's surface colour, and the shapes are
- * drawn back to front, clipped to the surface.
+ * surface's w x h units are fitted into it (gfxFit), and the shapes are drawn back to front, clipped to the surface.
+ *
+ * `pathScale` is the pixels in a vp on the screen drawn to: ArkUI reads a path string (gfx.path, gfx.strokePath) in
+ * pixels whatever the canvas's own unit, so a path is drawn under that much more scale -- without it a signature pad's
+ * frame came out a third of its size on a phone of density 3.4. The host's SVG recorder draws in one unit and passes 1.
  *
  * A shape with a non-finite number is skipped rather than drawn wrong: a NaN from a division by zero would
  * otherwise leave the canvas in a state the rest of the frame inherits.
  */
 export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: ResolvedTheme,
-    boxW: number, boxH: number, w: number, h: number): void {
+    boxW: number, boxH: number, w: number, h: number, pathScale: number = 1): void {
   let fit = gfxFit(boxW, boxH, w, h)
   ctx.save()
   ctx.clearRect(0, 0, boxW, boxH)
@@ -451,16 +454,16 @@ export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: Resolve
   ctx.scale(fit.scale, fit.scale)
   ctx.beginPath()
   ctx.rect(0, 0, w, h)
+  // No card of its own: a surface among a screen's sections stands on the page like they do, and one that wants a
+  // panel draws it (gfx.rect in "surface").
   ctx.clip()
-  ctx.fillStyle = themeColor(t.surface)
-  ctx.fillRect(0, 0, w, h)
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  for (let o of ops) { paintOp(ctx, o, t) }
+  for (let o of ops) { paintOp(ctx, o, t, pathScale) }
   ctx.restore()
 }
 
-function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme): void {
+function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number): void {
   if (!finite(o)) { return }
   if (o.kind === 'group') {
     ctx.save()
@@ -468,7 +471,7 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme): voi
     if (o.start !== 0) { ctx.rotate(o.start * RAD) }
     if (o.r !== 1) { ctx.scale(o.r, o.r) }
     ctx.globalAlpha = ctx.globalAlpha * o.size
-    for (let c of o.children) { paintOp(ctx, c, t) }
+    for (let c of o.children) { paintOp(ctx, c, t, pathScale) }
     ctx.restore()
     return
   }
@@ -532,16 +535,20 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme): voi
     }
   } else if (o.kind === 'path' || o.kind === 'strokePath') {
     if (o.text.length === 0) { return }
+    if (o.kind === 'strokePath' && o.lineWidth <= 0) { return }
+    // The path string is read in pixels (see paintGfx): scaled up by as many pixels as a vp has, it lands in units.
     let p = new Path2D(o.text)
+    ctx.save()
+    ctx.scale(pathScale, pathScale)
     if (o.kind === 'path') {
       ctx.fillStyle = c
       ctx.fill(p)
     } else {
-      if (o.lineWidth <= 0) { return }
       ctx.strokeStyle = c
-      ctx.lineWidth = o.lineWidth
+      ctx.lineWidth = o.lineWidth / pathScale
       ctx.stroke(p)
     }
+    ctx.restore()
   } else if (o.kind === 'text') {
     if (o.size <= 0 || o.text.length === 0) { return }
     ctx.font = (o.bold ? 'bold ' : 'normal ') + o.size.toString() + 'vp sans-serif'
