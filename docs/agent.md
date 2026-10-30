@@ -87,6 +87,28 @@ Measured on the phone (Generate screen, deepseek, 2026-10-30, one run each):
 
 Host check: `tools/vera-harness/scene-hole-check.js` (mocked model).
 
+### Changing a game or a scene
+
+A change typed under a program that draws on a `ui.Surface` (the Generate screen's refine, `editSurface` in
+`GeneratePage.ets`) does not go to the general refine, which rewrote the whole program from a prompt that knows neither
+guide and served it after one run. `agent/AgentSurfaceEdit.ets` shows the model the program, what it was made for and the
+change, with the game guide (a surface that fills the screen) or the scene guide (one among sections, told that the
+section's `__PASSTHROUGH__` is written out and that a new setting the scene settles from is copied in when it starts); the
+model answers with SEARCH/REPLACE edits (a whole program only when most of it changes). The result is played as a new one
+is -- fingers, and for a scene each button pressed -- and repaired by edits against that, at most twice; then asked once
+more with thinking on. A change that does not pass leaves the program on the screen as it was and says why. A structural
+edit of a composed screen (add, remove, move a block) is still tried first; one it hands on comes here. The change is
+traced (`surface-edit`).
+
+Measured (deepseek-flash, host, 2026-10-30, one run each):
+
+| program | change | before (general refine, phone) | now |
+|---|---|---|---|
+| neon arkanoid, 470 lines | make the paddle wider and every tenth brick drops a power-up that splits the ball into three balls | 72 s, rewritten to 571 lines, not played | 29 s: 12 edits, one repair round after the play, 573 lines; played for 90 s on the host: wider paddle, the ball splits into up to four |
+| examples/surface-roulette.vera, 377 lines | add a bet on a dozen that pays 2 to 1, and highlight the winning pocket | -- | 9-10 s, 10-12 edits, no repair; the new bet and the highlight work, but both runs settle the dozen wrongly: the first from the form while the ball runs, the second (with the rule about copying it in) from the previous spin's copy. Played, it passes; only a rule of the game itself catches that |
+
+Host check: `tools/vera-harness/surface-edit-check.js` (mocked model).
+
 ## Terms
 
 | term | what it is | where |
