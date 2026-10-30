@@ -139,6 +139,13 @@ class RequestBase {
   before: RequestBase | null = null
 }
 
+/** The round button of the request box (GeneratePage.roundButton), passed whole so that its state is followed. */
+class RoundButtonSpec {
+  symbol: string = ''
+  enabled: boolean = true
+  tap: () => void = () => {}
+}
+
 /** Everything spent since the last fresh generation, refinements included. */
 class RunTotals {
   runs: number = 0
@@ -2728,24 +2735,28 @@ struct GeneratePage {
   @Builder
   actionButton() {
     if (this.generating) {
-      this.roundButton('sys.symbol.square_fill', app.primary, app.onPrimary, true, () => { this.stopGeneration() })
+      this.roundButton({ symbol: 'sys.symbol.square_fill', enabled: true, tap: () => { this.stopGeneration() } })
     } else {
-      this.roundButton('sys.symbol.arrow_up', app.primary, app.onPrimary, this.draft.trim().length > 0 && this.canGenerate(),
-        () => { this.send() })
+      this.roundButton({ symbol: 'sys.symbol.arrow_up', enabled: this.draft.trim().length > 0 && this.canGenerate(),
+        tap: () => { this.send() } })
     }
   }
 
+  /**
+   * One object literal, not separate arguments: a @Builder's arguments passed by value are read once, and the send button
+   * then stayed as dim and as disabled as it was over the empty box whatever was typed into it.
+   */
   @Builder
-  roundButton(symbol: string, fill: ResourceColor, ink: ResourceColor, enabled: boolean, tap: () => void) {
+  roundButton(spec: RoundButtonSpec) {
     Button({ type: ButtonType.Circle }) {
-      SymbolGlyph($r(symbol)).fontSize(22).fontColor([ink])
+      SymbolGlyph($r(spec.symbol)).fontSize(22).fontColor([app.onPrimary])
     }
     .width(44)
     .height(44)
-    .backgroundColor(fill)
-    .opacity(enabled ? 1 : 0.4)
-    .enabled(enabled)
-    .onClick(tap)
+    .backgroundColor(app.primary)
+    .opacity(spec.enabled ? 1 : 0.4)
+    .enabled(spec.enabled)
+    .onClick(spec.tap)
   }
 
   /**
