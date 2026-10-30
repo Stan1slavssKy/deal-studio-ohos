@@ -36,7 +36,7 @@ for (const p of ['帮我创建一张吃药卡，提醒我每天吃药', '西湖�
 
 // Reading the answer.
 assert.equal(S.parseSurfaceBrief('{"surface": true, "title": "T", "design": "D"}').design, 'D')
-assert.equal(S.parseSurfaceBrief('noise {"surface": false, "title": "", "design": ""} noise').surface, false)
+assert.equal(S.parseSurfaceBrief('noise {"surface": false, "title": "", "design": ""} noise').kind, S.SURFACE_NONE)
 assert.equal(S.parseSurfaceBrief('{"surface": true, "title": "T", "design": ""}'), null, 'a game with no design is not an answer')
 assert.equal(S.parseSurfaceBrief('not json'), null)
 
@@ -67,6 +67,7 @@ function mockHost(answers) {
   h.calls = {plan: [], code: []}
   h.askPlan = async (systemPrompt, user) => {
     h.calls.plan.push(systemPrompt === S.SURFACE_CLASSIFY_PROMPT ? 'surface' : 'needs')
+    if (systemPrompt !== S.SURFACE_CLASSIFY_PROMPT) h.calls.needsUser = user
     return systemPrompt === S.SURFACE_CLASSIFY_PROMPT ? answers.brief : null
   }
   h.askCode = async (systemPrompt, user, budget, think) => {
@@ -111,6 +112,13 @@ const brief = JSON.stringify({surface: true, title: 'Star Catch', design: 'Catch
   host = mockHost({brief: JSON.stringify({surface: false, title: '', design: ''}), code: []})
   outcome = await route.buildScreen(request('score keeper for a board game'), host)
   assert.deepEqual(host.calls.plan.slice(0, 2), ['surface', 'needs'], 'a "no" goes on to the agent\'s plan')
+  assert.ok(host.calls.code.every(c => !c.system.includes('FULL-CANVAS APPS')), 'and the game writer is not asked')
+
+  // Part of the screen is drawn: the agent builds it, and its plan is told of the scene.
+  host = mockHost({brief: JSON.stringify({surface: 'part', title: '', design: '', scene: 'a roulette wheel the ball lands on'}), code: []})
+  outcome = await route.buildScreen(request('virtual casino roulette: bets and the bank are forms, with the wheel and ball animated'), host)
+  assert.deepEqual(host.calls.plan.slice(0, 2), ['surface', 'needs'], 'a part goes on to the agent\'s plan')
+  assert.match(host.calls.needsUser, /need of type scene: a roulette wheel the ball lands on/)
   assert.ok(host.calls.code.every(c => !c.system.includes('FULL-CANVAS APPS')), 'and the game writer is not asked')
 
   // No game words: not even asked. No guide on the host, or switched off: not asked either.

@@ -18,10 +18,12 @@ So the route asks first (`agent/AgentSurface.ets`, before the agent in `buildScr
 
 1. **Gate.** Only a request with a word that may mean such an app is asked about (`looksLikeSurface`, English and Chinese
    word lists); a to-do list never pays for the question.
-2. **Brief.** One call to the plan model (`SURFACE_CLASSIFY_PROMPT`, no thinking, JSON): `surface` true or false, and when
-   true a short title and an original design -- goal, controls on a touch screen, objects, collisions, score, lives,
-   levels, the look in hex colours. A named game is taken as its genre and mechanics, never its levels, names or artwork.
-   A "no", or no answer, goes on to the agent as before.
+2. **Brief.** One call to the plan model (`SURFACE_CLASSIFY_PROMPT`, no thinking, JSON): `surface` is `whole`, `part` or
+   `none`. For `whole`, a short title and an original design -- goal, controls on a touch screen, objects, collisions,
+   score, lives, levels, the look in hex colours. A named game is taken as its genre and mechanics, never its levels,
+   names or artwork. For `part` (a roulette wheel beside the bets, dice above a score sheet, a signature pad on a form),
+   a sentence of the scene, which goes to the agent with the request: see the next section. A `none`, or no answer,
+   goes on to the agent as before.
 3. **Write.** The model writes the whole program on one `ui.Surface` (`SURFACE_TOKENS`), shown the generation prompt with its
    catalogue cut to the surface's few components plus `std/gfx`, and its screen-composition advice replaced by
    `rawfile/vera-surface-skill.txt`: the shape of a frame-driven program, controls (drag, tap, a stick on the left half
@@ -48,6 +50,42 @@ Measured (deepseek-flash, 2026-10-30, one run each):
 with 8-9 ms of program and painting per frame. The designs and the text on screen come back in English whatever the
 request's language. Frames of the host runs are drawn with `tools/vera-harness/gfx-run.js`. Host check:
 `tools/vera-harness/surface-route-check.js`.
+
+### A scene inside a screen
+
+A screen of forms and lists with one drawn, moving or touched picture among them is the agent's, with the picture as a
+block of its own:
+
+1. **Plan.** The plan of needs has a type `scene` (`NeedsPlan.ets`): what is drawn, what moves or is touched, what sets
+   it moving, what it decides or changes. What a scene decides -- the number it lands on, a balance it pays into, the
+   results so far, the records a signature is kept with -- belongs to the scene, not to figures or entries; the inputs
+   the person sets for it stay inputs. A drawing is kept as its strokes, never as an image. When the route's classifier
+   said `part`, its sentence is added to the request the plan is drawn from (`sceneNote`).
+2. **Route.** A scene is carried as an item of `other` marked with `SCENE_MARK` (`VeraCompose.ets`): Jev is not asked
+   whether a part covers it or whether it was asked for, Align never offers it a section, and it goes straight to the
+   written section with the needs it changes (`comp.custom`).
+3. **Write.** The section writer (`AgentCustom.ets`) is shown `SCENE_GUIDE` (`agent/AgentScene.ets`) with a worked
+   example in the section's own form, a prize wheel, and has `SCENE_TOKENS` to write in. The guide's rules come from a
+   roulette table written by hand and from the generations below: controls are components beside the surface, never
+   drawn; the bet is copied into the scene's own fields when it starts and settled from those; the pocket a ball rests
+   in is worked out in the wheel's frame, and a ball on a wheel is drawn at the wheel's angle plus its offset.
+4. **Check.** The section is played before it is served (`playSurface(compiled, true, true)`): fingers on the surface
+   first, and when they move nothing, each button on the screen pressed in turn with two more seconds of frames.
+
+The renderer side, from the hand-written roulette (`tools/vera-harness/examples/surface-roulette.vera`): a surface
+whose page is covered stops its loop (the router page observer), one scrolled out of view runs its frame handler but is
+not drawn, a surface stands on the page with no card of its own, and a path string is drawn under the screen's density,
+since ArkUI reads one in pixels.
+
+Measured on the phone (Generate screen, deepseek, 2026-10-30, one run each):
+
+| request | ready in | what came out |
+|---|---|---|
+| virtual casino roulette: bids, current bank, etc are forms, but they are accompanied with an animation of the roulette and ball | 29-30 s | three runs as the guide grew. 1: the number paid was worked out from the ball's angle alone, so the ball rested on another pocket. 2: the ball and the wheel snapped to the same angle on landing, the ball over pocket 0. 3: ball, number and bank agree (a $10 red bet on 25 took the bank from 500 to 510); the bet was locked in when the ball was thrown in all three |
+| dice roller for board games: choose how many dice, roll them with a tumbling animation, and keep a history of the totals | 28.5 s | the dice tumble and settle, the total matches the faces, a row is added to the history; the total follows the faces while they tumble |
+| delivery receipt: recipient name, number of parcels, and a signature pad where the recipient signs with a finger, then save the receipt to a list | 20.7 / not built / 32.1 s | 1: a list part with a "Signature" text field beside the pad; 2: not built, the plan asked for the signature "captured as an image" and Jev read every try as not doing it; 3: name, parcels, the pad, Save receipt and the list of receipts, saved as a row |
+
+Host check: `tools/vera-harness/scene-hole-check.js` (mocked model).
 
 ## Terms
 

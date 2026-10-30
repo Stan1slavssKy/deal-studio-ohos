@@ -44,6 +44,17 @@ function script(): Touch[] {
   return out
 }
 
+/** The buttons a person can press on the screen: enabled, with a handler. */
+function buttonsIn(node: VeraUiNode, out: VeraUiNode[]): VeraUiNode[] {
+  if (node.kind === 'button' && node.enabled && node.action.length > 0) { out.push(node) }
+  for (let child of node.children) { buttonsIn(child, out) }
+  return out
+}
+
+/** At most this many buttons are pressed, each followed by this many frames, when the fingers moved nothing. */
+const PRESSED_BUTTONS: number = 6
+const FRAMES_AFTER_PRESS: number = 120
+
 function findSurface(node: VeraUiNode): VeraUiNode | null {
   if (node.kind === 'surface') { return node }
   for (let child of node.children) {
@@ -78,9 +89,11 @@ function diagnostic(e: Error, when: string): string {
 
 /**
  * '' when the program's surface plays, else what is wrong, for the repair prompt. `requireSurface`: a program with no
- * ui.Surface is itself the problem (the game route asked for one).
+ * ui.Surface is itself the problem (the game route asked for one). `pressButtons`: the surface is one part of a screen, and
+ * what sets it moving may be a button beside it (Spin, Roll, Start) rather than a finger on it -- when the fingers moved
+ * nothing, each button on the screen is pressed in turn and the frames played again.
  */
-export function playSurface(compiled: CompileResult, requireSurface: boolean = true): string {
+export function playSurface(compiled: CompileResult, requireSurface: boolean = true, pressButtons: boolean = false): string {
   let host = new UiHostEnvironment()
   let vm = new VirtualMachine(deserializeVbc2(compiled.vbc2), host)
   let state: RuntimeValue
@@ -125,8 +138,32 @@ export function playSurface(compiled: CompileResult, requireSurface: boolean = t
       let drawn = decodeGfx(vm.execute(s.label, [state]))
       if (!changed && fingerprint(drawn) !== first) { changed = true }
     }
+    if (pressButtons && s.action.length > 0 && !changed) {
+      let buttons: VeraUiNode[] = []
+      for (let root of decodeVeraUi(vm.execute('view', [state]))) { buttonsIn(root, buttons) }
+      for (let b of buttons.slice(0, PRESSED_BUTTONS)) {
+        if (changed) { break }
+        where = 'in ' + b.action + ' (the button "' + b.text + '")'
+        state = vm.execute(b.action, [state, new VeraNumberValue(b.eventValue)])
+        let before = fingerprint(decodeGfx(vm.execute(s.label, [state])))
+        for (let more = 1; more <= FRAMES_AFTER_PRESS && !changed; more++) {
+          frame++
+          where = 'in ' + s.action + ' at frame ' + frame.toString() + ', after the button "' + b.text + '"'
+          state = vm.execute(s.action, [state, new VeraNumberValue(PLAY_STEP_MS)])
+          where = 'in ' + s.label + ' at frame ' + frame.toString() + ', after the button "' + b.text + '"'
+          let drawn = fingerprint(decodeGfx(vm.execute(s.label, [state])))
+          if (drawn !== before || drawn !== first) { changed = true }
+        }
+      }
+    }
   } catch (e) {
     return diagnostic(e as Error, where)
+  }
+  if (s.action.length > 0 && !changed && pressButtons) {
+    return 'The program compiled, but nothing on the surface changed in ' + (PLAY_FRAMES * PLAY_STEP_MS / 1000).toString() +
+      ' seconds of frames after a tap in the middle and drags across it, nor after pressing each button on the screen: what ' +
+      'sets the scene moving (a tap on it, or a button such as Spin or Roll) must change the state ' + s.label + ' draws, and ' +
+      s.action + ' must move it by elapsedMs'
   }
   if (s.action.length > 0 && !changed) {
     return 'The program compiled, but nothing on the surface changed in ' + (PLAY_FRAMES * PLAY_STEP_MS / 1000).toString() +

@@ -33,6 +33,8 @@ export class AgentRequest {
   prompt: string = ''
   /** A widget inside a chat reply rather than a whole screen. */
   widget: boolean = false
+  /** What the route was told is drawn on the screen, moving or touched (AgentSurface.ets), for the plan; '' for nothing. */
+  scene: string = ''
 }
 
 export class AgentResult {
@@ -149,7 +151,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
     }, result.asked)
     if (settled.length > 0) { host.status('Planning again with your answer...') }
     return settled
-  })
+  }, request.scene)
   result.composed = composed
   result.note = composed.note
   let planning = Date.now() - started

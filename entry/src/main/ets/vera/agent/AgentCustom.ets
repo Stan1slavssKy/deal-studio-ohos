@@ -13,6 +13,9 @@
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { smokeRun } from '../VeraSmoke'
+import { playSurface } from '../VeraSurfacePlay'
+import { isScene } from '../VeraCompose'
+import { SCENE_GUIDE, SCENE_TOKENS } from './AgentScene'
 
 /**
  * Asks the model for code: (system prompt, request, most tokens to write, whether it thinks first) -> its reply, or null
@@ -286,12 +289,19 @@ function quoted(source: string, errors: string): string {
   return out.join('\n')
 }
 
-/** '' when the program compiles and runs, else what went wrong with the lines it points at. */
-function check(source: string): string {
+/**
+ * '' when the program compiles and runs, else what went wrong with the lines it points at. A section with a scene is also
+ * played: fingers on it, then each button pressed, every frame drawn.
+ */
+function check(source: string, scene: boolean = false): string {
   try {
     let compiled = compileVeraSource(source)
     let ran = smokeRun(compiled)
     if (ran.length > 0) { return quoted(source, ran) }
+    if (scene) {
+      let played = playSurface(compiled, true, true)
+      if (played.length > 0) { return quoted(source, played) }
+    }
     // A field the section keeps that nothing reads is something the person can set that changes nothing they can see.
     let unread = compiled.unreadFields.filter((f: string): boolean => f.startsWith('c_'))
     if (unread.length > 0) {
@@ -311,7 +321,8 @@ export async function writeSection(request: CustomRequest, language: string, ask
   let started = Date.now()
   let found = foundTargets(request.phone)
   let phone = found.length > 0 ? request.phone : ''
-  let system = language + CONTRACT + phoneRule(phone)
+  let scene = request.needs.some((n: string): boolean => isScene(n))
+  let system = language + CONTRACT + phoneRule(phone) + (scene ? SCENE_GUIDE : '')
   let asked = 'Request: ' + request.prompt + '\n\nThe section must do:\n- ' + request.needs.join('\n- ') +
     (request.inputs.length > 0 ? '\n\nThe person sets these on the screen and nothing else uses them yet; the section uses them:\n- ' +
       request.inputs.join('\n- ') : '') +
@@ -330,7 +341,7 @@ export async function writeSection(request: CustomRequest, language: string, ask
     let think = attempt > REPAIRS
     result.attempts = attempt + 1
     result.thought = think
-    let budget = request.whole ? SCREEN_TOKENS : SECTION_TOKENS
+    let budget = request.whole ? SCREEN_TOKENS : (scene ? SCENE_TOKENS : SECTION_TOKENS)
     let reply = await ask(system, user, think ? budget * THINKING_ROOM : budget, think)
     if (reply === null) { result.failed = 'no answer for the custom section'; break }
     let cannot = between(reply, 'cannot')
@@ -341,7 +352,7 @@ export async function writeSection(request: CustomRequest, language: string, ask
     // Asked for twice at most: a section that still makes its own clock or list is better than none, so it is then taken as it is.
     let again = section === null || attempt >= 2 ? '' : repeats(section, request)
     let problem = section === null ? 'The answer was not in the form asked for: <classes>, <fields>, <functions> and <view>.' :
-      (calls.length > 0 ? calls : (again.length > 0 ? again : check(request.compose(section))))
+      (calls.length > 0 ? calls : (again.length > 0 ? again : check(request.compose(section), scene)))
     if (problem.length === 0) {
       // It compiles and runs; whether it does what it is for is Jev's reading. One it reads as not doing a need is asked
       // for again, saying which.

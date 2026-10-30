@@ -151,6 +151,15 @@ function firstField(l: SketchList, kind: string): ListField | null {
   return null
 }
 
+/**
+ * The words an item of `other` starts with when the plan of needs made it a scene (NeedsPlan.ets): a picture the app draws
+ * itself, which nothing ready does. It is written in the section hole on a ui.Surface (AgentCustom.ets), and neither a part
+ * nor a section of the catalogue is asked about it.
+ */
+export const SCENE_MARK: string = 'a scene the app draws itself: '
+
+export function isScene(need: string): boolean { return need.startsWith(SCENE_MARK) }
+
 export class Sketch {
   title: string = ''
   eyebrow: string = ''
@@ -1610,6 +1619,7 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
 
   let parts = partsOf(sketch)
   for (let i = 0; i < sketch.other.length; i++) {
+    if (isScene(sketch.other[i])) { continue }
     let options: Map<string, string> = copyOf(parts)
     options.set('none', 'none of these: it needs something the app does not have')
     questions['covers.' + i.toString()] = choice('The request also asks for "' + sketch.other[i] +
@@ -1650,6 +1660,7 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
       questions['within.value.' + v.id] = choice('Is showing "' + v.label + '" (' + v.means + ') part of one of these?', needs)
     }
     for (let i = 0; i < sketch.other.length; i++) {
+      if (isScene(sketch.other[i])) { continue }
       questions['within.other.' + i.toString()] = choice('Is "' + sketch.other[i] + '" part of one of these?', needs)
     }
   }
@@ -2230,6 +2241,10 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   let partIds: string[] = []
   partsOf(sketch).forEach((_d: string, key: string) => { partIds.push(key) })
   for (let i = 0; i < sketch.other.length; i++) {
+    if (isScene(sketch.other[i])) {
+      if (customEnabled) { comp.custom.push(sketch.other[i]) } else { comp.unbound.push('not in the vocabulary: ' + sketch.other[i]) }
+      continue
+    }
     let within = answerOf(answers, 'within.other.' + i.toString(), served, comp.answers, COVERED_ABOVE)
     if (within.length > 0) { comp.claimed.push(sketch.other[i]); continue }
     let covered = answerOf(answers, 'covers.' + i.toString(), partIds, comp.answers)

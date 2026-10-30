@@ -94,6 +94,7 @@ The Spin button and a tap on the wheel throw the same ball, and the pocket it is
 The bet is the one the ball was thrown with, even when the form changes while it runs.
 The bank adds up over 400 spins.
 Given a directory, it also writes `roulette-sheet.svg`.
+`scene-hole-check.js` follows a scene through the agent with a mocked model: the classifier's three answers, the plan's `scene` need, the composer and Align leaving it to the written section, the scene guide's example playing, a scene only a button starts, and the writer repairing a scene that never moves.
 
 The prompt workflow harness executes application request and repair methods with mocked HTTP responses:
 

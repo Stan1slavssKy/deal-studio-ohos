@@ -1033,7 +1033,7 @@ export struct VeraPreview {
       let drawAt = Date.now()
       let ops = decodeGfx(this.vm!.execute(node.label, [this.currentState!]))
       let paintAt = Date.now()
-      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum)
+      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum, this.getUIContext().vp2px(1))
       this.frameSplit[1] += paintAt - drawAt
       this.frameSplit[2] += Date.now() - paintAt
     } catch (e) {

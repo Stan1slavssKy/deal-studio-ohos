@@ -195,15 +195,25 @@ async function drawPlan(askPlan: SketchAsk, prompt: string, onSketch: (partial: 
 }
 
 /**
+ * Added to the request the plan is drawn from when the route was told part of the screen is a scene (AgentSurface.ets): the
+ * plan model on its own makes a spinning wheel a figure and a button.
+ */
+export function sceneNote(scene: string): string {
+  return '\n\nPart of this screen is a scene, one need of type scene: ' + scene
+}
+
+/**
  * The whole of composing a new screen, from the plan of needs: the plan, the person's answers to what it asks, Jev's choice of
  * a section or a part for each need, then the composer's own choices (widgets, formulas, effects, moments) over what is left.
  */
 export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoices: JevAsk,
     onSketch: (partial: Sketch) => void = (_s: Sketch): void => {}, widget: boolean = false,
-    review: PlanReview | null = null): Promise<ComposeResult> {
+    review: PlanReview | null = null, scene: string = ''): Promise<ComposeResult> {
   let result = new ComposeResult()
   let started = Date.now()
-  let drawn = await drawPlan(askPlan, prompt, onSketch, widget ? WIDGET_NEEDS_NOTE : '')
+  // What the plan is told besides the request: a widget's room, and the scene the route was told part of the screen is.
+  let note = (widget ? WIDGET_NEEDS_NOTE : '') + (scene.length > 0 ? sceneNote(scene) : '')
+  let drawn = await drawPlan(askPlan, prompt, onSketch, note)
   result.sketchMs = Date.now() - started
   result.planTries = drawn.tries
   if (drawn.plan === null) { result.note = 'no usable plan after ' + drawn.tries.toString() + ' tries'; return result }
@@ -214,7 +224,7 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
   if (settled.length > 0) {
     prompt = prompt + '\n\n' + settled
     let again = Date.now()
-    let redrawn = await drawPlan(askPlan, prompt, onSketch, widget ? WIDGET_NEEDS_NOTE : '')
+    let redrawn = await drawPlan(askPlan, prompt, onSketch, note)
     result.sketchMs += Date.now() - again
     result.replanned = true
     result.planTries += redrawn.tries

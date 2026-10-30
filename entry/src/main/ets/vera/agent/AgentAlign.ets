@@ -11,7 +11,8 @@
  * cover with a slot turned on would be lost. On by default; `--ps veraAlign 0` (setAlignEnabled) turns it off, and nothing here runs.
  */
 
-import { Composition, SketchInput, SketchValue, READY_KINDS, JevAsk, LIST_SECTIONS, hasClock, canReplaceList, replaceList } from '../VeraCompose'
+import { Composition, SketchInput, SketchValue, READY_KINDS, JevAsk, LIST_SECTIONS, hasClock, canReplaceList, replaceList,
+  isScene } from '../VeraCompose'
 import { fragments, vetoes, FragmentSpec, VetoSpec } from '../VeraTemplates'
 
 /** Sections a need that nothing else does may be given: the plan's ready kinds, and the two that do phone work no effect does. */
@@ -112,15 +113,16 @@ export class AlignResult {
  * are fine -- a reader makes up nothing, it shows what the log holds (a chart of the entries, a table per category).
  */
 export function alignReaderCandidates(comp: Composition): string[] {
-  return comp.custom.filter((need: string): boolean => !need.startsWith(FIGURE_MARK))
+  return comp.custom.filter((need: string): boolean => !need.startsWith(FIGURE_MARK) && !isScene(need))
 }
 
 /** The needs of `custom` a section may do: not the person's own records, not a figure. */
 export function alignCandidates(comp: Composition): string[] {
   // A value of format fraction is drawn by the figures part as a progress bar: a need for "a progress bar" is already done.
   let bar = comp.sketch.values.some((v: SketchValue): boolean => v.format === 'fraction')
+  // A scene is drawn by the program itself: no section of the catalogue draws one.
   return comp.custom.filter((need: string): boolean => need.indexOf(OWN_MARK) < 0 && !need.startsWith(FIGURE_MARK) &&
-    !(bar && need.toLowerCase().indexOf('progress') >= 0))
+    !isScene(need) && !(bar && need.toLowerCase().indexOf('progress') >= 0))
 }
 
 function criteriaOf(specs: FragmentSpec[], kinds: string[]): Record<string, Object> {

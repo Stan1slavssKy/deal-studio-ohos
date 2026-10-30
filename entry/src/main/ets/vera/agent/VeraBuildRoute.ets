@@ -22,7 +22,7 @@ import { settleProgram } from './AgentRepair'
 import { compositionFromPlan, rebuilds } from '../VeraComposition'
 import { addStage, WHO_MODEL, WHO_PHONE } from '../RunStages'
 import { toolCount, toolSpanSince } from '../ToolLog'
-import { briefSurface, writeSurfaceApp } from './AgentSurface'
+import { briefSurface, writeSurfaceApp, SURFACE_WHOLE, SURFACE_PART } from './AgentSurface'
 
 /** The agent's program is the result. */
 export const OUTCOME_AGENT: string = 'agent'
@@ -115,6 +115,8 @@ async function writeWholeScreen(request: RouteRequest, host: AgentHost, outcome:
  * A game, a toy, a simulation or a drawing (AgentSurface.ets): written whole on a ui.Surface, from a design the plan model
  * writes. Null when the request is not one, so the agent builds it; an outcome when it is, served or not -- a game the
  * agent's parts would build is a screen of buttons pretending to be one, so a game that could not be written is not built.
+ * A screen of which only a part is drawn (a roulette wheel beside the bets) is the agent's too, told of its scene: the plan
+ * makes it a need of its own, and the section hole writes it on a surface beside the rest.
  */
 async function buildSurface(request: RouteRequest, host: AgentHost): Promise<RouteOutcome | null> {
   if (request.agent === null || request.agent!.widget || request.mode !== 'deepseek') { return null }
@@ -122,8 +124,9 @@ async function buildSurface(request: RouteRequest, host: AgentHost): Promise<Rou
   let started = Date.now()
   let brief = await briefSurface(prompt, host)
   let briefMs = Date.now() - started
-  if (brief === null) {
-    // The question was asked and answered no (or not at all): its time is the agent's first stage.
+  if (brief === null || brief.kind !== SURFACE_WHOLE) {
+    // The question was asked and answered no, part or not at all: its time is the agent's first stage.
+    if (brief !== null && brief.kind === SURFACE_PART) { request.agent!.scene = brief.scene }
     return null
   }
   let outcome = new RouteOutcome()
