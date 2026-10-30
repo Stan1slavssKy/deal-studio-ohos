@@ -70,6 +70,10 @@ const MODE_LOCAL: string = 'local'
 /** The picture a new app starts with; the Save window lets it be changed. */
 const DEFAULT_APP_ICON: string = APP_ICONS[0]
 const TAB_PREVIEW: string = 'preview'
+/** The fold button, in full screen: the same size and place folded and unfolded. */
+const FOLD_SIZE: number = 44
+/** What a program is given under it when the fold button lies over it: the button, its margin and a little more. */
+const FOLD_ROOM: number = 76
 const TAB_CODE: string = 'code'
 const TAB_METRICS: string = 'metrics'
 
@@ -333,6 +337,10 @@ struct GeneratePage {
   /** What the one box holds, the settings and the details are open. */
   @State draft: string = ''
   @State settingsOpen: boolean = false
+  /** The program alone over the whole screen, with the box under it; see fullscreenPane. */
+  @State fullscreen: boolean = false
+  /** Full screen with the request box folded away; see composer. */
+  @State composerHidden: boolean = false
   /** The result card's request line is open to the whole history of requests. */
   @State requestOpen: boolean = false
   private scroller: Scroller = new Scroller()
@@ -513,6 +521,13 @@ struct GeneratePage {
   /** A run began or ended: the end of the thread is where the new card is. */
   private threadMoved(): void {
     this.scrollDown()
+    // The box is enabled again when the run ends and takes the focus back, which opens the keyboard over the result.
+    if (!this.generating) {
+      // After the page has drawn the box enabled again, not before: switching it on is what hands it the focus back.
+      setTimeout(() => {
+        try { this.getUIContext().getFocusController().clearFocus() } catch (e) { console.warn('VERA clearFocus failed: ' + (e as Error).message) }
+      }, 350)
+    }
   }
 
   private startNew(): void {
@@ -1927,6 +1942,7 @@ struct GeneratePage {
   onBackPress(): boolean | void {
     if (this.closing || this.naming) { return false }
     if (this.leaving) { this.leaving = false; return true }
+    if (this.fullscreen) { this.fullscreen = false; return true }
     if (this.hasUnsavedWork()) {
       this.leaving = true
       return true
@@ -2541,6 +2557,183 @@ struct GeneratePage {
     .borderRadius(14)
   }
 
+  /**
+   * The one box: the first message asks for an app, the ones after it ask for a change to it. It floats over the page as a
+   * rounded card with a shadow and a margin on every side, so that it reads as something laid over the program and not as
+   * its bottom edge. One round button on its right does whatever is next: send, or stop while a run is going. In full
+   * screen a button at its left folds the box away, and the button that brings it back is that same button, in the same
+   * place.
+   */
+  @Builder
+  composer() {
+    Row({ space: 8 }) {
+      if (this.fullscreen && this.hasResult()) {
+        this.foldButton(true)
+      }
+      TextInput({ placeholder: this.hasResult() || this.baseVersionId.length > 0 ? 'What to change?' : 'Describe the app you want...',
+        text: this.draft })
+        .onChange((value: string) => { this.draft = value })
+        .onSubmit(() => { this.send() })
+        .layoutWeight(1)
+        .height(44)
+        .fontSize(16)
+        .borderRadius(22)
+        .backgroundColor(app.background)
+        .enabled(!this.generating && this.baseError.length === 0)
+      this.actionButton()
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: 12, right: 12, top: 8, bottom: 10 })
+    .padding(6)
+    .backgroundColor(app.surface)
+    .borderRadius(30)
+    .border({ width: 1, color: app.line })
+    .shadow({ radius: 16, color: '#33000000', offsetY: -2 })
+  }
+
+  /** The round button on the right of the box; see composer. */
+  @Builder
+  actionButton() {
+    if (this.generating) {
+      this.roundButton('sys.symbol.square_fill', app.primary, app.onPrimary, true, () => { this.stopGeneration() })
+    } else {
+      this.roundButton('sys.symbol.arrow_up', app.primary, app.onPrimary, this.draft.trim().length > 0 && this.canGenerate(),
+        () => { this.send() })
+    }
+  }
+
+  @Builder
+  roundButton(symbol: string, fill: ResourceColor, ink: ResourceColor, enabled: boolean, tap: () => void) {
+    Button({ type: ButtonType.Circle }) {
+      SymbolGlyph($r(symbol)).fontSize(22).fontColor([ink])
+    }
+    .width(44)
+    .height(44)
+    .backgroundColor(fill)
+    .opacity(enabled ? 1 : 0.4)
+    .enabled(enabled)
+    .onClick(tap)
+  }
+
+  /**
+   * Folds the box away in full screen, and brings it back: one button with the arrow turned over. Both places are the same
+   * point of the screen, so a second tap undoes the first without the hand moving.
+   */
+  @Builder
+  foldButton(fold: boolean) {
+    Button({ type: ButtonType.Circle }) {
+      SymbolGlyph($r(fold ? 'sys.symbol.chevron_down' : 'sys.symbol.chevron_up')).fontSize(18).fontColor([app.secondaryInk])
+    }
+    .width(FOLD_SIZE)
+    .height(FOLD_SIZE)
+    .backgroundColor(app.secondaryFill)
+    // Over the program it needs a shadow to be seen; in the box it sits on the box.
+    .shadow(fold ? { radius: 0 } : { radius: 8, color: '#40000000', offsetY: 2 })
+    .onClick(() => { this.composerHidden = fold })
+  }
+
+  /** The title bar's buttons: the program full screen once there is one, the settings, a new app. */
+  private barMenus(): NavigationMenuItem[] {
+    let items: NavigationMenuItem[] = []
+    if (this.hasResult() && !this.generating) {
+      items.push({
+        value: 'Full screen',
+        symbolIcon: new SymbolGlyphModifier($r('sys.symbol.arrow_up_left_and_arrow_down_right')),
+        action: () => { this.setFullscreen(true) }
+      })
+    }
+    items.push({
+      value: 'Settings',
+      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.gearshape')),
+      action: () => { this.settingsOpen = !this.settingsOpen }
+    })
+    items.push({
+      value: 'New',
+      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),
+      action: () => { this.confirmNew() }
+    })
+    return items
+  }
+
+  /** What was typed into the program goes with it to the other view, which draws a program of its own. */
+  private setFullscreen(on: boolean): void {
+    this.carriedState = this.liveState
+    this.tab = TAB_PREVIEW
+    this.composerHidden = false
+    this.fullscreen = on
+  }
+
+  /**
+   * Full screen: nothing but the program, and the box under it for the next request. While a change is being made the
+   * program stays as it was, with what the run is doing in a small label over it, and the agent's question under it.
+   */
+  @Builder
+  fullscreenPane() {
+    Column() {
+      Stack({ alignContent: Alignment.TopEnd }) {
+        // With the box folded, the round button lies over the bottom corner: the program gets room to scroll clear of it.
+        VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState, bottomRoom: this.composerHidden ? FOLD_ROOM : 0,
+          onStateSnapshot: (encoded: string): void => { this.liveState = encoded } })
+          .width('100%')
+          .height('100%')
+        Row({ space: 8 }) {
+          // Save without leaving full screen: a name is asked for the first time, as ever; greyed out once it is saved.
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.save'))
+              .fontSize(18).fontColor([this.isSaved() ? app.inkDisabled : app.primaryInk])
+          }
+          .width(36)
+          .height(36)
+          .backgroundColor(app.surface)
+          .shadow({ radius: 4, color: '#26000000', offsetY: 1 })
+          .enabled(!this.generating && !this.isSaved())
+          .opacity(this.generating ? 0.5 : 1)
+          .onClick(() => { this.doSave() })
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.arrow_down_right_and_arrow_up_left')).fontSize(18).fontColor([app.secondaryInk])
+          }
+          .width(36)
+          .height(36)
+          .backgroundColor(app.surface)
+          .shadow({ radius: 4, color: '#26000000', offsetY: 1 })
+          .onClick(() => { this.setFullscreen(false) })
+        }
+        .margin({ top: 8, right: 8 })
+        if (this.generating || !this.compiled) {
+          Row({ space: 8 }) {
+            if (this.generating) { LoadingProgress().width(16).height(16) }
+            Text(this.status.length > 0 ? this.status : 'Working...')
+              .fontSize(12).fontColor(this.generating ? app.inkSoft : app.warningInk).maxLines(3)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .backgroundColor(app.surface)
+          .borderRadius(12)
+          .shadow({ radius: 4, color: '#26000000', offsetY: 1 })
+          // Left of the collapse button, not over it.
+          .constraintSize({ maxWidth: '75%' })
+          .margin({ top: 12, right: 100 })
+        }
+        if (this.composerHidden) {
+          // Where the fold button was in the box: margin 12 and the box's border and padding in, margin 10 and the same up.
+          Column() { this.foldButton(false) }
+            .position({ left: 19, bottom: 17 })
+        }
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .clip(true)
+      if (this.questionText.length > 0) {
+        QuestionCard({ question: this.questionText, options: this.questionOptions, fallback: this.questionFallback,
+          onPick: (index: number): void => { this.settleQuestion(index) },
+          onTyped: (text: string): void => { this.settleQuestion(text) } })
+          .margin({ left: 12, right: 12, top: 8 })
+      }
+    }
+    .width('100%')
+    .layoutWeight(1)
+  }
+
   /** The program that runs, over the whole space: its status and Save on top, then Preview, Code or Metrics. */
   @Builder
   resultPane() {
@@ -2814,6 +3007,7 @@ struct GeneratePage {
     this.status = ''
     this.draft = ''
     this.tab = TAB_PREVIEW
+    this.fullscreen = false
     this.requestOpen = false
     this.composerOpen = false
     this.scroller.scrollEdge(Edge.Top)
@@ -2825,17 +3019,19 @@ struct GeneratePage {
     Stack() {
     Navigation() {
       Column() {
-        if (this.baseError.length > 0) {
+        if (this.baseError.length > 0 && !this.fullscreen) {
           Text(this.baseError).fontSize(13).fontColor(app.dangerInk).width('100%').padding({ left: 16, right: 16, top: 8 })
         }
-        if (this.settingsOpen) {
+        if (this.settingsOpen && !this.fullscreen) {
           Column() { this.settingsPanel() }
             .width('100%')
             .padding({ left: 12, right: 12, top: 8 })
         }
         // A program that runs takes the whole space between the bar and the box, as the whole of the screen it is; before
         // and while it is built, and when it was not, the page is a thread of cards.
-        if (!this.generating && this.hasResult()) {
+        if (this.fullscreen && this.hasResult()) {
+          this.fullscreenPane()
+        } else if (!this.generating && this.hasResult()) {
           this.resultPane()
         } else {
         List({ space: 10, scroller: this.scroller }) {
@@ -2870,29 +3066,10 @@ struct GeneratePage {
         .scrollBar(BarState.Off)
         }
 
-        // The one box: the first message asks for an app, the ones after it ask for a change to it.
-        Row({ space: 8 }) {
-          TextInput({ placeholder: this.hasResult() || this.baseVersionId.length > 0 ? 'What to change?' : 'Describe the app you want...',
-            text: this.draft })
-            .onChange((value: string) => { this.draft = value })
-            .onSubmit(() => { this.send() })
-            .layoutWeight(1)
-            .height(44)
-            .enabled(!this.generating && this.baseError.length === 0)
-          Button(this.generating ? 'Stop' : 'Send')
-            .attributeModifier(new PrimaryButton())
-            .enabled(this.generating || (this.draft.trim().length > 0 && this.canGenerate()))
-            .onClick(() => {
-              if (this.generating) {
-                this.stopGeneration()
-              } else {
-                this.send()
-              }
-            })
+        // Full screen can fold the box away, leaving the program the whole screen; a round button brings it back.
+        if (!(this.fullscreen && this.composerHidden && this.hasResult())) {
+          this.composer()
         }
-        .width('100%')
-        .padding({ left: 12, right: 12, top: 6, bottom: 10 })
-        .backgroundColor(app.surface)
       }
       .width('100%')
       .height('100%')
@@ -2901,16 +3078,9 @@ struct GeneratePage {
     .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.nextVersionNumber.toString() :
       (this.projectId.length === 0 ? 'New app' : 'Generate'))
     .titleMode(NavigationTitleMode.Mini)
+    .hideTitleBar(this.fullscreen && this.hasResult())
     .backgroundColor(app.background)
-    .menus([{
-      value: 'Settings',
-      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.gearshape')),
-      action: () => { this.settingsOpen = !this.settingsOpen }
-    }, {
-      value: 'New',
-      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),
-      action: () => { this.confirmNew() }
-    }])
+    .menus(this.barMenus())
 
     if (this.naming) {
       this.nameOverlay()
