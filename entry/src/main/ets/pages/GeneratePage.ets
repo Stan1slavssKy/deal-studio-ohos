@@ -45,6 +45,8 @@ import { suggestAppName, suggestAppIcon } from '../vera/AppName'
 import { app, PrimaryButton, TonalButton, QuietButton } from '../components/AppStyle'
 import { MetricCard, MetricTile, MetricChip, MetricLine } from '../components/MetricCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
+import { webSearch } from '../vera/VeraWebSearch'
+import { foundResults, liveFiguresNote } from '../vera/LiveFigures'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { ToolCall, ToolTotal, toolCalls, resetToolLog, toolTotals, toolMs } from '../vera/ToolLog'
 import { ServiceNote, serviceNotes, resetServiceHealth, describeService, silent, serviceTrouble } from '../vera/ServiceHealth'
@@ -970,10 +972,41 @@ struct GeneratePage {
       }
     }
     if (route.agent !== null) {
-      this.tryRoute(this.prompt.trim(), route)
+      this.tryLiveFigures(this.prompt.trim(), route)
       return
     }
     this.startAttemptOne(this.prompt.trim())
+  }
+
+  /**
+   * A new screen that shows a current figure (the weather, a rate, a price) is written by the model on a search made now
+   * (LiveFigures.ets), not built by the agent; everything else, and a search that found nothing, goes to the route.
+   */
+  private async tryLiveFigures(userPrompt: string, route: RouteRequest): Promise<void> {
+    let run = this.runId
+    if (settings.hasExaKey()) {
+      this.status = 'Checking whether it needs current figures...'
+      let checkStart = Date.now()
+      let query = await this.metricWork(run, (): Promise<string> => deepseek.extractLiveQuery(userPrompt))
+      addStage(this.stages, 'Does it need current figures', WHO_MODEL, Date.now() - checkStart)
+      if (run !== this.runId || this.cancelRequested) { return }
+      if (query.length > 0) {
+        this.status = 'Looking up current figures...'
+        let searchStart = Date.now()
+        let results = await this.metricWork(run, (): Promise<string> => webSearch(query))
+        addStage(this.stages, 'Looking up current figures', WHO_SEARCH, Date.now() - searchStart, query)
+        if (run !== this.runId || this.cancelRequested) { return }
+        let fields: Record<string, Object> = {}
+        fields['query'] = query
+        fields['found'] = foundResults(results)
+        trace('live-figures', fields)
+        if (foundResults(results)) {
+          this.startAttemptOne(userPrompt, 'Generating', liveFiguresNote(results))
+          return
+        }
+      }
+    }
+    this.tryRoute(userPrompt, route)
   }
 
   private async tryRoute(userPrompt: string, route: RouteRequest): Promise<void> {
@@ -994,7 +1027,8 @@ struct GeneratePage {
     }
     if (outcome.agent !== null) {
       this.traceAgent(outcome.agent!)
-      this.stages = outcome.agent!.stages.slice()
+      // After the stages of the check for current figures (tryLiveFigures), if it ran.
+      this.stages = this.stages.concat(outcome.agent!.stages)
     }
     if (outcome.kind === OUTCOME_AGENT) {
       this.showAgent(outcome.agent!)
