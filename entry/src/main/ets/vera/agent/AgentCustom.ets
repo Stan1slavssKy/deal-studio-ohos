@@ -65,7 +65,8 @@ function phoneRule(phone: string): string {
   if (phone.length === 0) {
     return DECLINE_RULE + '- The section never calls sdk.call: what the phone does is not its job.\n' +
       '- If the section cannot really do it with this language and these components -- it needs a camera, a live feed, ' +
-      'the person\'s location or data the phone does not hold -- answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it with made-up data.\n'
+      'the person\'s location or data the phone does not hold -- decline that need as above, beside the rest; a bare <cannot>' + CANNOT_FORM +
+      '</cannot> only when none of the needs can be done. Never fake it with made-up data.\n'
   }
   return DECLINE_RULE + '- What the phone or another app must do, the section does with sdk.call from a handler, calling ONLY targets from ' +
     '"Phone functions found" in the request, copied exactly, with the parameters they show, values from the screen\'s state. ' +
@@ -78,7 +79,8 @@ function phoneRule(phone: string): string {
     'if a function found does the nearest useful thing for the person -- shows or opens the same thing in the app made for it: ' +
     'write the section with that function, and say in a line on the screen what it does instead.\n' +
     '- If none of the phone functions found does what is needed, or it needs something the phone cannot give a program ' +
-    '(a camera, a live feed, the person\'s location), answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it, never pretend a call happened, ' +
+    '(a camera, a live feed, the person\'s location), decline that need as above, beside the rest; a bare <cannot>' + CANNOT_FORM +
+    '</cannot> only when none of the needs can be done. Never fake it, never pretend a call happened, ' +
     'never call a target that is not listed.\n'
 }
 
@@ -345,6 +347,7 @@ export async function writeSection(request: CustomRequest, language: string, ask
   let truncated = false
   let previous = ''
   let lastMissed = ''
+  let runnable: FragmentSpec | null = null
   // The first try and its repairs without thinking, then one more with it: slower, for what the quick tries got wrong.
   for (let attempt = 0; attempt <= REPAIRS + 1; attempt++) {
     let think = attempt > REPAIRS
@@ -389,18 +392,25 @@ export async function writeSection(request: CustomRequest, language: string, ask
         break
       }
       result.failed = 'custom section does not do: ' + missed.join('; ')
-      // One Jev reads as doing none of it is no part of the screen.
+      // One Jev reads as doing none of it is kept apart, as the last resort: a screen that runs, with a notice that it was not
+      // checked, is more use than a notice alone (measured: Exam prep, one need, a working form and practice thrown away). Not
+      // for the whole screen: the route then builds it another way.
       if (missed.length < request.needs.length && (best === null || missed.length < bestMissed.length)) {
         best = section
         bestMissed = missed
+      } else if (missed.length === request.needs.length && !request.whole) {
+        runnable = section
       }
       // The same need missed twice running: asking again repeats it (measured: three tries, then a thinking one, 85 s). The best
       // section so far is served and says what it misses.
       let missedNow = missed.join('\n')
-      if (best !== null && missedNow === lastMissed) { break }
+      if ((best !== null || runnable !== null) && missedNow === lastMissed) { break }
       lastMissed = missedNow
-      problem = 'Read against the request, it does not do: ' + missed.join('; ') + '. It must really do that, used as written -- ' +
-        'or, if it cannot be done here, answer <cannot>.'
+      // The way out offered is the need declined on its own, the rest kept: offered only the bare <cannot>, which throws the
+      // whole section away, the writer kept the section and explained on the screen that it could not (measured: Exam prep).
+      problem = 'Read against the request, it does not do: ' + missed.join('; ') + '. It must really do that, used as written. ' +
+        'If this phone cannot, keep the rest of the section and add, for each need it cannot do, <cannot need="the need, copied exactly">' +
+        CANNOT_FORM + '</cannot> beside it -- not an explanation inside the screen.'
     } else {
       // The first two lines: the diagnostic and the line of the program it points at, so the trace says what was written.
       result.failed = 'custom section: ' + (truncated ? 'cut off at the token limit; ' : '') + problem.split('\n').slice(0, 2).join(' | ')
@@ -414,6 +424,10 @@ export async function writeSection(request: CustomRequest, language: string, ask
     result.section = best
     result.missed = bestMissed
     result.failed = 'custom section does not do: ' + bestMissed.join('; ')
+  } else if (result.section === null && result.cannot.length === 0 && runnable !== null) {
+    result.section = runnable
+    result.missed = request.needs.slice()
+    result.failed = 'custom section does not do: ' + request.needs.join('; ')
   }
   result.ms = Date.now() - started
   return result

@@ -2688,21 +2688,24 @@ export struct VeraPreview {
               .fontColor(this.t().inkStrong)
               .width('100%')
           }
+          // Under the words, not beside them: beside, a button like "Open camera" took half the row and the message
+          // wrapped two words to a line (Exam prep).
+          if (node.value.length > 0) {
+            Button(node.value)
+              .height(this.t().chipHeight)
+              .fontSize(this.t().sizeBody)
+              .fontFamily(this.textFamily())
+              .type(ButtonType.Capsule)
+              .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
+              .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().primary)))
+              .margin({ top: this.t().gapTight })
+              .onClick(() => {
+                if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
+              })
+          }
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
-        if (node.value.length > 0) {
-          Button(node.value)
-            .height(this.t().chipHeight)
-            .fontSize(this.t().sizeBody)
-            .fontFamily(this.textFamily())
-            .type(ButtonType.Capsule)
-            .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
-            .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().primary)))
-            .onClick(() => {
-              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
-            })
-        }
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
