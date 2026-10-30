@@ -362,7 +362,8 @@ function checklistFragment(): FragmentSpec {
   listStyle.set('comfortable', 'looser spacing')
   return new FragmentSpec(
     'checklist',
-    'A browsable list of items the person can check off or mark one at a time; it is not a deck of cards to flip, a quiz or a game',
+    'A browsable list of items the person can check off or mark one at a time, with no time of day for each; it is not a deck of ' +
+    'cards to flip, a quiz or a game, and places to visit on a day out or a trip are an itinerary, not this',
     `@jsonable
 class Item {
   label: string;
@@ -1925,7 +1926,8 @@ function itineraryFragment(): FragmentSpec {
   let spec = new FragmentSpec(
     'itinerary',
     'An ordered list of places or steps with a time window and duration each, which the person marks as reached one by one; ' +
-    'it can also open a stop in the maps app and add stops to the phone calendar. A day plan, a tour, a route of stops',
+    'it can also open a stop in the maps app and add stops to the phone calendar. A day plan, a day out, a trip itinerary, a tour, ' +
+    'a route of stops: the sights to visit, each at its time',
     STOP_CLASS,
     [new StateFieldSpec('stopsIDX', 'Stop[]'), new StateFieldSpec('startMinIDX', 'number'), new StateFieldSpec('gapIDX', 'number'),
      new StateFieldSpec('startPlaceIDX', 'string'), new StateFieldSpec('startLatIDX', 'string'), new StateFieldSpec('startLonIDX', 'string'),
@@ -2360,7 +2362,8 @@ function timelineFragment(): FragmentSpec {
   timelineStyle.set('comfortable', 'looser spacing')
   return new FragmentSpec(
     'timeline',
-    'Steps or events in time order, such as an itinerary, a daily schedule or a history, each with a time',
+    'Steps or events in time order, each with a time, only to read: a daily schedule or a history. Places to visit on a day out ' +
+    'or a trip, which the person goes to one after another, are an itinerary, not this',
     '',
     [],
     '',

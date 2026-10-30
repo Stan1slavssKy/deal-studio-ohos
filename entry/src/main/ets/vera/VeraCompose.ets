@@ -2056,6 +2056,9 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   for (let i = 0; i < sketch.ready.length; i++) {
     let kind = answerOf(answers, 'ready.' + i.toString(), READY_KINDS, comp.answers, READY_ABOVE)
     let own = answerOf(answers, 'whose.' + i.toString(), ['own'], comp.answers, OWN_RECORDS_ABOVE) === 'own'
+    // Which section a ready need went to, and how sure Jev was of each: the pick is otherwise visible only as its result.
+    console.info('VERA-COMPOSE ready.' + i.toString() + ' "' + sketch.ready[i] + '" -> ' + (kind.length > 0 ? kind : 'none') + ' ' +
+      JSON.stringify(answers['ready.' + i.toString()] ?? null).substring(0, 400))
     comp.readyKinds.push(own ? '' : kind)
     if (own && customEnabled) {
       // Their own records are theirs to enter: a section that keeps what they add, starting empty, and makes up none.
