@@ -923,6 +923,12 @@ export struct VeraPreview {
     if (paint) { this.paintSurfaces() }
   }
 
+  /** Every text field from here down may show its check now; see LiveNode.touched. */
+  private touchFields(node: LiveNode): void {
+    if (node.kind === 'field') { node.touched = true }
+    for (let child of node.children) { this.touchFields(child) }
+  }
+
   private collectSurfaces(node: LiveNode, found: LiveNode[]): void {
     if (node.kind === 'surface') { found.push(node) }
     for (let child of node.children) { this.collectSurfaces(child, found) }
@@ -3429,6 +3435,8 @@ export struct VeraPreview {
         .fontColor(buttonInk(this.t(), node.style))
         .onClick(() => {
           if (node.action.length > 0 && node.enabled) {
+            // A button press is the attempt after which an empty required field is worth pointing out.
+            if (this.liveRoot !== null) { this.touchFields(this.liveRoot!) }
             this.handleAction(node.action, node.eventValue)
           }
         })
@@ -3487,10 +3495,16 @@ export struct VeraPreview {
           .type(this.textFieldKeyboard(node))
           .onSubmit((_key: EnterKeyType, _event: SubmitEvent) => {})
           .onChange((v: string) => {
+            // ArkUI also calls this when the program itself sets the text (a form cleared after Add): that echo is not typing.
+            if (v !== node.value) {
+              node.typed = v
+              node.touched = true
+            }
             if (node.action.length > 0) { this.handleStringAction(node.action, v) }
           })
-        if (this.textFieldIssue(node).length > 0) {
+        if (node.touched && this.textFieldIssue(node).length > 0) {
           Text(this.textFieldIssue(node)).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().dangerInk)
+            .width('100%')
         }
       }
       .width('100%')
