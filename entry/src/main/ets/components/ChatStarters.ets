@@ -31,6 +31,38 @@ export const STARTERS_EN: ChatStarter[] = [
   new ChatStarter('pills', 'Pills', 'Create a medicine card that reminds me to take my pills every day.'),
 ]
 
+/** A ready-made request on the home screen: a card with a symbol on a tint, a title and a short hint. */
+export class HomeStarter {
+  id: string = ''
+  title: string = ''
+  hint: string = ''
+  symbol: string = ''
+  /** The card's pale background and the colour of its symbol. */
+  tint: string = ''
+  ink: string = ''
+  prompt: string = ''
+
+  constructor(id: string, title: string, hint: string, symbol: string, tint: string, ink: string, prompt: string) {
+    this.id = id
+    this.title = title
+    this.hint = hint
+    this.symbol = symbol
+    this.tint = tint
+    this.ink = ink
+    this.prompt = prompt
+  }
+}
+
+/** The three demos of docs/demo-prompts.md, the same prompts as STARTERS_EN; the home screen sends one in either mode. */
+export const HOME_STARTERS: HomeStarter[] = [
+  new HomeStarter('trip', 'Trip plan', 'A day at West Lake for three', 'sys.symbol.airplane', '#E8F1FF', '#0A59F7',
+    STARTERS_EN[0].prompt),
+  new HomeStarter('baby', 'Baby fever', '37.5°C: a care card', 'sys.symbol.thermometer', '#FFF0E6', '#E0601F',
+    STARTERS_EN[1].prompt),
+  new HomeStarter('pills', 'Pills', 'A daily reminder card', 'sys.symbol.drug', '#E7F6EE', '#1F9D6B',
+    STARTERS_EN[2].prompt),
+]
+
 /**
  * The starters an empty Generate screen offers. English only: a prompt typed into the
  * generator is written in English whatever the person's language (CLAUDE.md), so there is

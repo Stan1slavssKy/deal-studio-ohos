@@ -3,14 +3,23 @@ import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { projectIconResource } from '../vera/ProjectIcons'
 import { app } from '../components/AppStyle'
-import { APP_STARTERS, ChatStarter, STARTERS_EN } from '../components/ChatStarters'
+import { HOME_STARTERS, HomeStarter } from '../components/ChatStarters'
 import { ProjectNavParams, ProjectRow, confirmDeleteProject, loadProjectRows, tileTint } from '../components/ProjectRows'
 
 /** Width of one label in the Chat / App switch, in vp. */
 const MODE_TAB_WIDTH: number = 112
 
-/** Height of the zone above the box, in vp: the apps in one mode, the ready-made requests in the other, so the centre never moves. */
-const ZONE_HEIGHT: number = 150
+/** Height of the zone above the box, in vp: the ready-made requests. */
+const ZONE_HEIGHT: number = 156
+
+/**
+ * Height of the apps shelf, in vp: it takes the zone and the box together (the box is
+ * about 136 tall with a 24 margin under it), so the greeting stays where it was.
+ */
+const SHELF_HEIGHT: number = ZONE_HEIGHT + 160
+
+/** Side of an app's icon on the shelf, in vp. */
+const SHELF_ICON: number = 120
 
 @Entry
 @Component
@@ -21,6 +30,8 @@ struct Index {
   @State draft: string = ''
   /** The box has the keyboard: the greeting and the zone give up their room to it. */
   @State typing: boolean = false
+  /** The apps made so far are open on a shelf in place of the requests and the box. */
+  @State showApps: boolean = false
 
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext()
@@ -42,6 +53,19 @@ struct Index {
 
   private reload(): void {
     this.projects = loadProjectRows()
+    if (this.projects.length === 0) { this.showApps = false }
+  }
+
+  /** Back closes the shelf before it leaves the app. */
+  onBackPress(): boolean {
+    if (!this.showApps) { return false }
+    this.setShelf(false)
+    return true
+  }
+
+  private setShelf(open: boolean): void {
+    if (this.showApps === open) { return }
+    this.getUIContext().animateTo({ duration: 240, curve: Curve.FastOutSlowIn }, () => { this.showApps = open })
   }
 
   private setMode(makeApp: boolean): void {
@@ -85,10 +109,14 @@ struct Index {
     Column() {
       this.topBar()
       this.middle()
-      if (!this.typing) {
-        this.zone()
+      if (this.showApps) {
+        this.appsShelf()
+      } else {
+        if (!this.typing) {
+          this.zone()
+        }
+        this.promptBox()
       }
-      this.promptBox()
     }
     .width('100%')
     .height('100%')
@@ -166,82 +194,115 @@ struct Index {
     .onClick(go)
   }
 
-  /** The apps made so far in the app mode, else ready-made requests to start from; the same height either way. */
+  /** The ready-made requests, three cards side by side; "My apps" at the right swaps them and the box for the apps. */
   @Builder
   zone() {
-    Column() {
-      if (this.makeApp && this.projects.length > 0) {
-        this.appsStrip()
-      } else {
-        this.starterChips(this.makeApp ? APP_STARTERS : STARTERS_EN)
+    Column({ space: 10 }) {
+      Row() {
+        Text('Try one of these').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).layoutWeight(1)
+        if (this.projects.length > 0) {
+          Row({ space: 2 }) {
+            Text('My apps').fontSize(14).fontWeight(FontWeight.Medium).fontColor(app.primaryInk)
+            SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(14).fontColor([app.primaryInk])
+          }
+          .height(44).padding({ left: 12, right: 4 })
+          .accessibilityText('My apps')
+          .onClick(() => { this.setShelf(true) })
+        }
       }
+      .width('100%').height(24).padding({ left: 16, right: 12 })
+      Row({ space: 8 }) {
+        ForEach(HOME_STARTERS, (starter: HomeStarter) => {
+          this.starterCard(starter)
+        }, (starter: HomeStarter) => starter.id)
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12 })
     }
     .width('100%')
     .height(ZONE_HEIGHT)
     .justifyContent(FlexAlign.Start)
+    .transition(TransitionEffect.OPACITY)
   }
 
-  /** A row of icons: a press opens one, a long press offers to delete it, "All" lists them with their pictures. */
+  /** One request: its symbol on a round tint, a title and a hint; a tap sends it in the current mode. */
   @Builder
-  appsStrip() {
-    Column({ space: 10 }) {
+  starterCard(starter: HomeStarter) {
+    Column({ space: 8 }) {
       Row() {
-        Text('My apps').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).layoutWeight(1)
-        Text('All ' + this.projects.length.toString()).fontSize(14).fontWeight(FontWeight.Medium)
-          .fontColor(app.primaryInk)
-          .height(44).padding({ left: 12, right: 4 }).align(Alignment.Center)
-          .onClick(() => { this.openApps() })
+        SymbolGlyph($r(starter.symbol)).fontSize(18).fontColor([starter.ink])
       }
-      .width('100%').height(24).padding({ left: 16, right: 12 })
-      Scroll() {
-        Row({ space: 8 }) {
-          ForEach(this.projects, (row: ProjectRow) => {
-            this.appTile(row)
-          }, (row: ProjectRow) => row.project.id + '|' + row.project.name + '|' + row.project.icon)
-        }
-        .padding({ left: 12, right: 12 })
-        .alignItems(VerticalAlign.Top)
+      .width(34).height(34).borderRadius(17)
+      .backgroundColor(starter.tint)
+      .justifyContent(FlexAlign.Center)
+      Column({ space: 2 }) {
+        Text(starter.title).fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(starter.hint).fontSize(12).fontColor(app.inkSoft).maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .width('100%')
+      .alignItems(HorizontalAlign.Start)
     }
+    .layoutWeight(1)
+    .height(110)
+    .padding(12)
+    .alignItems(HorizontalAlign.Start)
+    .borderRadius(18)
+    .backgroundColor(app.surface)
+    .borderWidth(1)
+    .borderColor(app.line)
+    .accessibilityText(starter.title)
+    .onClick(() => { this.submit(starter.prompt) })
   }
 
-  /** What to try: titles of ready-made requests, one tap sends one. */
+  /** The apps made so far, large, one swipe across; a press opens one, a long press offers to delete it. */
   @Builder
-  starterChips(starters: ChatStarter[]) {
-    Column({ space: 10 }) {
-      Text(this.makeApp ? 'Try one of these' : 'Or start with').fontSize(15).fontWeight(FontWeight.Medium)
-        .fontColor(app.inkStrong).width('100%').height(24).padding({ left: 16 })
-      Scroll() {
-        Row({ space: 8 }) {
-          ForEach(starters, (starter: ChatStarter) => {
-            Text(starter.title).fontSize(14).fontColor(app.inkStrong).maxLines(1)
-              .height(40).padding({ left: 16, right: 16 }).borderRadius(20)
-              .backgroundColor(app.surface).borderWidth(1).borderColor(app.line)
-              .onClick(() => { this.submit(starter.prompt) })
-          }, (starter: ChatStarter) => starter.id)
+  appsShelf() {
+    Column({ space: 20 }) {
+      Row() {
+        Text('My apps').fontSize(17).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).layoutWeight(1)
+        Button({ type: ButtonType.Circle }) {
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(18).fontColor([app.inkStrong])
         }
-        .padding({ left: 12, right: 12 })
+        .width(36).height(36)
+        .backgroundColor(app.secondaryFill)
+        .accessibilityText('Close my apps')
+        .onClick(() => { this.setShelf(false) })
       }
-      .scrollable(ScrollDirection.Horizontal)
+      .width('100%').padding({ left: 16, right: 12 })
+      List({ space: 12 }) {
+        ForEach(this.projects, (row: ProjectRow) => {
+          ListItem() {
+            this.appTile(row)
+          }
+        }, (row: ProjectRow) => row.project.id + '|' + row.project.name + '|' + row.project.icon)
+      }
+      .listDirection(Axis.Horizontal)
       .scrollBar(BarState.Off)
-      .align(Alignment.TopStart)
+      .scrollSnapAlign(ScrollSnapAlign.START)
+      .contentStartOffset(16)
+      .contentEndOffset(16)
+      .edgeEffect(EdgeEffect.Spring)
       .width('100%')
+      .height(SHELF_ICON + 56)
     }
+    .width('100%')
+    .height(SHELF_HEIGHT)
+    .padding({ top: 8 })
+    .justifyContent(FlexAlign.Start)
+    .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 40 })))
   }
 
   @Builder
   appTile(row: ProjectRow) {
-    Column({ space: 8 }) {
-      Image(projectIconResource(row.project.icon)).width(40).height(40).objectFit(ImageFit.Contain)
-        .width(60).height(60).padding(10).borderRadius(18).backgroundColor(tileTint(row.project.id))
-      Text(row.project.name).fontSize(12).fontColor(app.inkStrong).maxLines(2)
+    Column({ space: 10 }) {
+      Image(projectIconResource(row.project.icon)).objectFit(ImageFit.Contain)
+        .width(SHELF_ICON).height(SHELF_ICON).padding(26).borderRadius(34).backgroundColor(tileTint(row.project.id))
+      Text(row.project.name).fontSize(14).fontColor(app.inkStrong).maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis }).textAlign(TextAlign.Center)
-        .width('100%').height(32)
+        .width('100%').height(40)
     }
-    .width(76)
+    .width(SHELF_ICON + 12)
     .onClick(() => {
       let nav = new ProjectNavParams()
       nav.projectId = row.project.id
@@ -287,5 +348,6 @@ struct Index {
     .borderWidth(1)
     .borderColor(app.line)
     .shadow({ radius: 20, color: '#12000000', offsetY: 4 })
+    .transition(TransitionEffect.OPACITY)
   }
 }
