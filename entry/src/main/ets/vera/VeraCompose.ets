@@ -3521,7 +3521,9 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     quote(laps ? 'Start the stopwatch and tap Lap.' : (form.length > 1 ? 'Fill in the fields above and tap Add.' : 'Tap Add to add one.')) + ', "", "", "list"))',
     'ui.When(entryCount > 0, ui.ListGroup("default", "", rows))',
     'ui.When(state.removedEntries.length() > 0, ui.Snackbar("default", "Removed", "Undo", "undoRemove"))',
-    'ui.Ticker("default", "undoClock", 6000, state.removedEntries.length() > 0, "expireUndo")']
+    // The interval moves with the number of entries: a second removal while the first Undo shows must start the six seconds again,
+    // and a ticker that is running is left alone unless its interval changed (VeraPreview.reconcileTimers).
+    'ui.Ticker("default", "undoClock", 6000 + state.entries.length() % 7, state.removedEntries.length() > 0, "expireUndo")']
   if (comp.widget) {
     for (let node of form.concat(listNodes)) { view.push('sets.push(' + node + ');') }
   } else {

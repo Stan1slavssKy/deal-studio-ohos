@@ -47,8 +47,11 @@ export class RowSource implements IDataSource {
   }
 }
 
-/** Asks, then deletes the project with its shortcut and forms; `done` runs after either way. */
-export function confirmDeleteProject(ui: UIContext, id: string, done: () => void): void {
+/** A delete under way: a second confirmation made before it ends does nothing. */
+let deleteInFlight: boolean = false
+
+/** Asks, then deletes the project with its shortcut and forms; `done` runs after either way, with whether the project is gone. */
+export function confirmDeleteProject(ui: UIContext, id: string, done: (deleted: boolean) => void): void {
   let project = store.getProject(id)
   if (project === null) { return }
   ui.showAlertDialog({
@@ -66,10 +69,18 @@ export function confirmDeleteProject(ui: UIContext, id: string, done: () => void
   })
 }
 
-async function deleteProject(ui: UIContext, id: string, done: () => void): Promise<void> {
+async function deleteProject(ui: UIContext, id: string, done: (deleted: boolean) => void): Promise<void> {
+  if (deleteInFlight) { return }
+  deleteInFlight = true
   let context = (): common.UIAbilityContext => ui.getHostContext() as common.UIAbilityContext
-  const status = await projectOperations.deleteProject(context, id)
-  done()
+  let status: ProjectOperationStatus = ProjectOperationStatus.Failed
+  try {
+    status = await projectOperations.deleteProject(context, id)
+  } finally {
+    deleteInFlight = false
+  }
+  done(status === ProjectOperationStatus.Success || status === ProjectOperationStatus.NotFound ||
+    status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed)
   refreshForms()
   if (status !== ProjectOperationStatus.Success) {
     const message = status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed ?

@@ -45,10 +45,6 @@ struct Index {
 
   onPageShow(): void {
     this.reload()
-    // Coming back, the box would take the focus again and open the keyboard over the apps; the person taps it when they want it.
-    setTimeout(() => {
-      try { this.getUIContext().getFocusController().clearFocus() } catch (e) { console.warn('VERA clearFocus failed: ' + (e as Error).message) }
-    }, 250)
   }
 
   private reload(): void {
@@ -311,7 +307,7 @@ struct Index {
     })
     // The press that asks is its own confirmation: nothing is deleted before the dialog is answered.
     .gesture(LongPressGesture({ repeat: false }).onAction(() => {
-      confirmDeleteProject(this.getUIContext(), row.project.id, () => { this.reload() })
+      confirmDeleteProject(this.getUIContext(), row.project.id, (deleted: boolean): void => { this.reload() })
     }))
   }
 
@@ -323,6 +319,9 @@ struct Index {
         .fontSize(16).fontColor(app.inkStrong).backgroundColor(Color.Transparent)
         .height(64).padding({ left: 6, right: 6 })
         .enterKeyType(EnterKeyType.Send)
+        // Coming back to the page, the box takes the focus again; that must not open the keyboard over the apps.
+        // A tap on the box still does.
+        .enableKeyboardOnFocus(false)
         .onChange((value: string) => { this.draft = value })
         .onSubmit(() => { this.submit(this.draft) })
         .onFocus(() => { this.getUIContext().animateTo({ duration: 180 }, () => { this.typing = true }) })

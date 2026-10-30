@@ -233,6 +233,8 @@ struct GeneratePage {
   @State prompt: string = ''
   /** Set by the home screen when it sent the request rather than only filling the box. */
   private runOnOpen: boolean = false
+  /** The prompt and the catalogue are read; a request sent before that waits for it (runOnOpen). */
+  private resourcesLoaded: boolean = false
   /** What a service that did not answer cost this run (ServiceHealth.ets), shown under the status. */
   @State troubleNote: string = ''
   @State requestHistory: string = ''
@@ -528,13 +530,6 @@ struct GeneratePage {
   /** A run began or ended: the end of the thread is where the new card is. */
   private threadMoved(): void {
     this.scrollDown()
-    // The box is enabled again when the run ends and takes the focus back, which opens the keyboard over the result.
-    if (!this.generating) {
-      // After the page has drawn the box enabled again, not before: switching it on is what hands it the focus back.
-      setTimeout(() => {
-        try { this.getUIContext().getFocusController().clearFocus() } catch (e) { console.warn('VERA clearFocus failed: ' + (e as Error).message) }
-      }, 350)
-    }
   }
 
   private startNew(): void {
@@ -697,6 +692,7 @@ struct GeneratePage {
     } catch (e) {
       this.status = 'Failed to load resources: ' + (e as Error).message
     }
+    this.resourcesLoaded = true
     this.checkProvider()
   }
 
@@ -896,6 +892,8 @@ struct GeneratePage {
 
   private doGenerate(): void {
     if (this.prompt.trim().length === 0 || this.baseError.length > 0 || this.generating) { return }
+    // Sent before the prompt and the catalogue were read: it goes when they are (aboutToAppear).
+    if (!this.resourcesLoaded) { this.runOnOpen = true; return }
     if (this.compiledSource.length > 0) { this.previousSource = this.compiledSource }
     if (this.mode === MODE_SERVER) {
       if (!settings.hasServerUrl()) { this.checkServer(); return }
@@ -1954,9 +1952,12 @@ struct GeneratePage {
    * or with everything saved, goes straight back.
    */
   onBackPress(): boolean | void {
-    if (this.closing || this.naming) { return false }
+    if (this.closing) { return false }
+    // The naming window is on top: Back closes it and keeps the result, instead of leaving the page with it.
+    if (this.naming) { this.cancelName(); return true }
     if (this.leaving) { this.leaving = false; return true }
-    if (this.fullscreen) { this.fullscreen = false; return true }
+    // Through the same way out as the button, so what was typed into the program goes with it.
+    if (this.fullscreen) { this.setFullscreen(false); return true }
     if (this.hasUnsavedWork()) {
       this.leaving = true
       return true
@@ -2537,27 +2538,33 @@ struct GeneratePage {
     .borderRadius(14)
   }
 
+  /** The compiler's words, what a service that did not answer cost, and what is missing to set up; nothing when there is none. */
+  @Builder
+  failureDetails() {
+    if (this.compileErrors.length > 0) {
+      Scroll() {
+        Text(this.compileErrors).fontSize(11).fontFamily('monospace').fontColor(app.danger).width('100%').padding(8)
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: 140 })
+      .backgroundColor(app.dangerFill)
+      .borderRadius(8)
+    }
+    if (this.troubleNote.length > 0) {
+      Text(this.troubleNote).fontSize(12).fontColor(app.warningInk).width('100%')
+    }
+    if (this.setupHint.length > 0) {
+      Text(this.setupHint).fontSize(11).fontColor(app.inkMuted).width('100%').copyOption(CopyOptions.LocalDevice)
+    }
+  }
+
   /** A run that gave no program: why, the compiler's words, and what a service that did not answer cost. */
   @Builder
   failedCard() {
     Column({ space: 8 }) {
       Text(this.status.length > 0 ? this.status : 'Nothing was built')
         .fontSize(13).fontColor(app.warningInk).width('100%').copyOption(CopyOptions.LocalDevice)
-      if (this.compileErrors.length > 0) {
-        Scroll() {
-          Text(this.compileErrors).fontSize(11).fontFamily('monospace').fontColor(app.danger).width('100%').padding(8)
-        }
-        .width('100%')
-        .constraintSize({ maxHeight: 140 })
-        .backgroundColor(app.dangerFill)
-        .borderRadius(8)
-      }
-      if (this.troubleNote.length > 0) {
-        Text(this.troubleNote).fontSize(12).fontColor(app.warningInk).width('100%')
-      }
-      if (this.setupHint.length > 0) {
-        Text(this.setupHint).fontSize(11).fontColor(app.inkMuted).width('100%').copyOption(CopyOptions.LocalDevice)
-      }
+      this.failureDetails()
       if (this.previewVbc2.length > 0 && !this.hasResult()) {
         Text(this.previewNote).fontSize(12).fontColor(app.warningInk).width('100%')
         VeraPreview({ previewOnly: true, vbc2: this.previewVbc2, embedded: true })
@@ -2588,6 +2595,9 @@ struct GeneratePage {
         text: this.draft })
         .onChange((value: string) => { this.draft = value })
         .onSubmit(() => { this.send() })
+        // The box is enabled again when a run ends and takes the focus back; that must not open the keyboard over the
+        // result. A tap on the box still does.
+        .enableKeyboardOnFocus(false)
         .onFocus(() => { this.composerFocused = true })
         .onBlur(() => { this.composerFocused = false })
         .layoutWeight(1)
@@ -2797,6 +2807,8 @@ struct GeneratePage {
       if (this.generatedSource.trim() !== this.compiledSource.trim()) {
         Text('The last attempt was not applied. Save keeps the previous successful code and version request.')
           .fontSize(12).fontColor(app.warningInk).width('100%')
+        // And why: the program that stays is the old one, and its errors are the only place to read them.
+        this.failureDetails()
       }
 
       Row({ space: 6 }) {
@@ -2995,7 +3007,6 @@ struct GeneratePage {
   private send(): void {
     let text = this.draft.trim()
     if (text.length === 0 || this.generating) { return }
-    this.draft = ''
     if (this.hasResult()) {
       this.refinePrompt = text
       this.doRefine()
@@ -3003,6 +3014,9 @@ struct GeneratePage {
       this.prompt = text
       this.doGenerate()
     }
+    // Emptied only once the request has gone: with no key, no model or no server it did not, and the words stay to be sent
+    // when that is put right.
+    if (this.generating || this.runOnOpen) { this.draft = '' }
     this.scrollDown()
   }
 

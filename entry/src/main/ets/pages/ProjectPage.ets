@@ -3,6 +3,7 @@ import { Project, Version, VersionMetrics, store } from '../vera/ProjectStore'
 import { refreshForms } from '../vera/FormUpdater'
 import { projectIconResource } from '../vera/ProjectIcons'
 import { IconPicker } from '../components/IconPicker'
+import { confirmDeleteProject } from '../components/ProjectRows'
 import { requestHeadline, changeNote, versionCountText } from '../vera/ProjectText'
 import { projectOperations, ProjectOperationStatus, ProjectShortcutState } from '../vera/ProjectOperations'
 import { common } from '@kit.AbilityKit'
@@ -155,7 +156,7 @@ struct ProjectPage {
               .bindMenu([
                 { value: this.shortcutButtonLabel(), action: () => { this.onShortcutMenu() },
                   enabled: this.shortcutMenuEnabled() },
-                { value: 'Delete project', action: () => { this.confirmDeleteProject() } }
+                { value: 'Delete project', action: () => { this.askDeleteProject() } }
               ])
           }
           .width('100%')
@@ -763,38 +764,10 @@ struct ProjectPage {
     else { this.refreshShortcutState() }
   }
 
-  private confirmDeleteProject(): void {
+  private askDeleteProject(): void {
     if (this.project === null) { return }
-    this.getUIContext().showAlertDialog({
-      title: 'Delete mini-app?',
-      message: 'Delete "' + this.project!.name + '" and all its saved versions and data? This cannot be undone.',
-      primaryButton: {
-        value: 'Cancel',
-        action: () => {}
-      },
-      secondaryButton: {
-        value: 'Delete',
-        fontColor: app.danger,
-        action: () => { this.doDeleteProject() }
-      }
+    confirmDeleteProject(this.getUIContext(), this.projectId, (deleted: boolean): void => {
+      if (deleted) { this.returnToIndex() }
     })
-  }
-
-  private async doDeleteProject(): Promise<void> {
-    if (this.projectOperationPending) { return }
-    this.projectOperationPending = true
-    let context = (): common.UIAbilityContext => this.getUIContext().getHostContext() as common.UIAbilityContext
-    const status = await projectOperations.deleteProject(context, this.projectId)
-    this.projectOperationPending = false
-    refreshForms()
-    if (status === ProjectOperationStatus.Success || status === ProjectOperationStatus.NotFound ||
-        status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed) {
-      if (status === ProjectOperationStatus.ProjectDeletedShortcutRemovalFailed) {
-        this.showProjectMessage('Mini-application was deleted, but its shortcut cannot be removed.')
-      }
-      this.returnToIndex()
-    } else {
-      this.showProjectMessage('Error deleting mini-app.')
-    }
   }
 }

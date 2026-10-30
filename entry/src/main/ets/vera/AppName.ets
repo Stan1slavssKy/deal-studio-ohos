@@ -50,25 +50,33 @@ export function suggestAppName(source: string, request: string): string {
   return fromRequest.length > 0 ? fromRequest : DEFAULT_APP_NAME
 }
 
-/** Words that point at a picture; the first group with a hit wins, so the more specific ones come first. */
+/**
+ * Words that point at a picture; the first group with a hit wins, so the more specific ones come first. A word counts
+ * whole, with a plural or an -ing/-er ending, so "play" is not found in "display" nor "log" in "dialog".
+ */
 const ICON_WORDS: string[][] = [
   ['🎮', 'game', 'quiz', 'puzzle', 'score', 'dice', 'play'],
-  ['🌍', 'trip', 'travel', 'layover', 'flight', 'weather', 'world', 'lake', 'city', 'itinerary', 'translat'],
-  ['🧮', 'calculat', 'convert', 'split', 'tip ', 'shared cost', 'budget', 'math'],
+  ['🌍', 'trip', 'travel', 'layover', 'flight', 'weather', 'world', 'lake', 'city', 'cities', 'itinerary', 'translate', 'translator',
+    'translation'],
+  ['🧮', 'calculate', 'calculator', 'calculation', 'convert', 'split', 'tip', 'shared cost', 'budget', 'math'],
   ['🎯', 'goal', 'focus', 'study', 'habit', 'streak', 'target'],
   ['📊', 'tracker', 'counter', 'stats', 'expense', 'ledger', 'log', 'water', 'coffee', 'calorie', 'fever', 'chart'],
-  ['📝', 'note', 'todo', 'to-do', 'plan', 'journal', 'remind', 'pill', 'medicine', 'checklist', 'list'],
+  ['📝', 'note', 'todo', 'to-do', 'plan', 'planner', 'planning', 'journal', 'remind', 'pill', 'medicine', 'checklist', 'list'],
   ['🎨', 'color', 'colour', 'draw', 'paint', 'wind down', 'relax', 'sleep'],
   ['⚡', 'battery', 'energy', 'power', 'charge', 'quick', 'timer', 'stopwatch'],
   ['🔧', 'tool', 'fix', 'settings', 'manager']
 ]
 
+/** One test per word: it starts at a word's start and ends at its end, after an optional plural or -ing/-er. */
+const ICON_PATTERNS: RegExp[][] = ICON_WORDS.map((group: string[]): RegExp[] =>
+  group.slice(1).map((word: string): RegExp => new RegExp('(^|[^a-z])' + word + '(e?s|ed|ing|ers?)?($|[^a-z])')))
+
 /** The picture a new app starts with, picked from its name and request; '' when nothing in them points at one. */
 export function suggestAppIcon(name: string, request: string): string {
-  let text = (name + ' ' + request).toLowerCase() + ' '
-  for (let group of ICON_WORDS) {
-    for (let i = 1; i < group.length; i++) {
-      if (text.indexOf(group[i]) >= 0) { return group[0] }
+  let text = (name + ' ' + request).toLowerCase()
+  for (let i = 0; i < ICON_WORDS.length; i++) {
+    for (let pattern of ICON_PATTERNS[i]) {
+      if (pattern.test(text)) { return ICON_WORDS[i][0] }
     }
   }
   return ''

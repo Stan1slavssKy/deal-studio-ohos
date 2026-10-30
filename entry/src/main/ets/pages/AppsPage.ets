@@ -97,7 +97,7 @@ struct AppsPage {
   rowMenu(id: string) {
     Menu() {
       MenuItem({ content: 'Delete project', symbolStartIcon: new SymbolGlyphModifier($r('sys.symbol.trash')) })
-        .onClick(() => { confirmDeleteProject(this.getUIContext(), id, () => { this.reload() }) })
+        .onClick(() => { confirmDeleteProject(this.getUIContext(), id, (deleted: boolean): void => { this.reload() }) })
     }
   }
 
@@ -107,7 +107,7 @@ struct AppsPage {
       Button('Delete')
         .attributeModifier(new DangerButton())
         .height('100%')
-        .onClick(() => { confirmDeleteProject(this.getUIContext(), id, () => { this.reload() }) })
+        .onClick(() => { confirmDeleteProject(this.getUIContext(), id, (deleted: boolean): void => { this.reload() }) })
     }.height('100%').padding({ left: 8 })
   }
 }
