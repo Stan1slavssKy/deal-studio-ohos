@@ -135,6 +135,19 @@ export function formatVeraClock(total: number): string {
   return (h < 10 ? '0' : '') + h.toString() + ':' + (mm < 10 ? '0' : '') + mm.toString()
 }
 
+const MONTH_NAMES: string[] =
+  ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/**
+ * A local day number -- what time.daysSinceEpoch() returns and ui.DateField
+ * holds -- as "30 Oct 2026": what the field draws and ui.dateToString returns.
+ * Day first and the month as a word, so it cannot be misread either way round.
+ */
+export function formatVeraDate(day: number): string {
+  let d = new Date((isFinite(day) ? Math.floor(day) : 0) * 86400000)
+  return d.getUTCDate().toString() + ' ' + MONTH_NAMES[d.getUTCMonth()] + ' ' + d.getUTCFullYear().toString()
+}
+
 /**
  * A length of time in seconds as M:SS, or H:MM:SS from an hour up, fractions
  * dropped and negatives shown as 0:00: a countdown's "6:00", which ClockText
@@ -788,6 +801,13 @@ export class UiHostEnvironment extends HostEnvironment {
           ['numberValue', new VeraNumberValue(argNum(args, 2))],
           ['action', new VeraStringValue(argString(args, 3))],
         ])
+      case 'DateField':
+        return viewNode('datefield', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['label', new VeraStringValue(argString(args, 1))],
+          ['numberValue', new VeraNumberValue(argNum(args, 2))],
+          ['action', new VeraStringValue(argString(args, 3))],
+        ])
       case 'NumberListItem':
         return viewNode('numberlistitem', [
           ['style', new VeraStringValue(argString(args, 0))],
@@ -916,6 +936,8 @@ export class UiHostEnvironment extends HostEnvironment {
         return new VeraStringValue(formatVeraDuration(asNum(args[0])))
       case 'clockToString':
         return new VeraStringValue(formatVeraClock(asNum(args[0])))
+      case 'dateToString':
+        return new VeraStringValue(formatVeraDate(asNum(args[0])))
       case 'booleanToString':
         return new VeraStringValue(asBool(args[0]) ? 'true' : 'false')
       default:

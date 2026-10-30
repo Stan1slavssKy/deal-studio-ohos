@@ -1251,6 +1251,7 @@ function buildStdUiModule(): ModuleInterface {
   fns.push(new ExternalFunction('numberToString', [NUMBER], STRING, false))
   fns.push(new ExternalFunction('formatNumber', [NUMBER, NUMBER], STRING, false))
   fns.push(new ExternalFunction('clockToString', [NUMBER], STRING, false))
+  fns.push(new ExternalFunction('dateToString', [NUMBER], STRING, false))
   fns.push(new ExternalFunction('durationToString', [NUMBER], STRING, false))
   fns.push(new ExternalFunction('booleanToString', [BOOLEAN], STRING, false))
   return new ModuleInterface('std/ui', fns, [new ExternalClass('View', viewType)])

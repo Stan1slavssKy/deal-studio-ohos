@@ -12,7 +12,7 @@
 
 import { VirtualMachine, deserializeVbc2, RuntimeValue, VeraNumberValue, VeraStringValue,
   VeraBooleanValue, encodeRuntimeValue, decodeRuntimeValue } from '../vera/VeraInterpreter'
-import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock, unitAfter, keepUnits } from '../vera/VeraUi'
+import { UiHostEnvironment, HostEffect, VeraUiNode, decodeVeraUi, formatVeraNumber, formatVeraClock, formatVeraDate, unitAfter, keepUnits } from '../vera/VeraUi'
 import { runRawIntent } from '../vera/VeraIntents'
 import { runSdkAdapter } from '../vera/VeraSdkBackend'
 import { LengthMetrics } from '@ohos.arkui.node'
@@ -346,7 +346,7 @@ export struct VeraPreview {
     'slider', 'select', 'tabs', 'divider', 'progress', 'progressring', 'ticker', 'grid', 'listitem', 'canvas',
     'apptheme', 'hero', 'adaptivecolumns', 'header', 'section', 'sectionheader', 'listgroup', 'banner',
     'emptystate', 'stat', 'metricgroup', 'tilegrid', 'tile',
-    'numbertext', 'numberstat', 'numberfield', 'timefield', 'numberlistitem', 'actionbar',
+    'numbertext', 'numberstat', 'numberfield', 'timefield', 'datefield', 'numberlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
     'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler',
     'table', 'tablerow', 'motion', 'transform', 'stage', 'surface']
@@ -1776,6 +1776,20 @@ export struct VeraPreview {
     return d
   }
 
+  /**
+   * A local day number, as time.daysSinceEpoch() counts it, as that day's local
+   * midnight; dateToDay is the way back. The day number is the local date read
+   * as if it were UTC, so the UTC fields of day * 86400000 are that date.
+   */
+  private dayToDate(day: number): Date {
+    let utc = new Date(Math.floor(day) * 86400000)
+    return new Date(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate())
+  }
+
+  private dateToDay(date: Date): number {
+    return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000)
+  }
+
   /** Semantic roles use system fonts unless the theme names a generic family. */
   private textFamily(style: string = 'body'): string | undefined {
     let t = this.t()
@@ -3008,6 +3022,32 @@ export struct VeraPreview {
                 let h = result.hour !== undefined ? result.hour as number : 0
                 let m = result.minute !== undefined ? result.minute as number : 0
                 this.handleAction(node.action, h * 60 + m)
+              }
+            })
+          })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .padding({ top: this.t().padRow, bottom: this.t().padRow })
+    } else if (node.kind === 'datefield') {
+      Row({ space: this.t().gapBase }) {
+        Text(node.label).fontSize(this.t().sizeBody).fontFamily(this.textFamily()).layoutWeight(1)
+            .fontColor(this.t().ink)
+        Button(formatVeraDate(node.numberValue))
+          .height(this.t().chipHeight)
+          .fontSize(this.t().sizeBody)
+          .fontFamily(this.textFamily())
+          .type(ButtonType.Capsule)
+          .enabled(node.enabled)
+          .backgroundColor(this.t().secondaryFill)
+          .fontColor(this.t().secondaryInk)
+          .onClick(() => {
+            if (node.action.length === 0) { return }
+            // The phone's own calendar, as TimeField uses its clock dialog.
+            this.getUIContext().showDatePickerDialog({
+              selected: this.dayToDate(node.numberValue),
+              onDateAccept: (value: Date) => {
+                this.handleAction(node.action, this.dateToDay(value))
               }
             })
           })

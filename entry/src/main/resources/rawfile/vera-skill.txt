@@ -97,7 +97,7 @@ Clock -- time. All functions return a number:
   time.nowMillis()       Unix milliseconds
   time.nowSeconds()      Unix seconds, with one-second resolution
   time.millisOfDay()     milliseconds since local midnight
-  time.daysSinceEpoch()  local day number
+  time.daysSinceEpoch()  local day number; what ui.DateField holds
   time.hourOfDay()       0..23
   time.minuteOfHour()    0..59
   time.weekday()         0=Sunday..6=Saturday
@@ -131,6 +131,7 @@ The language also supports string +, comparisons, .length(), .toUpperCase(), .to
 For an amount the person types, use ui.TextField with keyboardType "number" and strings.toNumber.
 Prefer ui.NumberText, ui.NumberStat, or ui.NumberListItem for numbers. Give money decimals 2.
 Use ui.ClockText for minutes since midnight, and ui.clockToString(minutes) for the same "HH:MM" inside a string.
+For a date inside a string, ui.dateToString(day) gives "30 Oct 2026" from a day number.
 For a countdown or elapsed time, ui.durationToString(seconds) gives "6:00" or "1:02:05".
 Use ui.numberToString(n) or ui.formatNumber(n, decimals) when a string is required.
 

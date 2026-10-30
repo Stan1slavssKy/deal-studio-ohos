@@ -121,6 +121,7 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['numberstat', ['default', 'accent', 'success', 'warning', 'danger']],
   ['numberfield', ['default']],
   ['timefield', ['default']],
+  ['datefield', ['default']],
   ['numberlistitem', ['default', 'accent', 'success', 'warning', 'danger']],
   ['actionbar', ['default', 'end', 'center', 'spread']],
   ['kvgroup', ['default', 'compact', 'spacious']],
@@ -401,6 +402,11 @@ export const CATALOG: ComponentSpec[] = [
       new PropSpec('action', 'string')],
     'a time of day, as minutes since midnight; the handler takes (state, value: number)', 'number',
     'For a time the person chooses. The value is minutes since midnight, which is the same shape time.hourOfDay() * 60 + time.minuteOfHour() produces, so it compares with the clock directly.'),
+  new ComponentSpec('DateField', 'datefield',
+    [style('datefield'), new PropSpec('label', 'string'), new PropSpec('value', 'number'),
+      new PropSpec('action', 'string')],
+    'a calendar date, as a local day number; the handler takes (state, value: number)', 'number',
+    'For a date the person chooses -- a due date, a birthday, a trip. The value is the day number time.daysSinceEpoch() returns, so start it at today with time.daysSinceEpoch(), compare it with today directly, and subtract two of them for a count of days. ui.dateToString(day) writes it as "30 Oct 2026" inside another component\'s text; (day + 4) % 7 is its weekday, 0=Sunday, as time.weekday() counts. Pair it with ui.TimeField for a date and a time.'),
   new ComponentSpec('NumberListItem', 'numberlistitem',
     [style('numberlistitem'), new PropSpec('title', 'string'), new PropSpec('subtitle', 'string'),
       new PropSpec('value', 'number'), new PropSpec('prefix', 'string'),
@@ -644,7 +650,7 @@ export const CORE_COMPONENTS: string[] = [
   // Inputs and progress: picking by similarity to the whole prompt missed
   // them for a form-like request (a pill tracker never got TextField, Toggle
   // or TimeField), and each miss costs a find_ui_component round.
-  'TextField', 'Toggle', 'Checkbox', 'Slider', 'Select', 'NumberField', 'TimeField', 'Progress',
+  'TextField', 'Toggle', 'Checkbox', 'Slider', 'Select', 'NumberField', 'TimeField', 'DateField', 'Progress',
 ]
 
 /** Components that are described only when selected. */
@@ -752,7 +758,7 @@ export function describeCatalogForPrompt(selected: Set<string> | null = null): s
   lines.push('UI constructors (all return ui.View):')
   for (let c of shown) { lines.push(signatureLine(c)) }
   lines.push('  ui.When(condition, child)  -- child when true, nothing when false')
-  lines.push('  ui.numberToString(n), ui.formatNumber(n, decimals), ui.clockToString(minutes), ui.durationToString(seconds), ui.booleanToString(b)')
+  lines.push('  ui.numberToString(n), ui.formatNumber(n, decimals), ui.clockToString(minutes), ui.dateToString(day), ui.durationToString(seconds), ui.booleanToString(b)')
   lines.push('')
   lines.push('Allowed styles:')
   for (let c of shown) {
