@@ -104,9 +104,27 @@ restarts once stored:
 hdc shell aa start -a EntryAbility -b com.vera.probe.dyn --ps deepseekKey sk-...
 ```
 
+`deepseekKey` is the historical name (DeepSeek is the default provider);
+`cloudKey` is the provider-neutral alias for any other OpenAI-compatible
+chat-completions endpoint, and it carries its own base URL and model:
+
+```bash
+hdc shell aa start -a EntryAbility -b com.vera.probe.dyn \
+  --ps cloudKey sk-... --ps apiBase https://api.openai.com/v1 --ps apiModel gpt-4o
+```
+
+`apiBase` is the prefix up to `/chat/completions` (the engine appends that path
+itself); `apiModel` is the `model` field. Both default to DeepSeek's, both
+persist across restarts, and the DeepSeek-only `thinking` / `reasoning_effort`
+request fields are sent only when the configured endpoint or model is DeepSeek's
+(`SettingsStore.isDeepSeek`). `--ps jevProxy 1` is a flag, not a URL: it routes
+the composer's selector calls through the in-process proxy (`JevProxy.ets`) so
+they are answered by the configured cloud model instead of TypeSafe, reusing the
+same `apiBase` / `apiModel` / `cloudKey`.
+
 The same goes for `vera-server`, if the Server generation mode is wanted:
-`--ps veraServer http://host:port`. Neither has a default, and neither belongs
-in the source.
+`--ps veraServer http://host:port`. None of these has a default, and none
+belongs in the source.
 
 **Prompts typed into the Generate screen are written in English**, even when the
 conversation is not.
