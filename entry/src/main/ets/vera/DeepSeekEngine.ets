@@ -51,6 +51,7 @@ import { TurnTiming, logTurn, logStep, trace, traceTurn } from './VeraTiming'
 import { searchToolSchema, webSearch, SEARCH_TOOL_NAME } from './VeraWebSearch'
 import { noteService, httpFailure, SERVICE_DEEPSEEK } from './ServiceHealth'
 import { noteTool } from './ToolLog'
+import { LIVE_QUERY_PROMPT, parseLiveQuery } from './LiveFigures'
 
 // Application generation uses this budget for both reasoning and source on every attempt.
 export const DEEPSEEK_GENERATION_MAX_TOKENS: number = 32768
@@ -857,6 +858,36 @@ export class DeepSeekEngine {
       console.warn('VERA-UI-NEEDS failed: ' + (e as Error).message)
       this.recordSideCall('Pick the UI components', startedAt, null)
       return null
+    } finally {
+      this.thinking = savedThinking
+      this.generating = false
+    }
+  }
+
+  /**
+   * The search query for a current figure the requested app shows (LiveFigures.ets), '' when it shows none or on any
+   * failure. Thinking off and a small budget, like extractUiNeeds.
+   */
+  async extractLiveQuery(userPrompt: string): Promise<string> {
+    if (!settings.hasApiKey() || this.generating) { return '' }
+    let messages: Record<string, Object>[] = []
+    messages.push(plainMessage('system', LIVE_QUERY_PROMPT))
+    messages.push(plainMessage('user', userPrompt))
+    let savedThinking = this.thinking
+    this.thinking = false
+    this.cancelled = false
+    this.generating = true
+    let startedAt = Date.now()
+    try {
+      let turn = await this.streamOnce(messages, 0, 60, (_token: string): void => {}, TOOLS_OFF, 'livequery', 1)
+      this.recordSideCall('Does it need current figures', startedAt, turn)
+      let query = parseLiveQuery(turn.content)
+      console.info('VERA-LIVE-QUERY ms=' + (Date.now() - startedAt).toString() + ' query=' + query)
+      return query
+    } catch (e) {
+      console.warn('VERA-LIVE-QUERY failed: ' + (e as Error).message)
+      this.recordSideCall('Does it need current figures', startedAt, null)
+      return ''
     } finally {
       this.thinking = savedThinking
       this.generating = false

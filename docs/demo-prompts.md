@@ -251,8 +251,10 @@ home screen opens the screen.
 ## 6. Chat starters and the home screen
 
 The home screen has a Chat / App switch, a box at the bottom and, above the
-box, the three starters below as cards in a row (`HOME_STARTERS` in
-`entry/src/main/ets/components/ChatStarters.ets`). A card sends its English
+box, the starters below as cards in a row that scrolls sideways
+(`HOME_STARTERS` in `entry/src/main/ets/components/ChatStarters.ets`): first
+the three chat starters, then four app demos. An EN / 中文 switch next to "Try
+one of these" changes the cards and the prompt a card sends; it opens on EN. A card sends its English
 prompt in the mode that is on: to a new chat in Chat, to a new app in App. What
 is typed into the box goes the same way. "My apps ›" at the right of the cards'
 header hides the box and opens a horizontal shelf of the saved apps with large
@@ -275,6 +277,32 @@ prompts live in `STARTERS_ZH` and `STARTERS_EN` in
 For 旅行计划 the presenter pastes a travel-guide link as the next message when
 the model asks. Chat cannot open the link itself: the plan comes from the
 model's own knowledge and web search, with the link as context.
+
+The four app demos on the home screen, after the three chat starters. Each card
+sends the English prompt; the Chinese is the brief it was written from.
+
+| card | brief | EN prompt |
+|---|---|---|
+| Tank battle | 帮我做一个小时候红白机风格的坦克大战，像素画面，能移动、开炮、打掉砖墙，消灭敌人并保护基地。 | Make a retro tank battle game in the pixel style of the 8-bit game consoles I played as a child: my tank moves and fires, shells knock out brick walls, and I destroy the enemy tanks while protecting my base. |
+| Exam prep | 学生从社区发现一个同学做好的备考工具，通过一句话换成自己的学校和课程；进入个人 miniapp 后拍下自己的复习材料，才建立与个人材料对应的题库。 | Make an exam prep tool for my own school and course: I photograph my revision materials and it builds a question bank from them for me to practise on. |
+| Grades & GPA | 帮我做个成绩和绩点计算器，叫"好绩将至"……桌面放一张 2×2 卡片，只写"好绩将至"和"课程成绩 · 学期绩点"，不要显示我的成绩。 | Make a grade and GPA calculator called "好绩将至" (Good Grades Ahead)… (full text in `HOME_STARTERS`) |
+| Timetable | 这是我这学期的选课明细，帮我做一个课表，可以按天、按周查看……以后可以拍照重新导入，也可以从日历导入课程。 | Make a class timetable from my course list for this term that I can view by day and by week… (full text in `HOME_STARTERS`) |
+
+Tank battle has a second step, typed as a refinement once the game is built:
+
+```
+Replace my tank with my corgi "Tuantuan" and the enemy tanks with my friend's
+black-and-white border collie "Doudou". I will upload their photos: keep each
+one's coat colours and shape and make them cute pixel art. Bullets become small
+bones, the base becomes a dog house, and the fire button says "Throw bone".
+Everything else plays the same.
+```
+
+The exam-prep brief starts in the community: a classmate's tool is remixed with
+one sentence naming the student's own school and course. The card covers only
+the second half, the personal app built on the student's own photographed
+material. The GPA and timetable briefs refer to an attached conversion table and
+course list; the prompts ask for them to be entered or imported instead.
 
 ## 7. Starting a new app
 

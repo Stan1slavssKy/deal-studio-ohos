@@ -45,6 +45,8 @@ import { suggestAppName, suggestAppIcon } from '../vera/AppName'
 import { app, PrimaryButton, TonalButton, QuietButton } from '../components/AppStyle'
 import { MetricCard, MetricTile, MetricChip, MetricLine } from '../components/MetricCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_CANCELLED } from '../vera/agent/VeraBuildRoute'
+import { webSearch } from '../vera/VeraWebSearch'
+import { foundResults, liveFiguresNote } from '../vera/LiveFigures'
 import { templateSelectEnabled } from '../vera/VeraTemplateSelectFlag'
 import { ToolCall, ToolTotal, toolCalls, resetToolLog, toolTotals, toolMs } from '../vera/ToolLog'
 import { ServiceNote, serviceNotes, resetServiceHealth, describeService, silent, serviceTrouble } from '../vera/ServiceHealth'
@@ -116,6 +118,32 @@ class RunRecord {
   attempts: AttemptMetrics[] = []
   compiled: boolean = false
   delta: SourceDelta = new SourceDelta()
+}
+
+/**
+ * What the screen held before a request ran: the program and the requests that made it. An edited request is run again on
+ * it, in place of the request it replaces (GeneratePage.rewriteRequest).
+ */
+class RequestBase {
+  compiledSource: string = ''
+  compiledVbc2: string = ''
+  compositionJson: string = ''
+  templateKinds: string[] = []
+  requestHistory: string = ''
+  acceptedRequest: string = ''
+  acceptedComposition: string = ''
+  acceptedOrigin: string = ''
+  acceptedMetrics: VersionMetrics | null = null
+  modelWrote: boolean = false
+  /** The base of the request that made this program, so that an edit after an edit still has one. */
+  before: RequestBase | null = null
+}
+
+/** The round button of the request box (GeneratePage.roundButton), passed whole so that its state is followed. */
+class RoundButtonSpec {
+  symbol: string = ''
+  enabled: boolean = true
+  tap: () => void = () => {}
 }
 
 /** Everything spent since the last fresh generation, refinements included. */
@@ -343,6 +371,8 @@ struct GeneratePage {
   @State tab: string = TAB_PREVIEW
   /** What the one box holds, the settings and the details are open. */
   @State draft: string = ''
+  /** The box holds an edit of the last request: sending it runs it again on what was there before it (rewriteRequest). */
+  @State rewriting: boolean = false
   @State settingsOpen: boolean = false
   /** The selector route switch is for working on the app, not for making one: folded away until asked for. */
   @State advancedOpen: boolean = false
@@ -388,6 +418,9 @@ struct GeneratePage {
   private pendingHistory: string = ''
   private pendingRequest: string = ''
   private acceptedRequest: string = ''
+  /** What was on the screen when the running request started, and when the accepted one did; null when unknown. */
+  private pendingBase: RequestBase | null = null
+  private acceptedBase: RequestBase | null = null
   private acceptedComposition: string = ''
   private acceptedOrigin: string = ''
   private acceptedMetrics: VersionMetrics | null = null
@@ -403,6 +436,7 @@ struct GeneratePage {
 
   private prepareRequest(ask: string): void {
     this.finishMetrics(this.runId)
+    this.pendingBase = this.currentBase()
     this.pendingRequest = ask
     this.pendingHistory = this.requestHistory.length > 0 ?
       this.requestHistory + '\n\nRefinement:\n' + ask : ask
@@ -515,6 +549,7 @@ struct GeneratePage {
   private acceptRequest(): void {
     this.requestHistory = this.pendingHistory
     this.acceptedRequest = this.pendingRequest
+    this.acceptedBase = this.pendingBase
     this.acceptedComposition = this.compositionJson
     this.acceptedOrigin = this.originLabel()
     this.totalMs = Math.max(0, Date.now() - this.genStartTime)
@@ -545,6 +580,9 @@ struct GeneratePage {
     this.pendingHistory = ''
     this.pendingRequest = ''
     this.acceptedRequest = ''
+    this.pendingBase = null
+    this.acceptedBase = null
+    this.rewriting = false
     this.acceptedComposition = ''
     this.acceptedOrigin = ''
     this.acceptedMetrics = null
@@ -970,10 +1008,41 @@ struct GeneratePage {
       }
     }
     if (route.agent !== null) {
-      this.tryRoute(this.prompt.trim(), route)
+      this.tryLiveFigures(this.prompt.trim(), route)
       return
     }
     this.startAttemptOne(this.prompt.trim())
+  }
+
+  /**
+   * A new screen that shows a current figure (the weather, a rate, a price) is written by the model on a search made now
+   * (LiveFigures.ets), not built by the agent; everything else, and a search that found nothing, goes to the route.
+   */
+  private async tryLiveFigures(userPrompt: string, route: RouteRequest): Promise<void> {
+    let run = this.runId
+    if (settings.hasExaKey()) {
+      this.status = 'Checking whether it needs current figures...'
+      let checkStart = Date.now()
+      let query = await this.metricWork(run, (): Promise<string> => deepseek.extractLiveQuery(userPrompt))
+      addStage(this.stages, 'Does it need current figures', WHO_MODEL, Date.now() - checkStart)
+      if (run !== this.runId || this.cancelRequested) { return }
+      if (query.length > 0) {
+        this.status = 'Looking up current figures...'
+        let searchStart = Date.now()
+        let results = await this.metricWork(run, (): Promise<string> => webSearch(query))
+        addStage(this.stages, 'Looking up current figures', WHO_SEARCH, Date.now() - searchStart, query)
+        if (run !== this.runId || this.cancelRequested) { return }
+        let fields: Record<string, Object> = {}
+        fields['query'] = query
+        fields['found'] = foundResults(results)
+        trace('live-figures', fields)
+        if (foundResults(results)) {
+          this.startAttemptOne(userPrompt, 'Generating', liveFiguresNote(results))
+          return
+        }
+      }
+    }
+    this.tryRoute(userPrompt, route)
   }
 
   private async tryRoute(userPrompt: string, route: RouteRequest): Promise<void> {
@@ -994,7 +1063,8 @@ struct GeneratePage {
     }
     if (outcome.agent !== null) {
       this.traceAgent(outcome.agent!)
-      this.stages = outcome.agent!.stages.slice()
+      // After the stages of the check for current figures (tryLiveFigures), if it ran.
+      this.stages = this.stages.concat(outcome.agent!.stages)
     }
     if (outcome.kind === OUTCOME_AGENT) {
       this.showAgent(outcome.agent!)
@@ -2564,6 +2634,15 @@ struct GeneratePage {
     Column({ space: 8 }) {
       Text(this.status.length > 0 ? this.status : 'Nothing was built')
         .fontSize(13).fontColor(app.warningInk).width('100%').copyOption(CopyOptions.LocalDevice)
+      if (this.pendingRequest.length > 0) {
+        Row({ space: 4 }) {
+          Text(this.pendingRequest).fontSize(13).fontColor(app.inkSoft).maxLines(3)
+            .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
+          this.requestAction('sys.symbol.square_on_square_fill', true, () => { copyText(this.getUIContext(), this.pendingRequest) })
+          this.requestAction('sys.symbol.square_and_pencil', true, () => { this.editFailedRequest() })
+        }
+        .width('100%')
+      }
       this.failureDetails()
       if (this.previewVbc2.length > 0 && !this.hasResult()) {
         Text(this.previewNote).fontSize(12).fontColor(app.warningInk).width('100%')
@@ -2587,6 +2666,25 @@ struct GeneratePage {
    */
   @Builder
   composer() {
+    Column({ space: 4 }) {
+    if (this.rewriting) {
+      Row({ space: 4 }) {
+        Text('Editing the request: sending builds it again in its place')
+          .fontSize(12).fontColor(app.inkMuted).layoutWeight(1).maxLines(2)
+          .padding({ left: 10 })
+        Button({ type: ButtonType.Circle }) {
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(16).fontColor([app.inkMuted])
+        }
+        .width(28)
+        .height(28)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.rewriting = false
+          this.draft = ''
+        })
+      }
+      .width('100%')
+    }
     Row({ space: 8 }) {
       if (this.fullscreen && this.hasResult()) {
         this.foldButton(true)
@@ -2603,10 +2701,11 @@ struct GeneratePage {
         .layoutWeight(1)
         .height(44)
         .fontSize(16)
-        .borderRadius(22)
-        .backgroundColor(app.background)
+        .backgroundColor(Color.Transparent)
         .enabled(!this.generating && this.baseError.length === 0)
       this.actionButton()
+    }
+    .width('100%')
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12, top: 8, bottom: 10 })
@@ -2617,28 +2716,46 @@ struct GeneratePage {
     .shadow({ radius: 16, color: '#33000000', offsetY: -2 })
   }
 
+  /** A small round button beside a request: copy it, or edit it. */
+  @Builder
+  requestAction(symbol: string, enabled: boolean, tap: () => void) {
+    Button({ type: ButtonType.Circle }) {
+      SymbolGlyph($r(symbol)).fontSize(18).fontColor([app.inkSoft])
+    }
+    .width(36)
+    .height(36)
+    .backgroundColor(app.background)
+    .opacity(enabled ? 1 : 0.4)
+    .enabled(enabled)
+    .onClick(tap)
+  }
+
   /** The round button on the right of the box; see composer. */
   @Builder
   actionButton() {
     if (this.generating) {
-      this.roundButton('sys.symbol.square_fill', app.primary, app.onPrimary, true, () => { this.stopGeneration() })
+      this.roundButton({ symbol: 'sys.symbol.square_fill', enabled: true, tap: () => { this.stopGeneration() } })
     } else {
-      this.roundButton('sys.symbol.arrow_up', app.primary, app.onPrimary, this.draft.trim().length > 0 && this.canGenerate(),
-        () => { this.send() })
+      this.roundButton({ symbol: 'sys.symbol.arrow_up', enabled: this.draft.trim().length > 0 && this.canGenerate(),
+        tap: () => { this.send() } })
     }
   }
 
+  /**
+   * One object literal, not separate arguments: a @Builder's arguments passed by value are read once, and the send button
+   * then stayed as dim and as disabled as it was over the empty box whatever was typed into it.
+   */
   @Builder
-  roundButton(symbol: string, fill: ResourceColor, ink: ResourceColor, enabled: boolean, tap: () => void) {
+  roundButton(spec: RoundButtonSpec) {
     Button({ type: ButtonType.Circle }) {
-      SymbolGlyph($r(symbol)).fontSize(22).fontColor([ink])
+      SymbolGlyph($r(spec.symbol)).fontSize(22).fontColor([app.onPrimary])
     }
     .width(44)
     .height(44)
-    .backgroundColor(fill)
-    .opacity(enabled ? 1 : 0.4)
-    .enabled(enabled)
-    .onClick(tap)
+    .backgroundColor(app.primary)
+    .opacity(spec.enabled ? 1 : 0.4)
+    .enabled(spec.enabled)
+    .onClick(spec.tap)
   }
 
   /**
@@ -2796,6 +2913,10 @@ struct GeneratePage {
             .copyOption(this.requestOpen ? CopyOptions.LocalDevice : CopyOptions.None)
           if (this.requestExpands()) {
             SymbolGlyph($r(this.requestOpen ? 'sys.symbol.chevron_up' : 'sys.symbol.chevron_down')).fontSize(20).fontColor([app.inkMuted])
+          }
+          this.requestAction('sys.symbol.square_on_square_fill', true, () => { copyText(this.getUIContext(), this.acceptedRequest) })
+          if (this.acceptedBase !== null) {
+            this.requestAction('sys.symbol.square_and_pencil', !this.generating, () => { this.editRequest() })
           }
         }
         .width('100%')
@@ -3004,9 +3125,71 @@ struct GeneratePage {
   }
 
   /** Sends what was typed: a request for an app while there is none, a change to it once there is. */
+  private currentBase(): RequestBase {
+    let base = new RequestBase()
+    base.compiledSource = this.compiledSource
+    base.compiledVbc2 = this.compiledVbc2
+    base.compositionJson = this.compositionJson
+    base.templateKinds = this.templateKinds.slice()
+    base.requestHistory = this.requestHistory
+    base.acceptedRequest = this.acceptedRequest
+    base.acceptedComposition = this.acceptedComposition
+    base.acceptedOrigin = this.acceptedOrigin
+    base.acceptedMetrics = this.acceptedMetrics
+    base.modelWrote = this.modelWrote
+    base.before = this.acceptedBase
+    return base
+  }
+
+  /**
+   * Puts back what was on the screen before the last accepted request, so that the edit of it sent now runs in its place: a
+   * change on the version before it, or a new app when it was the first request.
+   */
+  private restoreBase(base: RequestBase): void {
+    this.compiledSource = base.compiledSource
+    this.compiledVbc2 = base.compiledVbc2
+    this.generatedSource = base.compiledSource
+    this.compositionJson = base.compositionJson
+    this.templateKinds = base.templateKinds.slice()
+    this.requestHistory = base.requestHistory
+    this.acceptedRequest = base.acceptedRequest
+    this.acceptedComposition = base.acceptedComposition
+    this.acceptedOrigin = base.acceptedOrigin
+    this.acceptedMetrics = base.acceptedMetrics
+    this.metricTotals = base.acceptedMetrics !== null ? this.copyMetrics(base.acceptedMetrics) : new VersionMetrics()
+    this.modelWrote = base.modelWrote
+    this.acceptedBase = base.before
+    this.requestOpen = false
+    if (base.compiledSource.length === 0) {
+      // A new app: nothing to change and nothing typed into it to carry over.
+      this.previousSource = ''
+      this.carriedState = ''
+      this.liveState = ''
+    }
+  }
+
+  /** The last request, into the box to be edited and sent again in its place. */
+  private editRequest(): void {
+    if (this.generating || this.acceptedBase === null) { return }
+    this.draft = this.acceptedRequest
+    this.rewriting = true
+    this.fullscreen = false
+  }
+
+  /** A request that built nothing, into the box: sending it is a new try on the screen as it is. */
+  private editFailedRequest(): void {
+    if (this.generating) { return }
+    this.draft = this.pendingRequest
+    this.rewriting = false
+  }
+
   private send(): void {
     let text = this.draft.trim()
     if (text.length === 0 || this.generating) { return }
+    if (this.rewriting) {
+      this.rewriting = false
+      if (this.acceptedBase !== null) { this.restoreBase(this.acceptedBase!) }
+    }
     if (this.hasResult()) {
       this.refinePrompt = text
       this.doRefine()

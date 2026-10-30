@@ -31,36 +31,78 @@ export const STARTERS_EN: ChatStarter[] = [
   new ChatStarter('pills', 'Pills', 'Create a medicine card that reminds me to take my pills every day.'),
 ]
 
-/** A ready-made request on the home screen: a card with a symbol on a tint, a title and a short hint. */
+/** A ready-made request on the home screen: a card with a symbol on a tint, a title and a short hint, in English and Chinese. */
 export class HomeStarter {
   id: string = ''
-  title: string = ''
-  hint: string = ''
   symbol: string = ''
   /** The card's pale background and the colour of its symbol. */
   tint: string = ''
   ink: string = ''
-  prompt: string = ''
+  en: HomeText
+  zh: HomeText
 
-  constructor(id: string, title: string, hint: string, symbol: string, tint: string, ink: string, prompt: string) {
+  constructor(id: string, symbol: string, tint: string, ink: string, en: HomeText, zh: HomeText) {
     this.id = id
-    this.title = title
-    this.hint = hint
     this.symbol = symbol
     this.tint = tint
     this.ink = ink
+    this.en = en
+    this.zh = zh
+  }
+
+  text(english: boolean): HomeText {
+    return english ? this.en : this.zh
+  }
+}
+
+/** What a home card says and sends in one language. */
+export class HomeText {
+  title: string = ''
+  hint: string = ''
+  prompt: string = ''
+
+  constructor(title: string, hint: string, prompt: string) {
+    this.title = title
+    this.hint = hint
     this.prompt = prompt
   }
 }
 
-/** The three demos of docs/demo-prompts.md, the same prompts as STARTERS_EN; the home screen sends one in either mode. */
+/**
+ * The home screen's cards; it sends one in either mode, in the language picked above them.
+ * The first three are the chat starters (STARTERS_EN / STARTERS_ZH), the rest the app demos
+ * of docs/demo-prompts.md section 6.
+ */
 export const HOME_STARTERS: HomeStarter[] = [
-  new HomeStarter('trip', 'Trip plan', 'A day at West Lake for three', 'sys.symbol.airplane', '#E8F1FF', '#0A59F7',
-    STARTERS_EN[0].prompt),
-  new HomeStarter('baby', 'Baby fever', '37.5°C: a care card', 'sys.symbol.thermometer', '#FFF0E6', '#E0601F',
-    STARTERS_EN[1].prompt),
-  new HomeStarter('pills', 'Pills', 'A daily reminder card', 'sys.symbol.drug', '#E7F6EE', '#1F9D6B',
-    STARTERS_EN[2].prompt),
+  new HomeStarter('trip', 'sys.symbol.airplane', '#E8F1FF', '#0A59F7',
+    new HomeText('Trip plan', 'A day at West Lake for three', STARTERS_EN[0].prompt),
+    new HomeText('旅行计划', '一家三口西湖一日游', STARTERS_ZH[0].prompt)),
+  new HomeStarter('baby', 'sys.symbol.thermometer', '#FFF0E6', '#E0601F',
+    new HomeText('Baby fever', '37.5°C: a care card', STARTERS_EN[1].prompt),
+    new HomeText('宝宝护理', '37.5度：发热护理卡片', STARTERS_ZH[1].prompt)),
+  new HomeStarter('pills', 'sys.symbol.drug', '#E7F6EE', '#1F9D6B',
+    new HomeText('Pills', 'A daily reminder card', STARTERS_EN[2].prompt),
+    new HomeText('吃药提醒', '每天提醒的吃药卡', STARTERS_ZH[2].prompt)),
+  new HomeStarter('tanks', 'sys.symbol.gamecontroller', '#FFF4D6', '#B7791F',
+    new HomeText('Tank battle', 'Pixel tanks, brick walls, a base',
+      'Make a retro tank battle game in the pixel style of the 8-bit game consoles I played as a child: my tank moves and fires, shells knock out brick walls, and I destroy the enemy tanks while protecting my base.'),
+    new HomeText('坦克大战', '像素坦克、砖墙和基地',
+      '帮我做一个小时候红白机风格的坦克大战，像素画面，能移动、开炮、打掉砖墙，消灭敌人并保护基地。')),
+  new HomeStarter('exam', 'sys.symbol.text_book_closed', '#F1EBFF', '#6B4FD8',
+    new HomeText('Exam prep', 'A question bank from my notes',
+      'Make an exam prep tool for my own school and course: I photograph my revision materials and it builds a question bank from them for me to practise on.'),
+    new HomeText('备考工具', '用复习材料建题库',
+      '帮我做一个备考工具，换成我自己的学校和课程：我拍下自己的复习材料，用它们建立对应的题库给我练习。')),
+  new HomeStarter('gpa', 'sys.symbol.graduationcap', '#E6F6F8', '#0F8A9D',
+    new HomeText('Grades & GPA', 'Course grades and term GPA',
+      'Make a grade and GPA calculator called "好绩将至" (Good Grades Ahead). Let me enter my school\'s grade-point conversion table and each course\'s credits and assessment rules. For each course I can fill in exam, homework and quiz scores separately to work out the overall grade, or enter the overall grade and credits directly to work out the term GPA. Make these two features separate entries at the same level that share one course list; I decide when an overall grade worked out from the details is used for the GPA, and the overall grade on the GPA page can also be edited by hand. Put a 2x2 card on the home screen that only says "好绩将至" and "课程成绩 · 学期绩点" and never shows my grades.'),
+    new HomeText('好绩将至', '课程成绩与学期绩点',
+      '帮我做个成绩和绩点计算器，叫"好绩将至"。我会输入学校的绩点换算表，以及几门课的学分和考核要求。每门课能分别填考试、作业、测验分数来算总评，也能直接输入总评和学分，算学期 GPA。两个功能分开做成平级入口，课程名单共用；明细算出的总评由我决定什么时候用于 GPA，绩点页的总评分数也要能手动修改。桌面放一张 2×2 卡片，只写"好绩将至"和"课程成绩 · 学期绩点"，不要显示我的成绩。')),
+  new HomeStarter('timetable', 'sys.symbol.calendar', '#FDEBEF', '#D2335C',
+    new HomeText('Timetable', 'Classes, wake-up alarms, a card',
+      'Make a class timetable from my course list for this term that I can view by day and by week. A home-screen card shows the current and next class with its room and time. Each day, set a wake-up alarm one hour before my first class, and none on days without classes. Later I can import the courses again from a photo, or from my calendar.'),
+    new HomeText('课表', '课程、起床闹钟和桌面卡片',
+      '根据我这学期的选课明细，帮我做一个课表，可以按天、按周查看。桌面卡片显示当前和接下来的课程、教室和时间。每天按第一节课提前一小时给我设置起床闹钟，没课就不设。以后可以拍照重新导入，也可以从日历导入课程。')),
 ]
 
 /**

@@ -1,4 +1,5 @@
 import { KeyboardAvoidMode } from '@ohos.arkui.UIContext'
+import window from '@ohos.window'
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { projectIconResource } from '../vera/ProjectIcons'
@@ -11,6 +12,8 @@ const MODE_TAB_WIDTH: number = 112
 
 /** Height of the zone above the box, in vp: the ready-made requests. */
 const ZONE_HEIGHT: number = 156
+/** Narrow enough that a fourth card shows at the edge, so the row reads as one that scrolls. */
+const STARTER_CARD_WIDTH: number = 118
 
 /**
  * Height of the apps shelf, in vp: it takes the zone and the box together (the box is
@@ -28,10 +31,21 @@ struct Index {
   /** What the box at the bottom is for: talking, or making an app. */
   @State makeApp: boolean = true
   @State draft: string = ''
-  /** The box has the keyboard: the greeting and the zone give up their room to it. */
+  /**
+   * The keyboard is up: the greeting and the zone give up their room to it. Read from the window, not from the box's focus:
+   * coming back to the page the box takes the focus again with no keyboard, and the greeting and the requests stayed hidden.
+   */
   @State typing: boolean = false
+  /** The window the keyboard's height is heard from, and the listener, to stop listening when the page goes. */
+  private keyboardWindow: window.Window | null = null
+  private keyboardListener: (height: number) => void = (height: number) => {
+    let open = height > 0
+    if (open !== this.typing) { this.getUIContext().animateTo({ duration: 180 }, () => { this.typing = open }) }
+  }
   /** The apps made so far are open on a shelf in place of the requests and the box. */
   @State showApps: boolean = false
+  /** The language of the ready-made cards; a card sends its prompt in it. */
+  @State starterEnglish: boolean = true
 
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext()
@@ -40,7 +54,18 @@ struct Index {
     consent.init(context.filesDir)
     // Shrink the page for the keyboard instead of panning it, so the box and its button stay in view.
     this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)
+    window.getLastWindow(context).then((win: window.Window) => {
+      this.keyboardWindow = win
+      win.on('keyboardHeightChange', this.keyboardListener)
+    }).catch((e: Error) => { console.warn('VERA keyboard listener unavailable: ' + e.message) })
     this.reload()
+  }
+
+  aboutToDisappear(): void {
+    if (this.keyboardWindow !== null) {
+      try { this.keyboardWindow.off('keyboardHeightChange', this.keyboardListener) } catch (_e) { /* the window is already gone */ }
+      this.keyboardWindow = null
+    }
   }
 
   onPageShow(): void {
@@ -190,12 +215,15 @@ struct Index {
     .onClick(go)
   }
 
-  /** The ready-made requests, three cards side by side; "My apps" at the right swaps them and the box for the apps. */
+  /** The ready-made requests, cards in a row that scrolls sideways; "My apps" at the right swaps them and the box for the apps. */
   @Builder
   zone() {
     Column({ space: 10 }) {
       Row() {
-        Text('Try one of these').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).layoutWeight(1)
+        Text(this.starterEnglish ? 'Try one of these' : '试试这些')
+          .fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).layoutWeight(1)
+        this.langChip('EN', true)
+        this.langChip('中文', false)
         if (this.projects.length > 0) {
           Row({ space: 2 }) {
             Text('My apps').fontSize(14).fontWeight(FontWeight.Medium).fontColor(app.primaryInk)
@@ -207,18 +235,38 @@ struct Index {
         }
       }
       .width('100%').height(24).padding({ left: 16, right: 12 })
-      Row({ space: 8 }) {
-        ForEach(HOME_STARTERS, (starter: HomeStarter) => {
-          this.starterCard(starter)
-        }, (starter: HomeStarter) => starter.id)
+      Scroll() {
+        Row({ space: 8 }) {
+          ForEach(HOME_STARTERS, (starter: HomeStarter) => {
+            this.starterCard(starter)
+          }, (starter: HomeStarter) => starter.id)
+        }
+        .padding({ left: 12, right: 12 })
       }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .width('100%')
-      .padding({ left: 12, right: 12 })
     }
     .width('100%')
     .height(ZONE_HEIGHT)
     .justifyContent(FlexAlign.Start)
     .transition(TransitionEffect.OPACITY)
+  }
+
+  /** One side of the cards' language switch; the picked one is filled. */
+  @Builder
+  langChip(label: string, english: boolean) {
+    Text(label)
+      .fontSize(12)
+      .fontWeight(this.starterEnglish === english ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.starterEnglish === english ? app.primaryInk : app.inkMuted)
+      .backgroundColor(this.starterEnglish === english ? app.primaryFill : Color.Transparent)
+      .borderRadius(12)
+      .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+      .margin({ left: 4 })
+      .accessibilityText(english ? 'English' : 'Chinese')
+      .onClick(() => { this.starterEnglish = english })
   }
 
   /** One request: its symbol on a round tint, a title and a hint; a tap sends it in the current mode. */
@@ -232,14 +280,14 @@ struct Index {
       .backgroundColor(starter.tint)
       .justifyContent(FlexAlign.Center)
       Column({ space: 2 }) {
-        Text(starter.title).fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).maxLines(1)
+        Text(starter.text(this.starterEnglish).title).fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong).maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(starter.hint).fontSize(12).fontColor(app.inkSoft).maxLines(2)
+        Text(starter.text(this.starterEnglish).hint).fontSize(12).fontColor(app.inkSoft).maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .alignItems(HorizontalAlign.Start)
     }
-    .layoutWeight(1)
+    .width(STARTER_CARD_WIDTH)
     .height(110)
     .padding(12)
     .alignItems(HorizontalAlign.Start)
@@ -247,8 +295,8 @@ struct Index {
     .backgroundColor(app.surface)
     .borderWidth(1)
     .borderColor(app.line)
-    .accessibilityText(starter.title)
-    .onClick(() => { this.submit(starter.prompt) })
+    .accessibilityText(starter.text(this.starterEnglish).title)
+    .onClick(() => { this.submit(starter.text(this.starterEnglish).prompt) })
   }
 
   /** The apps made so far, large, one swipe across; a press opens one, a long press offers to delete it. */
@@ -324,8 +372,6 @@ struct Index {
         .enableKeyboardOnFocus(false)
         .onChange((value: string) => { this.draft = value })
         .onSubmit(() => { this.submit(this.draft) })
-        .onFocus(() => { this.getUIContext().animateTo({ duration: 180 }, () => { this.typing = true }) })
-        .onBlur(() => { this.getUIContext().animateTo({ duration: 180 }, () => { this.typing = false }) })
       Row() {
         Blank()
         // Pale while there is nothing to send, as on the Generate screen; a press then just opens the page.
