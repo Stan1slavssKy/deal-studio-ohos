@@ -142,7 +142,7 @@ export class SketchList {
   fields: ListField[] = []
 }
 
-const FIELD_KINDS: string[] = ['text', 'number', 'time', 'toggle']
+const FIELD_KINDS: string[] = ['text', 'number', 'time', 'date', 'toggle']
 const MAX_FIELDS: number = 4
 
 /** The list's first field of `kind`, or null. */
@@ -2040,6 +2040,28 @@ export function replaceList(comp: Composition, kind: string): void {
   comp.dropped.push('"' + need + '": a section does it, not a part')
 }
 
+/** Sections that show figures written for them, and the reader of a record_log that shows the same thing from the records. */
+const LOG_READERS: Map<string, string> = new Map<string, string>([['bar_chart', 'series_chart'], ['data_table', 'breakdown_table']])
+
+/**
+ * A chart or table beside a log of records shows the log. bar_chart and data_table show figures written for them, and they are
+ * the only ones a ready need can be given: Shared costs' "a bar chart of what each friend has paid" was drawn from made-up sums
+ * (12000, 8500, ...), and its table of who paid what read "Anna $120.00 +$45.00", above a log of no payments and totals of
+ * $0.00. With a record_log on the screen each becomes the reader that shows the log's totals per person or category through its
+ * ports (series_chart, breakdown_table).
+ */
+export function readLogInCharts(comp: Composition): void {
+  if (comp.blocks.indexOf('record_log') < 0) { return }
+  for (let i = 0; i < comp.blocks.length; i++) {
+    let reader = LOG_READERS.get(comp.blocks[i])
+    if (reader === undefined || comp.blocks.indexOf(reader) >= 0) { continue }
+    let written = comp.blocks[i]
+    comp.blocks[i] = reader
+    for (let j = 0; j < comp.readyKinds.length; j++) { if (comp.readyKinds[j] === written) { comp.readyKinds[j] = reader } }
+    comp.dropped.push('the ' + written + ' shows the log of records on the screen, not figures written for it')
+  }
+}
+
 /**
  * A countdown or a list the plan calls for may be a section of the catalogue instead of the part, when Jev says so with the
  * confidence of any other pick and nothing else on the screen needs what the part has (canReplaceClock, canReplaceList). The
@@ -2260,6 +2282,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   }
 
   chooseSections(comp, answers)
+  readLogInCharts(comp)
 
   // An item of "other" may still be something a part does; only Jev's confident "this part" covers it.
   let partIds: string[] = []
@@ -2710,15 +2733,20 @@ export function hasClock(sketch: Sketch): boolean { return sketch.hasCountdown |
 /** The state field holding what the form has for `f` before the entry is added. */
 function draftOf(f: ListField): string { return 'draft_' + f.id }
 
-/** Words and numbers are typed, so their drafts are text; a time is minutes since midnight; an on/off is a boolean. */
+/**
+ * Words and numbers are typed, so their drafts are text; a time is minutes since midnight, a date the day number
+ * time.daysSinceEpoch() counts; an on/off is a boolean.
+ */
 function draftType(f: ListField): string {
-  if (f.kind === 'time') { return 'number' }
+  if (f.kind === 'time' || f.kind === 'date') { return 'number' }
   if (f.kind === 'toggle') { return 'boolean' }
   return 'string'
 }
 
 function draftInit(f: ListField): string {
   if (f.kind === 'time') { return numberLiteral(f.value) }
+  // A date starts at today: an expiry or a due date typed as words could not be compared with any day (Pantry expiry).
+  if (f.kind === 'date') { return 'time.daysSinceEpoch()' }
   if (f.kind === 'toggle') { return f.value !== 0 ? 'true' : 'false' }
   return '""'
 }
@@ -3517,6 +3545,7 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     if (f.kind === 'text') { form.push('ui.TextField("default", ' + quote(f.label) + ', ' + at + ')') }
     else if (f.kind === 'number') { form.push('ui.TextField("default", ' + quote(f.label) + ', ' + at + ', "number")') }
     else if (f.kind === 'time') { form.push('ui.TimeField("default", ' + quote(f.label) + ', ' + at + ')') }
+    else if (f.kind === 'date') { form.push('ui.DateField("default", ' + quote(f.label) + ', ' + at + ')') }
     else { form.push('ui.Toggle("default", ' + quote(f.label) + ', ' + at + ')') }
   }
   // Add is off until the entry has what addEntry needs, so the tap is never silently ignored.
@@ -3540,7 +3569,7 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
   let titleField = textField ?? numberField
   let trailingField = textField !== null && numberField !== null ? numberField : firstField(list, 'time')
   let shown = (f: ListField): string => f.kind === 'text' ? 'e.' + f.id :
-    (f.kind === 'time' ? 'ui.clockToString(e.' + f.id + ')' : entryAmountText(f))
+    (f.kind === 'time' ? 'ui.clockToString(e.' + f.id + ')' : (f.kind === 'date' ? 'ui.dateToString(e.' + f.id + ')' : entryAmountText(f)))
   let title = titleField !== null ? shown(titleField) : '"#" + ui.numberToString(i + 1)'
   let trailing = trailingField !== null ? shown(trailingField) : '""'
   let pieces: string[] = []
@@ -3877,7 +3906,8 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
   for (let i = 0; i < comp.readyKinds.length; i++) {
     if (comp.readyKinds[i].length === 0) { continue }
     let slot = new PlanSlot('ready.' + i.toString(), sketch.ready[i])
-    slot.accepts = READY_KINDS.slice()
+    // The section chosen may be a reader put in its place (readLogInCharts).
+    slot.accepts = unique(READY_KINDS.concat([comp.readyKinds[i]]))
     add(slot, FILL_BLOCK, block++)
   }
   // A section that took a part's place: a slot of its own, filled by it.

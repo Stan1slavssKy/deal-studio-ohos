@@ -83,7 +83,8 @@ export const NEEDS_PROMPT: string =
   '   {"type": "countdown", "label": what is being timed, "length": the id of the input, constant or figure that sets how long it runs},\n' +
   '   {"type": "stopwatch", "label": what is being timed},\n' +
   '   {"type": "entries", "label": what the entries are, "fields": what each entry holds, up to 4: [{"id": camelCase, "label": shown label,\n' +
-  '    "kind": "text" | "number" | "time" | "toggle", "measure": for a number, as for inputs, "unit": as for inputs, "value": starting value,\n' +
+  '    "kind": "text" | "number" | "time" | "date" | "toggle" ("date" for a calendar day: an expiry, a due date, a birthday), "measure": ' +
+  'for a number, as for inputs, "unit": as for inputs, "value": starting value,\n' +
   '    "decimals": for a plain number, as for a figure}] (no fields when adding an entry takes only a tap)},\n' +
   '   {"type": "content", "what": in plain words everything the need involves: what it lists or shows, what the person does with it, what the phone does,\n' +
   '    "from": the words of the request that ask for it, copied exactly},\n' +
