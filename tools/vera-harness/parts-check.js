@@ -138,4 +138,23 @@ for (const label of fs.readdirSync(path.join(__dirname, 'compose'))) {
     assert.ok(compiled.handlers.has('toggle' + (parts.length + 1)), label + ': the checklist keeps its handler')
   }
 }
+// A date in an entry is picked as a date and kept as a day number: an expiry typed as words compares with no day (Pantry).
+{
+  const {VirtualMachine, deserializeVbc2, decodeRuntimeValue} = loadVera('VeraInterpreter')
+  const {UiHostEnvironment, decodeVeraUi} = loadVera('VeraUi')
+  const sk = JSON.parse(fixture('expenses', 'sketch.json'))
+  sk.list = {label: 'pantry items', fields: [{id: 'item', label: 'Item', kind: 'text'}, {id: 'expires', label: 'Expires', kind: 'date'}]}
+  sk.values = []
+  const comp = c.readComposition(fixture('expenses', 'jev-answer.json'), c.parseSketch(JSON.stringify(sk)))
+  assert.deepEqual(comp.sketch.list.fields.map(f => f.kind), ['text', 'date'])
+  const vm = new VirtualMachine(deserializeVbc2(runs(c.assembleProgram(comp)).vbc2), new UiHostEnvironment())
+  const walk = (n, f) => { f(n); (n.children || []).forEach(x => walk(x, f)) }
+  const view = st => { const o = []; walk(decodeVeraUi(vm.execute('view', [st]))[0], n => o.push(n)); return o }
+  let st = vm.execute('init')
+  assert.ok(view(st).some(n => n.kind === 'datefield'), 'the form picks the date')
+  st = vm.execute('set_draft_item', [st, decodeRuntimeValue(['s', 'Milk'])])
+  st = vm.execute('set_draft_expires', [st, decodeRuntimeValue(['n', 20760])])
+  st = vm.execute('addEntry', [st, decodeRuntimeValue(['n', 0])])
+  assert.match(view(st).flatMap(n => [n.text, n.label]).filter(Boolean).join('|'), /Milk\|3 Nov 2026/)
+}
 console.log('parts-check: ok')

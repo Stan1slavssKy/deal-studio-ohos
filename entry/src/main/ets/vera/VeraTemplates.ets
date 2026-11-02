@@ -355,6 +355,11 @@ export class FragmentSpec {
   }
 }
 
+/**
+ * A list the person ticks off. A row not yet ticked has no icon and a ticked one a check: the same "list" icon on every row
+ * said nothing and did not show which were done (Wind down, Chore stars, Baby fever). The group's header says how many are
+ * done and that a row is tapped to tick it.
+ */
 function checklistFragment(): FragmentSpec {
   let listStyle: Map<string, string> = new Map<string, string>()
   listStyle.set('default', 'normal spacing')
@@ -406,7 +411,7 @@ function doneCountIDX(state: AppState): number {
     let j: number = 0;
     while (j < count) {
       let it: Item = state.itemsIDX[j];
-      let icon: string = "list";
+      let icon: string = "";
       let subtitle: string = it.detail;
       if (it.done) { icon = "check"; subtitle = "done"; if (it.detail.length() > 0) { subtitle = it.detail + " - done"; } }
       rows.push(ui.ListItem("default", it.label, subtitle, "", "toggleIDX", j, true, icon));
@@ -414,7 +419,7 @@ function doneCountIDX(state: AppState): number {
     }
     sections.push(ui.Section("content", "", "", [
       ui.When(count === 0, ui.EmptyState("default", "Nothing here", "Add an item to get started.", "", "", "pin")),
-      ui.When(count > 0, ui.ListGroup("__LIST_STYLE_IDX__", "", rows))
+      ui.When(count > 0, ui.ListGroup("__LIST_STYLE_IDX__", ui.numberToString(doneCountIDX(state)) + " of " + ui.numberToString(count) + " done - tap one to tick it", rows))
     ]));
   }`,
     [new SlotSpec('__LIST_STYLE_IDX__', ['default', 'compact', 'comfortable'], 'choice',
@@ -669,6 +674,13 @@ function setHourIDX(state: AppState, value: number): AppState {
   return withDraftIDX(state, state.draftTitleIDX, hour, state.draftMinuteIDX, state.draftDailyIDX);
 }
 
+function setTimeIDX(state: AppState, value: number): AppState {
+  let minute: number = value % 60;
+  let hour: number = (value - minute) / 60;
+  if (hour < 0 || hour > 23) { hour = 8; minute = 0; }
+  return withDraftIDX(state, state.draftTitleIDX, hour, minute, state.draftDailyIDX);
+}
+
 function setMinuteIDX(state: AppState, value: number): AppState {
   let minute: number = math.floor(value);
   if (minute < 0) { minute = 0; }
@@ -761,8 +773,7 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     let canAdd: boolean = strings.trim(state.draftTitleIDX).length() > 0;
     sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
       ui.TextField("default", "__TITLE_LABEL_IDX__", state.draftTitleIDX, "setTitleIDX"),
-      ui.NumberField("default", "Hour (0-23)", state.draftHourIDX, 0, 23, "setHourIDX"),
-      ui.NumberField("default", "Minute (0-59)", state.draftMinuteIDX, 0, 59, "setMinuteIDX"),
+      ui.TimeField("default", "Time", state.draftHourIDX * 60 + state.draftMinuteIDX, "setTimeIDX"),
       ui.Toggle("default", "__REPEAT_LABEL_IDX__", state.draftDailyIDX, "setDailyIDX"),
       ui.ActionBar("end", [
         ui.Button("primary", "Add", "addReminderIDX", 0, canAdd)
@@ -1148,7 +1159,7 @@ function searchListFragment(): FragmentSpec {
     while (j < names.length()) {
       let name: string = names[j];
       if (q.length() === 0 || strings.contains(name, q)) {
-        rows.push(ui.ListItem("default", name, "", "", "", j, false, "list"));
+        rows.push(ui.ListItem("default", name, "", "", "", j, false, ""));
       }
       j = j + 1;
     }
@@ -1459,9 +1470,9 @@ function balancesIDX(state: AppState): number[] {
       if (plain) {
         let title: string = r.note;
         if (title.length() === 0) { title = "Entry"; }
-        rows.push(ui.ListItem("default", title, "", shown, "", k, false, "list"));
+        rows.push(ui.ListItem("default", title, "", shown, "", k, false, ""));
       } else {
-        rows.push(ui.ListItem("default", who, r.note, shown, "", k, false, "list"));
+        rows.push(ui.ListItem("default", who, r.note, shown, "", k, false, ""));
       }
       k = k - 1;
     }
@@ -1626,7 +1637,10 @@ function breakdownTableFragment(): FragmentSpec {
   )
 }
 
-/** A bar chart with one bar per person or category, from a record_log elsewhere on the screen: the totals, or the balances. */
+/**
+ * A bar chart with one bar per person or category, from a record_log elsewhere on the screen: the totals, or the balances.
+ * Before anything is recorded it is one line, not a chart of zeros: on Shared costs that was a tall empty card at the top.
+ */
 function seriesChartFragment(): FragmentSpec {
   let useBalances: Map<string, string> = new Map<string, string>()
   useBalances.set('true', 'yes, show how far each is above or below the average')
@@ -1653,8 +1667,13 @@ function seriesChartFragment(): FragmentSpec {
       if (v < low) { low = v; }
     }
     let none: number[] = [];
+    let any: boolean = false;
+    for (let v: number of vals) {
+      if (v !== 0) { any = true; }
+    }
     sections.push(ui.Section("content", "", "", [
-      ui.Sparkline("default", vals, top, "__CHART_LABEL_IDX__", true, none, "accent", "", "", names, low)
+      ui.When(any, ui.Sparkline("default", vals, top, "__CHART_LABEL_IDX__", true, none, "accent", "", "", names, low)),
+      ui.When(!any, ui.Text("caption", "__CHART_LABEL_IDX__: the bars appear once something is added"))
     ]));
   }`,
     [new SlotSpec('__USE_BALANCES_IDX__', ['false', 'true'], 'noul', 'Should the bars show how far each is above or below the average instead of each total?', useBalances, 0.6)],

@@ -51,6 +51,17 @@ assert.equal(act(h, 'addReminder1', fill(h, st, 'X', -3, 70, true), num(0)).effe
 assert.equal(act(h, 'addReminder1', fill(h, st, 'X', 9, 70, true), num(0)).effects[0].values.get('minute'), '59')
 assert.equal(act(h, 'addReminder1', fill(h, st, 'X', 9, -1, true), num(0)).effects[0].values.get('minute'), '0')
 
+// the time is picked as a time of day, not as an hour and a minute counted on two steppers
+{
+  const fresh = h.vm.execute('init')
+  assert.ok(nodes(h, fresh).some(n => n.kind === 'timefield'), 'the form has a time picker')
+  assert.doesNotMatch(text(h, fresh), /Hour \(0-23\)|Minute \(0-59\)/)
+  let t = act(h, 'setTitle1', fresh, str('Vitamin')).st
+  t = act(h, 'setTime1', t, num(21 * 60 + 15)).st
+  const ev = act(h, 'addReminder1', t, num(0)).effects[0]
+  assert.equal(ev.values.get('hour'), '21'); assert.equal(ev.values.get('minute'), '15')
+}
+
 // adding: the exact calendar call, the row, and what the calendar answered
 st = fill(h, h.vm.execute('init'), 'Aspirin', 8, 30, true)
 r = act(h, 'addReminder1', st, num(0)); assert.equal(r.effects.length, 1)
