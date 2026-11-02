@@ -626,7 +626,7 @@ function remindersFragment(): FragmentSpec {
   let calendar: Map<string, string> = new Map<string, string>()
   calendar.set('true', 'yes, each entry goes into the phone calendar with a reminder')
   calendar.set('false', 'no, the entries are only a list in the app')
-  return new FragmentSpec(
+  let spec = new FragmentSpec(
     'reminders',
     'A list the person builds one entry at a time, each with a title, a time of day (hour and minute) and whether it repeats every day; ' +
     'entries can be put into the phone calendar with a reminder and removed, and the list shows what is scheduled and what the ' +
@@ -830,6 +830,11 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     ['needs_search_or_form'],
     ['needs_integration=__CALENDAR_IDX__']
   )
+  // A section beside it that lists the same things (a medicine card) reads this list rather than keeping its own: Pills had
+  // a form and list of reminders and, beside it, "My medicines" with a second form and list of the same medicines.
+  spec.owns = 'the person\'s reminders (a list of records, each with a title such as a medicine, an hour, a minute and whether it ' +
+    'repeats every day), the form that adds one with its time picker, and each one put into the phone calendar'
+  return spec
 }
 
 /**

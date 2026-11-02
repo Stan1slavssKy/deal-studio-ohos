@@ -3763,6 +3763,15 @@ export function partsContract(comp: Composition): PartsContract {
       'Its form, its Add and Remove buttons and its rows are already on the screen. The section makes no list of its own for the same entries; ' +
       'to add one it copies state.entries into a new array, pushes a LogEntry (minute: time.hourOfDay() * 60 + time.minuteOfHour()) and returns {entries: thatArray __PASSTHROUGH__}.')
   }
+  // What a chosen section already shows: written again beside it and worked out another way, it disagreed with it (West
+  // Lake: a "Day at a glance" with its own day length and time back beside the itinerary's).
+  for (let kind of comp.blocks) {
+    let spec = fragments().find((f: FragmentSpec): boolean => f.kind === kind)
+    if (spec === undefined || spec.owns.length === 0) { continue }
+    out.lines.push('a ' + kind + ' section, already on the screen, which has ' + spec.owns + '. Its state is in the program below. The section ' +
+      'shows none of that again and works none of it out another way -- no second list, form, time, schedule or summary of the same things; ' +
+      'what it needs of them it reads from that state.')
+  }
   return out
 }
 

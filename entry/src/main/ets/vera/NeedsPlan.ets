@@ -104,6 +104,8 @@ export const NEEDS_PROMPT: string =
   'clock.remaining, clock.elapsed and clock.duration, in seconds, when there is a countdown; clock.elapsed, in seconds, when there is a stopwatch. ' +
   'The app keeps its state between visits.\n' +
   'Rules: inputs are only what the person sets once for the whole screen; what each entry holds goes in its fields. ' +
+  'A quantity is in one place: one the person records again and again (a temperature, a weight, a dose taken) is a field of the entries ' +
+  'and the figures read the latest or all of them, never also an input. ' +
   'content is what the app starts with, written for the request: items, places, steps, facts or figures that anyone could look up or suggest. ' +
   'What the person keeps themselves -- their notes, entries, records, contacts or messages -- is never content: it starts empty, and is entries. ' +
   'Everything a need brings -- its items, its buttons, what the phone does from them, its counts -- belongs to that need alone: ' +

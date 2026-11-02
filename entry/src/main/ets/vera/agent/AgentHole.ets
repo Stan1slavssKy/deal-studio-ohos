@@ -9,6 +9,7 @@ import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED } from '../ScreenPlan'
 import { PartsContract } from '../VeraCompose'
+import { NOTICE_SPLIT } from '../ScreenPlan'
 
 const OUTCOME_WRITTEN: string = 'written'
 const OUTCOME_PARTIAL: string = 'partial'
@@ -64,6 +65,8 @@ export function noticeBlock(cannot: boolean, why: string): FragmentSpec {
     literal(body) + '", "", "", "warning")]));\n}'
   let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
   spec.indexed = false
+  // Its title and words, for the notices of one screen to be shown as one (ScreenPlan.ets's assemblePlan).
+  spec.criteria = literal(title) + NOTICE_SPLIT + literal(body)
   return spec
 }
 
