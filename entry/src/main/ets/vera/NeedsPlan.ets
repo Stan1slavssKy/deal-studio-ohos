@@ -110,6 +110,8 @@ export const NEEDS_PROMPT: string =
   'it is never also an input, a figure, an action or an other. ' +
   'A time of day (an input or field of kind time, a figure of format time_of_day) is minutes since midnight, 07:30 being 450; ' +
   'a length of time, such as time left or a pace, is never a time of day. constants are fixed numbers the app needs and the person does not set. ' +
+  'A number the request names itself (three undos, 15-minute blocks, four friends) is a constant, not an input, unless the request asks ' +
+  'the person to set or change it. ' +
   'figures are every number the request asks to show, in an order where each can be worked out from inputs, constants, the quantities above ' +
   'and the figures before it, in one step: two numbers added, subtracted, multiplied or divided, a percent of a number, one number as a percent ' +
   'of another, a number rounded up, or one number divided by another and rounded up. A number that takes more steps gets a figure for each step ' +
