@@ -104,12 +104,19 @@ export const NEEDS_PROMPT: string =
   'clock.remaining, clock.elapsed and clock.duration, in seconds, when there is a countdown; clock.elapsed, in seconds, when there is a stopwatch. ' +
   'The app keeps its state between visits.\n' +
   'Rules: inputs are only what the person sets once for the whole screen; what each entry holds goes in its fields. ' +
+  'A quantity is in one place: one the person records again and again (a temperature, a weight, a dose taken) is a field of the entries ' +
+  'and the figures read the latest or all of them, never also an input. ' +
+  'When several named people each do something that is counted for them (two kids earning stars for chores, friends paying), each ' +
+  'time is an entry with a field for who did it and its amount, so each person\'s total can be worked out; a list ticked once for ' +
+  'everyone cannot say whose it was. ' +
   'content is what the app starts with, written for the request: items, places, steps, facts or figures that anyone could look up or suggest. ' +
   'What the person keeps themselves -- their notes, entries, records, contacts or messages -- is never content: it starts empty, and is entries. ' +
   'Everything a need brings -- its items, its buttons, what the phone does from them, its counts -- belongs to that need alone: ' +
   'it is never also an input, a figure, an action or an other. ' +
   'A time of day (an input or field of kind time, a figure of format time_of_day) is minutes since midnight, 07:30 being 450; ' +
   'a length of time, such as time left or a pace, is never a time of day. constants are fixed numbers the app needs and the person does not set. ' +
+  'A number the request names itself (three undos, 15-minute blocks, four friends) is a constant, not an input, unless the request asks ' +
+  'the person to set or change it. ' +
   'figures are every number the request asks to show, in an order where each can be worked out from inputs, constants, the quantities above ' +
   'and the figures before it, in one step: two numbers added, subtracted, multiplied or divided, a percent of a number, one number as a percent ' +
   'of another, a number rounded up, or one number divided by another and rounded up. A number that takes more steps gets a figure for each step ' +

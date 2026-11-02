@@ -61,7 +61,14 @@ const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE 
   '- If the program already has a clock (Start, Stop, Reset buttons, a time shown) or a list of entries with its own Add button, ' +
   'the section draws no clock, no Start/Stop/Reset buttons and no second list of the same entries: it works with that state and shows only what is new.\n' +
   '- A message about an empty or wrong field (such as "Enter a task name") is shown only after the person has tried to add it, never while the field is still untouched.\n' +
-  '- Show each piece of information once: no heading and caption that say the same thing, and no second view (a table, "splits") of entries the program already lists in rows.\n' +
+  '- Show each piece of information once: no heading and caption that say the same thing, and no second view (a table, "splits") of entries the program already lists in rows. ' +
+  'A figure is a progress bar or a number, not both; a list the program already has (its stops, its entries) is not listed again with a ' +
+  'button added to each row -- the button goes where the program can take it, or the section names the item to act on; and one set of tabs ' +
+  'or switches for one choice.\n' +
+  '- A list the section keeps that starts empty has its own way to add to it, and to remove from it: an empty list nothing can fill is a ' +
+  'dead end (Chore stars: "No rewards yet" with no way to add one).\n' +
+  '- Every number the section shows is worked out from something on the screen or named in the request: progress toward a goal needs the ' +
+  'goal, set on the screen or fixed by the request, not a percent of nothing.\n' +
   '- Never write a phone number, address or other real-world contact the request did not give: a made-up number (such as +1 800 555 0100) looks real to the person. ' +
   'Show a field for the person to fill in, or say to call their local emergency number.\n'
 

@@ -147,14 +147,47 @@ export function assemblePlan(plan: ScreenPlan, partial: boolean = false): string
   // A notice that part of the screen is missing goes first, under the title: at the bottom of a long screen the person never
   // reaches it and takes what is there for everything asked (measured: Exam prep, a form and a list above it). Only the order
   // of the program changes; the components' indices, which the slots point at, stay as they are.
-  for (let notices of [true, false]) {
-    for (let c of plan.components) {
-      if ((c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') !== notices) { continue }
-      specs.push(c.spec)
-      values.push(c.values)
-    }
+  // Several are one banner, each its own line: three stacked banners took half the screen above anything that works (Timetable).
+  let notices: FragmentSpec[] = []
+  for (let c of plan.components) {
+    if (c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') { notices.push(c.spec!) }
+  }
+  if (notices.length > 1) {
+    specs.push(oneNotice(notices))
+    values.push(new Map<string, string>())
+  } else if (notices.length === 1) {
+    specs.push(notices[0])
+    values.push(new Map<string, string>())
+  }
+  for (let c of plan.components) {
+    if (c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') { continue }
+    specs.push(c.spec)
+    values.push(c.values)
   }
   return composeFragments(specs, plan.globals, values)
+}
+
+/** Between a notice's title and its words in FragmentSpec.criteria (agent/AgentHole.ets's noticeBlock). */
+export const NOTICE_SPLIT: string = '\u0001'
+
+/** The notices of a screen as one banner: their common title, or a general one, and each one's words on a line of its own. */
+function oneNotice(notices: FragmentSpec[]): FragmentSpec {
+  let titles: string[] = []
+  let lines: string[] = []
+  for (let n of notices) {
+    let at = n.criteria.indexOf(NOTICE_SPLIT)
+    if (at < 0) { continue }
+    let title = n.criteria.substring(0, at)
+    let body = n.criteria.substring(at + NOTICE_SPLIT.length)
+    if (titles.indexOf(title) < 0) { titles.push(title) }
+    if (lines.indexOf(body) < 0) { lines.push(body) }
+  }
+  let title = titles.length === 1 ? titles[0] : 'Some parts are limited'
+  let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("warning", "' + title + '", "' +
+    lines.map((l: string): string => '- ' + l).join('\\n') + '", "", "", "warning")]));\n}'
+  let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
+  spec.indexed = false
+  return spec
 }
 
 /** One line per slot, for the trace and the host checks: "id fill(detail) by=N: need". */
