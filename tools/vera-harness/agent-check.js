@@ -196,6 +196,10 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       r = await run([unread, good])
       assert.equal(r.attempts, 2, r.failed)
       assert.match(asks[1].user, /state field c_ghost is set by a handler but nothing reads it/)
+      // Asked about once: a section that still keeps a field nothing reads runs, and is served rather than thrown away.
+      r = await run([unread, unread])
+      assert.ok(r.section !== null, r.failed)
+      assert.equal(r.attempts, 2)
     }
     r = await run([good.replace('return {', 'sdk.call("x/y", [], "c_bump");\n  return {'), good])
     assert.equal(r.attempts, 2)

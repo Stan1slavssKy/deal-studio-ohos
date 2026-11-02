@@ -88,7 +88,10 @@ const CANNOT_FORM: string = 'one short sentence for the person using the app, in
 
 /** A need that cannot be done is declined on its own; the others are still written. */
 const DECLINE_RULE: string = '- When some of the needs cannot be done but others can, write the section for the ones that can and add, for each one ' +
-  'that cannot, <cannot need="the need, copied exactly">' + CANNOT_FORM + '</cannot> beside it. Answer a bare <cannot> only when none can be done.\n'
+  'that cannot, <cannot need="the need, copied exactly">' + CANNOT_FORM + '</cannot> beside it. Answer a bare <cannot> only when none can be done.\n' +
+  '- A need declined has no button or row that claims to do it. If the section offers the nearest thing instead (an event in the ' +
+  'phone calendar for a notification it cannot send), its button says that thing ("Add to calendar"), and the <cannot> sentence ' +
+  'says what is offered instead. A notice saying it cannot beside a button named for the same thing reads as broken.\n'
 
 /** The rule for phone calls: none, or only the targets the phone's lookups found. */
 function phoneRule(phone: string): string {
@@ -300,6 +303,9 @@ export function parseSection(reply: string): FragmentSpec | null {
   return spec
 }
 
+/** How check() begins the problem of a state field nothing reads. */
+const UNREAD_PROBLEM: string = 'The state field'
+
 /** The diagnostics with the program line each one points at, so the repair sees what it wrote there. */
 /**
  * How to fix a diagnostic the message alone does not say how to: a writer told only "expected View, found View[]" wrote
@@ -333,7 +339,7 @@ function quoted(source: string, errors: string): string {
  * '' when the program compiles and runs, else what went wrong with the lines it points at. A section with a scene is also
  * played: fingers on it, then each button pressed, every frame drawn.
  */
-function check(source: string, scene: boolean = false): string {
+function check(source: string, scene: boolean = false, unreadToo: boolean = true): string {
   try {
     let compiled = compileVeraSource(source)
     let ran = smokeRun(compiled)
@@ -344,8 +350,8 @@ function check(source: string, scene: boolean = false): string {
     }
     // A field the section keeps that nothing reads is something the person can set that changes nothing they can see.
     let unread = compiled.unreadFields.filter((f: string): boolean => f.startsWith('c_'))
-    if (unread.length > 0) {
-      return 'The state field' + (unread.length > 1 ? 's ' : ' ') + unread.join(', ') + (unread.length > 1 ? ' are' : ' is') +
+    if (unread.length > 0 && unreadToo) {
+      return UNREAD_PROBLEM + (unread.length > 1 ? 's ' : ' ') + unread.join(', ') + (unread.length > 1 ? ' are' : ' is') +
         ' set by a handler but nothing reads ' + (unread.length > 1 ? 'them' : 'it') + ', so changing ' + (unread.length > 1 ? 'them does' : 'it does') +
         ' nothing the person can see. Show it or use it in view(), or remove it and whatever sets it.'
     }
@@ -388,6 +394,9 @@ export async function writeSection(request: CustomRequest, language: string, ask
   let editRounds = 0
   let wholes = 0
   let lastProblem = ''
+  // A field nothing reads is asked about once: it changes nothing the person sees, and a section that runs is not thrown away
+  // for it (Minesweeper on the phone: a game that compiled and ran, refused four times over c_mines and then c_lost).
+  let unreadAsked = false
   // The first try written whole, then mended by edits (cheap: 2-4 s against 10-18 s for a whole one), a quick whole try when
   // edits do not apply, and last the thinking try written whole: slower, for what the rest got wrong. Edit rounds do not use
   // up the quick tries: counted as tries, two of them sent the next straight to a 33 s thinking try (Timetable on the phone).
@@ -442,7 +451,8 @@ export async function writeSection(request: CustomRequest, language: string, ask
     // Asked for twice at most: a section that still makes its own clock or list is better than none, so it is then taken as it is.
     let again = section === null || attempt >= 2 ? '' : repeats(section, request)
     let problem = section === null ? 'The answer was not in the form asked for: <classes>, <fields>, <functions> and <view>.' :
-      (calls.length > 0 ? calls : (again.length > 0 ? again : check(request.compose(section), scene)))
+      (calls.length > 0 ? calls : (again.length > 0 ? again : check(request.compose(section), scene, !unreadAsked)))
+    if (problem.startsWith(UNREAD_PROBLEM)) { unreadAsked = true }
     if (problem.length === 0) {
       // It compiles and runs; whether it does what it is for is Jev's reading. One it reads as not doing a need is asked
       // for again, saying which.
