@@ -1990,6 +1990,57 @@ export function canTakeRounds(comp: Composition): boolean {
   return !other && !readsAny(comp, CLOCK_OPERANDS)
 }
 
+/** What says a length of a phase or a number of rounds: the interval timer's own settings. */
+const ROUND_WORDS: RegExp = /\b(rounds?|blocks?|sets?|cycles?|reps?|intervals?|breaks?|rest|focus|work|phases?|sessions?)\b/i
+
+/**
+ * The interval timer sets its own lengths and rounds and shows its phase, its round and the focus time done: the plan's inputs for
+ * the same (a select of "Focus block", "Break", a stepper of "Blocks"), the figures worked out from them (total focus time) and a
+ * second countdown for the break are its, and drawn beside it they were all there twice (Homework timer on the phone). They leave;
+ * what is left of them is claimed by the section and read against the finished screen.
+ */
+function handRoundsToTimer(comp: Composition): void {
+  let sketch = comp.sketch
+  let leaving = sketch.inputs.filter((i: SketchInput): boolean => i.kind !== 'text' && i.kind !== 'toggle' &&
+    (i.measure === 'seconds' || i.measure === 'minutes' || ROUND_WORDS.test(i.label))).map((i: SketchInput): string => i.id)
+  if (leaving.length === 0) { return }
+  sketch.inputs = sketch.inputs.filter((i: SketchInput): boolean => leaving.indexOf(i.id) < 0)
+  comp.inputs = comp.inputs.filter((i: SketchInput): boolean => leaving.indexOf(i.id) < 0)
+  // A figure worked out from one that leaves leaves too ("Total session" from the focus and break totals).
+  let away: string[] = leaving.slice()
+  let reads = (v: SketchValue): boolean => away.some((id: string): boolean => new RegExp('\\b' + id + '\\b').test(v.formula))
+  let gone: SketchValue[] = []
+  let more = true
+  while (more) {
+    more = false
+    for (let v of sketch.values) {
+      if (gone.indexOf(v) < 0 && reads(v)) { gone.push(v); away.push(v.id); more = true }
+    }
+  }
+  sketch.values = sketch.values.filter((v: SketchValue): boolean => gone.indexOf(v) < 0)
+  // Totals of the session worked out from the lengths are the plan's, not the request's: claimed, they came back to be written as
+  // "900s" and "4500s".
+  for (let v of gone) {
+    comp.bindings.delete(v.id)
+    comp.dropped.push('value "' + v.label + '": the interval timer shows its own')
+  }
+  // "Switches to the other phase when a block or a break runs out" is what the timer does.
+  for (let e of sketch.events) {
+    let need = e.what + ' (' + e.when + ')'
+    if (comp.custom.indexOf(need) < 0 || !(ROUND_WORDS.test(need) || /\bcountdown|runs? out|ends?\b/i.test(e.when))) { continue }
+    comp.custom = comp.custom.filter((n: string): boolean => n !== need)
+    comp.phoneNeeds = comp.phoneNeeds.filter((n: string): boolean => n !== need)
+    comp.unboundNeeds = comp.unboundNeeds.filter((n: string): boolean => n !== need)
+    comp.dropped.push('event "' + e.what + '": the interval timer moves from phase to phase itself')
+  }
+  // The break's countdown is the timer's rest phase: not read against the screen, where Jev did not find a second clock and the
+  // section written for it failed into "Part of this app could not be built".
+  let rounds = sketch.other.filter((o: string): boolean => o.startsWith('a second countdown') || ROUND_WORDS.test(o))
+  sketch.other = sketch.other.filter((o: string): boolean => rounds.indexOf(o) < 0)
+  for (let o of rounds) { comp.dropped.push('"' + o + '": the interval timer\'s rest phase') }
+  for (let id of leaving) { comp.dropped.push('input "' + id + '": the interval timer sets it') }
+}
+
 export function replaceClock(comp: Composition, kind: string = 'timer'): void {
   if (kind !== 'timer') {
     let need = comp.sketch.countdown
@@ -1998,6 +2049,7 @@ export function replaceClock(comp: Composition, kind: string = 'timer'): void {
     comp.countdownFrom = ''
     comp.blocks.push(kind)
     comp.replaced.push(new Replaced(kind, need, numbers.length > 0 ? 'starts from the plan\'s numbers: ' + numbers : ''))
+    if (kind === 'interval_timer') { handRoundsToTimer(comp) }
     comp.claimed.push(need)
     comp.dropped.push('"' + need + '": a section does it, not a part')
     return
@@ -2149,6 +2201,7 @@ export function readLogInCharts(comp: Composition): void {
  */
 function chooseSections(comp: Composition, answers: Record<string, Object>): void {
   let clock = comp.sketch.hasCountdown ? answerOf(answers, 'clock.part', CLOCK_SECTIONS, comp.answers, READY_ABOVE) : ''
+  if (comp.sketch.hasCountdown) { console.info('VERA-CHOOSE clock.part=' + (clock.length > 0 ? clock : 'part')) }
   if (clock === 'timer' && canReplaceClock(comp)) { replaceClock(comp) }
   else if (clock === 'interval_timer' && canTakeRounds(comp)) { replaceClock(comp, 'interval_timer') }
   if (comp.sketch.list !== null) {
@@ -2372,6 +2425,8 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   let partIds: string[] = []
   partsOf(sketch).forEach((_d: string, key: string) => { partIds.push(key) })
   for (let i = 0; i < sketch.other.length; i++) {
+    // An item a section took over when it took a part's place (handRoundsToTimer) is gone from the composition's plan.
+    if (comp.sketch.other.indexOf(sketch.other[i]) < 0) { continue }
     if (isScene(sketch.other[i])) {
       if (customEnabled) { comp.custom.push(sketch.other[i]) } else { comp.unbound.push('not in the vocabulary: ' + sketch.other[i]) }
       continue
@@ -2479,6 +2534,10 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
 function dropValues(comp: Composition, answers: Record<string, Object>, failed: Map<string, string>, served: string[],
                     shownBySection: string[]): void {
   let sketch = comp.sketch
+  // A figure a section took over when it took a part's place (handRoundsToTimer) is gone from the plan, and with it what failed of it.
+  let taken: string[] = []
+  failed.forEach((_why: string, id: string) => { if (!sketch.values.some((v: SketchValue): boolean => v.id === id)) { taken.push(id) } })
+  for (let id of taken) { failed.delete(id) }
   // A value worked out from one that cannot be is no better off: its example passed on a number given to it.
   for (let v of sketch.values) {
     let b = comp.bindings.get(v.id)
@@ -2544,7 +2603,10 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     }
     failed.forEach((_why: string, id: string) => {
       if (leaving.indexOf(id) >= 0) { return }
-      let v = sketch.values.find((x: SketchValue): boolean => x.id === id)!
+      // A figure a section took over when it took a part's place (handRoundsToTimer) is gone from the plan.
+      let found = sketch.values.find((x: SketchValue): boolean => x.id === id)
+      if (found === undefined) { return }
+      let v: SketchValue = found
       if (readByParts.indexOf(id) >= 0) {
         // The parts read it by name -- the countdown's length, a figure worked out from it: it becomes a number the
         // person sets, under the same name, starting from the plan's own example.

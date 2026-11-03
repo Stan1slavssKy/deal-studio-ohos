@@ -151,3 +151,34 @@ console.log('screen-order-check: ok')
   assert.match(kept.text, /Metformin/)
   console.log('screen-order-check: own rows')
 }
+
+// Work and rest in rounds: the interval timer takes the countdown, the plan's lengths and the figures worked out from them, and the
+// break's second countdown; what is left is assembled and runs (an exception here left the phone on "Composing..." for good).
+{
+  const sketch = c.parseSketch(JSON.stringify({title: 'Focus', inputs: [
+    {id: 'focusMinutes', label: 'Focus block', kind: 'choice', measure: 'minutes', value: 0, options: [{label: '15 min', value: 15}, {label: '25 min', value: 25}]},
+    {id: 'breakMinutes', label: 'Break', kind: 'choice', measure: 'minutes', value: 0, options: [{label: '5 min', value: 5}]},
+    {id: 'subject', label: 'Subject', kind: 'text', value: 0}],
+    constants: [], countdown: {label: 'Focus block', length: 'focusMinutes'},
+    values: [{id: 'blocks', label: 'Focus blocks', means: 'blocks', format: 'count', formula: 'ceil(60 / focusMinutes)', example: {given: {focusMinutes: 15}, result: 4}},
+             {id: 'total', label: 'Total session', means: 't', format: 'minutes', formula: 'blocks * (focusMinutes + breakMinutes)', example: {given: {blocks: 4, focusMinutes: 15, breakMinutes: 5}, result: 80}}],
+    events: [{id: 'switch', when: 'a focus block or a break runs out', what: 'the phone switches to the other phase and starts its countdown', asked: true}],
+    other: ['a second countdown: Break']}))
+  const comp = c.readComposition(JSON.stringify({answers: {'clock.part': {type: 'choice', choice: 'interval_timer', confidence: 1}}}), sketch, false)
+  assert.deepEqual(comp.blocks, ['interval_timer'])
+  assert.deepEqual(comp.sketch.inputs.map(i => i.id), ['subject'])
+  assert.deepEqual(comp.sketch.values, [])
+  assert.deepEqual(comp.custom, [], 'the break, the phase switch and the totals are the timer\'s')
+  assert.deepEqual(comp.unbound, [], 'nothing left reads a figure the timer took')
+  // A figure Jev could not bind is gone with the others, not left unbound with no name.
+  const failing = c.readComposition(JSON.stringify({answers: {'clock.part': {type: 'choice', choice: 'interval_timer', confidence: 1}}}),
+    c.parseSketch(JSON.stringify({...JSON.parse(JSON.stringify({title: 'F', inputs: [{id: 'focusMinutes', label: 'Focus block', kind: 'count', measure: 'minutes', min: 1, max: 60, value: 15}],
+      constants: [], countdown: {label: 'Focus', length: 'focusMinutes'},
+      values: [{id: 'odd', label: 'Odd', means: 'x', format: 'plain', formula: 'focusMinutes * 7 + 3', example: {given: {focusMinutes: 15}, result: 1}}],
+      events: [], other: []}))})), false)
+  assert.deepEqual(failing.unbound, [])
+  assert.match(comp.replaced[0].detail, /Focus block 15 min/)
+  const plan = c.screenPlan(comp, [])
+  assert.equal(smokeRun(compileVeraSource(sp.assemblePlan(plan, true)), false), '')
+  console.log('screen-order-check: rounds to the interval timer')
+}

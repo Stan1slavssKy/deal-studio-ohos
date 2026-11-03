@@ -80,7 +80,15 @@ export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sket
     // The interval timer is offered for work and rest in rounds, whoever sets the lengths; the plain timer only for one set length.
     if (options !== null && !asksForRounds(prompt)) { options!.delete('interval_timer') }
     if (options !== null && !timerMayTakeCountdown(plan)) { options!.delete('timer') }
-    if (options !== null && options!.size > 1) {
+    if (options !== null && options!.has('interval_timer')) {
+      // Work and rest in turns is the interval timer, without asking: asked, Jev kept the plain countdown, and the screen said a break
+      // could not be timed on this phone (Homework timer).
+      let says: Record<string, Object> = {}
+      says['type'] = 'choice'
+      says['choice'] = 'interval_timer'
+      says['confidence'] = 1
+      out.forced['clock.part'] = says
+    } else if (options !== null && options!.size > 1) {
       questions['clock.part'] = choice('The app needs the countdown "' + sketch.countdown + '". Which of these does exactly that?', options!)
     }
   }

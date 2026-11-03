@@ -169,7 +169,18 @@ export async function buildScreen(request: RouteRequest, host: AgentHost): Promi
     checkAgent(host)
     if (surface !== null) { return surface }
     if (request.agent !== null) {
-      let result = await runAgent(request.agent!, host)
+      // A fault in the agent, other than a cancellation, is an agent that did not build the screen, said in the trace, and the
+      // whole screen is tried next. Unheld, it left the Generate screen on "Composing..." for good (a figure a section had taken
+      // over, read after it was gone).
+      let result: AgentResult
+      try {
+        result = await runAgent(request.agent!, host)
+      } catch (e) {
+        if ((e as Error).name === 'OperationCancelledError') { throw (e as Error) }
+        result = new AgentResult()
+        result.note = 'agent failed: ' + ((e as Error).message ?? String(e))
+        console.error('VERA-AGENT failed: ' + ((e as Error).stack ?? String(e)))
+      }
       checkAgent(host)
       outcome.agent = result
       if (result.vbc2.length > 0) { outcome.kind = OUTCOME_AGENT; return outcome }
