@@ -39,7 +39,6 @@ import { util } from '@kit.ArkTS'
 import { GenerateRequest, GenerateResult, TokenCallback } from './LlamaEngine'
 import { settings } from './SettingsStore'
 import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
-import { calendarSdkContract } from './VeraCalendarSdk'
 import { sdkContract } from './VeraSdkContracts'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
@@ -391,7 +390,7 @@ async function curatedSdkAlso(need: string, cancellation?: OperationCancellation
   let out: SdkEntry[] = []
   for (let e of ranked) {
     if (out.length >= SDK_ALSO_LIMIT) { break }
-    if (calendarSdkContract(e.kit + '.' + e.module + '.' + e.name) !== undefined) { out.push(e) }
+    if (sdkContract(e.kit + '.' + e.module + '.' + e.name) !== undefined) { out.push(e) }
   }
   return out
 }

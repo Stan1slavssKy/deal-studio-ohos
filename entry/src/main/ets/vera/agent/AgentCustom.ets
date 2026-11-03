@@ -11,6 +11,7 @@
  */
 
 import { OperationCancellation, throwIfCancelled } from '../OperationCancellation'
+import { ASK_TARGET, ASK_RULE } from '../VeraAsk'
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { smokeRun } from '../VeraSmoke'
@@ -107,7 +108,7 @@ const DECLINE_RULE: string = '- When some of the needs cannot be done but others
 /** The rule for phone calls: none, or only the targets the phone's lookups found. */
 function phoneRule(phone: string): string {
   if (phone.length === 0) {
-    return DECLINE_RULE + '- The section never calls sdk.call: what the phone does is not its job.\n' +
+    return DECLINE_RULE + '- The section never calls sdk.call, except "' + ASK_TARGET + '" as said below: what the phone does is not its job.\n' +
       '- If the section cannot really do it with this language and these components -- it needs a camera, a live feed, ' +
       'the person\'s location or data the phone does not hold -- decline that need as above, beside the rest; a bare <cannot>' + CANNOT_FORM +
       '</cannot> only when none of the needs can be done. Never fake it with made-up data.\n'
@@ -144,13 +145,16 @@ export function foundTargets(phone: string): string[] {
 
 /** '' when every sdk.call in the reply calls a target found, else what is wrong. */
 function callProblem(reply: string, found: string[]): string {
-  let calls = reply.split('sdk.call(').length - 1
+  // Words written while the program runs (VeraAsk.ets) are the app's own function, open to every section.
+  let asks = reply.split('sdk.call("' + ASK_TARGET + '"').length - 1
+  let calls = reply.split('sdk.call(').length - 1 - asks
   if (calls === 0) { return '' }
   if (found.length === 0) { return 'The section calls sdk.call, which it never may: write it without phone calls.' }
   let literal = new RegExp('sdk\\.call\\(\\s*"([^"]+)"', 'g')
   let named = 0
   let m: RegExpExecArray | null = literal.exec(reply)
   while (m !== null) {
+    if (m[1] === ASK_TARGET) { m = literal.exec(reply); continue }
     named++
     if (found.indexOf(m[1]) < 0) {
       return 'The section calls "' + m[1] + '", which is not one of the phone functions found. Call only those, copied exactly:\n' + found.join('\n')
@@ -381,7 +385,7 @@ export async function writeSection(request: CustomRequest, language: string, ask
   let found = foundTargets(request.phone)
   let phone = found.length > 0 ? request.phone : ''
   let scene = request.needs.some((n: string): boolean => isScene(n))
-  let system = language + CONTRACT + phoneRule(phone) + (scene ? SCENE_GUIDE : '')
+  let system = language + CONTRACT + phoneRule(phone) + ASK_RULE + (scene ? SCENE_GUIDE : '')
   let asked = 'Request: ' + request.prompt + '\n\nThe section must do:\n- ' + request.needs.join('\n- ') +
     (request.inputs.length > 0 ? '\n\nThe person sets these on the screen and nothing else uses them yet; the section uses them:\n- ' +
       request.inputs.join('\n- ') : '') +
