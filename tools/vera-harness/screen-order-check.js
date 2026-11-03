@@ -139,3 +139,15 @@ console.log('screen-order-check: ok')
   assert.equal(s.inputs[1].kind, 'count')
   console.log('screen-order-check: minutes since midnight')
 }
+
+// The person's own things are only those the request names; none named is an empty list, not the fallback.
+{
+  const {expandListRows} = loadVera('VeraTemplateContent')
+  const {fragments: fr} = loadVera('VeraTemplates')
+  const doses = fr().find(f => f.kind === 'dose_schedule').listFields[0]
+  assert.equal(expandListRows([['Vitamin D', '08:00', ''], ['Blood pressure pill', '20:00', '']], doses, 'remind me to take my pills every day').rows, 0)
+  const kept = expandListRows([['Metformin', '08:00', 'with food'], ['Vitamin D', '20:00', '']], doses, 'I take metformin at 8 with breakfast')
+  assert.equal(kept.rows, 1)
+  assert.match(kept.text, /Metformin/)
+  console.log('screen-order-check: own rows')
+}

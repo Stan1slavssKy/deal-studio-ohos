@@ -163,6 +163,12 @@ export class ListFieldSpec {
   maxRows: number
   /** The rows used when the answer is missing or unusable; one string[] per row, one string per column. */
   fallbackRows: string[][]
+  /**
+   * The rows are the person's own things (their medicines, their pantry): a row is kept only when the request names it, and none named
+   * is an empty list, never the fallback. The fill wrote "Vitamin D" and "Blood pressure pill" for "remind me to take my pills", and
+   * six foods for an empty pantry, whatever the hint said.
+   */
+  ownRows: boolean = false
   /** Indices of columns that are whole numbers, spliced unquoted (as a bare number literal) instead of as escaped text. */
   numericColumns: number[]
   /**
@@ -186,6 +192,12 @@ export class ListFieldSpec {
     this.numericColumns = numericColumns
     this.columnChecks = columnChecks
   }
+  /** Marks the rows as the person's own (ownRows), for chaining after the constructor. */
+  owned(): ListFieldSpec {
+    this.ownRows = true
+    return this
+  }
+
 }
 
 /**
@@ -2758,10 +2770,11 @@ function onDoseRemovedIDX(state: AppState, value: string): AppState {
     ],
     ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"', 'import * as time from "std/time"'],
     [new ListFieldSpec('__DOSES_IDX__', 'doses',
-      'The doses the request names, one per time of day it is taken (a pill taken morning and evening is two rows); none when it names none',
-      ['name (1-4 words, such as Vitamin D)', 'time of day as HH:MM in 24 hours, such as 08:00', 'a short note such as with food, or an empty string'],
+      'The doses of medicines the request names by name, one per time of day it is taken (a pill taken morning and evening is two rows). ' +
+      '"My pills" or "my medicine" names none: then an empty list, and the person adds their own. Never a made-up medicine',
+      ['name exactly as the request gives it (1-4 words)', 'time of day as HH:MM in 24 hours, such as 08:00', 'a short note such as with food, or an empty string'],
       [28, 5, 24],
-      '{name: "{0}", time: "{1}", note: "{2}"}', ',\n    ', 0, 8, [])],
+      '{name: "{0}", time: "{1}", note: "{2}"}', ',\n    ', 0, 8, []).owned()],
     [new PortSpec('writes', 'taken_today', 'number', 'takenTodayIDX(state)', '', true),
      new PortSpec('writes', 'doses', 'number', 'state.dosesIDX.length()', '', true),
      new PortSpec('writes', 'streak', 'number', 'shownStreakIDX(state)', '', true)],
@@ -3047,7 +3060,7 @@ function daysWordIDX(n: number): string {
       'documents they will enter). Only things the request states: never made-up food or dates',
       ['name of the thing (1-4 words)', 'days from today until it is due, a whole number (0 today, negative when already past)',
        'its life in days when it comes round again (90 for every 90 days), 0 when it happens once'],
-      [28, 5, 5], '{name: "{0}", inDays: {1}, lifeDays: {2}}', ',\n    ', 0, 12, [], [1, 2])],
+      [28, 5, 5], '{name: "{0}", inDays: {1}, lifeDays: {2}}', ',\n    ', 0, 12, [], [1, 2]).owned()],
     [new PortSpec('writes', 'soon_count', 'number', 'soonCountIDX(state)', '', true),
      new PortSpec('writes', 'expired_count', 'number', 'expiredCountIDX(state)', '', true),
      new PortSpec('writes', 'soon_names', 'string', 'soonNamesIDX(state)', '', true),
@@ -3311,7 +3324,9 @@ function ideaDeckFragment(): FragmentSpec {
     'idea_deck',
     'Ideas or suggestions to pick ONE from right now -- something to do in bed, a dinner to cook, a game for the kids, a date idea, ' +
     'a break activity -- shown one at a time with Another and Done, filtered by how long each takes and by its level (energy, effort). ' +
-    'Not a to-do list or shopping list to tick off (that is checklist), not facts to read (key_facts), not a plan of the day in time order',
+    'Not a to-do list or shopping list to tick off (that is checklist), not facts to read (key_facts), not a plan of the day in time order. ' +
+    'The ideas are written once, when the app is made: not for suggestions worked out from what the person enters later (dinners from ' +
+    'the food in their pantry, questions from their notes)',
     `@jsonable
 class Idea {
   title: string;

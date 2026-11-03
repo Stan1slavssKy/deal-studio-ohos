@@ -109,12 +109,13 @@ const DECLINE_RULE: string = '- When some of the needs cannot be done but others
 function phoneRule(phone: string): string {
   if (phone.length === 0) {
     return DECLINE_RULE + '- The section never calls sdk.call, except "' + ASK_TARGET + '" as said below: what the phone does is not its job.\n' +
+      '- Words written from what the person entered (suggestions, recipes, ideas) are never declined: "' + ASK_TARGET + '" writes them.\n' +
       '- If the section cannot really do it with this language and these components -- it needs a camera, a live feed, ' +
       'the person\'s location or data the phone does not hold -- decline that need as above, beside the rest; a bare <cannot>' + CANNOT_FORM +
       '</cannot> only when none of the needs can be done. Never fake it with made-up data.\n'
   }
   return DECLINE_RULE + '- What the phone or another app must do, the section does with sdk.call from a handler, calling ONLY targets from ' +
-    '"Phone functions found" in the request, copied exactly, with the parameters they show, values from the screen\'s state. ' +
+    '"Phone functions found" in the request (and "' + ASK_TARGET + '", as said below), copied exactly, with the parameters they show, values from the screen\'s state. ' +
     'Its answer handler shows what came back: an answer starting with "declined" or "error" is a failure, anything else succeeded.\n' +
     '- A function that opens another app with the action ready for the person to confirm (a message filled in, a contact ' +
     'form, a route) does the job: use it, and say on the screen that the person confirms it there.\n' +
@@ -123,6 +124,7 @@ function phoneRule(phone: string): string {
     '- A need worded as something to do inside this app that the app cannot do (it has no such component) is not refused ' +
     'if a function found does the nearest useful thing for the person -- shows or opens the same thing in the app made for it: ' +
     'write the section with that function, and say in a line on the screen what it does instead.\n' +
+    '- Words written from what the person entered (suggestions, recipes, ideas) are never declined: "' + ASK_TARGET + '" writes them, as said below.\n' +
     '- If none of the phone functions found does what is needed, or it needs something the phone cannot give a program ' +
     '(a camera, a live feed, the person\'s location), decline that need as above, beside the rest; a bare <cannot>' + CANNOT_FORM +
     '</cannot> only when none of the needs can be done. Never fake it, never pretend a call happened, ' +
