@@ -102,3 +102,40 @@ console.log('screen-order-check: ok')
   assert.equal(withoutRepeatedButtons(view, 'ui.Button("primary", "Add", "a", 0, true)'), view, 'one-word labels stay')
   console.log('screen-order-check: no button twice')
 }
+
+// Work and rest in turns is asked for in so many words; a plain countdown is not.
+{
+  const nc2 = loadVera('NeedsChoose')
+  assert.ok(nc2.asksForRounds('Make a homework timer that splits a task into 15-minute focus blocks with real breaks in between.'))
+  assert.ok(nc2.asksForRounds('interval training: 30 s work, 10 s rest, 8 rounds'))
+  assert.ok(!nc2.asksForRounds('a 10 minute egg timer'))
+  console.log('screen-order-check: rounds')
+}
+
+{
+  const nc3 = loadVera('NeedsChoose')
+  assert.ok(nc3.asksOneTap('Make a water tracker that logs a glass with one tap'))
+  assert.ok(!nc3.asksOneTap('Make a feeding tracker for a newborn that logs amount and time'))
+  console.log('screen-order-check: one tap')
+}
+
+// A number field answered as a JSON number is taken, not dropped for the fallback.
+{
+  const {parseContentResponse} = loadVera('VeraTemplateContent')
+  const {ContentFieldSpec} = loadVera('VeraTemplates')
+  const fields = [new ContentFieldSpec('__A__', 'amount', '1', 'h', 6, true), new ContentFieldSpec('__U__', 'unit', '', 'h', 8)]
+  const r = parseContentResponse('{"amount": 250, "unit": "ml"}', fields)
+  assert.equal(r.values.get('__A__'), '250')
+  console.log('screen-order-check: numbers as numbers')
+}
+
+// Minutes since midnight are a time of day, whatever kind the plan wrote.
+{
+  const s = c.parseSketch(JSON.stringify({title: 'T', inputs: [
+    {id: 'sleepStart', label: 'Sleep starts', kind: 'count', measure: 'minutes', unit: 'minutes since midnight', min: 0, max: 1439, value: 1320},
+    {id: 'rest', label: 'Rest', kind: 'count', measure: 'minutes', unit: 'min', min: 1, max: 60, value: 5}], values: [], events: [], other: []}))
+  assert.equal(s.inputs[0].kind, 'time')
+  assert.equal(s.inputs[0].value, 1320)
+  assert.equal(s.inputs[1].kind, 'count')
+  console.log('screen-order-check: minutes since midnight')
+}

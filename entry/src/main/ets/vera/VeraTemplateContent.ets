@@ -288,6 +288,7 @@ export function parseContentResponse(raw: string | null, fields: ContentFieldSpe
   let notes: string[] = []
   for (let field of fields) {
     let raw_value = parsed[field.key]
+    if (field.numeric && typeof raw_value === 'number' && isFinite(raw_value as number)) { raw_value = (raw_value as number).toString() }
     if (typeof raw_value !== 'string' || (raw_value as string).trim().length === 0) {
       values.set(field.token, field.fallback)
       notes.push(field.key + '=default')
@@ -446,6 +447,9 @@ export async function fillSectionsContent(chosenKinds: string[], userPrompt: str
     let filled = false
     if (ok) {
       let rawValue = parsed[f.jsonKey]
+      // A number field may come back as a JSON number (250), not as text ("250"): read as text it was dropped for the fallback, and a
+      // water log added 1 ml a tap toward no goal (quick_log on the phone).
+      if (f.numeric && typeof rawValue === 'number' && isFinite(rawValue as number)) { rawValue = (rawValue as number).toString() }
       if (typeof rawValue === 'string' && (rawValue as string).trim().length > 0) {
         value = f.numeric ? sanitizeVeraInt(rawValue as string, f.fallback) : escapeForVeraString(rawValue as string, f.maxLength)
         filled = true

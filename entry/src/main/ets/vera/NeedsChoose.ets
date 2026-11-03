@@ -11,7 +11,7 @@
 
 import { OperationCancellation, isCancelled, throwIfCancelled } from './OperationCancellation'
 import { Sketch, SketchInput, ListField, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
-  listNeeds, clockOptions, listOptions, choice, askReady, LIST_SECTIONS, PART } from './VeraCompose'
+  listNeeds, clockOptions, listOptions, choice, askReady, LIST_SECTIONS, LIST_PUBLISHERS, PART } from './VeraCompose'
 import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
   needOf } from './NeedsPlan'
 
@@ -19,6 +19,16 @@ import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_N
  * Whether the `timer` section may take the countdown's place: its length is one fixed time of the plan's (a person who sets it
  * needs the part, which follows the input), nothing happens when it ends, and no figure reads the time left or passed.
  */
+/** Whether the request asks for something logged with one tap rather than typed in. */
+export function asksOneTap(prompt: string): boolean {
+  return /\b(one|single|a|1)[ -]tap\b|\bwith a tap\b|\btap to (log|add|count)\b|一键|点一下/i.test(prompt)
+}
+
+/** Whether the request asks for work and rest in turns: blocks with breaks between them, rounds, intervals, a pomodoro. */
+export function asksForRounds(prompt: string): boolean {
+  return /\b(breaks?|rest|rounds?|intervals?|pomodoro|sets? of|cycles?|blocks? of|reps?)\b/i.test(prompt) || /番茄|休息|轮/.test(prompt)
+}
+
 export function timerMayTakeCountdown(plan: NeedsPlan): boolean {
   let countdown = needOf(plan, NEED_COUNTDOWN)
   if (countdown === null) { return false }
@@ -48,7 +58,7 @@ export function listSectionsFor(plan: NeedsPlan): string[] {
     if (n.type === NEED_ACTION && (n.on === ON_ADDED || n.on === ON_TAP)) { return [] }
   }
   let read = plan.needs.some((n: Need): boolean => n.type === NEED_FIGURE && n.reads.some((q: string): boolean => q.startsWith('entries.')))
-  return LIST_SECTIONS.filter((kind: string): boolean => !read || kind === 'record_log')
+  return LIST_SECTIONS.filter((kind: string): boolean => !read || LIST_PUBLISHERS.indexOf(kind) >= 0)
 }
 
 export class ChooseRequest {
@@ -56,6 +66,8 @@ export class ChooseRequest {
   body: string = ''
   /** Questions the second call does not ask: the ones this call asked, and the ones the plan's facts have answered. */
   settled: string[] = []
+  /** Answers the request's own words settle without Jev, under the keys Jev's would be: "with one tap" is the one-tap log. */
+  forced: Record<string, Object> = {}
 }
 
 /** The one question per need that a part and a section both do, with only the options the plan's facts leave. */
@@ -65,7 +77,10 @@ export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sket
   if (sketch.hasCountdown) {
     out.settled.push('clock.part')
     let options = clockOptions(sketch)
-    if (options !== null && timerMayTakeCountdown(plan)) {
+    // The interval timer is offered for work and rest in rounds, whoever sets the lengths; the plain timer only for one set length.
+    if (options !== null && !asksForRounds(prompt)) { options!.delete('interval_timer') }
+    if (options !== null && !timerMayTakeCountdown(plan)) { options!.delete('timer') }
+    if (options !== null && options!.size > 1) {
       questions['clock.part'] = choice('The app needs the countdown "' + sketch.countdown + '". Which of these does exactly that?', options!)
     }
   }
@@ -75,10 +90,24 @@ export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sket
     if (options !== null) {
       let allowed = listSectionsFor(plan)
       let narrowed: Map<string, string> = new Map<string, string>()
+      // "Logs a glass with one tap" is the one-tap log or the plain list, nothing else: asked among all of them, Jev took the
+      // list's typed form two times of three (Water reminder on the phone).
+      // Asked between the two, Jev still took the typed form, so the request's own words decide.
+      let oneTap = asksOneTap(prompt) && allowed.indexOf('quick_log') >= 0
       options!.forEach((describe: string, key: string) => { if (key === PART || allowed.indexOf(key) >= 0) { narrowed.set(key, describe) } })
-      if (narrowed.size > 1) {
+      if (oneTap) {
+        let says: Record<string, Object> = {}
+        says['type'] = 'choice'
+        says['choice'] = 'quick_log'
+        says['confidence'] = 1
+        out.forced['list.part'] = says
+        narrowed = new Map<string, string>([['quick_log', 'the request says one tap']])
+      } else if (narrowed.size > 1) {
         questions['list.part'] = choice('The person keeps ' + sketch.list!.label + '.' + listNeeds(sketch) + ' Which of these does exactly that?', narrowed)
       }
+      // Which sections were offered for the list and why the others were not: the plan's actions on an entry keep the part.
+      console.info('VERA-CHOOSE list "' + sketch.list!.label + '" offered=' + Array.from(narrowed.keys()).join(',') +
+        ' actions=' + plan.needs.filter((n: Need): boolean => n.type === NEED_ACTION).map((n: Need): string => n.on).join(','))
     }
   }
   if (sketch.ready.length > 0) {
@@ -356,6 +385,12 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     answers = body.length > 0 ? readChoices(body) : null
     // Without the choices the parts stay, and the composer asks what a section is for (ready.N, whose.N, real_data) itself.
     if (answers === null) { skipped = [] }
+  }
+  // What the request's words settled stands whether or not Jev answered the rest.
+  let forcedKeys = Object.keys(choose.forced)
+  if (forcedKeys.length > 0) {
+    if (answers === null) { answers = {}; skipped = forcedKeys.slice() }
+    for (let k of forcedKeys) { answers![k] = choose.forced[k] }
   }
   throwIfCancelled(cancellation)
   let composed = await composeFromSketch(result, prompt, sketch, askChoices, widget, answers, skipped, cancellation)

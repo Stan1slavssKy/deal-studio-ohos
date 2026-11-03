@@ -64,7 +64,7 @@ export function composePlanEnabled(): boolean { return planEnabled }
  * detail view, the readers of a log); and the intent panel, whose rows are a call of their own.
  */
 export const READY_KINDS: string[] = ['checklist', 'key_facts', 'trend_chart', 'spotlight', 'search_list', 'data_table', 'timeline',
-  'bar_chart', 'itinerary']
+  'bar_chart', 'itinerary', 'idea_deck']
 
 /** Something the plan cannot settle without the person: the answers, and the one the plan was drawn for. */
 export class SketchQuestion {
@@ -289,6 +289,10 @@ export function parseSketch(text: string): Sketch | null {
       // day (a wake time of 05:00 to 23:59 is 300 to 1439): it is the end at midnight that says so.
       let minutesOfTheDay = input.measure === 'minutes' && input.min < 1439 && input.max >= 1439 && input.max <= 1440
       if (input.kind === 'time' && isTime(input.measure) && !minutesOfTheDay) { input.kind = 'count' }
+      // A number the plan says is minutes since midnight ("Sleep starts", unit "minutes since midnight", 1320) is a time of day: typed as
+      // a number it read 1320 in a text field (Water reminder on the phone).
+      if ((input.kind === 'count' || input.kind === 'amount') && (/since midnight|time of day/i.test(input.unit + ' ' + input.label) || minutesOfTheDay) &&
+        input.value >= 0 && input.value < 1440) { input.kind = 'time' }
       // A time of day is minutes since midnight, whatever measure the sketch wrote.
       if (input.kind === 'time') {
         input.measure = 'clock'
@@ -1449,7 +1453,7 @@ export function clockOptions(sketch: Sketch): Map<string, string> | null {
   let out: Map<string, string> = new Map<string, string>()
   out.set(PART, 'the app builds its own countdown from the numbers on the screen: start, stop and reset, a length that follows what ' +
     'the person sets, and phone actions at its end')
-  for (let f of fragments()) { if (f.kind === 'timer') { out.set(f.kind, f.criteria) } }
+  for (let f of fragments()) { if (CLOCK_SECTIONS.indexOf(f.kind) >= 0) { out.set(f.kind, f.criteria) } }
   return out.size > 1 ? out : null
 }
 
@@ -1457,7 +1461,8 @@ export function clockOptions(sketch: Sketch): Map<string, string> | null {
 export function listOptions(sketch: Sketch): Map<string, string> | null {
   if (sketch.list === null) { return null }
   let out: Map<string, string> = new Map<string, string>()
-  out.set(PART, 'the app\'s own plain list: ' + describeList(sketch.list!) + '. The only figures it gives are how many entries there are ' +
+  out.set(PART, 'the app\'s own plain list: ' + describeList(sketch.list!) + '. Each entry is typed into a form of those fields and added ' +
+    'with an Add button. The only figures it gives are how many entries there are ' +
     'and the sum of one number field; it has no total for each person or category, no chart of them and no settling up of who owes whom')
   for (let f of fragments()) {
     if (LIST_SECTIONS.indexOf(f.kind) < 0) { continue }
@@ -1969,7 +1974,34 @@ export function canReplaceClock(comp: Composition): boolean {
   return !atEnd && !readsAny(comp, CLOCK_OPERANDS)
 }
 
-export function replaceClock(comp: Composition): void {
+/**
+ * Whether the countdown may be the interval timer: its lengths and rounds are the section's own settings, so the plan's lengths may be
+ * inputs; but nothing else on the screen may read the clock, and nothing but a buzz may happen as it ends (the section signals each
+ * change of phase itself).
+ */
+export function canTakeRounds(comp: Composition): boolean {
+  if (!comp.sketch.hasCountdown || comp.blocks.indexOf('interval_timer') >= 0) { return false }
+  let other = false
+  comp.moments.forEach((moment: string, id: string) => {
+    if (moment !== 'countdown_end') { return }
+    let effect = comp.effects.get(id) ?? ''
+    if (effect !== 'vibrate' && effect !== 'beep') { other = true }
+  })
+  return !other && !readsAny(comp, CLOCK_OPERANDS)
+}
+
+export function replaceClock(comp: Composition, kind: string = 'timer'): void {
+  if (kind !== 'timer') {
+    let need = comp.sketch.countdown
+    let numbers = planNumbers(comp.sketch)
+    comp.sketch = withoutClock(comp.sketch)
+    comp.countdownFrom = ''
+    comp.blocks.push(kind)
+    comp.replaced.push(new Replaced(kind, need, numbers.length > 0 ? 'starts from the plan\'s numbers: ' + numbers : ''))
+    comp.claimed.push(need)
+    comp.dropped.push('"' + need + '": a section does it, not a part')
+    return
+  }
   let need = comp.sketch.countdown
   // The length the plan fixed goes with the need: the section writes its own presets, and a countdown of two hours that the
   // section shows as fifteen minutes is not the countdown the request asked for.
@@ -2035,15 +2067,39 @@ export function canReplaceList(comp: Composition, kind: string): boolean {
   comp.args.forEach((given: Map<string, string>) => {
     given.forEach((source: string) => { if (source.startsWith('entry.')) { onEntry = true } })
   })
-  return !onEntry && (kind === 'record_log' || valuesOverEntries(comp).length === 0)
+  return !onEntry && (LIST_PUBLISHERS.indexOf(kind) >= 0 || valuesOverEntries(comp).length === 0)
 }
 
 /**
  * The section takes the list part's place. The values over the entries leave the plan as needs the catalogue is asked about
  * (AgentAlign.ets offers the readers of what the section publishes first), and a written section otherwise.
  */
+/**
+ * The plan's own numbers, in words, for a section that takes a part's place: the glass of 250 ml and the goal of 2000 ml a water
+ * plan set, the 15 minutes of focus and 5 of rest a homework plan set. Without them the section's content was written from the
+ * request alone and came out at its defaults (1 ml a tap, no goal: Water reminder on the phone).
+ */
+export function planNumbers(sketch: Sketch): string {
+  let out: string[] = []
+  for (let i of sketch.inputs) {
+    if (i.kind === 'text' || i.kind === 'toggle') { continue }
+    let value = i.kind === 'choice' ? (i.options[i.value] !== undefined ? i.options[i.value].label : '') :
+      (i.kind === 'time' || i.measure === 'clock' ? clockWords(i.value) : numberLiteral(i.value) + (i.unit.length > 0 ? ' ' + i.unit : ''))
+    if (value.length > 0) { out.push(i.label + ' ' + value) }
+  }
+  for (let k of sketch.constants) { out.push(k.label + ' ' + numberLiteral(k.value)) }
+  return out.join('; ')
+}
+
+function clockWords(minutes: number): string {
+  let h = Math.floor(minutes / 60) % 24
+  let m = Math.round(minutes % 60)
+  return (h < 10 ? '0' : '') + h.toString() + ':' + (m < 10 ? '0' : '') + m.toString()
+}
+
 export function replaceList(comp: Composition, kind: string): void {
   let need = comp.sketch.list!.label
+  let numbers = kind === 'record_log' ? '' : planNumbers(comp.sketch)
   let leaving = valuesOverEntries(comp)
   let gone: SketchValue[] = comp.sketch.values.filter((v: SketchValue): boolean => leaving.indexOf(v.id) >= 0)
   comp.sketch = withList(comp.sketch, null)
@@ -2051,11 +2107,14 @@ export function replaceList(comp: Composition, kind: string): void {
   for (let v of gone) {
     comp.bindings.delete(v.id)
     let shown = 'shows ' + v.label + (v.means.length > 0 ? ': ' + v.means : '')
-    if (customEnabled) { comp.custom.push(shown) } else { comp.unbound.push(shown) }
+    // A section that shows its own figures over the entries (today's total toward the goal, doses taken) is said to show this one,
+    // and the finished screen is read for it; one it does not show goes back to be written. Beside record_log the readers show it.
+    if (kind !== 'record_log') { comp.claimed.push(shown) }
+    else if (customEnabled) { comp.custom.push(shown) } else { comp.unbound.push(shown) }
     comp.dropped.push('value "' + v.label + '": left to what the section that keeps the entries publishes')
   }
   comp.blocks.push(kind)
-  comp.replaced.push(new Replaced(kind, need))
+  comp.replaced.push(new Replaced(kind, need, numbers.length > 0 ? 'starts from the plan\'s numbers: ' + numbers : ''))
   // Not a claim for the finished screen to be read against: the pick was a question about this very list, and reading the screen
   // for "keeps expenses" asks the same thing again (and wrote a section for what the log already does).
   comp.dropped.push('"' + need + '": a section does it, not a part')
@@ -2089,12 +2148,14 @@ export function readLogInCharts(comp: Composition): void {
  * section takes the part's place in the plan; what the person sets for it is the section's own.
  */
 function chooseSections(comp: Composition, answers: Record<string, Object>): void {
-  if (comp.sketch.hasCountdown && answerOf(answers, 'clock.part', ['timer'], comp.answers, READY_ABOVE) === 'timer' && canReplaceClock(comp)) {
-    replaceClock(comp)
-  }
+  let clock = comp.sketch.hasCountdown ? answerOf(answers, 'clock.part', CLOCK_SECTIONS, comp.answers, READY_ABOVE) : ''
+  if (clock === 'timer' && canReplaceClock(comp)) { replaceClock(comp) }
+  else if (clock === 'interval_timer' && canTakeRounds(comp)) { replaceClock(comp, 'interval_timer') }
   if (comp.sketch.list !== null) {
     let kind = answerOf(answers, 'list.part', LIST_SECTIONS, comp.answers, READY_ABOVE)
-    if (kind.length > 0 && canReplaceList(comp, kind)) { replaceList(comp, kind) }
+    let can = kind.length > 0 && canReplaceList(comp, kind)
+    console.info('VERA-CHOOSE list.part=' + (kind.length > 0 ? kind : 'part') + (kind.length > 0 && !can ? ' (refused: the part is wired to)' : ''))
+    if (can) { replaceList(comp, kind) }
   }
 }
 
@@ -2692,7 +2753,17 @@ export const READY_ABOVE: number = 0.5
 /** The option that is the composer's own part, in the questions that put a part and sections side by side. */
 export const PART: string = 'part'
 /** Sections that keep what the person enters, one entry at a time: the ones a list part may be replaced by. */
-export const LIST_SECTIONS: string[] = ['record_log', 'reminders']
+export const LIST_SECTIONS: string[] = ['record_log', 'reminders', 'quick_log', 'dose_schedule', 'due_items', 'points_ledger', 'reading_status']
+
+/**
+ * The sections that keep the person's entries and show their own figures over them (totals today, doses taken, items due soon,
+ * balances, the latest reading's status): beside them the figures a plan works out over the entries leave for what the section
+ * shows (replaceList). `reminders` shows none.
+ */
+export const LIST_PUBLISHERS: string[] = ['record_log', 'quick_log', 'dose_schedule', 'due_items', 'points_ledger', 'reading_status']
+
+/** The sections a countdown may be: one countdown of a set time, or work and rest in rounds. */
+export const CLOCK_SECTIONS: string[] = ['timer', 'interval_timer']
 /** The bar the catalogue gives its own needs_real_data question (VeraTemplates.vetoes). */
 const REAL_DATA_ABOVE: number = 0.35
 /** Made-up records in place of the person's own mislead; any lean toward "own" refuses the section. Not tuned. */

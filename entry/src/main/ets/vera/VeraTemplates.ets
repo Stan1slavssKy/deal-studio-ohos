@@ -368,7 +368,8 @@ function checklistFragment(): FragmentSpec {
   return new FragmentSpec(
     'checklist',
     'A browsable list of items the person can check off or mark one at a time, with no time of day for each; it is not a deck of ' +
-    'cards to flip, a quiz or a game, and places to visit on a day out or a trip are an itinerary, not this',
+    'cards to flip, a quiz or a game, nor ideas or suggestions to pick one from (that is idea_deck), nor care tips to read, and ' +
+    'places to visit on a day out or a trip are an itinerary, not this',
     `@jsonable
 class Item {
   label: string;
