@@ -134,6 +134,11 @@ export class ListField {
   decimals: number = -1
   /** The form's starting value: minutes since midnight for a time, 1 for an on/off that starts on. */
   value: number = 0
+  /**
+   * A number the request itself gives for this field ("a fever of 37.5°C"): the list starts with one entry holding it, so the
+   * figures that read the entries show it at once instead of "No reading yet". NaN when the request names none.
+   */
+  seed: number = NaN
 }
 
 /** Entries the person adds through a form of up to four fields (none: one entry per tap), each stamped with the minute it was added. */
@@ -228,7 +233,7 @@ function usableId(raw: string, seen: string[]): string {
 /** Names the assembled program uses for itself; an input or value may not take them. */
 const RESERVED_IDS: string[] = ['state', 'value', 'elapsedMs', 'running', 'finished', 'effectStatus', 'remaining',
   'elapsed', 'duration', 'view', 'init', 'ui', 'math', 'strings', 'sdk', 'time', 'entries', 'entryCount', 'entryTotal',
-  'draftText', 'draftNumberText', 'entry', 'out', 'rows', 'i', 'e', 'emptyEntries', 'total', 'next', 'startAt',
+  'draftText', 'draftNumberText', 'entry', 'out', 'rows', 'i', 'e', 'emptyEntries', 'firstEntries', 'total', 'next', 'startAt',
   'effectNote', 'share', 'countdownSeconds', 'addEntry', 'removeEntry', 'ignored', 'onEntryAnswer', 'answered', 'marked',
   'note', 'sub', 'undoRemove', 'expireUndo', 'removedEntries', 'removedAt', 'gone', 'none']
 
@@ -3617,7 +3622,25 @@ function listPart(comp: Composition, list: SketchList, fields: Field[]): Fragmen
     if (form.length > 0) { view.push('sections.push(ui.Section("content", "", "", [' + form.join(', ') + ']));') }
     view.push('sections.push(ui.Section("content", "", "", [' + listNodes.join(', ') + ']));')
   }
-  let spec = part('list', entryFields(list), functions, view, fn(entryClass), '  let emptyEntries: LogEntry[] = [];')
+  let init = '  let emptyEntries: LogEntry[] = [];'
+  let fieldsInit = entryFields(list)
+  if (list.fields.some((f: ListField): boolean => !isNaN(f.seed))) {
+    // The entry the request names: its number, the rest as an empty form would leave them, stamped now.
+    let seeded: string[] = []
+    for (let f of list.fields) {
+      if (!isNaN(f.seed)) { seeded.push(f.id + ': ' + numberLiteral(f.seed)) }
+      else if (f.kind === 'text') { seeded.push(f.id + ': ""') }
+      else if (f.kind === 'toggle') { seeded.push(f.id + ': ' + (f.value !== 0 ? 'true' : 'false')) }
+      else if (f.kind === 'time') { seeded.push(f.id + ': time.hourOfDay() * 60 + time.minuteOfHour()') }
+      else if (f.kind === 'date') { seeded.push(f.id + ': time.daysSinceEpoch()') }
+      else { seeded.push(f.id + ': 0') }
+    }
+    seeded.push('minute: time.hourOfDay() * 60 + time.minuteOfHour()')
+    if (answering.length > 0) { seeded.push('status: ""') }
+    init += '\n  let firstEntries: LogEntry[] = [{' + seeded.join(', ') + '}];'
+    fieldsInit = fieldsInit.map((f: Field): Field => f.name === 'entries' ? new Field('entries', 'LogEntry[]', 'firstEntries') : f)
+  }
+  let spec = part('list', fieldsInit, functions, view, fn(entryClass), init)
   spec.ports.push(new PortSpec('writes', 'entries', 'LogEntry[]', 'entries'))
   spec.ports.push(new PortSpec('writes', 'count', 'number', 'state.entries.length()', '', true))
   return spec

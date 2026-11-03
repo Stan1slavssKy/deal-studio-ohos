@@ -98,7 +98,10 @@ const DECLINE_RULE: string = '- When some of the needs cannot be done but others
   'that cannot, <cannot need="the need, copied exactly">' + CANNOT_FORM + '</cannot> beside it. Answer a bare <cannot> only when none can be done.\n' +
   '- A need declined has no button or row that claims to do it. If the section offers the nearest thing instead (an event in the ' +
   'phone calendar for a notification it cannot send), its button says that thing ("Add to calendar"), and the <cannot> sentence ' +
-  'says what is offered instead. A notice saying it cannot beside a button named for the same thing reads as broken.\n'
+  'says what is offered instead. A notice saying it cannot beside a button named for the same thing reads as broken.\n' +
+  '- A need the section does in its own way is done, not declined: guidance written out as rows is the care card or tips card ' +
+  'asked for, a list is a "card", a field the person fills in is a setting. <cannot need> is only for what the person does not get ' +
+  'at all on this screen, never for how it looks.\n'
 
 /** The rule for phone calls: none, or only the targets the phone's lookups found. */
 function phoneRule(phone: string): string {

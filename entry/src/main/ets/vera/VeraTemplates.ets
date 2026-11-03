@@ -2157,10 +2157,15 @@ function onOpenedIDX(state: AppState, value: string): AppState {
       if (limit < 0 || at + s.minutes <= limit) {
         endsAt = at + s.minutes;
         let icon: string = "pin";
-        if (s.done) { icon = "check"; }
+        let rowStyle: string = "default";
+        let reachedText: string = "";
+        if (s.done) { icon = "check"; rowStyle = "success"; reachedText = "Reached"; }
         let subtitle: string = ui.clockToString(at) + " - " + ui.clockToString(at + s.minutes) + " | " + ui.numberToString(s.minutes) + " min";
-        rows.push(ui.ListItem("default", s.name, subtitle, "", "toggleStopIDX", j, true, icon));
-        let buttons: ui.View[] = [];
+        rows.push(ui.ListItem(rowStyle, s.name, subtitle, reachedText, "toggleStopIDX", j, true, icon));
+        // Marking a stop reached is what Navigate starts from: a tap on the row did it, but nothing said so (Istanbul layover).
+        let reachStyle: string = "secondary";
+        if (s.done) { reachStyle = "success"; }
+        let buttons: ui.View[] = [ui.IconButton(reachStyle, "check", "Mark reached", "toggleStopIDX", j, true)];
         if (showCal) {
           let calText: string = "Add to calendar";
           if (s.eventId !== "") { calText = "In calendar"; }

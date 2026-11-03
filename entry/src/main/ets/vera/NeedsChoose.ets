@@ -9,7 +9,7 @@
  * Jev does not give leaves the part.
  */
 
-import { Sketch, SketchInput, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
+import { Sketch, SketchInput, ListField, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
   listNeeds, clockOptions, listOptions, choice, askReady, LIST_SECTIONS, PART } from './VeraCompose'
 import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
   needOf } from './NeedsPlan'
@@ -145,6 +145,56 @@ export function startOnRequested(sketch: Sketch, prompt: string): string {
   return input.label + ' starts at ' + value.toString()
 }
 
+/** The unit a number in the request or a field's unit or label is in, as one key; '' when none is recognised. */
+export function unitKey(text: string): string {
+  let t = text.toLowerCase()
+  if (/°\s*c\b|℃|celsius|\bdegrees?\b|temperature|\btemp\b/.test(t)) { return 'celsius' }
+  if (/°\s*f\b|fahrenheit/.test(t)) { return 'fahrenheit' }
+  if (/\bml\b|millilit/.test(t)) { return 'ml' }
+  if (/\bkg\b|kilo(gram)?s?\b/.test(t)) { return 'kg' }
+  if (/\bkm\b|kilomet/.test(t)) { return 'km' }
+  if (/\bbpm\b|heart rate|pulse/.test(t)) { return 'bpm' }
+  if (/mmhg|blood pressure/.test(t)) { return 'mmhg' }
+  if (/mmol|blood sugar|glucose/.test(t)) { return 'mmol' }
+  return ''
+}
+
+/** Every number the request names with a unit, as [value, unit key] pairs, each pair once. */
+export function requestedMeasures(prompt: string): [number, string][] {
+  let found: [number, string][] = []
+  let pattern = /(\d+(?:[.,]\d+)?)\s*(°\s*[cf]\b|℃|degrees?(?:\s+(?:celsius|fahrenheit))?|ml\b|millilit\w*|kg\b|km\b|bpm\b|mmhg\b|mmol\S*)/gi
+  let m = pattern.exec(prompt)
+  while (m !== null) {
+    let value = parseFloat(m[1].replace(',', '.'))
+    let unit = unitKey(m[2])
+    if (unit.length > 0 && !found.some((p: [number, string]): boolean => p[0] === value && p[1] === unit)) { found.push([value, unit]) }
+    m = pattern.exec(prompt)
+  }
+  return found
+}
+
+/**
+ * A request that states a reading the person has now ("my baby has a fever of 37.5°C") starts the list of readings with it,
+ * when the list has exactly one number field in that unit and the request names exactly one number in it. Without it the
+ * screen said "No reading yet" under a request that gave the reading. Returns what was done, in words; '' when nothing.
+ */
+export function seedFromRequest(sketch: Sketch, prompt: string): string {
+  if (sketch.list === null) { return '' }
+  let measures = requestedMeasures(prompt)
+  if (measures.length === 0) { return '' }
+  let done: string[] = []
+  for (let unit of measures.map((p: [number, string]): string => p[1]).filter((u: string, i: number, a: string[]): boolean => a.indexOf(u) === i)) {
+    let values = measures.filter((p: [number, string]): boolean => p[1] === unit)
+    if (values.length !== 1) { continue }
+    let fields = sketch.list!.fields.filter((f: ListField): boolean => f.kind === 'number' &&
+      (unitKey(f.unit) === unit || (f.unit.length === 0 && unitKey(f.label) === unit)))
+    if (fields.length !== 1) { continue }
+    fields[0].seed = values[0][0]
+    done.push(fields[0].label + ' starts with ' + values[0][0].toString())
+  }
+  return done.join('; ')
+}
+
 class DrawnPlan {
   text: string = ''
   plan: NeedsPlan | null = null
@@ -251,6 +301,8 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     if (redone !== null) { redone!.questions = sketch.questions; sketch = redone! }
   }
   let startedOn = startOnRequested(sketch, prompt)
+  let seeded = seedFromRequest(sketch, prompt)
+  if (seeded.length > 0) { startedOn = startedOn.length > 0 ? startedOn + '; ' + seeded : seeded }
   let choose = buildChooseRequest(prompt, plan, sketch)
   let answers: Record<string, Object> | null = null
   let skipped: string[] = choose.settled
