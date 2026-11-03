@@ -9,6 +9,7 @@ import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED } from '../ScreenPlan'
 import { PartsContract } from '../VeraCompose'
+import { withoutRepeatedButtons } from './AgentClaims'
 import { NOTICE_SPLIT, NOTICE_INSTEAD_TITLE } from '../ScreenPlan'
 
 const OUTCOME_WRITTEN: string = 'written'
@@ -197,6 +198,8 @@ function settle(plan: ScreenPlan, prompt: string, slots: PlanSlot[], asked: Cust
   record.lookup = asked.phone
   host.onHole(record)
   if (written.section !== null) {
+    // What the rest of the screen already has a button for is not drawn twice, whatever the writer was told.
+    written.section.viewBlock = withoutRepeatedButtons(written.section.viewBlock, assemblePlan(plan, true))
     plan.components.push(new PlanComponent(FILL_HOLE, written.section, new Map<string, string>()))
     let at = plan.components.length - 1
     let missed = slots.filter((s: PlanSlot): boolean => written.missed.indexOf(s.need) >= 0)
