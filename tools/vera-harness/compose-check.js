@@ -739,7 +739,8 @@ console.log('compose-check: ok')
   const withSection = asked(new Map([['ready.0', 'itinerary']]))
   assert.match(withSection, /the section already has: the start time of the day/)
   assert.doesNotMatch(asked(new Map()), /the section already has/, 'no section chosen: nothing to say of it')
-  assert.doesNotMatch(asked(new Map([['ready.0', 'checklist']])), /the section already has/, 'a block with no `owns` adds nothing')
+  assert.doesNotMatch(asked(new Map([['ready.0', 'master_list']])), /the section already has/, 'a block with no `owns` adds nothing')
+  assert.match(asked(new Map([['ready.0', 'checklist']])), /the section already has: its list of items/, 'SECTION_OWNS fills the catalogue\'s own')
 }
 console.log('compose: a chosen section says what it holds')
 

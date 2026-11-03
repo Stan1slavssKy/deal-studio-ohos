@@ -163,11 +163,15 @@ export function assemblePlan(plan: ScreenPlan, partial: boolean = false): string
     specs.push(notices[0])
     values.push(new Map<string, string>())
   }
+  // The folded settings (VeraCompose.ets's settingsPart) go under every section: what the screen is for comes first.
+  let settings: PlanComponent[] = []
   for (let c of plan.components) {
     if (c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') { continue }
+    if (c.spec !== null && c.spec!.kind === SETTINGS_PART) { settings.push(c); continue }
     specs.push(c.spec)
     values.push(c.values)
   }
+  for (let c of settings) { specs.push(c.spec); values.push(c.values) }
   if (insteads.length > 0) {
     specs.push(insteads.length > 1 ? oneNotice(insteads, 'info') : insteads[0])
     values.push(new Map<string, string>())
@@ -180,6 +184,9 @@ export const NOTICE_SPLIT: string = '\u0001'
 
 /** The title of a notice that says what the screen does instead (agent/AgentHole.ets's NOTICE_INSTEAD; kept here to avoid a cycle). */
 export const NOTICE_INSTEAD_TITLE: string = 'Done differently'
+
+/** The kind of the composer's folded settings part (VeraCompose.ets's SETTINGS_KIND; kept here to avoid a cycle). */
+export const SETTINGS_PART: string = 'settings'
 
 /** The notices of a screen as one banner: their common title, or a general one, and each one's words on a line of its own. */
 function oneNotice(notices: FragmentSpec[], icon: string = 'warning'): FragmentSpec {

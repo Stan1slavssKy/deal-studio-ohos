@@ -385,7 +385,10 @@ export async function writeSection(request: CustomRequest, language: string, ask
   let asked = 'Request: ' + request.prompt + '\n\nThe section must do:\n- ' + request.needs.join('\n- ') +
     (request.inputs.length > 0 ? '\n\nThe person sets these on the screen and nothing else uses them yet; the section uses them:\n- ' +
       request.inputs.join('\n- ') : '') +
-    (request.parts.length > 0 ? '\n\nThe program already has these: use them, do not make your own:\n- ' + request.parts.join('\n- ') : '') +
+    (request.parts.length > 0 ? '\n\nThe program already has these: use them, do not make your own:\n- ' + request.parts.join('\n- ') +
+      '\n\nNothing they show is shown again: no second list, total, chart, Remove last or Start over button. While what the section ' +
+      'works from is still empty, it shows one plain line saying what will appear and when, never a ui.EmptyState: the list above ' +
+      'already has one (two empty states one under the other read as a broken screen).' : '') +
     (request.facts.length > 0 ? '\n\nFixed numbers the app uses:\n- ' + request.facts.join('\n- ') : '') +
     (phone.length > 0 ? '\n\nPhone functions found (the only targets the section may call):\n' + phone : '') +
     (request.whole ? '\n\nThe program has nothing yet but its header: your section is the whole screen, everything the request ' +

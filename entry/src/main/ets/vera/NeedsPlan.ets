@@ -68,12 +68,13 @@ export const NEEDS_PROMPT: string =
   '{"title": short app title, "eyebrow": 1-3 word label in capitals, "subtitle": one short line,\n' +
   ' "inputs": [{"id": camelCase, "label": shown label, "kind": "amount" | "percent" | "count" | "choice" | "toggle" | "text" | "time",\n' +
   '   "measure": "money" | "percent" | "count" | "seconds" | "minutes" | "number", "min": number, "max": number, "value": starting number, "unit": the currency or unit the request uses, or "",\n' +
+  '   "setting": true for a value set once and rarely changed afterwards (a goal, a threshold, a size, a gap, sleep hours) that the request does not state, else leave it out,\n' +
   '   "options": only for choice: [{"label": shown text, "value": the number the option stands for, such as a length of time}];\n' +
   '   a choice\'s own "value" is the index of the starting option}],\n' +
   ' "constants": [{"id": camelCase, "label": what it is, "value": number, "measure": as for inputs}],\n' +
   ' "needs": [one object for each thing the app shows or does beyond inputs and constants, in the order the screen shows them, each of one type:\n' +
   '   {"type": "figure", "id": camelCase, "label": shown label, "means": what the number is, in plain words,\n' +
-  '    "format": "money" | "percent" | "count" | "seconds" | "minutes" | "time_of_day" | "fraction" | "plain", "unit": as for inputs,\n' +
+  '    "format": "money" | "percent" | "count" | "seconds" | "minutes" | "time_of_day" | "fraction" | "yes_no" (a condition, 1 for yes and 0 for no) | "plain", "unit": as for inputs,\n' +
   '    "decimals": for a plain number, how many digits after the point to show, 0 to 6, only when one digit would lose what matters,\n' +
   '    "shown": false for every figure that only feeds another figure and is not what the request names, however informative it looks; otherwise leave it out,\n' +
   '    "formula": how it is worked out, as an expression over the ids of inputs, constants, the figures before it and the quantities below,\n' +

@@ -196,6 +196,26 @@ export function seedFromRequest(sketch: Sketch, prompt: string): string {
   return done.join('; ')
 }
 
+/** Labels of inputs that are settings by their words: a goal, a limit, a size, a gap, quiet or sleep hours, a warning level. */
+const SETTING_WORDS: RegExp = /\b(threshold|goal|target|limit|size|gap|between|buffer|margin|warn|alert|soon|asleep|sleep|awake|wake|quiet|reminder interval|every)\b/i
+
+/**
+ * Marks the inputs that are settings: those the plan says are, or whose label says so, unless the request states their value (then
+ * they are what the request is about: "12 hours before my flight"). Returns the labels marked, for the note.
+ */
+export function markSettings(sketch: Sketch, prompt: string): string[] {
+  let marked: string[] = []
+  let numbers = (prompt.match(/\d+(?:[.,:]\d+)?/g) ?? []).map((n: string): number => parseFloat(n.replace(',', '.').replace(':', '.')))
+  for (let input of sketch.inputs) {
+    let byWords = SETTING_WORDS.test(input.label) && input.kind !== 'text' && input.kind !== 'choice'
+    if (!input.setting && !byWords) { continue }
+    let stated = numbers.some((n: number): boolean => n === input.value) && input.value !== 0
+    input.setting = !stated
+    if (input.setting) { marked.push(input.label) }
+  }
+  return marked
+}
+
 class DrawnPlan {
   text: string = ''
   plan: NeedsPlan | null = null
@@ -316,6 +336,7 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     if (redone !== null) { redone!.questions = sketch.questions; sketch = redone! }
   }
   let startedOn = startOnRequested(sketch, prompt)
+  markSettings(sketch, prompt)
   let seeded = seedFromRequest(sketch, prompt)
   if (seeded.length > 0) { startedOn = startedOn.length > 0 ? startedOn + '; ' + seeded : seeded }
   let choose = buildChooseRequest(prompt, plan, sketch)

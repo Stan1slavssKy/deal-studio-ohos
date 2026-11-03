@@ -90,6 +90,11 @@ export class SketchInput {
   /** money, percent, count, seconds, minutes or number: what the input measures, for unit-checked formulas. */
   measure: string = 'number'
   options: SketchOption[] = []
+  /**
+   * Set once and rarely changed (a goal, a threshold, a glass size, hours of sleep), not what the person works with each time:
+   * drawn folded under Settings at the foot of the screen (settingsPart), not above what the screen is for. See markSettings.
+   */
+  setting: boolean = false
 }
 
 export class SketchValue {
@@ -107,6 +112,11 @@ export class SketchValue {
   result: number = NaN
   /** A step toward another figure that the request does not ask to see: worked out, not shown. */
   hidden: boolean = false
+  /**
+   * A yes or a no worked out as 1 or 0 ("currentTemp >= threshold ? 1 : 0", or the plan's format "yes_no"): shown as Yes or No.
+   * As a number it read "Fever level 0" (Baby fever).
+   */
+  yesNo: boolean = false
 }
 
 export class SketchEvent {
@@ -269,6 +279,7 @@ export function parseSketch(text: string): Sketch | null {
       input.max = num(r, 'max', 100)
       input.value = num(r, 'value', input.min)
       input.unit = str(r, 'unit', '')
+      input.setting = r['setting'] === true
       input.measure = str(r, 'measure', input.kind === 'percent' ? 'percent' : (input.kind === 'count' ? 'count' : 'number'))
       if (MEASURES.indexOf(input.measure) < 0 || input.measure === 'clock') { input.measure = 'number' }
       if (input.measure === 'money') { input.unit = currencySign(input.unit) }
@@ -399,6 +410,8 @@ export function parseSketch(text: string): Sketch | null {
       value.label = str(r, 'label', value.id)
       value.means = str(r, 'means', value.label)
       value.format = str(r, 'format', 'plain')
+      value.yesNo = value.format === 'yes_no' || isYesNoFormula(str(r, 'formula', ''))
+      if (value.format === 'yes_no') { value.format = 'plain' }
       // "time_of_day" is the internal clock format; a sketch's own "clock" more often means a length of time.
       if (value.format === 'time_of_day') { value.format = 'clock' }
       else if (value.format === 'clock' || VALUE_FORMATS.indexOf(value.format) < 0) { value.format = 'plain' }
@@ -1889,6 +1902,7 @@ function planWorked(v: SketchValue): string {
 }
 
 function figureShown(v: SketchValue): string {
+  if (v.yesNo) { return ' (a yes or a no worked out as 1 or 0: show it as Yes or No, or as words that say which, never as the number)' }
   if (v.format === 'clock') { return ' (a time of day: show it as hh:mm, never as the number of minutes since midnight)' }
   if (v.format === 'minutes') { return ' (a length of time in minutes: show it as minutes, or as hours and minutes)' }
   if (v.format === 'seconds') { return ' (a length of time in seconds: show it as m:ss)' }
@@ -2128,7 +2142,9 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
   for (let input of sketch.inputs) {
     let allowed: string[] = []
     for (let w of WIDGETS) { if (w.kinds.indexOf(input.kind) >= 0) { allowed.push(w.id) } }
-    let picked = allowed.length === 1 ? allowed[0] : answerOf(answers, 'widget.' + input.id, allowed, comp.answers)
+    let ruled = countWidget(input)
+    let picked = ruled.length > 0 ? ruled :
+      (allowed.length === 1 ? allowed[0] : answerOf(answers, 'widget.' + input.id, allowed, comp.answers))
     comp.widgets.set(input.id, picked.length > 0 ? picked : allowed[0])
   }
 
@@ -2425,6 +2441,15 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   // brings it back, still bound).
   for (let id of shownBySection.concat(itinerary)) {
     if (!failed.has(id) && leaving.indexOf(id) < 0) { leaving.push(id); sections.push(id) }
+  }
+  // The same figure twice -- the same formula over the same names, drawn the same way -- is shown once: the plan named "goal
+  // progress" and "progress" for one fraction and both came out as bars (Water reminder).
+  let seen: string[] = []
+  for (let v of sketch.values) {
+    let b = comp.bindings.get(v.id)
+    if (b === undefined || failed.has(v.id) || leaving.indexOf(v.id) >= 0 || v.hidden) { continue }
+    let key = [b.formula, b.a, b.b, b.expr, b.scale, b.show].join('|')
+    if (seen.indexOf(key) >= 0) { leaving.push(v.id) } else { seen.push(key) }
   }
   let covering: string[] = []
   for (let i = 0; i < sketch.other.length; i++) {
@@ -2993,7 +3018,16 @@ function durationText(measure: string, expr: string): string {
   return 'ui.durationToString(math.ceil(' + expr + (measure === 'minutes' ? ' * 60' : '') + '))'
 }
 
+/** A formula whose answer is a yes or a no: a condition giving 1 or 0 (or 0 or 1). */
+export function isYesNoFormula(formula: string): boolean {
+  return /\?\s*(1|0)\s*:\s*(0|1)\s*\)?\s*$/.test(formula.trim()) && !/\?\s*(1|0)\s*:\s*\1\s*\)?\s*$/.test(formula.trim())
+}
+
+/** Yes or No for a figure that is a yes or a no, as the text a stat or a row shows. */
+function yesNoText(expr: string): string { return '((' + expr + ') !== 0 ? "Yes" : "No")' }
+
 function statFor(v: SketchValue, expr: string): string {
+  if (v.yesNo) { return 'ui.Stat("default", ' + quote(v.label) + ', ' + yesNoText(expr) + ', "", "check")' }
   if (isTime(v.format) || v.format === 'clock') {
     return 'ui.Stat("default", ' + quote(v.label) + ', ' + amountText(v.format, v.unit, expr) + ', "", "clock")'
   }
@@ -3005,6 +3039,7 @@ function statFor(v: SketchValue, expr: string): string {
 
 /** One row of the figures' table: the label, and the number at the right edge as a stat would show it. */
 function figureRow(v: SketchValue, expr: string): string {
+  if (v.yesNo) { return 'ui.ListItem("default", ' + quote(v.label) + ', "", ' + yesNoText(expr) + ', "", 0, true, "")' }
   if (isTime(v.format) || v.format === 'clock') {
     return 'ui.ListItem("default", ' + quote(v.label) + ', "", ' + amountText(v.format, v.unit, expr) + ', "", 0, false, "")'
   }
@@ -3016,6 +3051,7 @@ function figureRow(v: SketchValue, expr: string): string {
 }
 
 function heroText(v: SketchValue, expr: string): string {
+  if (v.yesNo) { return yesNoText(expr) }
   if (isTime(v.format) || v.format === 'clock') { return amountText(v.format, v.unit, expr) }
   if (v.format === 'money') { return quote(v.unit) + ' + ui.formatNumber(' + expr + ', 2)' }
   if (v.format === 'percent') { return 'ui.formatNumber(' + expr + ', 1) + "%"' }
@@ -3310,6 +3346,41 @@ function heroPart(comp: Composition, figs: Figures): FragmentSpec {
 }
 
 /** What the person sets once for the whole screen: one control and one setter per input. A new countdown length restarts the countdown. */
+/** The controls inputsPart leaves for settingsPart: the settings, folded at the foot of the screen. */
+let settingControls: string[] = []
+
+/**
+ * The inputs drawn folded under Settings: those marked as settings, when the screen has something else to show above them -- a list,
+ * a clock, a figure or a section of the catalogue. A screen of inputs alone keeps them where they are: they are all it has.
+ */
+export function foldedSettings(comp: Composition): string[] {
+  if (comp.widget) { return [] }
+  let settings = comp.inputs.filter((i: SketchInput): boolean => i.setting)
+  if (settings.length === 0) { return [] }
+  let other = comp.sketch.list !== null || hasClock(comp.sketch) || comp.blocks.length > 0 ||
+    comp.sketch.values.some((v: SketchValue): boolean => !v.hidden) ||
+    comp.inputs.some((i: SketchInput): boolean => !i.setting)
+  return other ? settings.map((i: SketchInput): string => i.id) : []
+}
+
+/** The settings, folded under one row at the foot of the screen; a tap shows them. Drawn after every section (ScreenPlan's assemblePlan). */
+function settingsPart(): FragmentSpec | null {
+  if (settingControls.length === 0) { return null }
+  let functions: string[] = [fn(['function toggleSettings(state: AppState, ignored: number): AppState {',
+    '  return {settingsOpen: !state.settingsOpen__PASSTHROUGH__};', '}'])]
+  let count = settingControls.length.toString() + (settingControls.length === 1 ? ' setting' : ' settings')
+  let view: string[] = ['{',
+    '  let settingsWord: string = "Show";',
+    '  if (state.settingsOpen) { settingsWord = "Hide"; }',
+    '  sections.push(ui.Section("supporting", "", "", [',
+    '    ui.ListItem("default", "Settings", ' + quote(count) + ', settingsWord, "toggleSettings", 0, true, ""),',
+    '    ui.When(state.settingsOpen, ui.Column("default", [' + settingControls.join(', ') + ']))',
+    '  ]));',
+    '}']
+  let spec = part(SETTINGS_KIND, [new Field('settingsOpen', 'boolean', 'false')], functions, view)
+  return spec
+}
+
 function inputsPart(comp: Composition, fields: Field[]): FragmentSpec {
   let sketch = comp.sketch
   let functions: string[] = []
@@ -3350,11 +3421,14 @@ function inputsPart(comp: Composition, fields: Field[]): FragmentSpec {
     }
   }
   let view: string[] = []
+  let folded = foldedSettings(comp)
+  let main = controls.filter((_c: string, i: number): boolean => folded.indexOf(comp.inputs[i].id) < 0)
   if (comp.widget) {
     for (let c of controls) { view.push('sets.push(' + c + ');') }
-  } else if (controls.length > 0) {
-    view.push('sections.push(ui.Section("content", "", "", [' + controls.join(', ') + ']));')
+  } else if (main.length > 0) {
+    view.push('sections.push(ui.Section("content", "", "", [' + main.join(', ') + ']));')
   }
+  settingControls = controls.filter((_c: string, i: number): boolean => folded.indexOf(comp.inputs[i].id) >= 0)
   let spec = part('inputs', inputFields(comp), functions, view)
   // What the person sets, under the input's id, for a section that reads it: a switch, typed words, a number. A choice is its
   // option's index, and typed digits are text, so neither is a number under that name.
@@ -3750,8 +3824,14 @@ export function compositionParts(comp: Composition): FragmentSpec[] {
   let screen = part('screen', [], [], view)
   screen.tab = 'Overview'
   parts.push(screen)
+  let settings = settingsPart()
+  settingControls = []
+  if (settings !== null) { parts.push(settings) }
   return parts
 }
+
+/** The kind of the part that holds the folded settings: drawn last on the screen. */
+export const SETTINGS_KIND: string = 'settings'
 
 /** Text as it goes between the quotes of a string literal. */
 function inQuotes(s: string): string {
@@ -4016,6 +4096,17 @@ export function partCount(comp: Composition): number { return compositionParts(c
 
 
 // ---- Pictures before the program is ready ----
+
+/**
+ * A whole number is set the same way every time, not as Jev happens to answer: - and + for a short range of whole numbers, typed for a
+ * long one (2000 ml in steps of one) or one with a fraction. The same "hours until the flight" was a stepper in one run and a text
+ * field in the next (Istanbul and Shanghai layover). '' leaves it to the choice.
+ */
+export function countWidget(input: SketchInput): string {
+  if (input.kind !== 'count') { return '' }
+  let whole = Number.isInteger(input.value) && Number.isInteger(input.min) && Number.isInteger(input.max)
+  return whole && input.max - input.min <= 100 ? 'stepper' : 'typed_number'
+}
 
 /** The widget each kind gets when nobody has chosen yet. */
 function defaultWidget(kind: string): string {

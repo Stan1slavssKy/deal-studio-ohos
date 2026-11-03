@@ -946,7 +946,9 @@ export class DeepSeekEngine {
     let startedAt = Date.now()
     try {
       let soFar = ''
-      let turn = await this.streamOnce(messages, 0, thinking ? 6000 : 1500, (token: string): void => {
+      // A plan of fourteen figures (Shared costs: each friend's total and balance) runs past 1500 tokens and was cut off three times
+      // over, the thinking try spending all of its 6000 on reasoning; the limit is a ceiling, not a cost.
+      let turn = await this.streamOnce(messages, 0, thinking ? 12000 : 3000, (token: string): void => {
         if (isCancelled(this.operationCancellation)) { return }
         soFar += token
         onText(soFar)

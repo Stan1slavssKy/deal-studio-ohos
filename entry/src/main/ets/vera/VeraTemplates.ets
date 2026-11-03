@@ -2020,10 +2020,9 @@ function onOpenedIDX(state: AppState, value: string): AppState {
       j = j + 1;
     }
     let ownStartIDX: boolean = __PORT_start__ < 0;
-    sections.push(ui.Section("content", "", "", [
-      ui.When(ownStartIDX, ui.TimeField("default", "Day starts", state.startMinIDX, "setStartIDX")),
-      ui.NumberField("default", "Minutes between stops", state.gapIDX, 0, 180, "setGapIDX")
-    ]));
+    // The day's start is what the person sets first; the minutes between stops are a setting, under the stops (Istanbul layover:
+    // they stood above the plan itself).
+    if (ownStartIDX) { sections.push(ui.Section("content", "", "", [ui.TimeField("default", "Day starts", state.startMinIDX, "setStartIDX")])); }
     let emptyText: string = "Nothing is planned yet.";
     if (limit >= 0 && count > 0) { emptyText = "Nothing fits before " + ui.clockToString(limit) + "."; }
     sections.push(ui.Section("content", "", "", [
@@ -2057,7 +2056,8 @@ function onOpenedIDX(state: AppState, value: string): AppState {
         ui.Button("danger", "Wipe added events", "wipeEventsIDX", 0, true)
       ]));
     }
-    if (notes.length() > 0) { sections.push(ui.Section("supporting", "", "", notes)); }
+    notes.push(ui.NumberField("default", "Minutes between stops", state.gapIDX, 0, 180, "setGapIDX"));
+    sections.push(ui.Section("supporting", "", "", notes));
   }`,
     [new SlotSpec('__NAVIGATE_IDX__', ['false', 'true'], 'noul', 'Should each stop have a button that opens it in the maps app for directions?', navigate, 0.6,
       ['navigate']),
@@ -2345,8 +2345,40 @@ function barChartFragment(): FragmentSpec {
  * two specifically are safe to hardcode and navigation is not. `actions`/`progress_goal`/
  * `key_facts`/`note`/`rating`/`spotlight` round out the generic, SDK-free side of the palette.
  */
+/**
+ * What each section already shows and the buttons it already has, for a section the model writes beside it (VeraCompose.ets's
+ * partsContract) and for the question whether something left to write is already on the screen. Without it a written section
+ * drew a second "Start over" and "Remove last" under record_log's, a second list of the same ideas under a checklist, and a
+ * second "paid so far" beside the breakdown table (Shared costs, Wind down).
+ */
+const SECTION_OWNS: Map<string, string> = new Map<string, string>([
+  ['checklist', 'its list of items with how many are done, each ticked by a tap'],
+  ['metrics', 'a few summary numbers and its two buttons'],
+  ['timer', 'the countdown or stopwatch with its time left, its Start/Pause and Reset buttons, its presets and what happens when it ends'],
+  ['calendar_event', 'one event with its Add to calendar button and the calendar\'s answer'],
+  ['actions', 'its row of quick buttons and which was tapped last'],
+  ['progress_goal', 'the progress bar toward the goal, the goal itself, its Add progress and Reset buttons'],
+  ['key_facts', 'its labelled facts'],
+  ['trend_chart', 'the line chart of the series'],
+  ['note', 'the note the person types'],
+  ['rating', 'the 1 to 10 slider and its readout'],
+  ['spotlight', 'its highlighted callout'],
+  ['search_list', 'its list of items and the box that narrows it'],
+  ['record_log', 'the form that adds a record (who or what category, the amount, a note) with its Add button, the list of records newest ' +
+    'first with Remove on each, a Remove last button and a Start over button that clears them all, and an empty state while there are none'],
+  ['number_strip', 'the total of the records, the average or equal share and how many records there are'],
+  ['breakdown_table', 'one row per person or category with the total each has put in and how far each is above or below the average (the balance)'],
+  ['series_chart', 'the bar chart of each person\'s or category\'s total'],
+  ['settle_up', 'who pays whom how much to settle up, or that everyone is even'],
+  ['progress_line', 'how many of the list\'s items are done, as a line and a bar'],
+  ['list_summary', 'how many items are done, how many there are and how many are left'],
+  ['data_table', 'its table of rows and three columns'],
+  ['timeline', 'its steps in time order, each with its time'],
+  ['bar_chart', 'its bar chart of the categories']
+])
+
 export function fragments(): FragmentSpec[] {
-  return [
+  let all: FragmentSpec[] = [
     checklistFragment(), metricsFragment(), timerFragment(), calendarEventFragment(),
     actionsFragment(), progressGoalFragment(), keyFactsFragment(), trendChartFragment(),
     noteFragment(), ratingFragment(), spotlightFragment(),
@@ -2356,6 +2388,8 @@ export function fragments(): FragmentSpec[] {
     recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
     itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment()
   ]
+  for (let f of all) { if (f.owns.length === 0 && SECTION_OWNS.has(f.kind)) { f.owns = SECTION_OWNS.get(f.kind)! } }
+  return all
 }
 
 /**
