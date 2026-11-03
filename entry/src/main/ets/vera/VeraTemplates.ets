@@ -2505,6 +2505,584 @@ function barChartFragment(): FragmentSpec {
  * `key_facts`/`note`/`rating`/`spotlight` round out the generic, SDK-free side of the palette.
  */
 /**
+ * Ideas to pick one from right now: one featured at a time with Another and Done, filtered by how long it takes and by its level,
+ * the rest of the matching ideas under it. Written for the request, like a checklist's items, but nothing is ticked off a list:
+ * the person wants one thing to do (Wind down: a checklist of eight ideas read "0 of 8 done - tap one to tick it").
+ */
+function ideaDeckFragment(): FragmentSpec {
+  let spec = new FragmentSpec(
+    'idea_deck',
+    'Ideas or suggestions to pick ONE from right now -- something to do in bed, a dinner to cook, a game for the kids, a date idea, ' +
+    'a break activity -- shown one at a time with Another and Done, filtered by how long each takes and by its level (energy, effort). ' +
+    'Not a to-do list or shopping list to tick off (that is checklist), not facts to read (key_facts), not a plan of the day in time order',
+    `@jsonable
+class Idea {
+  title: string;
+  minutes: number;
+  level: string;
+  how: string;
+  doneDay: number;
+}`,
+    [new StateFieldSpec('ideasIDX', 'Idea[]'), new StateFieldSpec('atIDX', 'number'), new StateFieldSpec('timeIDX', 'number'),
+     new StateFieldSpec('levelIDX', 'number')],
+    `  let ideasIDX: Idea[] = [
+    __IDEAS_IDX__
+  ];`,
+    `ideasIDX: ideasIDX, atIDX: 0, timeIDX: 0, levelIDX: 0`,
+    `function rebuildIdeasIDX(state: AppState, ideas: Idea[], at: number, timePick: number, levelPick: number): AppState {
+  return {ideasIDX: ideas, atIDX: at, timeIDX: timePick, levelIDX: levelPick__PASSTHROUGH__};
+}
+
+function levelsIDX(state: AppState): string[] {
+  let out: string[] = [];
+  for (let it: Idea of state.ideasIDX) {
+    let seen: boolean = false;
+    for (let l: string of out) { if (l === it.level) { seen = true; } }
+    if (!seen && it.level.length() > 0) { out.push(it.level); }
+  }
+  return out;
+}
+
+function timeLimitIDX(pick: number): number {
+  if (pick === 1) { return 5; }
+  if (pick === 2) { return 15; }
+  if (pick === 3) { return 30; }
+  return 100000;
+}
+
+function fitsIDX(state: AppState, timePick: number, levelPick: number, index: number): boolean {
+  if (index < 0 || index >= state.ideasIDX.length()) { return false; }
+  let it: Idea = state.ideasIDX[index];
+  if (it.minutes > timeLimitIDX(timePick)) { return false; }
+  let levels: string[] = levelsIDX(state);
+  if (levelPick > 0 && levelPick <= levels.length()) {
+    if (it.level !== levels[levelPick - 1]) { return false; }
+  }
+  return true;
+}
+
+function nextFitIDX(state: AppState, timePick: number, levelPick: number, startAt: number): number {
+  let n: number = state.ideasIDX.length();
+  if (n === 0) { return -1; }
+  let start: number = startAt;
+  if (start < 0) { start = 0; }
+  let k: number = 0;
+  while (k < n) {
+    let i: number = (start + k) % n;
+    if (fitsIDX(state, timePick, levelPick, i)) { return i; }
+    k = k + 1;
+  }
+  return -1;
+}
+
+function doneTodayIDX(state: AppState): number {
+  let today: number = time.daysSinceEpoch();
+  let n: number = 0;
+  for (let it: Idea of state.ideasIDX) { if (it.doneDay === today) { n = n + 1; } }
+  return n;
+}
+
+function anotherIdeaIDX(state: AppState, ignored: number): AppState {
+  let next: number = nextFitIDX(state, state.timeIDX, state.levelIDX, state.atIDX + 1);
+  return rebuildIdeasIDX(state, state.ideasIDX, next, state.timeIDX, state.levelIDX);
+}
+
+function doneIdeaIDX(state: AppState, ignored: number): AppState {
+  if (!fitsIDX(state, state.timeIDX, state.levelIDX, state.atIDX)) { return state; }
+  let today: number = time.daysSinceEpoch();
+  let out: Idea[] = [];
+  let i: number = 0;
+  while (i < state.ideasIDX.length()) {
+    let it: Idea = state.ideasIDX[i];
+    if (i === state.atIDX) {
+      out.push({title: it.title, minutes: it.minutes, level: it.level, how: it.how, doneDay: today});
+    } else {
+      out.push(it);
+    }
+    i = i + 1;
+  }
+  let marked: AppState = rebuildIdeasIDX(state, out, state.atIDX, state.timeIDX, state.levelIDX);
+  let n: number = out.length();
+  let k: number = 1;
+  while (k < n) {
+    let j: number = (state.atIDX + k) % n;
+    if (fitsIDX(marked, state.timeIDX, state.levelIDX, j) && out[j].doneDay !== today) {
+      return rebuildIdeasIDX(state, out, j, state.timeIDX, state.levelIDX);
+    }
+    k = k + 1;
+  }
+  return rebuildIdeasIDX(state, out, nextFitIDX(marked, state.timeIDX, state.levelIDX, state.atIDX + 1), state.timeIDX, state.levelIDX);
+}
+
+function pickIdeaIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.ideasIDX.length()) { return state; }
+  return rebuildIdeasIDX(state, state.ideasIDX, index, state.timeIDX, state.levelIDX);
+}
+
+function setIdeaTimeIDX(state: AppState, index: number): AppState {
+  let at: number = state.atIDX;
+  if (!fitsIDX(state, index, state.levelIDX, at)) { at = nextFitIDX(state, index, state.levelIDX, 0); }
+  return rebuildIdeasIDX(state, state.ideasIDX, at, index, state.levelIDX);
+}
+
+function setIdeaLevelIDX(state: AppState, index: number): AppState {
+  let at: number = state.atIDX;
+  if (!fitsIDX(state, state.timeIDX, index, at)) { at = nextFitIDX(state, state.timeIDX, index, 0); }
+  return rebuildIdeasIDX(state, state.ideasIDX, at, state.timeIDX, index);
+}`,
+    `{
+    let today: number = time.daysSinceEpoch();
+    let levels: string[] = levelsIDX(state);
+    let levelNames: string[] = ["Any"];
+    for (let l: string of levels) { levelNames.push(l); }
+    let at: number = state.atIDX;
+    if (!fitsIDX(state, state.timeIDX, state.levelIDX, at)) { at = nextFitIDX(state, state.timeIDX, state.levelIDX, 0); }
+    if (at >= 0) {
+      let it: Idea = state.ideasIDX[at];
+      let meta: string = ui.numberToString(it.minutes) + " min";
+      if (it.level.length() > 0) { meta = meta + " · " + it.level; }
+      if (it.doneDay === today) { meta = meta + " · done today"; }
+      let featured: ui.View[] = [];
+      featured.push(ui.Text("caption", "__DECK_LABEL_IDX__"));
+      featured.push(ui.Text("title", it.title));
+      featured.push(ui.Text("muted", meta));
+      if (it.how.length() > 0) { featured.push(ui.Text("body", it.how)); }
+      featured.push(ui.ActionBar("end", [
+        ui.Button("secondary", "Another", "anotherIdeaIDX", 0, true),
+        ui.Button("primary", "Done", "doneIdeaIDX", 0, it.doneDay !== today)
+      ]));
+      sections.push(ui.Section("hero", "", "", [ui.Card("accent", featured)]));
+    } else {
+      sections.push(ui.Section("content", "", "", [
+        ui.EmptyState("default", "Nothing fits", "Try any time or any level.", "", "", "info")
+      ]));
+    }
+    let filters: ui.View[] = [
+      ui.Select("default", "Time", ["Any time", "Up to 5 min", "Up to 15 min", "Up to 30 min"], state.timeIDX, "setIdeaTimeIDX")
+    ];
+    if (levels.length() > 1) {
+      filters.push(ui.Select("default", "__LEVEL_LABEL_IDX__", levelNames, state.levelIDX, "setIdeaLevelIDX"));
+    }
+    sections.push(ui.Section("content", "", "", filters));
+    let rows: ui.View[] = [];
+    let i: number = 0;
+    while (i < state.ideasIDX.length()) {
+      if (i !== at && fitsIDX(state, state.timeIDX, state.levelIDX, i)) {
+        let it2: Idea = state.ideasIDX[i];
+        let sub: string = ui.numberToString(it2.minutes) + " min";
+        if (it2.level.length() > 0) { sub = sub + " · " + it2.level; }
+        let icon: string = "";
+        if (it2.doneDay === today) { icon = "check"; }
+        rows.push(ui.ListItem("default", it2.title, sub, "", "pickIdeaIDX", i, true, icon));
+      }
+      i = i + 1;
+    }
+    let done: number = doneTodayIDX(state);
+    let doneLine: string = "";
+    if (done > 0) { doneLine = ui.numberToString(done) + " done today"; }
+    if (rows.length() > 0) {
+      sections.push(ui.Section("content", "More ideas", doneLine, [ui.ListGroup("default", "", rows)]));
+    } else {
+      if (done > 0) { sections.push(ui.Section("supporting", "", "", [ui.Text("muted", doneLine)])); }
+    }
+  }`,
+    [],
+    [new ContentFieldSpec('__DECK_LABEL_IDX__', 'deck_label', 'Try this', 'Short line over the featured idea (1-3 words, such as Try this now)', 24),
+     new ContentFieldSpec('__LEVEL_LABEL_IDX__', 'level_label', 'Level', 'What the level of an idea measures (1-2 words, such as Energy or Effort)', 16)],
+    ['import * as time from "std/time"'],
+    [new ListFieldSpec('__IDEAS_IDX__', 'ideas',
+      'The ideas to pick from (6 to 12), fitting the request: each with a short title, how many minutes it takes, its level in one ' +
+      'lower-case word used the same way across the ideas (low, medium, high energy; or easy, medium, hard), and one line on how to do it',
+      ['title of the idea (2-5 words)', 'minutes it takes, a whole number', 'level, one lower-case word', 'how to do it, one short line'],
+      [32, 4, 12, 90],
+      '{title: "{0}", minutes: {1}, level: "{2}", how: "{3}", doneDay: -1}', ',\n    ', 6, 12,
+      [['Read a few pages', '10', 'low', 'Pick a light book and stop at the end of a chapter.'],
+       ['Slow breathing', '3', 'low', 'Breathe in for four, out for six, ten times.'],
+       ['Stretch your neck', '5', 'low', 'Roll your shoulders, then tilt your head side to side.'],
+       ['Tidy one drawer', '15', 'medium', 'Empty it, keep what you use, put the rest away.'],
+       ['Write a short list', '5', 'low', 'Three things to do tomorrow, nothing more.'],
+       ['Short walk', '20', 'high', 'Round the block at an easy pace.']],
+      [1])],
+    [new PortSpec('writes', 'done_today', 'number', 'doneTodayIDX(state)', '', true)]
+  )
+  spec.tab = 'Ideas'
+  return spec
+}
+
+/**
+ * Work and rest in cycles: a focus block, a break, the next round, until the rounds are done. Ticks the way `timer` does (a
+ * ui.Ticker of one second handing the elapsed milliseconds to onTick), moves on from one phase to the next by itself and
+ * vibrates at each change when the slot says so. The lengths and the number of rounds come from the request and stay settable
+ * at the foot of the section. Not a single countdown: that is `timer`.
+ */
+function intervalTimerFragment(): FragmentSpec {
+  let signal: Map<string, string> = new Map<string, string>()
+  signal.set('true', 'yes, the phone vibrates briefly when a block or a break ends')
+  signal.set('false', 'no, the change only shows on the screen')
+  let spec = new FragmentSpec(
+    'interval_timer',
+    'Work and rest in cycles that run on by themselves: pomodoro, homework split into focus blocks with breaks between, interval ' +
+    'training (work 30 seconds, rest 10, eight rounds); shows the time left in the block, which block it is and the round, and moves ' +
+    'from focus to break to the next round on its own. Not a single countdown or stopwatch (that is timer)',
+    '',
+    [new StateFieldSpec('workSecIDX', 'number'), new StateFieldSpec('restSecIDX', 'number'), new StateFieldSpec('roundsIDX', 'number'),
+     new StateFieldSpec('roundIDX', 'number'), new StateFieldSpec('phaseIDX', 'number'), new StateFieldSpec('phaseMsIDX', 'number'),
+     new StateFieldSpec('runningIDX', 'boolean'), new StateFieldSpec('focusMsIDX', 'number'), new StateFieldSpec('inSecondsIDX', 'boolean')],
+    `  let workSecIDX: number = __WORK_SECONDS_IDX__;
+  if (workSecIDX < 5 || workSecIDX > 14400) { workSecIDX = 1500; }
+  let restSecIDX: number = __REST_SECONDS_IDX__;
+  if (restSecIDX < 0 || restSecIDX > 7200) { restSecIDX = 300; }
+  let roundsIDX: number = __ROUNDS_IDX__;
+  if (roundsIDX < 1 || roundsIDX > 50) { roundsIDX = 4; }
+  let inSecondsIDX: boolean = workSecIDX < 120;`,
+    `workSecIDX: workSecIDX, restSecIDX: restSecIDX, roundsIDX: roundsIDX, roundIDX: 1, phaseIDX: 0, phaseMsIDX: 0, runningIDX: false, focusMsIDX: 0, inSecondsIDX: inSecondsIDX`,
+    `function rebuildCycleIDX(state: AppState, round: number, phase: number, phaseMs: number, running: boolean, focusMs: number): AppState {
+  return {workSecIDX: state.workSecIDX, restSecIDX: state.restSecIDX, roundsIDX: state.roundsIDX, roundIDX: round, phaseIDX: phase, phaseMsIDX: phaseMs, runningIDX: running, focusMsIDX: focusMs, inSecondsIDX: state.inSecondsIDX__PASSTHROUGH__};
+}
+
+function phaseLimitMsIDX(state: AppState, phase: number): number {
+  if (phase === 0) { return state.workSecIDX * 1000; }
+  if (phase === 1) { return state.restSecIDX * 1000; }
+  return 0;
+}
+
+function signalIDX(): number {
+  if (__SIGNAL_IDX__) { sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "800"], "onSignalAnsweredIDX"); }
+  return 0;
+}
+
+function onSignalAnsweredIDX(state: AppState, value: string): AppState {
+  return state;
+}
+
+function nextPhaseIDX(state: AppState, focusMs: number, running: boolean): AppState {
+  if (state.phaseIDX === 0) {
+    if (state.roundIDX >= state.roundsIDX) { return rebuildCycleIDX(state, state.roundIDX, 2, 0, false, focusMs); }
+    if (state.restSecIDX <= 0) { return rebuildCycleIDX(state, state.roundIDX + 1, 0, 0, running, focusMs); }
+    return rebuildCycleIDX(state, state.roundIDX, 1, 0, running, focusMs);
+  }
+  if (state.phaseIDX === 1) { return rebuildCycleIDX(state, state.roundIDX + 1, 0, 0, running, focusMs); }
+  return state;
+}
+
+function onCycleTickIDX(state: AppState, elapsedMs: number): AppState {
+  if (!state.runningIDX || state.phaseIDX === 2) { return state; }
+  let limit: number = phaseLimitMsIDX(state, state.phaseIDX);
+  let next: number = state.phaseMsIDX + elapsedMs;
+  let focus: number = state.focusMsIDX;
+  if (next >= limit) {
+    if (state.phaseIDX === 0) { focus = focus + (limit - state.phaseMsIDX); }
+    let ignored: number = signalIDX();
+    return nextPhaseIDX(state, focus, true);
+  }
+  if (state.phaseIDX === 0) { focus = focus + elapsedMs; }
+  return rebuildCycleIDX(state, state.roundIDX, state.phaseIDX, next, true, focus);
+}
+
+function toggleCycleIDX(state: AppState, ignored: number): AppState {
+  if (state.phaseIDX === 2) { return rebuildCycleIDX(state, 1, 0, 0, true, 0); }
+  return rebuildCycleIDX(state, state.roundIDX, state.phaseIDX, state.phaseMsIDX, !state.runningIDX, state.focusMsIDX);
+}
+
+function skipPhaseIDX(state: AppState, ignored: number): AppState {
+  if (state.phaseIDX === 2) { return state; }
+  return nextPhaseIDX(state, state.focusMsIDX, state.runningIDX);
+}
+
+function resetCycleIDX(state: AppState, ignored: number): AppState {
+  return rebuildCycleIDX(state, 1, 0, 0, false, 0);
+}
+
+function setWorkIDX(state: AppState, value: number): AppState {
+  let seconds: number = value * 60;
+  if (state.inSecondsIDX) { seconds = value; }
+  if (seconds < 5) { seconds = 5; }
+  return {workSecIDX: seconds, phaseMsIDX: 0__PASSTHROUGH__};
+}
+
+function setRestIDX(state: AppState, value: number): AppState {
+  let seconds: number = value * 60;
+  if (state.inSecondsIDX) { seconds = value; }
+  if (seconds < 0) { seconds = 0; }
+  return {restSecIDX: seconds, phaseMsIDX: 0__PASSTHROUGH__};
+}
+
+function setRoundsIDX(state: AppState, value: number): AppState {
+  let rounds: number = value;
+  if (rounds < 1) { rounds = 1; }
+  let round: number = state.roundIDX;
+  if (round > rounds) { round = rounds; }
+  return {roundsIDX: rounds, roundIDX: round__PASSTHROUGH__};
+}
+
+function focusSecondsIDX(state: AppState): number {
+  return math.floor(state.focusMsIDX / 1000);
+}`,
+    `{
+    let phase: number = state.phaseIDX;
+    let limitSec: number = phaseLimitMsIDX(state, phase) / 1000;
+    let leftSec: number = math.ceil(limitSec - state.phaseMsIDX / 1000);
+    if (leftSec < 0) { leftSec = 0; }
+    let clock: ui.View[] = [];
+    clock.push(ui.Ticker("default", "cycleIDX", 1000, state.runningIDX && phase !== 2, "onCycleTickIDX"));
+    if (phase === 2) {
+      clock.push(ui.Badge("success", "All rounds done", "check"));
+      clock.push(ui.Text("display", ui.durationToString(focusSecondsIDX(state))));
+      clock.push(ui.Text("muted", "__WORK_LABEL_IDX__ time over " + ui.numberToString(state.roundsIDX) + " rounds"));
+    } else {
+      let label: string = "__WORK_LABEL_IDX__";
+      let tone: string = "accent";
+      if (phase === 1) { label = "__REST_LABEL_IDX__"; tone = "success"; }
+      clock.push(ui.Badge(tone, label, "clock"));
+      clock.push(ui.Text("display", ui.durationToString(leftSec)));
+      clock.push(ui.Progress(tone, "Round " + ui.numberToString(state.roundIDX) + " of " + ui.numberToString(state.roundsIDX), state.phaseMsIDX / 1000, limitSec));
+    }
+    sections.push(ui.Section("hero", "", "", clock));
+    let startText: string = "Start";
+    if (state.runningIDX) { startText = "Pause"; }
+    if (!state.runningIDX && phase !== 2 && (state.phaseMsIDX > 0 || state.roundIDX > 1 || phase === 1)) { startText = "Resume"; }
+    if (phase === 2) { startText = "Start again"; }
+    sections.push(ui.Section("content", "", "", [ui.ActionBar("spread", [
+      ui.Button("secondary", "Reset", "resetCycleIDX", 0, state.phaseMsIDX > 0 || state.roundIDX > 1 || phase !== 0),
+      ui.Button("secondary", "Skip", "skipPhaseIDX", 0, phase !== 2),
+      ui.Button("primary", startText, "toggleCycleIDX", 0, true)
+    ])]));
+    let unit: string = "minutes";
+    let workShown: number = math.round(state.workSecIDX / 60);
+    let restShown: number = math.round(state.restSecIDX / 60);
+    if (state.inSecondsIDX) { unit = "seconds"; workShown = state.workSecIDX; restShown = state.restSecIDX; }
+    sections.push(ui.Section("supporting", "", "", [
+      ui.NumberField("default", "__WORK_LABEL_IDX__ (" + unit + ")", workShown, 1, 240, "setWorkIDX"),
+      ui.NumberField("default", "__REST_LABEL_IDX__ (" + unit + ")", restShown, 0, 120, "setRestIDX"),
+      ui.NumberField("default", "Rounds", state.roundsIDX, 1, 50, "setRoundsIDX")
+    ]));
+  }`,
+    [new SlotSpec('__SIGNAL_IDX__', ['true', 'false'], 'choice',
+      'Should the phone vibrate when a focus block or a break ends?', signal)],
+    [new ContentFieldSpec('__WORK_SECONDS_IDX__', 'work_seconds', '1500', 'Length of one focus or work block in seconds, a whole number (15 minutes is 900)', 6, true),
+     new ContentFieldSpec('__REST_SECONDS_IDX__', 'rest_seconds', '300', 'Length of one break or rest in seconds, a whole number (5 minutes is 300; 0 for none)', 6, true),
+     new ContentFieldSpec('__ROUNDS_IDX__', 'rounds', '4', 'How many rounds of work and rest, a whole number (1 to 50)', 3, true),
+     new ContentFieldSpec('__WORK_LABEL_IDX__', 'work_label', 'Focus', 'Name of the work block (one word, such as Focus, Work or Run)', 12),
+     new ContentFieldSpec('__REST_LABEL_IDX__', 'rest_label', 'Break', 'Name of the rest block (one word, such as Break or Rest)', 12)],
+    ['import * as sdk from "std/sdk"', 'import * as math from "std/math"'],
+    [],
+    [new PortSpec('writes', 'round', 'number', 'state.roundIDX', '', true),
+     new PortSpec('writes', 'focus_seconds_done', 'number', 'focusSecondsIDX(state)', '', true)]
+  )
+  spec.tab = 'Timer'
+  return spec
+}
+
+/**
+ * Readings taken now and again, each read against bands written for the request: the latest is shown large with what it means and
+ * what to do, the readings make a line, and the list keeps them newest first. A reading the request itself gives ("a fever of
+ * 37.5") is the first one, so the status shows at once (Baby fever: "No reading yet" under a request that gave it).
+ */
+function readingStatusFragment(): FragmentSpec {
+  let spec = new FragmentSpec(
+    'reading_status',
+    'A measurement the person takes now and again -- a baby\'s temperature, blood pressure, blood sugar, weight, a pulse -- each ' +
+    'added with its time, the latest shown large with what it means (normal, watch, see a doctor) and what to do, from bands written ' +
+    'for the request, and a line of the readings over time. Not money or expenses (record_log), not counting taps or glasses, not a ' +
+    'reminder list',
+    `@jsonable
+class Reading {
+  value: number;
+  minute: number;
+  day: number;
+  note: string;
+}
+
+@jsonable
+class Band {
+  upTo: number;
+  label: string;
+  tone: string;
+  advice: string;
+}`,
+    [new StateFieldSpec('readingsIDX', 'Reading[]'), new StateFieldSpec('bandsIDX', 'Band[]'),
+     new StateFieldSpec('draftIDX', 'string'), new StateFieldSpec('draftNoteIDX', 'string')],
+    `  let bandsIDX: Band[] = [
+    __BANDS_IDX__
+  ];
+  let readingsIDX: Reading[] = [];
+  let firstIDX: number = strings.toNumber("__FIRST_READING_IDX__", -999999);
+  if (firstIDX > -999999) {
+    readingsIDX.push({value: firstIDX, minute: time.hourOfDay() * 60 + time.minuteOfHour(), day: time.daysSinceEpoch(), note: ""});
+  }`,
+    `readingsIDX: readingsIDX, bandsIDX: bandsIDX, draftIDX: "", draftNoteIDX: ""`,
+    `function setReadingDraftIDX(state: AppState, value: string): AppState {
+  return {draftIDX: value__PASSTHROUGH__};
+}
+
+function setReadingNoteIDX(state: AppState, value: string): AppState {
+  return {draftNoteIDX: value__PASSTHROUGH__};
+}
+
+function addReadingIDX(state: AppState, ignored: number): AppState {
+  let value: number = strings.toNumber(strings.trim(state.draftIDX), -999999);
+  if (value <= -999999) { return state; }
+  let out: Reading[] = [];
+  for (let r: Reading of state.readingsIDX) { out.push(r); }
+  out.push({value: value, minute: time.hourOfDay() * 60 + time.minuteOfHour(), day: time.daysSinceEpoch(), note: strings.trim(state.draftNoteIDX)});
+  return {readingsIDX: out, draftIDX: "", draftNoteIDX: ""__PASSTHROUGH__};
+}
+
+function removeReadingIDX(state: AppState, index: number): AppState {
+  let out: Reading[] = [];
+  let i: number = 0;
+  while (i < state.readingsIDX.length()) {
+    if (i !== index) { out.push(state.readingsIDX[i]); }
+    i = i + 1;
+  }
+  return {readingsIDX: out__PASSTHROUGH__};
+}
+
+function bandAtIDX(state: AppState, value: number): number {
+  let n: number = state.bandsIDX.length();
+  if (n === 0) { return -1; }
+  let i: number = 0;
+  while (i < n - 1) {
+    if (value < state.bandsIDX[i].upTo) { return i; }
+    i = i + 1;
+  }
+  return n - 1;
+}
+
+function toneOfIDX(tone: string): string {
+  if (tone === "success" || tone === "warning" || tone === "danger") { return tone; }
+  return "default";
+}
+
+function latestIDX(state: AppState): number {
+  let n: number = state.readingsIDX.length();
+  if (n === 0) { return 0; }
+  return state.readingsIDX[n - 1].value;
+}
+
+function statusLevelIDX(state: AppState): number {
+  let n: number = state.readingsIDX.length();
+  if (n === 0) { return 0; }
+  let b: number = bandAtIDX(state, state.readingsIDX[n - 1].value);
+  if (b < 0) { return 0; }
+  let tone: string = state.bandsIDX[b].tone;
+  if (tone === "danger") { return 2; }
+  if (tone === "warning") { return 1; }
+  return 0;
+}
+
+function readingTextIDX(value: number): string {
+  return ui.formatNumber(value, __DECIMALS_IDX__) + "__UNIT_SUFFIX_IDX__";
+}`,
+    `{
+    let n: number = state.readingsIDX.length();
+    let today: number = time.daysSinceEpoch();
+    if (n > 0) {
+      let last: Reading = state.readingsIDX[n - 1];
+      let b: number = bandAtIDX(state, last.value);
+      let card: ui.View[] = [ui.Text("caption", "__READING_LABEL_IDX__ at " + ui.clockToString(last.minute))];
+      card.push(ui.Text("display", readingTextIDX(last.value)));
+      let cardTone: string = "surface";
+      if (b >= 0) {
+        let band: Band = state.bandsIDX[b];
+        let tone: string = toneOfIDX(band.tone);
+        if (tone !== "default") { cardTone = tone; }
+        card.push(ui.Badge(tone, band.label, ""));
+        if (band.advice.length() > 0) { card.push(ui.Text("body", band.advice)); }
+      }
+      sections.push(ui.Section("hero", "", "", [ui.Card(cardTone, card)]));
+    }
+    let typed: number = strings.toNumber(strings.trim(state.draftIDX), -999999);
+    sections.push(ui.Section("content", "Add a reading", "", [
+      ui.TextField("default", "__READING_LABEL_IDX__ (__UNIT_IDX__)", state.draftIDX, "setReadingDraftIDX", "number"),
+      ui.TextField("default", "Note", state.draftNoteIDX, "setReadingNoteIDX"),
+      ui.ActionBar("end", [ui.Button("primary", "Add", "addReadingIDX", 0, typed > -999999)])
+    ]));
+    if (n >= 2) {
+      let series: number[] = [];
+      let times: string[] = [];
+      let start: number = 0;
+      if (n > 24) { start = n - 24; }
+      let i: number = start;
+      let top: number = state.readingsIDX[start].value;
+      let bottom: number = top;
+      while (i < n) {
+        let r: Reading = state.readingsIDX[i];
+        series.push(r.value);
+        times.push(ui.clockToString(r.minute));
+        if (r.value > top) { top = r.value; }
+        if (r.value < bottom) { bottom = r.value; }
+        i = i + 1;
+      }
+      let span: number = top - bottom;
+      if (span < 1) { span = 1; }
+      sections.push(ui.Section("content", "", "", [
+        ui.Sparkline("accent", series, top + span / 4, "__READING_LABEL_IDX__", false, [], "default", "", "", times, bottom - span / 4)
+      ]));
+    }
+    let rows: ui.View[] = [];
+    let k: number = n - 1;
+    while (k >= 0) {
+      let r2: Reading = state.readingsIDX[k];
+      let b2: number = bandAtIDX(state, r2.value);
+      let label: string = "";
+      let tone2: string = "default";
+      if (b2 >= 0) { label = state.bandsIDX[b2].label; tone2 = toneOfIDX(state.bandsIDX[b2].tone); }
+      let when: string = ui.clockToString(r2.minute);
+      if (r2.day !== today) { when = ui.dateToString(r2.day) + " " + when; }
+      if (r2.note.length() > 0) { when = when + " · " + r2.note; }
+      rows.push(ui.ListItem(tone2, readingTextIDX(r2.value), when, label, "", k, true, ""));
+      rows.push(ui.ActionBar("end", [ui.IconButton("quiet", "trash", "Remove this reading", "removeReadingIDX", k, true)]));
+      k = k - 1;
+    }
+    let guide: ui.View[] = [];
+    let j: number = 0;
+    let nb: number = state.bandsIDX.length();
+    while (j < nb) {
+      let band2: Band = state.bandsIDX[j];
+      let range: string = "Under " + readingTextIDX(band2.upTo);
+      if (j === nb - 1) {
+        range = "Any";
+        if (j > 0) { range = readingTextIDX(state.bandsIDX[j - 1].upTo) + " or more"; }
+      } else {
+        if (j > 0) { range = readingTextIDX(state.bandsIDX[j - 1].upTo) + " to " + readingTextIDX(band2.upTo); }
+      }
+      guide.push(ui.ListItem(toneOfIDX(band2.tone), band2.label, band2.advice, range, "", j, true, ""));
+      j = j + 1;
+    }
+    if (n > 0) {
+      sections.push(ui.Section("content", "Readings", "Newest first", [ui.ListGroup("default", "", rows)]));
+    } else {
+      sections.push(ui.Section("content", "", "", [ui.Text("muted", "Add a reading to see what it means.")]));
+    }
+    if (nb > 0) { sections.push(ui.Section("supporting", "What the numbers mean", "", [ui.ListGroup("compact", "", guide)])); }
+  }`,
+    [],
+    [new ContentFieldSpec('__READING_LABEL_IDX__', 'reading_label', 'Reading', 'What is measured (1-2 words, such as Temperature or Weight)', 20),
+     new ContentFieldSpec('__UNIT_IDX__', 'unit', 'units', 'Its unit as the request writes it (such as °C, kg, mmol/L, bpm)', 10),
+     new ContentFieldSpec('__UNIT_SUFFIX_IDX__', 'unit_suffix', '', 'The same unit as it follows a number, starting with a space (" °C", " kg", " bpm")', 10),
+     new ContentFieldSpec('__DECIMALS_IDX__', 'decimals', '1', 'Digits after the point a reading is shown with, 0 to 2 (a temperature 1, a weight 1, a pulse 0)', 1, true),
+     new ContentFieldSpec('__FIRST_READING_IDX__', 'first_reading', '', 'The reading the request itself states (such as 37.5), as a plain number, or an empty string when it states none', 10)],
+    ['import * as strings from "std/strings"', 'import * as time from "std/time"'],
+    [new ListFieldSpec('__BANDS_IDX__', 'bands',
+      'What a reading means, as 2 to 4 bands from low to high: for each, the number it stays under (the last band has no upper bound: give 0), ' +
+      'a short label, a tone (success for fine, warning for watch it, danger for act now) and one line on what to do. Use the thresholds ' +
+      'a doctor or the request would give; include a band for low values only when low values matter',
+      ['upper bound, a plain number (0 for the last band)', 'label (1-3 words)', 'tone: success, warning or danger', 'what to do, one short line'],
+      [8, 24, 8, 90],
+      '{upTo: {0}, label: "{1}", tone: "{2}", advice: "{3}"}', ',\n    ', 2, 4,
+      [['38', 'Normal', 'success', 'Keep an eye on it.'], ['39', 'Fever', 'warning', 'Fluids, light clothes, check again in an hour.'],
+       ['0', 'High fever', 'danger', 'Call a doctor.']],
+      [], ['number', '', '', ''])],
+    [new PortSpec('writes', 'latest', 'number', 'latestIDX(state)', '', true),
+     new PortSpec('writes', 'status_level', 'number', 'statusLevelIDX(state)', '', true),
+     new PortSpec('writes', 'count', 'number', 'state.readingsIDX.length()', '', true)]
+  )
+  spec.tab = 'Readings'
+  return spec
+}
+
+/**
  * What each section already shows and the buttons it already has, for a section the model writes beside it (VeraCompose.ets's
  * partsContract) and for the question whether something left to write is already on the screen. Without it a written section
  * drew a second "Start over" and "Remove last" under record_log's, a second list of the same ideas under a checklist, and a
@@ -2534,7 +3112,13 @@ const SECTION_OWNS: Map<string, string> = new Map<string, string>([
   ['list_summary', 'how many items are done, how many there are and how many are left'],
   ['data_table', 'its table of rows and three columns'],
   ['timeline', 'its steps in time order, each with its time'],
-  ['bar_chart', 'its bar chart of the categories']
+  ['bar_chart', 'its bar chart of the categories'],
+  ['idea_deck', 'one idea featured at a time with its Another and Done buttons, filters by time and level, the other matching ideas ' +
+    'and how many were done today'],
+  ['interval_timer', 'the time left in the focus block or break, which block it is, the round of how many, its Start/Pause, Skip and ' +
+    'Reset buttons, the lengths and number of rounds as settings, and the focus time when all rounds are done'],
+  ['reading_status', 'the form that adds a reading with its Add button, the latest reading large with what it means and what to do, a ' +
+    'line chart of the readings, the readings newest first with a remove button on each, and what each range of numbers means']
 ])
 
 export function fragments(): FragmentSpec[] {
@@ -2546,7 +3130,8 @@ export function fragments(): FragmentSpec[] {
     barChartFragment(),
     masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
     recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
-    itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment(), liveFactsFragment()
+    itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment(), liveFactsFragment(),
+    ideaDeckFragment(), intervalTimerFragment(), readingStatusFragment()
   ]
   for (let f of all) { if (f.owns.length === 0 && SECTION_OWNS.has(f.kind)) { f.owns = SECTION_OWNS.get(f.kind)! } }
   return all
