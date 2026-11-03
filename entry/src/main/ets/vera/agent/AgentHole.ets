@@ -9,7 +9,7 @@ import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED } from '../ScreenPlan'
 import { PartsContract } from '../VeraCompose'
-import { NOTICE_SPLIT } from '../ScreenPlan'
+import { NOTICE_SPLIT, NOTICE_INSTEAD_TITLE } from '../ScreenPlan'
 
 const OUTCOME_WRITTEN: string = 'written'
 const OUTCOME_PARTIAL: string = 'partial'
@@ -45,6 +45,14 @@ function literal(text: string): string {
 }
 
 /** The first sentence of `text`, at most 140 characters. */
+/** The title of a notice that says what the screen does instead of what was asked: shown after the rest, not as a warning. */
+export const NOTICE_INSTEAD: string = NOTICE_INSTEAD_TITLE
+
+/** Whether the writer's sentence says what the screen offers in place of the thing it cannot do. */
+export function offersInstead(why: string): boolean {
+  return /\binstead\b|,\s*so\s+(it|you|the app|this app|this)\b|\bbut (it|you) can\b/i.test(why)
+}
+
 function firstSentence(text: string): string {
   let t = text.trim()
   let at = t.search(/[.!?](\s|$)/)
@@ -58,11 +66,18 @@ function firstSentence(text: string): string {
  */
 export function noticeBlock(cannot: boolean, why: string): FragmentSpec {
   let unchecked = !cannot && why.startsWith('It may not do')
-  let title = cannot ? 'Not available on this phone' : (unchecked ? 'Not checked' : 'Part of this app could not be built')
+  // A refusal that says what is offered instead is not a refusal: the screen does the nearest thing (Baby fever: "cannot show a
+  // care card of its own, so the guidance is written out"; Water: "cannot post a notification, so ..."). A warning above
+  // everything that works read as if the app were broken; it is a quiet line after the rest (ScreenPlan.ets's assemblePlan).
+  let instead = cannot && offersInstead(why)
+  let title = instead ? NOTICE_INSTEAD :
+    (cannot ? 'Not available on this phone' : (unchecked ? 'Not checked' : 'Part of this app could not be built'))
   // The person sees one short sentence: the plan's needs and the writer's failure are its own wording and stay in the trace.
   let body = cannot ? firstSentence(why) : (unchecked ? 'This part may not work exactly as described.' : 'Try asking for it again, or describe it differently.')
-  let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("warning", "' + literal(title) + '", "' +
-    literal(body) + '", "", "", "warning")]));\n}'
+  let style = instead ? 'default' : 'warning'
+  let icon = instead ? 'info' : 'warning'
+  let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("' + style + '", "' + literal(title) + '", "' +
+    literal(body) + '", "", "", "' + icon + '")]));\n}'
   let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
   spec.indexed = false
   // Its title and words, for the notices of one screen to be shown as one (ScreenPlan.ets's assemblePlan).

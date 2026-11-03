@@ -161,6 +161,9 @@ const EMBEDDED_WINDOW: number = 360
 /** The height of the band a lone ui.Path is centred in. */
 const PATH_BAND_HEIGHT: number = 240
 
+/** How far into the program, in vp, it still counts as at its top: the host's corner buttons stay shown. */
+const READING_TOP: number = 40
+
 @Component
 export struct VeraPreview {
   /**
@@ -232,6 +235,12 @@ export struct VeraPreview {
   }
   /** Read-only snapshot for a hosting chat. It does not migrate state between programs. */
   onStateSnapshot: (encoded: string) => void = (_encoded: string): void => {}
+  /**
+   * Told when the program is being read further down (true) or back towards its top (false), for a host that lays buttons
+   * over the program's corner: they cover its rows while it scrolls, so the host hides them on the way down.
+   */
+  onReadingDown: (down: boolean) => void = (_down: boolean): void => {}
+  private readingDown: boolean = false
   /**
    * Drawn inside something that scrolls, such as a chat message: the program
    * takes the height it needs and has no scrolling of its own.
@@ -1581,6 +1590,14 @@ export struct VeraPreview {
             .onAreaChange((_old: Area, now: Area) => {
               this.rootTop = Number(now.globalPosition.y)
               this.rootHeight = Number(now.height)
+            })
+            .onDidScroll((_x: number, dy: number) => {
+              let top = this.rootScroller.currentOffset().yOffset <= READING_TOP
+              let down = !top && (dy > 2 ? true : (dy < -2 ? false : this.readingDown))
+              if (down !== this.readingDown) {
+                this.readingDown = down
+                this.onReadingDown(down)
+              }
             })
             // Scroll centres its content by default, which leaves a generated
             // program floating in the middle of the box instead of starting where

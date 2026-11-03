@@ -406,6 +406,8 @@ export struct GeneratePage {
   @State @Watch('syncUsbNetPoll') advancedOpen: boolean = false
   /** The program alone over the whole screen, with the box under it; see fullscreenPane. */
   @State fullscreen: boolean = false
+  /** The full-screen corner buttons stepped aside while the program is read further down (VeraPreview onReadingDown). */
+  @State cornerHidden: boolean = false
   /** Full screen with the request box folded away; see composer. */
   @State composerHidden: boolean = false
   /** True while another destination covers this page; flows to VeraPreview so its surface frame loop stops underneath. */
@@ -3125,6 +3127,7 @@ export struct GeneratePage {
 
   /** What was typed into the program goes with it to the other view, which draws a program of its own. */
   private setFullscreen(on: boolean): void {
+    this.cornerHidden = false
     this.carriedState = this.liveState
     this.tab = TAB_PREVIEW
     this.composerHidden = false
@@ -3142,7 +3145,10 @@ export struct GeneratePage {
         // With the box folded, the round button lies over the bottom corner: the program gets room to scroll clear of it.
         VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState, destinationHidden: this.destinationHidden,
           bottomRoom: this.composerHidden ? FOLD_ROOM : 0,
-          onStateSnapshot: (encoded: string): void => { if (!this.disposed) { this.liveState = encoded } } })
+          onStateSnapshot: (encoded: string): void => { if (!this.disposed) { this.liveState = encoded } },
+          // The two round buttons lie over the program's corner: on the way down they would cover its rows (a stop's
+          // Navigate button, measured on Istanbul layover), so they step aside and come back on the way up.
+          onReadingDown: (down: boolean): void => { animateTo({ duration: 180 }, () => { this.cornerHidden = down }) } })
           .width('100%')
           .height('100%')
         Row({ space: 8 }) {
@@ -3168,6 +3174,9 @@ export struct GeneratePage {
           .onClick(() => { this.setFullscreen(false) })
         }
         .margin({ top: 8, right: 8 })
+        .opacity(this.cornerHidden ? 0 : 1)
+        .translate({ y: this.cornerHidden ? -56 : 0 })
+        .hitTestBehavior(this.cornerHidden ? HitTestMode.None : HitTestMode.Default)
         if (this.generating || !this.compiled || this.readyNote) {
           Row({ space: 8 }) {
             if (this.generating) { LoadingProgress().width(16).height(16) }

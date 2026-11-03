@@ -148,9 +148,13 @@ export function assemblePlan(plan: ScreenPlan, partial: boolean = false): string
   // reaches it and takes what is there for everything asked (measured: Exam prep, a form and a list above it). Only the order
   // of the program changes; the components' indices, which the slots point at, stay as they are.
   // Several are one banner, each its own line: three stacked banners took half the screen above anything that works (Timetable).
+  // A notice that only says what the screen does instead (NOTICE_INSTEAD) is not a warning: it goes last, after what it explains.
   let notices: FragmentSpec[] = []
+  let insteads: FragmentSpec[] = []
   for (let c of plan.components) {
-    if (c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') { notices.push(c.spec!) }
+    if (c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') {
+      if (c.spec!.criteria.startsWith(NOTICE_INSTEAD_TITLE + NOTICE_SPLIT)) { insteads.push(c.spec!) } else { notices.push(c.spec!) }
+    }
   }
   if (notices.length > 1) {
     specs.push(oneNotice(notices))
@@ -164,14 +168,22 @@ export function assemblePlan(plan: ScreenPlan, partial: boolean = false): string
     specs.push(c.spec)
     values.push(c.values)
   }
+  if (insteads.length > 0) {
+    specs.push(insteads.length > 1 ? oneNotice(insteads, 'info') : insteads[0])
+    values.push(new Map<string, string>())
+  }
   return composeFragments(specs, plan.globals, values)
 }
 
 /** Between a notice's title and its words in FragmentSpec.criteria (agent/AgentHole.ets's noticeBlock). */
 export const NOTICE_SPLIT: string = '\u0001'
 
+/** The title of a notice that says what the screen does instead (agent/AgentHole.ets's NOTICE_INSTEAD; kept here to avoid a cycle). */
+export const NOTICE_INSTEAD_TITLE: string = 'Done differently'
+
 /** The notices of a screen as one banner: their common title, or a general one, and each one's words on a line of its own. */
-function oneNotice(notices: FragmentSpec[]): FragmentSpec {
+function oneNotice(notices: FragmentSpec[], icon: string = 'warning'): FragmentSpec {
+  let style = icon === 'warning' ? 'warning' : 'default'
   let titles: string[] = []
   let lines: string[] = []
   for (let n of notices) {
@@ -183,8 +195,8 @@ function oneNotice(notices: FragmentSpec[]): FragmentSpec {
     if (lines.indexOf(body) < 0) { lines.push(body) }
   }
   let title = titles.length === 1 ? titles[0] : 'Some parts are limited'
-  let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("warning", "' + title + '", "' +
-    lines.map((l: string): string => '- ' + l).join('\\n') + '", "", "", "warning")]));\n}'
+  let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("' + style + '", "' + title + '", "' +
+    lines.map((l: string): string => '- ' + l).join('\\n') + '", "", "", "' + icon + '")]));\n}'
   let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
   spec.indexed = false
   return spec
