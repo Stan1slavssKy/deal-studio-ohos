@@ -2453,6 +2453,486 @@ function timelineFragment(): FragmentSpec {
  * itself. Numbers are the model's answer for the request; they are sample figures unless the request
  * gave real ones.
  */
+/**
+ * Something logged with one tap -- a glass of water, a feed, a nappy, a coffee: one big button adds the amount set for a tap,
+ * stamped with the day and the minute. Today's total against a goal (a ring), today's count and how long since the last one;
+ * today's entries newest first, an Undo of the last. Earlier days are kept but not counted as today. The amount per tap and the
+ * goal are settings at the foot of the section. Water reminder had a form with an Amount field and an Add button for "one tap".
+ */
+function quickLogFragment(): FragmentSpec {
+  let spec = new FragmentSpec(
+    'quick_log',
+    'One big button that logs the same thing with a single tap (a glass of water, a feed, a nappy change, a coffee, a cigarette), ' +
+    'with today\'s total toward a daily goal, today\'s count, how long since the last one, and today\'s entries with an undo. ' +
+    'Not for records where the person types an amount and a note each time, or tags each with a person or category: that is record_log',
+    `@jsonable
+class Tap {
+  amount: number;
+  day: number;
+  minute: number;
+}
+
+@jsonable
+class TapPreset {
+  label: string;
+  amount: number;
+}`,
+    [new StateFieldSpec('tapsIDX', 'Tap[]'), new StateFieldSpec('presetsIDX', 'TapPreset[]'),
+     new StateFieldSpec('amountTextIDX', 'string'), new StateFieldSpec('goalTextIDX', 'string')],
+    `  let presetsIDX: TapPreset[] = [
+    __PRESETS_IDX__
+  ];
+  let firstAmountIDX: number = __AMOUNT_IDX__;
+  if (firstAmountIDX <= 0) { firstAmountIDX = 1; }
+  let firstGoalIDX: number = __GOAL_IDX__;
+  if (firstGoalIDX < 0) { firstGoalIDX = 0; }
+  let noTapsIDX: Tap[] = [];`,
+    `tapsIDX: noTapsIDX, presetsIDX: presetsIDX, amountTextIDX: ui.numberToString(firstAmountIDX), goalTextIDX: ui.numberToString(firstGoalIDX)`,
+    `function tapAmountIDX(state: AppState): number {
+  let n: number = strings.toNumber(state.amountTextIDX, 1);
+  if (n <= 0) { n = 1; }
+  return n;
+}
+
+function tapGoalIDX(state: AppState): number {
+  let n: number = strings.toNumber(state.goalTextIDX, 0);
+  if (n < 0) { n = 0; }
+  return n;
+}
+
+function logTapIDX(state: AppState, amount: number): AppState {
+  let out: Tap[] = [];
+  for (let t: Tap of state.tapsIDX) { out.push(t); }
+  out.push({amount: amount, day: time.daysSinceEpoch(), minute: time.hourOfDay() * 60 + time.minuteOfHour()});
+  return {tapsIDX: out__PASSTHROUGH__};
+}
+
+function addTapIDX(state: AppState, ignored: number): AppState {
+  return logTapIDX(state, tapAmountIDX(state));
+}
+
+function addPresetIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.presetsIDX.length()) { return state; }
+  return logTapIDX(state, state.presetsIDX[index].amount);
+}
+
+function removeTapIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.tapsIDX.length()) { return state; }
+  let out: Tap[] = [];
+  let i: number = 0;
+  while (i < state.tapsIDX.length()) {
+    if (i !== index) { out.push(state.tapsIDX[i]); }
+    i = i + 1;
+  }
+  return {tapsIDX: out__PASSTHROUGH__};
+}
+
+function undoTapIDX(state: AppState, ignored: number): AppState {
+  let today: number = time.daysSinceEpoch();
+  let last: number = -1;
+  let i: number = 0;
+  while (i < state.tapsIDX.length()) {
+    if (state.tapsIDX[i].day === today) { last = i; }
+    i = i + 1;
+  }
+  return removeTapIDX(state, last);
+}
+
+function setTapAmountIDX(state: AppState, value: string): AppState {
+  return {amountTextIDX: value__PASSTHROUGH__};
+}
+
+function setTapGoalIDX(state: AppState, value: string): AppState {
+  return {goalTextIDX: value__PASSTHROUGH__};
+}
+
+function totalOnIDX(state: AppState, day: number): number {
+  let n: number = 0;
+  for (let t: Tap of state.tapsIDX) { if (t.day === day) { n = n + t.amount; } }
+  return n;
+}
+
+function countOnIDX(state: AppState, day: number): number {
+  let n: number = 0;
+  for (let t: Tap of state.tapsIDX) { if (t.day === day) { n = n + 1; } }
+  return n;
+}
+
+function todayTotalIDX(state: AppState): number { return totalOnIDX(state, time.daysSinceEpoch()); }
+
+function todayCountIDX(state: AppState): number { return countOnIDX(state, time.daysSinceEpoch()); }
+
+function tapAgoIDX(minutes: number): string {
+  if (minutes < 1) { return "just now"; }
+  let hours: number = math.floor(minutes / 60);
+  let rest: number = minutes - hours * 60;
+  if (hours === 0) { return ui.numberToString(rest) + " min ago"; }
+  if (rest === 0) { return ui.numberToString(hours) + " h ago"; }
+  return ui.numberToString(hours) + " h " + ui.numberToString(rest) + " min ago";
+}`,
+    `{
+    let today: number = time.daysSinceEpoch();
+    let nowMinute: number = time.hourOfDay() * 60 + time.minuteOfHour();
+    let unit: string = "__UNIT_IDX__";
+    let unitText: string = "";
+    if (unit !== "") { unitText = " " + unit; }
+    let goal: number = tapGoalIDX(state);
+    let total: number = totalOnIDX(state, today);
+    let count: number = countOnIDX(state, today);
+    let lastMinute: number = -1;
+    for (let t: Tap of state.tapsIDX) { if (t.day === today) { lastMinute = t.minute; } }
+    let lastText: string = "nothing yet today";
+    if (lastMinute >= 0) { lastText = tapAgoIDX(nowMinute - lastMinute); }
+    let summary: ui.View[] = [];
+    if (goal > 0) {
+      let ringStyle: string = "accent";
+      if (total >= goal) { ringStyle = "success"; }
+      summary.push(ui.ProgressRing(ringStyle, "__TODAY_LABEL_IDX__", total, goal, ui.formatNumber(total, 0) + " of " + ui.formatNumber(goal, 0) + unitText));
+    }
+    let countText: string = ui.numberToString(count);
+    summary.push(ui.MetricGroup("default", 2, [
+      ui.Stat("default", "__COUNT_LABEL_IDX__", countText, "today", "chart"),
+      ui.Stat("default", "Last", lastText, "", "clock")
+    ]));
+    sections.push(ui.Section("summary", "__SECTION_TITLE_IDX__", "", summary));
+    let buttons: ui.View[] = [ui.Button("primary", "__BUTTON_IDX__", "addTapIDX", 0, true)];
+    let p: number = 0;
+    while (p < state.presetsIDX.length()) {
+      buttons.push(ui.Button("secondary", state.presetsIDX[p].label, "addPresetIDX", p, true));
+      p = p + 1;
+    }
+    sections.push(ui.Section("content", "", "", [ui.ActionBar("center", buttons)]));
+    let rows: ui.View[] = [];
+    let i: number = state.tapsIDX.length() - 1;
+    while (i >= 0) {
+      let t: Tap = state.tapsIDX[i];
+      if (t.day === today) {
+        let what: string = "__ENTRY_WORD_IDX__";
+        if (unit !== "") { what = ui.formatNumber(t.amount, 0) + unitText; }
+        rows.push(ui.ListItem("default", what, ui.clockToString(t.minute), "", "", 0, true, "check"));
+        rows.push(ui.ActionBar("end", [ui.IconButton("quiet", "trash", "Remove", "removeTapIDX", i, true)]));
+      }
+      i = i - 1;
+    }
+    let yesterday: number = countOnIDX(state, today - 1);
+    let notes: ui.View[] = [];
+    if (count > 0) {
+      notes.push(ui.ListGroup("default", "Today", rows));
+      notes.push(ui.ActionBar("end", [ui.Button("secondary", "Undo", "undoTapIDX", 0, true)]));
+    }
+    if (yesterday > 0) {
+      let yText: string = "Yesterday: " + ui.numberToString(yesterday);
+      if (unit !== "") { yText = yText + ", " + ui.formatNumber(totalOnIDX(state, today - 1), 0) + unitText; }
+      notes.push(ui.Text("muted", yText));
+    }
+    if (notes.length() > 0) { sections.push(ui.Section("content", "", "", notes)); }
+    let settings: ui.View[] = [];
+    if (unit !== "") { settings.push(ui.TextField("default", "Amount per tap (" + unit + ")", state.amountTextIDX, "setTapAmountIDX", "number")); }
+    let goalLabel: string = "Daily goal (0 for none)";
+    if (unit !== "") { goalLabel = "Daily goal (" + unit + ", 0 for none)"; }
+    settings.push(ui.TextField("default", goalLabel, state.goalTextIDX, "setTapGoalIDX", "number"));
+    sections.push(ui.Section("supporting", "", "", settings));
+  }`,
+    [],
+    [
+      new ContentFieldSpec('__SECTION_TITLE_IDX__', 'section_title', 'Today', 'Heading of the section (1-3 words, such as Water today)', 24),
+      new ContentFieldSpec('__BUTTON_IDX__', 'button', 'Add one', 'Label of the one-tap button (2-3 words, such as Add a glass, Log a feed)', 20),
+      new ContentFieldSpec('__AMOUNT_IDX__', 'amount', '1', 'How much one tap adds, a whole number in the unit (250 for a glass of water in ml); 1 when each tap is simply one more', 6, true),
+      new ContentFieldSpec('__UNIT_IDX__', 'unit', '', 'The unit of the amount, such as ml or g; an empty string when each tap is simply one more (a nappy, a coffee)', 8),
+      new ContentFieldSpec('__GOAL_IDX__', 'goal', '0', 'The daily goal in the same unit as a whole number (2000 for water in ml), or 0 for no goal', 6, true),
+      new ContentFieldSpec('__TODAY_LABEL_IDX__', 'today_label', 'Today', 'Label of the ring toward the goal (1-2 words)', 16),
+      new ContentFieldSpec('__COUNT_LABEL_IDX__', 'count_label', 'Count', 'Label of today\'s count, the thing counted (1-2 words, such as Glasses or Feeds)', 16),
+      new ContentFieldSpec('__ENTRY_WORD_IDX__', 'entry_word', 'One logged', 'What one entry is called on its row when there is no unit (1-3 words, such as Nappy change)', 20)
+    ],
+    ['import * as strings from "std/strings"', 'import * as time from "std/time"'],
+    [new ListFieldSpec('__PRESETS_IDX__', 'presets',
+      'Other amounts as extra buttons, only when the request names different sizes (a small and a large glass); usually none',
+      ['button label (1-3 words)', 'the amount it adds, a whole number in the unit'], [16, 6],
+      '{label: "{0}", amount: {1}}', ',\n    ', 0, 3, [], [1])],
+    [new PortSpec('writes', 'today_total', 'number', 'todayTotalIDX(state)', '', true),
+     new PortSpec('writes', 'today_count', 'number', 'todayCountIDX(state)', '', true),
+     new PortSpec('writes', 'goal', 'number', 'tapGoalIDX(state)', '', true)],
+    [],
+    ['needs_search_or_form']
+  )
+  spec.owns = 'the one-tap button that logs an entry (with any preset amounts), today\'s total toward the daily goal as a ring, today\'s count, ' +
+    'how long since the last one, today\'s entries with Remove on each and an Undo button, yesterday\'s count, and the amount per tap and ' +
+    'the daily goal as settings at its foot'
+  return spec
+}
+
+/**
+ * Doses to take at set times each day, each ticked off when taken: the doses the request names, a form to add one, a Take button
+ * per dose that becomes an Undo, "2 of 3 taken today" and a streak of days on which every dose was taken. The marks are per day
+ * (the day number a dose was last taken), so a new day starts untaken without anything running at midnight. A dose past its time
+ * and not taken says it is late. Optionally each dose goes into the phone calendar with a daily reminder, as `reminders` does.
+ * Medicine card had only a list of reminders and nowhere to say a pill was taken.
+ */
+function doseScheduleFragment(): FragmentSpec {
+  let calendar: Map<string, string> = new Map<string, string>()
+  calendar.set('true', 'yes, each dose goes into the phone calendar with a daily reminder')
+  calendar.set('false', 'no, the doses are only ticked off in the app')
+  let spec = new FragmentSpec(
+    'dose_schedule',
+    'Medicines, vitamins or other doses to take at set times every day, each ticked off when taken today, with how many are taken ' +
+    'today, which are late, and a streak of days with every dose taken; the person can add and remove doses, and each can go into the ' +
+    'phone calendar with a daily reminder. Not for one-off reminders or appointments (that is reminders), nor a log of amounts (record_log)',
+    `@jsonable
+class Dose {
+  name: string;
+  minute: number;
+  note: string;
+  takenDay: number;
+  takenAt: number;
+  eventId: string;
+  status: string;
+}
+
+@jsonable
+class DoseSeed {
+  name: string;
+  time: string;
+  note: string;
+}`,
+    [new StateFieldSpec('dosesIDX', 'Dose[]'), new StateFieldSpec('streakIDX', 'number'), new StateFieldSpec('streakDayIDX', 'number'),
+     new StateFieldSpec('draftNameIDX', 'string'), new StateFieldSpec('draftMinuteIDX', 'number'),
+     new StateFieldSpec('pendingIDX', 'number'), new StateFieldSpec('doseNoteIDX', 'string')],
+    `  let seedsIDX: DoseSeed[] = [
+    __DOSES_IDX__
+  ];
+  let dosesIDX: Dose[] = [];
+  for (let s: DoseSeed of seedsIDX) {
+    let parts: string[] = strings.split(strings.trim(s.time), ":");
+    let hour: number = 8;
+    let minute: number = 0;
+    if (parts.length() >= 1) { hour = strings.toNumber(parts[0], 8); }
+    if (parts.length() >= 2) { minute = strings.toNumber(parts[1], 0); }
+    if (hour < 0 || hour > 23) { hour = 8; }
+    if (minute < 0 || minute > 59) { minute = 0; }
+    dosesIDX.push({name: s.name, minute: hour * 60 + minute, note: s.note, takenDay: -1, takenAt: -1, eventId: "", status: ""});
+  }`,
+    `dosesIDX: dosesIDX, streakIDX: 0, streakDayIDX: -1, draftNameIDX: "", draftMinuteIDX: 480, pendingIDX: -1, doseNoteIDX: ""`,
+    `function failedIDX(value: string): boolean {
+  return strings.startsWith(value, "declined") || strings.startsWith(value, "error");
+}
+
+function takenOnIDX(state: AppState, day: number): number {
+  let n: number = 0;
+  for (let d: Dose of state.dosesIDX) { if (d.takenDay === day) { n = n + 1; } }
+  return n;
+}
+
+function takenTodayIDX(state: AppState): number { return takenOnIDX(state, time.daysSinceEpoch()); }
+
+function shownStreakIDX(state: AppState): number {
+  if (state.streakDayIDX < time.daysSinceEpoch() - 1) { return 0; }
+  return state.streakIDX;
+}
+
+function withDoseIDX(list: Dose[], index: number, changed: Dose): Dose[] {
+  let out: Dose[] = [];
+  let i: number = 0;
+  while (i < list.length()) {
+    if (i === index) { out.push(changed); } else { out.push(list[i]); }
+    i = i + 1;
+  }
+  return out;
+}
+
+function takeDoseIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.dosesIDX.length()) { return state; }
+  let today: number = time.daysSinceEpoch();
+  let d: Dose = state.dosesIDX[index];
+  let allBefore: boolean = state.dosesIDX.length() > 0 && takenOnIDX(state, today) === state.dosesIDX.length();
+  let takenDay: number = today;
+  let takenAt: number = time.hourOfDay() * 60 + time.minuteOfHour();
+  if (d.takenDay === today) { takenDay = -1; takenAt = -1; }
+  let out: Dose[] = withDoseIDX(state.dosesIDX, index, {name: d.name, minute: d.minute, note: d.note, takenDay: takenDay, takenAt: takenAt, eventId: d.eventId, status: d.status});
+  let allNow: boolean = true;
+  for (let x: Dose of out) { if (x.takenDay !== today) { allNow = false; } }
+  let streak: number = shownStreakIDX(state);
+  let streakDay: number = state.streakDayIDX;
+  if (allNow && !allBefore) {
+    if (streakDay === today - 1) { streak = streak + 1; } else if (streakDay !== today) { streak = 1; }
+    streakDay = today;
+  }
+  if (!allNow && allBefore && streakDay === today) {
+    streak = streak - 1;
+    streakDay = today - 1;
+    if (streak <= 0) { streak = 0; streakDay = -1; }
+  }
+  return {dosesIDX: out, streakIDX: streak, streakDayIDX: streakDay__PASSTHROUGH__};
+}
+
+function setDoseNameIDX(state: AppState, value: string): AppState {
+  return {draftNameIDX: value__PASSTHROUGH__};
+}
+
+function setDoseTimeIDX(state: AppState, value: number): AppState {
+  let minute: number = value;
+  if (minute < 0 || minute > 1439) { minute = 480; }
+  return {draftMinuteIDX: minute__PASSTHROUGH__};
+}
+
+function calendarCallIDX(name: string, minute: number): number {
+  let m: number = minute % 60;
+  let h: number = (minute - m) / 60;
+  sdk.call("CalendarKit.Calendar.addEvent",
+    ["title", "__EVENT_PREFIX_IDX__" + name, "hour", ui.numberToString(h), "minute", ui.numberToString(m),
+     "durationMinutes", "15", "remindBefore", "0", "repeat", "daily", "description", "__EVENT_NOTE_IDX__"], "onDoseAddedIDX");
+  return 0;
+}
+
+function addDoseIDX(state: AppState, ignored: number): AppState {
+  let name: string = strings.trim(state.draftNameIDX);
+  if (name.length() === 0) { return state; }
+  let useCalendar: boolean = __CALENDAR_IDX__;
+  let status: string = "";
+  let pending: number = state.pendingIDX;
+  if (useCalendar && pending < 0) {
+    status = "pending";
+    pending = state.dosesIDX.length();
+    calendarCallIDX(name, state.draftMinuteIDX);
+  }
+  let out: Dose[] = [];
+  for (let d: Dose of state.dosesIDX) { out.push(d); }
+  out.push({name: name, minute: state.draftMinuteIDX, note: "", takenDay: -1, takenAt: -1, eventId: "", status: status});
+  return {dosesIDX: out, draftNameIDX: "", pendingIDX: pending, doseNoteIDX: ""__PASSTHROUGH__};
+}
+
+function calendarDoseIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.dosesIDX.length() || state.pendingIDX >= 0) { return state; }
+  let d: Dose = state.dosesIDX[index];
+  if (d.eventId !== "") { return state; }
+  calendarCallIDX(d.name, d.minute);
+  let out: Dose[] = withDoseIDX(state.dosesIDX, index, {name: d.name, minute: d.minute, note: d.note, takenDay: d.takenDay, takenAt: d.takenAt, eventId: "", status: "pending"});
+  return {dosesIDX: out, pendingIDX: index__PASSTHROUGH__};
+}
+
+function onDoseAddedIDX(state: AppState, value: string): AppState {
+  let at: number = state.pendingIDX;
+  if (at < 0 || at >= state.dosesIDX.length()) { return state; }
+  let d: Dose = state.dosesIDX[at];
+  let changed: Dose = {name: d.name, minute: d.minute, note: d.note, takenDay: d.takenDay, takenAt: d.takenAt, eventId: value, status: "ok"};
+  let note: string = "";
+  if (failedIDX(value)) {
+    changed = {name: d.name, minute: d.minute, note: d.note, takenDay: d.takenDay, takenAt: d.takenAt, eventId: "", status: value};
+    note = value;
+  }
+  return {dosesIDX: withDoseIDX(state.dosesIDX, at, changed), pendingIDX: -1, doseNoteIDX: note__PASSTHROUGH__};
+}
+
+function removeDoseIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.dosesIDX.length()) { return state; }
+  let gone: Dose = state.dosesIDX[index];
+  let out: Dose[] = [];
+  let i: number = 0;
+  while (i < state.dosesIDX.length()) {
+    if (i !== index) { out.push(state.dosesIDX[i]); }
+    i = i + 1;
+  }
+  let pending: number = state.pendingIDX;
+  if (pending === index) { pending = -1; }
+  if (pending > index) { pending = pending - 1; }
+  if (gone.eventId !== "") { sdk.call("CalendarKit.Calendar.deleteEvents", ["ids", gone.eventId], "onDoseRemovedIDX"); }
+  return {dosesIDX: out, pendingIDX: pending__PASSTHROUGH__};
+}
+
+function onDoseRemovedIDX(state: AppState, value: string): AppState {
+  if (failedIDX(value)) { return {doseNoteIDX: value__PASSTHROUGH__}; }
+  return state;
+}`,
+    `{
+    let useCalendar: boolean = __CALENDAR_IDX__;
+    let today: number = time.daysSinceEpoch();
+    let nowMinute: number = time.hourOfDay() * 60 + time.minuteOfHour();
+    let count: number = state.dosesIDX.length();
+    let taken: number = takenOnIDX(state, today);
+    let streak: number = shownStreakIDX(state);
+    let progressStyle: string = "accent";
+    if (count > 0 && taken === count) { progressStyle = "success"; }
+    let streakText: string = ui.numberToString(streak) + " days";
+    if (streak === 1) { streakText = "1 day"; }
+    sections.push(ui.Section("summary", "__SECTION_TITLE_IDX__", "", [
+      ui.Progress(progressStyle, ui.numberToString(taken) + " of " + ui.numberToString(count) + " taken today", taken, math.max(count, 1)),
+      ui.MetricGroup("default", 2, [
+        ui.Stat("default", "Taken today", ui.numberToString(taken) + " of " + ui.numberToString(count), "", "check"),
+        ui.Stat("default", "Streak", streakText, "every dose taken", "star")
+      ])
+    ]));
+    let rows: ui.View[] = [];
+    let j: number = 0;
+    while (j < count) {
+      let d: Dose = state.dosesIDX[j];
+      let isTaken: boolean = d.takenDay === today;
+      let rowStyle: string = "default";
+      let icon: string = "clock";
+      let when: string = ui.clockToString(d.minute);
+      if (d.note !== "") { when = when + " - " + d.note; }
+      let trailing: string = "";
+      if (isTaken) {
+        rowStyle = "success"; icon = "check";
+        trailing = "Taken " + ui.clockToString(d.takenAt);
+      } else if (nowMinute > d.minute) {
+        rowStyle = "warning"; icon = "warning";
+        when = "Due " + ui.clockToString(d.minute) + " - late";
+      }
+      if (useCalendar) {
+        if (d.status === "pending") { when = when + " - sending to calendar"; }
+        else if (d.status === "ok") { when = when + " - in calendar"; }
+        else if (d.status !== "") { when = when + " - not in calendar"; }
+      }
+      rows.push(ui.ListItem(rowStyle, d.name, when, trailing, "", 0, true, icon));
+      let takeText: string = "Take";
+      let takeStyle: string = "primary";
+      if (isTaken) { takeText = "Undo"; takeStyle = "secondary"; }
+      let buttons: ui.View[] = [ui.Button(takeStyle, takeText, "takeDoseIDX", j, true)];
+      if (useCalendar && d.eventId === "" && d.status !== "pending") {
+        buttons.push(ui.IconButton("secondary", "calendar", "Add to calendar", "calendarDoseIDX", j, state.pendingIDX < 0));
+      }
+      buttons.push(ui.IconButton("quiet", "trash", "Remove", "removeDoseIDX", j, true));
+      rows.push(ui.ActionBar("end", buttons));
+      j = j + 1;
+    }
+    sections.push(ui.Section("content", "", "", [
+      ui.When(count === 0, ui.Text("muted", "No doses yet: add one below.")),
+      ui.When(count > 0, ui.ListGroup("default", "", rows))
+    ]));
+    let notes: ui.View[] = [];
+    if (state.doseNoteIDX !== "") { notes.push(ui.InsetBanner("warning", "The calendar said no", state.doseNoteIDX, "", "", "info")); }
+    notes.push(ui.TextField("default", "__NAME_LABEL_IDX__", state.draftNameIDX, "setDoseNameIDX"));
+    notes.push(ui.TimeField("default", "Time", state.draftMinuteIDX, "setDoseTimeIDX"));
+    notes.push(ui.ActionBar("end", [ui.Button("secondary", "Add dose", "addDoseIDX", 0, strings.trim(state.draftNameIDX).length() > 0)]));
+    sections.push(ui.Section("supporting", "__FORM_TITLE_IDX__", "", notes));
+  }`,
+    [new SlotSpec('__CALENDAR_IDX__', ['false', 'true'], 'noul',
+      'Should each dose be put into the phone calendar with a daily reminder?', calendar, 0.6, ['calendar_add'])],
+    [
+      new ContentFieldSpec('__SECTION_TITLE_IDX__', 'section_title', 'Today\'s doses', 'Heading of the section (1-3 words, such as Today\'s pills)', 24),
+      new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add a dose', 'Heading of the form that adds one (2-4 words)', 24),
+      new ContentFieldSpec('__NAME_LABEL_IDX__', 'name_label', 'Name', 'Label of the name field (1-2 words, such as Medicine)', 20),
+      new ContentFieldSpec('__EVENT_PREFIX_IDX__', 'event_prefix', 'Take ', 'Words put before the name in the calendar event, such as "Take ", or an empty string', 12),
+      new ContentFieldSpec('__EVENT_NOTE_IDX__', 'event_note', 'Daily dose', 'A short note for the calendar event (2-6 words, no quotes)', 40)
+    ],
+    ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"', 'import * as time from "std/time"'],
+    [new ListFieldSpec('__DOSES_IDX__', 'doses',
+      'The doses the request names, one per time of day it is taken (a pill taken morning and evening is two rows); none when it names none',
+      ['name (1-4 words, such as Vitamin D)', 'time of day as HH:MM in 24 hours, such as 08:00', 'a short note such as with food, or an empty string'],
+      [28, 5, 24],
+      '{name: "{0}", time: "{1}", note: "{2}"}', ',\n    ', 0, 8, [])],
+    [new PortSpec('writes', 'taken_today', 'number', 'takenTodayIDX(state)', '', true),
+     new PortSpec('writes', 'doses', 'number', 'state.dosesIDX.length()', '', true),
+     new PortSpec('writes', 'streak', 'number', 'shownStreakIDX(state)', '', true)],
+    [],
+    ['needs_search_or_form'],
+    ['needs_integration=__CALENDAR_IDX__']
+  )
+  spec.owns = 'the doses with their times, a Take button on each that becomes Undo once taken, which doses are late, how many are taken ' +
+    'today as a bar, the streak of days with every dose taken, a form to add a dose with its time, Remove on each, and each dose put into ' +
+    'the phone calendar with a daily reminder'
+  return spec
+}
+
 function barChartFragment(): FragmentSpec {
   let barStyle: Map<string, string> = new Map<string, string>()
   barStyle.set('default', 'no, same tone as the rest')
@@ -2534,7 +3014,9 @@ const SECTION_OWNS: Map<string, string> = new Map<string, string>([
   ['list_summary', 'how many items are done, how many there are and how many are left'],
   ['data_table', 'its table of rows and three columns'],
   ['timeline', 'its steps in time order, each with its time'],
-  ['bar_chart', 'its bar chart of the categories']
+  ['bar_chart', 'its bar chart of the categories'],
+  ['quick_log', 'the one-tap button, today\'s total toward the goal, today\'s count, how long since the last one, today\'s entries with an Undo'],
+  ['dose_schedule', 'the doses with a Take button on each, how many are taken today, which are late and the streak of days with every dose taken']
 ])
 
 export function fragments(): FragmentSpec[] {
@@ -2546,7 +3028,8 @@ export function fragments(): FragmentSpec[] {
     barChartFragment(),
     masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
     recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
-    itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment(), liveFactsFragment()
+    itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment(), liveFactsFragment(),
+    quickLogFragment(), doseScheduleFragment()
   ]
   for (let f of all) { if (f.owns.length === 0 && SECTION_OWNS.has(f.kind)) { f.owns = SECTION_OWNS.get(f.kind)! } }
   return all
