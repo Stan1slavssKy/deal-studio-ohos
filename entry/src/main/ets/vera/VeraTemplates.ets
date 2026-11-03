@@ -2818,6 +2818,481 @@ function barChartFragment(): FragmentSpec {
  * Amounts are whole units on purpose: money with cents is a request for the model to write the
  * program (needs_logic), not something a fixed fragment can promise.
  */
+const DUE_CLASS: string = `@jsonable
+class DueItem {
+  name: string;
+  dueDay: number;
+  lifeDays: number;
+}
+
+@jsonable
+class DueSeed {
+  name: string;
+  inDays: number;
+  lifeDays: number;
+}`
+
+/**
+ * Things that run out or fall due: food that expires, a filter to change, a car service, a passport. Each has the day it is due
+ * (the day number time.daysSinceEpoch() counts) and, when it comes round again, a life in days: Done starts it over from today.
+ * The list is always soonest first, each row saying how far off it is in words and in a tone (expired and today in red, within
+ * the soon window in amber). A plain list of food with dates was a form and a list newest first, with nothing that said what
+ * was about to go off (Pantry expiry, Filter tracker, Service log).
+ */
+function dueItemsFragment(): FragmentSpec {
+  let spec = new FragmentSpec(
+    'due_items',
+    'Things that run out or fall due, each with a date: food that expires, filters or batteries to change, a car service, a ' +
+    'passport or a subscription to renew. Always sorted by the soonest due, each saying how many days are left or how long ago it ' +
+    'expired, with what is due soon counted at the top; something that comes round again (every 90 days) is started over with Done. ' +
+    'Not a to-do list without dates (that is checklist), not a daily schedule of times (that is reminders)',
+    DUE_CLASS,
+    [new StateFieldSpec('itemsIDX', 'DueItem[]'), new StateFieldSpec('todayIDX', 'number'), new StateFieldSpec('soonIDX', 'number'),
+     new StateFieldSpec('draftNameIDX', 'string'), new StateFieldSpec('draftDueIDX', 'number'), new StateFieldSpec('draftLifeIDX', 'string')],
+    `  let todayIDX: number = time.daysSinceEpoch();
+  let seedsIDX: DueSeed[] = [
+    __ITEMS_IDX__
+  ];
+  let itemsIDX: DueItem[] = [];
+  for (let s: DueSeed of seedsIDX) {
+    let lifeIDX: number = s.lifeDays;
+    if (lifeIDX < 0) { lifeIDX = 0; }
+    itemsIDX.push({name: s.name, dueDay: todayIDX + s.inDays, lifeDays: lifeIDX});
+  }
+  let soonIDX: number = __SOON_DAYS_IDX__;
+  if (soonIDX < 0 || soonIDX > 60) { soonIDX = 3; }`,
+    `itemsIDX: itemsIDX, todayIDX: todayIDX, soonIDX: soonIDX, draftNameIDX: "", draftDueIDX: todayIDX, draftLifeIDX: ""`,
+    `function withItemsIDX(state: AppState, items: DueItem[]): AppState {
+  return {itemsIDX: items, todayIDX: time.daysSinceEpoch(), soonIDX: state.soonIDX, draftNameIDX: state.draftNameIDX, draftDueIDX: state.draftDueIDX, draftLifeIDX: state.draftLifeIDX__PASSTHROUGH__};
+}
+
+function setNameIDX(state: AppState, value: string): AppState {
+  return {itemsIDX: state.itemsIDX, todayIDX: state.todayIDX, soonIDX: state.soonIDX, draftNameIDX: value, draftDueIDX: state.draftDueIDX, draftLifeIDX: state.draftLifeIDX__PASSTHROUGH__};
+}
+
+function setDueIDX(state: AppState, value: number): AppState {
+  return {itemsIDX: state.itemsIDX, todayIDX: state.todayIDX, soonIDX: state.soonIDX, draftNameIDX: state.draftNameIDX, draftDueIDX: value, draftLifeIDX: state.draftLifeIDX__PASSTHROUGH__};
+}
+
+function setLifeIDX(state: AppState, value: string): AppState {
+  return {itemsIDX: state.itemsIDX, todayIDX: state.todayIDX, soonIDX: state.soonIDX, draftNameIDX: state.draftNameIDX, draftDueIDX: state.draftDueIDX, draftLifeIDX: value__PASSTHROUGH__};
+}
+
+function setSoonIDX(state: AppState, value: number): AppState {
+  return {itemsIDX: state.itemsIDX, todayIDX: state.todayIDX, soonIDX: value, draftNameIDX: state.draftNameIDX, draftDueIDX: state.draftDueIDX, draftLifeIDX: state.draftLifeIDX__PASSTHROUGH__};
+}
+
+function addItemIDX(state: AppState, ignored: number): AppState {
+  let name: string = strings.trim(state.draftNameIDX);
+  if (name === "") { return state; }
+  let life: number = math.round(strings.toNumber(state.draftLifeIDX, 0));
+  if (life < 0) { life = 0; }
+  let out: DueItem[] = [];
+  for (let it: DueItem of state.itemsIDX) { out.push(it); }
+  out.push({name: name, dueDay: state.draftDueIDX, lifeDays: life});
+  let today: number = time.daysSinceEpoch();
+  return {itemsIDX: out, todayIDX: today, soonIDX: state.soonIDX, draftNameIDX: "", draftDueIDX: today, draftLifeIDX: ""__PASSTHROUGH__};
+}
+
+function renewIDX(state: AppState, index: number): AppState {
+  let today: number = time.daysSinceEpoch();
+  let out: DueItem[] = [];
+  let i: number = 0;
+  while (i < state.itemsIDX.length()) {
+    let it: DueItem = state.itemsIDX[i];
+    if (i === index && it.lifeDays > 0) { out.push({name: it.name, dueDay: today + it.lifeDays, lifeDays: it.lifeDays}); }
+    else { out.push(it); }
+    i = i + 1;
+  }
+  return withItemsIDX(state, out);
+}
+
+function removeItemIDX(state: AppState, index: number): AppState {
+  let out: DueItem[] = [];
+  let i: number = 0;
+  while (i < state.itemsIDX.length()) {
+    if (i !== index) { out.push(state.itemsIDX[i]); }
+    i = i + 1;
+  }
+  return withItemsIDX(state, out);
+}
+
+function refreshTodayIDX(state: AppState, elapsedMs: number): AppState {
+  let today: number = time.daysSinceEpoch();
+  if (today === state.todayIDX) { return state; }
+  return {itemsIDX: state.itemsIDX, todayIDX: today, soonIDX: state.soonIDX, draftNameIDX: state.draftNameIDX, draftDueIDX: state.draftDueIDX, draftLifeIDX: state.draftLifeIDX__PASSTHROUGH__};
+}
+
+function sortedIDX(state: AppState): number[] {
+  let order: number[] = [];
+  let i: number = 0;
+  while (i < state.itemsIDX.length()) {
+    let at: number = order.length();
+    let j: number = 0;
+    while (j < order.length()) {
+      if (state.itemsIDX[i].dueDay < state.itemsIDX[order[j]].dueDay) { at = j; break; }
+      j = j + 1;
+    }
+    let next: number[] = [];
+    let k: number = 0;
+    while (k < order.length()) {
+      if (k === at) { next.push(i); }
+      next.push(order[k]);
+      k = k + 1;
+    }
+    if (at === order.length()) { next.push(i); }
+    order = next;
+    i = i + 1;
+  }
+  return order;
+}
+
+function expiredCountIDX(state: AppState): number {
+  let n: number = 0;
+  for (let it: DueItem of state.itemsIDX) { if (it.dueDay < state.todayIDX) { n = n + 1; } }
+  return n;
+}
+
+function soonCountIDX(state: AppState): number {
+  let n: number = 0;
+  for (let it: DueItem of state.itemsIDX) {
+    let left: number = it.dueDay - state.todayIDX;
+    if (left >= 0 && left <= state.soonIDX) { n = n + 1; }
+  }
+  return n;
+}
+
+function soonNamesIDX(state: AppState): string {
+  let out: string = "";
+  for (let i: number of sortedIDX(state)) {
+    let it: DueItem = state.itemsIDX[i];
+    if (it.dueDay - state.todayIDX <= state.soonIDX) {
+      if (out.length() > 0) { out = out + ", "; }
+      out = out + it.name;
+    }
+  }
+  return out;
+}
+
+function daysWordIDX(n: number): string {
+  if (n === 1) { return "1 day"; }
+  return ui.numberToString(n) + " days";
+}`,
+    `{
+    let n: number = state.itemsIDX.length();
+    let expired: number = expiredCountIDX(state);
+    let soon: number = soonCountIDX(state);
+    let rows: ui.View[] = [];
+    for (let i: number of sortedIDX(state)) {
+      let it: DueItem = state.itemsIDX[i];
+      let left: number = it.dueDay - state.todayIDX;
+      let badge: string = "In " + daysWordIDX(left);
+      let tone: string = "default";
+      let icon: string = "calendar";
+      if (left < 0) { badge = "Expired " + daysWordIDX(0 - left) + " ago"; tone = "danger"; icon = "warning"; }
+      else if (left === 0) { badge = "Today"; tone = "danger"; icon = "warning"; }
+      else if (left === 1) { badge = "Tomorrow"; tone = "warning"; icon = "clock"; }
+      else if (left <= state.soonIDX) { tone = "warning"; icon = "clock"; }
+      let detail: string = ui.dateToString(it.dueDay);
+      if (it.lifeDays > 0) {
+        let rest: number = left;
+        if (rest < 0) { rest = 0; }
+        if (rest > it.lifeDays) { rest = it.lifeDays; }
+        detail = detail + " · every " + daysWordIDX(it.lifeDays) + " · " + ui.numberToString(math.round(rest * 100 / it.lifeDays)) + "% left";
+      }
+      rows.push(ui.ListItem(tone, it.name, detail, badge, "", i, true, icon));
+      let buttons: ui.View[] = [];
+      if (it.lifeDays > 0) { buttons.push(ui.Button("secondary", "Done", "renewIDX", i, true)); }
+      buttons.push(ui.IconButton("quiet", "trash", "Remove", "removeItemIDX", i, true));
+      rows.push(ui.ActionBar("end", buttons));
+    }
+    if (n > 0) {
+      let expiredTone: string = "default";
+      if (expired > 0) { expiredTone = "danger"; }
+      let soonTone: string = "default";
+      if (soon > 0) { soonTone = "warning"; }
+      sections.push(ui.Section("summary", "", "", [ui.MetricGroup("default", 2, [
+        ui.NumberStat(expiredTone, "Expired", expired, "", "", 1, "past their date", "warning", 0),
+        ui.NumberStat(soonTone, "Due soon", soon, "", "", 1, "within " + daysWordIDX(state.soonIDX), "clock", 0)
+      ])]));
+    }
+    let typed: boolean = strings.trim(state.draftNameIDX) !== "";
+    let compactIDX: boolean = __WIDGET__;
+    sections.push(ui.Section("content", "__FORM_TITLE_IDX__", "", [
+      ui.TextField("default", "__NAME_LABEL_IDX__", state.draftNameIDX, "setNameIDX"),
+      ui.DateField("default", "__DATE_LABEL_IDX__", state.draftDueIDX, "setDueIDX"),
+      ui.When(!compactIDX, ui.TextField("default", "Comes round every (days, blank for once)", state.draftLifeIDX, "setLifeIDX", "number")),
+      ui.ActionBar("end", [ui.Button("primary", "Add", "addItemIDX", 0, typed)])
+    ]));
+    sections.push(ui.Section("content", "", "", [
+      ui.When(n === 0, ui.EmptyState("default", "Nothing tracked yet", "Add something with its date above.", "", "", "calendar")),
+      ui.When(n > 0, ui.ListGroup("default", "", rows))
+    ]));
+    sections.push(ui.Section("supporting", "", "", [
+      ui.NumberField("default", "Due soon means within (days)", state.soonIDX, 0, 60, "setSoonIDX"),
+      ui.Ticker("default", "dueDayIDX", 3600000, true, "refreshTodayIDX")
+    ]));
+  }`,
+    [],
+    [
+      new ContentFieldSpec('__FORM_TITLE_IDX__', 'form_title', 'Add an item', 'Heading of the form (2-4 words, e.g. Add food)', 24),
+      new ContentFieldSpec('__NAME_LABEL_IDX__', 'name_label', 'Item', 'Label of the name field (1-2 words, e.g. Food, Filter)', 16),
+      new ContentFieldSpec('__DATE_LABEL_IDX__', 'date_label', 'Due', 'Label of the date field (1-2 words, e.g. Expires, Due)', 16),
+      new ContentFieldSpec('__SOON_DAYS_IDX__', 'soon_days', '3', 'How many days ahead count as due soon, as a whole number (1 to 30)', 2, true)
+    ],
+    ['import * as strings from "std/strings"', 'import * as time from "std/time"'],
+    [new ListFieldSpec('__ITEMS_IDX__', 'items',
+      'The things the request itself names, each with when it is due (0 to 12 rows); none when the person adds their own (a pantry, ' +
+      'documents they will enter). Only things the request states: never made-up food or dates',
+      ['name of the thing (1-4 words)', 'days from today until it is due, a whole number (0 today, negative when already past)',
+       'its life in days when it comes round again (90 for every 90 days), 0 when it happens once'],
+      [28, 5, 5], '{name: "{0}", inDays: {1}, lifeDays: {2}}', ',\n    ', 0, 12, [], [1, 2])],
+    [new PortSpec('writes', 'soon_count', 'number', 'soonCountIDX(state)', '', true),
+     new PortSpec('writes', 'expired_count', 'number', 'expiredCountIDX(state)', '', true),
+     new PortSpec('writes', 'soon_names', 'string', 'soonNamesIDX(state)', '', true),
+     new PortSpec('writes', 'count', 'number', 'state.itemsIDX.length()', '', true)],
+    [],
+    ['needs_search_or_form', 'needs_logic']
+  )
+  spec.tab = 'Due'
+  return spec
+}
+
+const POINTS_CLASS: string = `@jsonable
+class PointsTask {
+  name: string;
+  points: number;
+}
+
+@jsonable
+class PointsEntry {
+  who: number;
+  what: string;
+  points: number;
+  day: number;
+  minute: number;
+}`
+
+/**
+ * Points a few people earn for tasks and spend on rewards: a chore chart for two kids, stars for practice. Each task and each reward
+ * is one tap for the person picked; a reward that costs more than the balance is dimmed and says what it still needs. Not money:
+ * shared costs are record_log. Publishes the people and each one's balance under the names record_log uses (labels, totals), so a
+ * bar chart that reads them (series_chart) shows the points.
+ */
+function pointsLedgerFragment(): FragmentSpec {
+  let spec = new FragmentSpec(
+    'points_ledger',
+    'Points or stars that one to four named people (kids, a team, players) earn by doing tasks and spend on rewards: each task and ' +
+    'each reward is one tap, each person\'s balance is shown big, a reward costing more than the balance says what it still needs, ' +
+    'and the history of points earned and spent can be undone. A chore chart, a reward chart, a habit score for kids. Not money ' +
+    'shared between people (that is record_log), not a single goal bar (that is progress_goal)',
+    POINTS_CLASS,
+    [new StateFieldSpec('peopleIDX', 'string[]'), new StateFieldSpec('tasksIDX', 'PointsTask[]'), new StateFieldSpec('rewardsIDX', 'PointsTask[]'),
+     new StateFieldSpec('historyIDX', 'PointsEntry[]'), new StateFieldSpec('whoIDX', 'number'),
+     new StateFieldSpec('draftNameIDX', 'string'), new StateFieldSpec('draftPointsIDX', 'number')],
+    `  let peopleIDX: string[] = [__PEOPLE_IDX__];
+  let tasksIDX: PointsTask[] = [
+    __TASKS_IDX__
+  ];
+  let rewardsIDX: PointsTask[] = [
+    __REWARDS_IDX__
+  ];
+  let historyIDX: PointsEntry[] = [];`,
+    `peopleIDX: peopleIDX, tasksIDX: tasksIDX, rewardsIDX: rewardsIDX, historyIDX: historyIDX, whoIDX: 0, draftNameIDX: "", draftPointsIDX: 5`,
+    `function withHistoryIDX(state: AppState, history: PointsEntry[]): AppState {
+  return {peopleIDX: state.peopleIDX, tasksIDX: state.tasksIDX, rewardsIDX: state.rewardsIDX, historyIDX: history, whoIDX: state.whoIDX, draftNameIDX: state.draftNameIDX, draftPointsIDX: state.draftPointsIDX__PASSTHROUGH__};
+}
+
+function balanceOfIDX(state: AppState, who: number): number {
+  let sum: number = 0;
+  for (let e: PointsEntry of state.historyIDX) { if (e.who === who) { sum = sum + e.points; } }
+  return sum;
+}
+
+function pointsIDX(state: AppState): number[] {
+  let out: number[] = [];
+  let i: number = 0;
+  while (i < state.peopleIDX.length()) {
+    out.push(balanceOfIDX(state, i));
+    i = i + 1;
+  }
+  return out;
+}
+
+function pointsTotalIDX(state: AppState): number {
+  let sum: number = 0;
+  for (let e: PointsEntry of state.historyIDX) { sum = sum + e.points; }
+  return sum;
+}
+
+function addEntryIDX(state: AppState, what: string, points: number): AppState {
+  let out: PointsEntry[] = [];
+  for (let e: PointsEntry of state.historyIDX) { out.push(e); }
+  out.push({who: state.whoIDX, what: what, points: points, day: time.daysSinceEpoch(), minute: time.hourOfDay() * 60 + time.minuteOfHour()});
+  return withHistoryIDX(state, out);
+}
+
+function setWhoIDX(state: AppState, index: number): AppState {
+  return {peopleIDX: state.peopleIDX, tasksIDX: state.tasksIDX, rewardsIDX: state.rewardsIDX, historyIDX: state.historyIDX, whoIDX: index, draftNameIDX: state.draftNameIDX, draftPointsIDX: state.draftPointsIDX__PASSTHROUGH__};
+}
+
+function awardIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.tasksIDX.length()) { return state; }
+  let t: PointsTask = state.tasksIDX[index];
+  return addEntryIDX(state, t.name, t.points);
+}
+
+function redeemIDX(state: AppState, index: number): AppState {
+  if (index < 0 || index >= state.rewardsIDX.length()) { return state; }
+  let r: PointsTask = state.rewardsIDX[index];
+  if (balanceOfIDX(state, state.whoIDX) < r.points) { return state; }
+  return addEntryIDX(state, r.name, 0 - r.points);
+}
+
+function undoLastIDX(state: AppState, ignored: number): AppState {
+  let out: PointsEntry[] = [];
+  let i: number = 0;
+  while (i < state.historyIDX.length() - 1) {
+    out.push(state.historyIDX[i]);
+    i = i + 1;
+  }
+  return withHistoryIDX(state, out);
+}
+
+function setNameIDX(state: AppState, value: string): AppState {
+  return {peopleIDX: state.peopleIDX, tasksIDX: state.tasksIDX, rewardsIDX: state.rewardsIDX, historyIDX: state.historyIDX, whoIDX: state.whoIDX, draftNameIDX: value, draftPointsIDX: state.draftPointsIDX__PASSTHROUGH__};
+}
+
+function setPointsIDX(state: AppState, value: number): AppState {
+  return {peopleIDX: state.peopleIDX, tasksIDX: state.tasksIDX, rewardsIDX: state.rewardsIDX, historyIDX: state.historyIDX, whoIDX: state.whoIDX, draftNameIDX: state.draftNameIDX, draftPointsIDX: value__PASSTHROUGH__};
+}
+
+function withAddedIDX(list: PointsTask[], name: string, points: number): PointsTask[] {
+  let out: PointsTask[] = [];
+  for (let t: PointsTask of list) { out.push(t); }
+  out.push({name: name, points: points});
+  return out;
+}
+
+function addTaskIDX(state: AppState, ignored: number): AppState {
+  let name: string = strings.trim(state.draftNameIDX);
+  if (name === "" || state.draftPointsIDX <= 0) { return state; }
+  return {peopleIDX: state.peopleIDX, tasksIDX: withAddedIDX(state.tasksIDX, name, state.draftPointsIDX), rewardsIDX: state.rewardsIDX, historyIDX: state.historyIDX, whoIDX: state.whoIDX, draftNameIDX: "", draftPointsIDX: state.draftPointsIDX__PASSTHROUGH__};
+}
+
+function addRewardIDX(state: AppState, ignored: number): AppState {
+  let name: string = strings.trim(state.draftNameIDX);
+  if (name === "" || state.draftPointsIDX <= 0) { return state; }
+  return {peopleIDX: state.peopleIDX, tasksIDX: state.tasksIDX, rewardsIDX: withAddedIDX(state.rewardsIDX, name, state.draftPointsIDX), historyIDX: state.historyIDX, whoIDX: state.whoIDX, draftNameIDX: "", draftPointsIDX: state.draftPointsIDX__PASSTHROUGH__};
+}
+
+function signedIDX(points: number): string {
+  if (points > 0) { return "+" + ui.numberToString(points); }
+  return ui.numberToString(points);
+}`,
+    `{
+    let people: number = state.peopleIDX.length();
+    let who: number = state.whoIDX;
+    if (who < 0 || who >= people) { who = 0; }
+    let whoName: string = "";
+    if (people > 0) { whoName = state.peopleIDX[who]; }
+    let balance: number = balanceOfIDX(state, who);
+    let stats: ui.View[] = [];
+    let i: number = 0;
+    while (i < people && i < 4) {
+      let tone: string = "default";
+      if (i === who && people > 1) { tone = "accent"; }
+      stats.push(ui.NumberStat(tone, state.peopleIDX[i], balanceOfIDX(state, i), "", " __UNIT_IDX__", 1, "", "star", 0));
+      i = i + 1;
+    }
+    sections.push(ui.Section("summary", "", "", [ui.MetricGroup("default", 2, stats)]));
+    let earn: ui.View[] = [];
+    let t: number = 0;
+    while (t < state.tasksIDX.length()) {
+      let task: PointsTask = state.tasksIDX[t];
+      earn.push(ui.ListItem("default", task.name, "", signedIDX(task.points), "awardIDX", t, true, "plus"));
+      t = t + 1;
+    }
+    let spend: ui.View[] = [];
+    let r: number = 0;
+    while (r < state.rewardsIDX.length()) {
+      let reward: PointsTask = state.rewardsIDX[r];
+      let enough: boolean = balance >= reward.points;
+      let note: string = "";
+      if (!enough) { note = "needs " + ui.numberToString(reward.points - balance) + " more"; }
+      let tone: string = "default";
+      if (enough) { tone = "success"; }
+      spend.push(ui.ListItem(tone, reward.name, note, ui.numberToString(reward.points), "redeemIDX", r, enough, "star"));
+      r = r + 1;
+    }
+    let pickWho: boolean = people > 1;
+    sections.push(ui.Section("content", "", "", [
+      ui.When(pickWho, ui.Select("default", "Who", state.peopleIDX, who, "setWhoIDX")),
+      ui.ListGroup("default", "__EARN_TITLE_IDX__", earn),
+      ui.When(state.rewardsIDX.length() > 0, ui.ListGroup("default", "__SPEND_TITLE_IDX__", spend))
+    ]));
+    let n: number = state.historyIDX.length();
+    let rows: ui.View[] = [];
+    let k: number = n - 1;
+    let shown: number = 0;
+    while (k >= 0 && shown < 20) {
+      let e: PointsEntry = state.historyIDX[k];
+      let name: string = "?";
+      if (e.who >= 0 && e.who < people) { name = state.peopleIDX[e.who]; }
+      let tone: string = "default";
+      if (e.points > 0) { tone = "success"; }
+      let title: string = e.what;
+      if (people > 1) { title = name + " · " + e.what; }
+      rows.push(ui.ListItem(tone, title, ui.dateToString(e.day) + " " + ui.clockToString(e.minute), signedIDX(e.points), "", k, true, ""));
+      k = k - 1;
+      shown = shown + 1;
+    }
+    sections.push(ui.Section("content", "History", "", [
+      ui.When(n === 0, ui.EmptyState("default", "No points yet", "Tap a task above when it is done.", "", "", "star")),
+      ui.When(n > 0, ui.ListGroup("default", "", rows)),
+      ui.ActionBar("end", [ui.Button("secondary", "Undo last", "undoLastIDX", 0, n > 0)])
+    ]));
+    let compactIDX: boolean = __WIDGET__;
+    let typed: boolean = strings.trim(state.draftNameIDX) !== "";
+    sections.push(ui.Section("supporting", "", "", [
+      ui.When(!compactIDX, ui.TextField("default", "New task or reward", state.draftNameIDX, "setNameIDX")),
+      ui.When(!compactIDX, ui.NumberField("default", "Points", state.draftPointsIDX, 1, 100, "setPointsIDX")),
+      ui.When(!compactIDX, ui.ActionBar("end", [
+        ui.Button("secondary", "Add reward", "addRewardIDX", 0, typed),
+        ui.Button("primary", "Add task", "addTaskIDX", 0, typed)
+      ]))
+    ]));
+  }`,
+    [],
+    [
+      new ContentFieldSpec('__UNIT_IDX__', 'unit', 'pts', 'What the points are called, short and plural (stars, pts, coins)', 8),
+      new ContentFieldSpec('__EARN_TITLE_IDX__', 'earn_title', 'Earn', 'Heading over the tasks that earn points (1-3 words)', 20),
+      new ContentFieldSpec('__SPEND_TITLE_IDX__', 'spend_title', 'Spend', 'Heading over the rewards that cost points (1-3 words)', 20)
+    ],
+    ['import * as strings from "std/strings"', 'import * as time from "std/time"'],
+    [new ListFieldSpec('__PEOPLE_IDX__', 'people',
+      'The people who earn points, by the names the request gives, else numbered stand-ins such as Kid 1, Kid 2 (1 to 4)',
+      ['name (1-2 words)'], [16], '"{0}"', ', ', 1, 4, [['Kid 1'], ['Kid 2']]),
+     new ListFieldSpec('__TASKS_IDX__', 'tasks',
+      'Tasks that earn points, from the request or the usual ones for it (3 to 8), each with the points it earns',
+      ['task (1-4 words)', 'points it earns, a whole number (1 to 20)'], [28, 3], '{name: "{0}", points: {1}}', ',\n    ', 1, 8,
+      [['Make the bed', '1'], ['Tidy up toys', '2'], ['Homework done', '3']], [1]),
+     new ListFieldSpec('__REWARDS_IDX__', 'rewards',
+      'Rewards the points are spent on, from the request or the usual ones for it (2 to 6), each with what it costs; none when ' +
+      'the request says the family agrees on them later',
+      ['reward (1-4 words)', 'points it costs, a whole number (2 to 100)'], [28, 3], '{name: "{0}", points: {1}}', ',\n    ', 0, 6,
+      [['Extra story', '5'], ['Ice cream', '10'], ['Movie night', '20']], [1])],
+    [new PortSpec('writes', 'labels', 'string[]', 'peopleIDX'),
+     new PortSpec('writes', 'totals', 'number[]', 'pointsIDX(state)', '', true),
+     new PortSpec('writes', 'total', 'number', 'pointsTotalIDX(state)', '', true),
+     new PortSpec('writes', 'count', 'number', 'state.historyIDX.length()', '', true)],
+    [],
+    ['needs_search_or_form', 'needs_multiple_counters', 'needs_logic']
+  )
+  spec.tab = 'Points'
+  return spec
+}
+
 /**
  * The palette VeraSectionCompose.ets picks from, one per section slot. `checklist`/`metrics`
  * reproduce today's two flat templates exactly (as single-fragment compositions); `timer` and
@@ -2856,7 +3331,12 @@ const SECTION_OWNS: Map<string, string> = new Map<string, string>([
   ['timeline', 'its steps in time order, each with its time'],
   ['bar_chart', 'its bar chart of the categories'],
   ['quick_log', 'the one-tap button, today\'s total toward the goal, today\'s count, how long since the last one, today\'s entries with an Undo'],
-  ['dose_schedule', 'the doses with a Take button on each, how many are taken today, which are late and the streak of days with every dose taken']
+  ['dose_schedule', 'the doses with a Take button on each, how many are taken today, which are late and the streak of days with every dose taken'],
+  ['due_items', 'its things each with the day it is due, soonest first, each saying how many days are left or how long ago it expired, ' +
+    'how many are expired and how many are due soon, its form to add one (name, date, how often it comes round), a Done button on ' +
+    'those that come round again, Remove on each, and the setting for how many days count as soon'],
+  ['points_ledger', 'each person\'s points balance, the tasks that earn points and the rewards that cost them (each a tap), what a ' +
+    'reward still needs, the history of points earned and spent with an Undo last button, and its form to add a task or a reward']
 ])
 
 export function fragments(): FragmentSpec[] {
@@ -2869,7 +3349,8 @@ export function fragments(): FragmentSpec[] {
     masterListFragment(), detailViewFragment(), listSummaryFragment(), filterBoxFragment(),
     recordLogFragment(), numberStripFragment(), breakdownTableFragment(), seriesChartFragment(), settleUpFragment(),
     itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment(),
-    quickLogFragment(), doseScheduleFragment()
+    quickLogFragment(), doseScheduleFragment(),
+    dueItemsFragment(), pointsLedgerFragment()
   ]
   for (let f of all) { if (f.owns.length === 0 && SECTION_OWNS.has(f.kind)) { f.owns = SECTION_OWNS.get(f.kind)! } }
   return all
