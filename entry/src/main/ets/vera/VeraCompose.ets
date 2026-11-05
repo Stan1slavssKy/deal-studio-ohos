@@ -2591,6 +2591,17 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     comp.inputs = comp.inputs.filter((i: SketchInput): boolean => names.indexOf(i.id) < 0)
     comp.customReads = comp.customReads.filter((id: string): boolean => names.indexOf(id) < 0)
   }
+  // The time of day that ends the plan's list of places or steps, when one of the figures worked out is it. Before the inputs are
+  // read: the day's start is not one the deadline is worked out from (dayStart).
+  let sure: number = 0
+  for (let v of comp.sketch.values) {
+    if (v.format !== 'clock' || !comp.bindings.has(v.id)) { continue }
+    if (answerOf(answers, 'deadline.' + v.id, ['yes'], comp.answers, DEADLINE_ABOVE) !== 'yes') { continue }
+    let a = answers['deadline.' + v.id] as Record<string, Object>
+    let confidence = typeof a['confidence'] === 'number' ? a['confidence'] as number : 1
+    // Two that say yes: the surer one.
+    if (confidence > sure) { sure = confidence; comp.deadline = v.id }
+  }
   // An input nothing reads does nothing. A number the request did not ask for is the sketch's extra and is
   // left out, and the note says so; one it asked for, a switch or words mean the request wants something
   // the parts do not do with it. The day's start time is read by the itinerary (dayStart).
@@ -2620,16 +2631,6 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     else { comp.dropped.push('input "' + input.label + '": nothing on the screen uses it') }
   }
   showEntryTotalsAsNumbers(comp)
-  // The time of day that ends the plan's list of places or steps, when one of the figures worked out is it.
-  let sure: number = 0
-  for (let v of comp.sketch.values) {
-    if (v.format !== 'clock' || !comp.bindings.has(v.id)) { continue }
-    if (answerOf(answers, 'deadline.' + v.id, ['yes'], comp.answers, DEADLINE_ABOVE) !== 'yes') { continue }
-    let a = answers['deadline.' + v.id] as Record<string, Object>
-    let confidence = typeof a['confidence'] === 'number' ? a['confidence'] as number : 1
-    // Two that say yes: the surer one.
-    if (confidence > sure) { sure = confidence; comp.deadline = v.id }
-  }
   // Inputs that nothing reads make a form that does nothing: the sketch has lost what they were for.
   if (sketch.values.length === 0 && !sketch.hasCountdown && !sketch.hasStopwatch && sketch.list === null && comp.events.length === 0 &&
       comp.blocks.length === 0 && comp.custom.length === 0) {
@@ -3715,9 +3716,21 @@ function itineraryShows(comp: Composition, answers: Record<string, Object>): str
  * the itinerary draws no start field of its own, which beside the form's was a second start time only one of which did anything
  * (West Lake: "Start time 09:00" and "Day starts 09:00"). '' when there is none, or more than one and so no telling which.
  */
+/** The time of day the plan's own example gives for the deadline (comp.deadline); NaN when there is none. */
+function deadlineExample(comp: Composition): number {
+  if (comp.deadline.length === 0) { return NaN }
+  let v = comp.sketch.values.find((x: SketchValue): boolean => x.id === comp.deadline)
+  return v === undefined ? NaN : v.result
+}
+
 function dayStart(comp: Composition): string {
   if (comp.blocks.indexOf('itinerary') < 0) { return '' }
-  let times = comp.sketch.inputs.filter((i: SketchInput): boolean => i.kind === 'time')
+  // Not a time at or after the deadline: one input "Flight departs" (21:00) with "Back at the airport by" = flight - 120 as the
+  // deadline started the day at the flight, after its own deadline, and showed no stop, with no start field left to fix it (review
+  // of #46). A landing time the deadline is worked out from (08:00, leave by 17:00) is still the day's start: told apart by the
+  // plan's own example of the deadline, not by what it is worked out from.
+  let endsBy = deadlineExample(comp)
+  let times = comp.sketch.inputs.filter((i: SketchInput): boolean => i.kind === 'time' && !(isFinite(endsBy) && i.value >= endsBy))
   return times.length === 1 ? times[0].id : ''
 }
 

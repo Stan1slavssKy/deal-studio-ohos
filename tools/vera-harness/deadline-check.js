@@ -76,6 +76,45 @@ align.setAlignEnabled(false)
     assert.deepEqual(reads.map(p => [p.name, p.optional]), [['deadline', true], ['start', true]])
     assert.ok(align.alignKinds().includes('itinerary'))
   }
+  // The one time input is the flight, after the deadline worked out from it: it is not the day's start (review of #46). The
+  // itinerary keeps its own start (09:00) and its Day starts field; the stops before 19:00 all fit. (The first plan above, whose
+  // start the deadline is worked out from and which comes before it, still starts the day: its stops end at 10:00, 11:15...)
+  {
+    const flight = {title: 'Layover', eyebrow: 'DAY', subtitle: 'What fits before the flight',
+      inputs: [{id: 'flightAt', label: 'Flight departs', kind: 'time', measure: 'minutes', min: 0, max: 1439, value: 1260}],
+      needs: [{type: 'figure', id: 'backBy', label: 'Back at the airport by', means: 'the time of day by which the stops must be over',
+               format: 'time_of_day', formula: 'flightAt - 120', example: {given: {flightAt: 1260}, result: 1140}},
+              {type: 'content', what: 'a list of stops to see in the city', from: REQUEST}]}
+    const h = new AgentHost()
+    h.askPlan = async (system, user, onText) => { const t = JSON.stringify(flight); onText(t); return t }
+    h.askJev = async body => JSON.stringify({answers: {'ready.0': says('itinerary'), 'whose.0': says('written'), real_data: says('false'),
+      'show.backBy': says('stat'), 'written.backBy': says('right', 0.9), 'asked.value.backBy': says('asked'), 'deadline.backBy': says('yes')}})
+    h.fillBlocks = async request => defaultBlockFill(request)
+    const r = await runAgent(Object.assign(new AgentRequest(), {prompt: REQUEST}), h)
+    assert.equal(r.errors, '', r.note)
+    const texts = screen(r.source)
+    assert.equal(texts.filter(t => /^Stop \d$/.test(t)).length, 5, texts.join(' | '))
+    assert.ok(texts.includes('Day starts'), 'the itinerary keeps its own start field')
+    assert.ok(!texts.some(t => /Nothing fits/.test(t)))
+  }
+  // A landing time the deadline is worked out from, and before it (08:00, leave by 17:00): it is the day's start, the stops begin at
+  // 08:00 and the itinerary draws no second start field (Istanbul layover).
+  {
+    const landing = {title: 'Layover', eyebrow: 'DAY', subtitle: 'What fits before the flight',
+      inputs: [{id: 'landAt', label: 'Landing time', kind: 'time', measure: 'minutes', min: 0, max: 1439, value: 480}],
+      needs: [{type: 'figure', id: 'leaveAt', label: 'Leave for airport', means: 'the time of day by which the stops must be over',
+               format: 'time_of_day', formula: 'landAt + 540', example: {given: {landAt: 480}, result: 1020}},
+              {type: 'content', what: 'a list of stops to see in the city', from: REQUEST}]}
+    const h = new AgentHost()
+    h.askPlan = async (system, user, onText) => { const t = JSON.stringify(landing); onText(t); return t }
+    h.askJev = async body => JSON.stringify({answers: {'ready.0': says('itinerary'), 'whose.0': says('written'), real_data: says('false'),
+      'show.leaveAt': says('stat'), 'written.leaveAt': says('right', 0.9), 'asked.value.leaveAt': says('asked'), 'deadline.leaveAt': says('yes')}})
+    h.fillBlocks = async request => defaultBlockFill(request)
+    const r = await runAgent(Object.assign(new AgentRequest(), {prompt: REQUEST}), h)
+    const texts = screen(r.source)
+    assert.ok(!texts.includes('Day starts'), 'one start time: ' + texts.join(' | '))
+    assert.ok(texts.some(t => /^08:00 - /.test(t)), 'the first stop at landing')
+  }
 align.setAlignEnabled(true)
   console.log('deadline-check ok')
 })().catch(e => { console.error(e); process.exit(1) })
