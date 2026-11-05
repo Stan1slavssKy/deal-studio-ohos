@@ -444,6 +444,9 @@ export struct VeraPreview {
   }
 
   onProgramChanged(): void {
+    // A new program is read from its top, and the host shows its corner again (GeneratePage.showCorner): the next scroll down
+    // has to tell it again, which it would not while this still said "down".
+    this.readingDown = false
     this.load()
   }
 

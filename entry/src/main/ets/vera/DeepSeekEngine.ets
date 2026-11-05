@@ -118,16 +118,10 @@ class ToolCallAccumulator {
   arguments: string = ''
 }
 
-/** What one HTTP request/response cycle produced. */
 /** How a request offers the tools: callable, defined but not callable, or not sent at all. */
 const TOOLS_AUTO = 'auto'
 const TOOLS_NONE = 'none'
 const TOOLS_OFF = 'off'
-
-/**
- * One of the small model calls that is not the program itself: the text for a block, a block's function bodies, the second
- * opinion on a weak pick, the choice of UI components. Kept per run so the Metrics tab can show what each cost.
- */
 
 /** A side call's reply and why the model stopped ("length" when the token limit ended it, "stop" when it ended it itself, "" unknown). */
 export class SideAnswer {
@@ -136,6 +130,10 @@ export class SideAnswer {
   constructor(text: string | null, finishReason: string) { this.text = text; this.finishReason = finishReason }
 }
 
+/**
+ * One of the small model calls that is not the program itself: the text for a block, a block's function bodies, the second
+ * opinion on a weak pick, the choice of UI components. Kept per run so the Metrics tab can show what each cost.
+ */
 export class SideCall {
   purpose: string = ''
   ms: number = 0
@@ -145,6 +143,7 @@ export class SideCall {
   ok: boolean = true
 }
 
+/** What one HTTP request/response cycle produced. */
 class StreamTurn {
   content: string = ''
   reasoning: string = ''

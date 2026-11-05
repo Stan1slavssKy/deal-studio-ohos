@@ -379,6 +379,11 @@ function check(source: string, scene: boolean = false, unreadToo: boolean = true
   }
 }
 
+/** Whether a section still compiles and runs after it was changed outside the writer's rounds, and leaves no field unread. */
+export function stillWorks(source: string): boolean {
+  return check(source) === ''
+}
+
 export async function writeSection(request: CustomRequest, language: string, ask: CodeAsk,
     cancellation?: OperationCancellation, finish: () => string = (): string => ''): Promise<CustomResult> {
   throwIfCancelled(cancellation)

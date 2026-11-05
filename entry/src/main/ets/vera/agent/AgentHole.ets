@@ -5,7 +5,7 @@
  */
 
 import { AgentHost, HoleRecord, checkAgent, agentCancellation } from './AgentHost'
-import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
+import { CustomRequest, CustomResult, writeSection, stillWorks } from './AgentCustom'
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED, NOTICE_SPLIT, NOTICE_INSTEAD_TITLE } from '../ScreenPlan'
 import { PartsContract } from '../VeraCompose'
@@ -215,8 +215,15 @@ function settle(plan: ScreenPlan, prompt: string, slots: PlanSlot[], asked: Cust
   host.onHole(record)
   checkAgent(host)
   if (written.section !== null) {
-    // What the rest of the screen already has a button for is not drawn twice, whatever the writer was told.
-    written.section.viewBlock = withoutRepeatedButtons(written.section.viewBlock, assemblePlan(plan, true))
+    // What the rest of the screen already has a button for is not drawn twice, whatever the writer was told. The section was
+    // checked with its own: without them it is checked again, and kept as written when it no longer compiles, runs or reads
+    // every field it sets (a field only the removed button set).
+    let view = written.section.viewBlock
+    let trimmed = withoutRepeatedButtons(view, assemblePlan(plan, true))
+    if (trimmed !== view) {
+      written.section.viewBlock = trimmed
+      if (!stillWorks(asked.compose(written.section))) { written.section.viewBlock = view }
+    }
     plan.components.push(new PlanComponent(FILL_HOLE, written.section, new Map<string, string>()))
     let at = plan.components.length - 1
     let missed = slots.filter((s: PlanSlot): boolean => written.missed.indexOf(s.need) >= 0)

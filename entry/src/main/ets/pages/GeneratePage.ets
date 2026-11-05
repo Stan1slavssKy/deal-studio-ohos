@@ -311,6 +311,8 @@ export struct GeneratePage {
   // What the USB-network VPN last reported (UsbNet.ets), read once a second while Advanced is open (syncUsbNetPoll).
   @State usbNetStatus: string = 'off'
   private usbNetTimer: number = -1
+  /** The timer that takes the run's line off the full screen (openWhole); -1 when none. */
+  private readyNoteTimer: number = -1
   @State attempt: number = 0
   @State compiled: boolean = false
   @State compileErrors: string = ''
@@ -743,6 +745,10 @@ export struct GeneratePage {
     if (this.usbNetTimer >= 0) {
       clearInterval(this.usbNetTimer)
       this.usbNetTimer = -1
+    }
+    if (this.readyNoteTimer >= 0) {
+      clearTimeout(this.readyNoteTimer)
+      this.readyNoteTimer = -1
     }
     if (this.generating) {
       this.stopGeneration()
@@ -3142,13 +3148,15 @@ export struct GeneratePage {
     if (this.fullscreen) { return }
     this.setFullscreen(true)
     this.readyNote = true
-    setTimeout(() => { this.readyNote = false }, READY_NOTE_MS)
+    // The line of an earlier run goes with its own timer, not this run's line with it.
+    if (this.readyNoteTimer >= 0) { clearTimeout(this.readyNoteTimer) }
+    this.readyNoteTimer = setTimeout(() => { this.readyNoteTimer = -1; this.readyNote = false }, READY_NOTE_MS)
   }
 
-  /** What was typed into the program goes with it to the other view, which draws a program of its own. */
   /** A new program starts at its top: the corner buttons show again (a short one may never scroll to bring them back). */
   showCorner(): void { this.cornerHidden = false }
 
+  /** What was typed into the program goes with it to the other view, which draws a program of its own. */
   private setFullscreen(on: boolean): void {
     this.cornerHidden = false
     this.carriedState = this.liveState

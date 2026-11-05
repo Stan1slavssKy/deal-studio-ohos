@@ -290,8 +290,9 @@ export function parseSketch(text: string): Sketch | null {
       let minutesOfTheDay = input.measure === 'minutes' && input.min < 1439 && input.max >= 1439 && input.max <= 1440
       if (input.kind === 'time' && isTime(input.measure) && !minutesOfTheDay) { input.kind = 'count' }
       // A number the plan says is minutes since midnight ("Sleep starts", unit "minutes since midnight", 1320) is a time of day: typed as
-      // a number it read 1320 in a text field (Water reminder on the phone).
-      if ((input.kind === 'count' || input.kind === 'amount') && (/since midnight|time of day/i.test(input.unit + ' ' + input.label) || minutesOfTheDay) &&
+      // a number it read 1320 in a text field (Water reminder on the phone). Its words say so, not its range: a count of minutes up to
+      // 1440 is as often a length ("Daily screen-time limit", 0 to 1440, 120 is two hours, not 02:00).
+      if ((input.kind === 'count' || input.kind === 'amount') && /since midnight|time of day/i.test(input.unit + ' ' + input.label) &&
         input.value >= 0 && input.value < 1440) { input.kind = 'time' }
       // A time of day is minutes since midnight, whatever measure the sketch wrote.
       if (input.kind === 'time') {
@@ -2034,8 +2035,8 @@ const LEDGER_TAKES: string[] = ['checklist', 'idea_deck', 'data_table', 'search_
 
 /** The plan's inputs for the people's names: the ledger names its own. */
 function ledgerNames(comp: Composition): string[] {
-  return comp.inputs.concat(comp.sketch.inputs).filter((i: SketchInput): boolean => i.kind === 'text' &&
-    /\b(kids?|child(ren)?|person|people|names?|first|second)\b/i.test(i.label)).map((i: SketchInput): string => i.id)
+  return unique(comp.inputs.concat(comp.sketch.inputs).filter((i: SketchInput): boolean => i.kind === 'text' &&
+    /\b(kids?|child(ren)?|person|people|names?|first|second)\b/i.test(i.label)).map((i: SketchInput): string => i.id))
 }
 
 /** The events the plan put on adding or tapping an entry leave with the list, to the section that takes it; each is said in the trace. */
@@ -2122,7 +2123,7 @@ function handRoundsToTimer(comp: Composition): void {
   // "Switches to the other phase when a block or a break runs out" is what the timer does.
   for (let e of sketch.events) {
     let need = e.what + ' (' + e.when + ')'
-    if (comp.custom.indexOf(need) < 0 || !(ROUND_WORDS.test(need) || /\bcountdown|runs? out|ends?\b/i.test(e.when))) { continue }
+    if (comp.custom.indexOf(need) < 0 || !(ROUND_WORDS.test(need) || /\b(countdown|runs? out|ends?)\b/i.test(e.when))) { continue }
     comp.custom = comp.custom.filter((n: string): boolean => n !== need)
     comp.phoneNeeds = comp.phoneNeeds.filter((n: string): boolean => n !== need)
     comp.unboundNeeds = comp.unboundNeeds.filter((n: string): boolean => n !== need)
@@ -2612,6 +2613,8 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     if (confidence > sure) { sure = confidence; comp.deadline = v.id }
   }
   dropValues(comp, answers, failed, served, shownBySection)
+  // One nothing could work out leaves all the same; the itinerary is then given no deadline rather than a name nothing defines.
+  if (comp.deadline.length > 0 && !comp.bindings.has(comp.deadline)) { comp.deadline = '' }
   // Figures over points the plan could not work out are the ledger's balances, not a section to write.
   if (comp.replaced.some((r: Replaced): boolean => r.kind === 'points_ledger')) {
     let figures = comp.custom.filter((n: string): boolean => n.startsWith('the figure "') && LEDGER_WORDS.test(n))
@@ -2698,7 +2701,10 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   // The same figure twice -- the same formula over the same names, drawn the same way -- is shown once: the plan named "goal
   // progress" and "progress" for one fraction and both came out as bars (Water reminder).
   let seen: string[] = []
-  for (let v of sketch.values) {
+  // The deadline first, so that of two the same it is the other that leaves.
+  let order = sketch.values.filter((v: SketchValue): boolean => v.id === comp.deadline)
+    .concat(sketch.values.filter((v: SketchValue): boolean => v.id !== comp.deadline))
+  for (let v of order) {
     let b = comp.bindings.get(v.id)
     if (b === undefined || failed.has(v.id) || leaving.indexOf(v.id) >= 0 || v.hidden) { continue }
     let key = [b.formula, b.a, b.b, b.expr, b.scale, b.show].join('|')
@@ -2713,7 +2719,9 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   let changed = true
   while (changed) {
     changed = false
-    let needed: string[] = dependsOn(comp, comp.countdownFrom).concat(covering)
+    // The deadline stays with what it is worked out from: the itinerary reads it (the deadline port), and it was chosen before the
+    // values left, so one that left would point at nothing.
+    let needed: string[] = dependsOn(comp, comp.countdownFrom).concat(covering, dependsOn(comp, comp.deadline))
     for (let v of sketch.values) {
       if (leaving.indexOf(v.id) >= 0) { continue }
       let b = comp.bindings.get(v.id)
@@ -3606,10 +3614,6 @@ function heroPart(comp: Composition, figs: Figures): FragmentSpec {
   return part('hero', [], [], view)
 }
 
-/** What the person sets once for the whole screen: one control and one setter per input. A new countdown length restarts the countdown. */
-/** The controls inputsPart leaves for settingsPart: the settings, folded at the foot of the screen. */
-let settingControls: string[] = []
-
 /**
  * The inputs drawn folded under Settings: those marked as settings, when the screen has something else to show above them -- a list,
  * a clock, a figure or a section of the catalogue. A screen of inputs alone keeps them where they are: they are all it has.
@@ -3625,7 +3629,7 @@ export function foldedSettings(comp: Composition): string[] {
 }
 
 /** The settings, folded under one row at the foot of the screen; a tap shows them. Drawn after every section (ScreenPlan's assemblePlan). */
-function settingsPart(): FragmentSpec | null {
+function settingsPart(settingControls: string[]): FragmentSpec | null {
   if (settingControls.length === 0) { return null }
   let functions: string[] = [fn(['function toggleSettings(state: AppState, ignored: number): AppState {',
     '  return {settingsOpen: !state.settingsOpen__PASSTHROUGH__};', '}'])]
@@ -3642,7 +3646,11 @@ function settingsPart(): FragmentSpec | null {
   return spec
 }
 
-function inputsPart(comp: Composition, fields: Field[]): FragmentSpec {
+/**
+ * What the person sets once for the whole screen: one control and one setter per input. A new countdown length restarts the countdown.
+ * The controls of the settings folded at the foot of the screen go into `folding`, for settingsPart.
+ */
+function inputsPart(comp: Composition, fields: Field[], folding: string[]): FragmentSpec {
   let sketch = comp.sketch
   let functions: string[] = []
   let controls: string[] = []
@@ -3689,7 +3697,7 @@ function inputsPart(comp: Composition, fields: Field[]): FragmentSpec {
   } else if (main.length > 0) {
     view.push('sections.push(ui.Section("content", "", "", [' + main.join(', ') + ']));')
   }
-  settingControls = controls.filter((_c: string, i: number): boolean => folded.indexOf(comp.inputs[i].id) >= 0)
+  controls.forEach((c: string, i: number) => { if (folded.indexOf(comp.inputs[i].id) >= 0) { folding.push(c) } })
   let spec = part('inputs', inputFields(comp), functions, view)
   // What the person sets, under the input's id, for a section that reads it: a switch, typed words, a number. A choice is its
   // option's index, and typed digits are text, so neither is a number under that name.
@@ -3733,11 +3741,6 @@ function itineraryShows(comp: Composition, answers: Record<string, Object>): str
     answerOf(answers, 'itinerary.value.' + v.id, ['yes'], comp.answers, COVERED_ABOVE) === 'yes').map((v: SketchValue): string => v.id)
 }
 
-/**
- * The input that sets when the itinerary's day starts: the one time of day the person sets on a screen with an itinerary. With it
- * the itinerary draws no start field of its own, which beside the form's was a second start time only one of which did anything
- * (West Lake: "Start time 09:00" and "Day starts 09:00"). '' when there is none, or more than one and so no telling which.
- */
 /** The time of day the plan's own example gives for the deadline (comp.deadline); NaN when there is none. */
 function deadlineExample(comp: Composition): number {
   if (comp.deadline.length === 0) { return NaN }
@@ -3745,6 +3748,11 @@ function deadlineExample(comp: Composition): number {
   return v === undefined ? NaN : v.result
 }
 
+/**
+ * The input that sets when the itinerary's day starts: the one time of day the person sets on a screen with an itinerary. With it
+ * the itinerary draws no start field of its own, which beside the form's was a second start time only one of which did anything
+ * (West Lake: "Start time 09:00" and "Day starts 09:00"). '' when there is none, or more than one and so no telling which.
+ */
 function dayStart(comp: Composition): string {
   if (comp.blocks.indexOf('itinerary') < 0) { return '' }
   // Not a time at or after the deadline: one input "Flight departs" (21:00) with "Back at the airport by" = flight - 120 as the
@@ -4099,7 +4107,8 @@ export function compositionParts(comp: Composition): FragmentSpec[] {
   if (hasClock(sketch)) { parts.push(clockPart(comp, fields)) }
   parts.push(figuresPart(comp))
   parts.push(heroPart(comp, figs))
-  parts.push(inputsPart(comp, fields))
+  let folding: string[] = []
+  parts.push(inputsPart(comp, fields, folding))
   parts.push(summaryPart(comp, figs))
   if (sketch.list !== null) { parts.push(listPart(comp, sketch.list, fields)) }
   parts.push(effectsPart(comp, fields))
@@ -4115,8 +4124,7 @@ export function compositionParts(comp: Composition): FragmentSpec[] {
   let screen = part('screen', [], [], view)
   screen.tab = 'Overview'
   parts.push(screen)
-  let settings = settingsPart()
-  settingControls = []
+  let settings = settingsPart(folding)
   if (settings !== null) { parts.push(settings) }
   return parts
 }
@@ -4130,7 +4138,6 @@ function inQuotes(s: string): string {
   return quoted.substring(1, quoted.length - 1)
 }
 
-/** The inputs left for the custom section, as it finds them in the state: "Dice" is state.dice, a typed number its text. */
 /** What the screen's own parts already hold, for a section the model writes: to use, not to make again. */
 export class PartsContract {
   /** The state the parts own, one entry each, in words and field names. */
@@ -4188,6 +4195,7 @@ export function inputsOnlyForCustom(comp: Composition): string[] {
   return comp.customReads.filter((id: string): boolean => read.indexOf(id) < 0)
 }
 
+/** The inputs left for the custom section, as it finds them in the state: "Dice" is state.dice, a typed number its text. */
 export function customInputs(comp: Composition): string[] {
   let out: string[] = []
   for (let input of comp.inputs) {

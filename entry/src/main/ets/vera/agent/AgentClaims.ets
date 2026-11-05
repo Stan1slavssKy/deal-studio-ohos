@@ -71,19 +71,17 @@ function wordsOf(text: string): string {
  * "Add" or "Save" is in too many needs to mean one button.
  */
 export function buttonsOnScreen(needs: string[], source: string): string[] {
-  let labels: string[] = []
-  let pattern = /ui\.Button\(\s*"[a-z]+"\s*,\s*"([^"]+)"/g
-  let m = pattern.exec(source)
-  while (m !== null) {
-    let w = wordsOf(m[1])
-    if (w.trim().split(' ').length >= 2 && labels.indexOf(w) < 0) { labels.push(w) }
-    m = pattern.exec(source)
-  }
+  let labels = buttonLabels(source).filter(isTwoWords)
   return needs.filter((need: string): boolean => {
     let n = wordsOf(need)
     return labels.some((l: string): boolean => n.indexOf(l + 'button ') >= 0 || n.indexOf(' ' + l.trim() + ' is tapped') >= 0 ||
-      n.indexOf('the' + l + 'button') >= 0 || BUTTON_MEANINGS.some((m: ButtonMeaning): boolean => m.label.test(l) && m.need.test(n)))
+      BUTTON_MEANINGS.some((m: ButtonMeaning): boolean => m.label.test(l) && m.need.test(n)))
   })
+}
+
+/** A label of two words or more: "Add" or "Save" is in too many needs, and too many forms, to mean one button. */
+function isTwoWords(label: string): boolean {
+  return label.trim().split(' ').length >= 2
 }
 
 /** A button label and the needs it does in other words: the plan says "the remove button" or "clears all payments". */
@@ -133,7 +131,7 @@ function buttonLabels(source: string): string[] {
  * its When; the comma that separated it goes too. Labels of one word ("Add") are left: they belong to the section's own form.
  */
 export function withoutRepeatedButtons(view: string, rest: string): string {
-  let taken = buttonLabels(rest).filter((l: string): boolean => l.trim().split(' ').length >= 2)
+  let taken = buttonLabels(rest).filter(isTwoWords)
   if (taken.length === 0) { return view }
   let out = view
   let from = 0

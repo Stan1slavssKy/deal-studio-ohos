@@ -25,7 +25,8 @@ export function readsMeasure(sketch: Sketch, prompt: string): boolean {
 
 /** Whether the request asks for points or stars earned for tasks and spent on rewards. */
 export function asksPoints(prompt: string): boolean {
-  return /\b(stars?|points?|tokens?)\b/i.test(prompt) && /\b(rewards?|redeem\w*|spend|prizes?)\b/i.test(prompt)
+  // Spending on its own is not it ("API tokens I spend"): spent on something, or a reward.
+  return /\b(stars?|points?|tokens?)\b/i.test(prompt) && /\b(rewards?|redeem\w*|prizes?)\b|\bspen(d|t|ds|ding)\b( \w+){0,2} on\b/i.test(prompt)
 }
 
 /** Whether the request asks for something logged with one tap rather than typed in. */
@@ -35,7 +36,9 @@ export function asksOneTap(prompt: string): boolean {
 
 /** Whether the request asks for work and rest in turns: blocks with breaks between them, rounds, intervals, a pomodoro. */
 export function asksForRounds(prompt: string): boolean {
-  return /\b(breaks?|rest|rounds?|intervals?|pomodoro|sets? of|cycles?|blocks? of|reps?)\b/i.test(prompt) || /番茄|休息|轮/.test(prompt)
+  // Each word with what makes it a turn of work and rest: "the rest of the day", "sets of reminders" and "blocks of text" are not.
+  return /\b(pomodoro|rounds?|intervals?|reps|work and rest|rest (between|periods?|intervals?)|breaks? (in )?between|with (\w+ )?breaks|\d+ ?(s|sec|seconds?|min|minutes?) (of )?(rest|breaks?)|(\d+|\w+) sets\b|sets? of \d+|cycles? of (work|focus|\d+))\b/i.test(prompt) ||
+    /番茄|休息|轮/.test(prompt)
 }
 
 /**
@@ -83,6 +86,15 @@ export class ChooseRequest {
   forced: Record<string, Object> = {}
 }
 
+/** The answer the request's own words give, under the key Jev's would be, as sure as can be. */
+function forcedChoice(kind: string): Record<string, Object> {
+  let says: Record<string, Object> = {}
+  says['type'] = 'choice'
+  says['choice'] = kind
+  says['confidence'] = 1
+  return says
+}
+
 /** The one question per need that a part and a section both do, with only the options the plan's facts leave. */
 export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sketch): ChooseRequest {
   let out = new ChooseRequest()
@@ -96,11 +108,7 @@ export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sket
     if (options !== null && options!.has('interval_timer')) {
       // Work and rest in turns is the interval timer, without asking: asked, Jev kept the plain countdown, and the screen said a break
       // could not be timed on this phone (Homework timer).
-      let says: Record<string, Object> = {}
-      says['type'] = 'choice'
-      says['choice'] = 'interval_timer'
-      says['confidence'] = 1
-      out.forced['clock.part'] = says
+      out.forced['clock.part'] = forcedChoice('interval_timer')
     } else if (options !== null && options!.size > 1) {
       questions['clock.part'] = choice('The app needs the countdown "' + sketch.countdown + '". Which of these does exactly that?', options!)
     }
@@ -119,21 +127,13 @@ export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sket
       // A reading the request gives in a unit the list keeps ("a fever of 37.5°C", a Temperature field): readings with a status.
       let reading = !asksPoints(prompt) && readsMeasure(sketch, prompt)
       if (asksPoints(prompt) || reading) {
-        let says: Record<string, Object> = {}
-        says['type'] = 'choice'
-        says['choice'] = reading ? 'reading_status' : 'points_ledger'
-        says['confidence'] = 1
-        out.forced['list.part'] = says
+        out.forced['list.part'] = forcedChoice(reading ? 'reading_status' : 'points_ledger')
       }
       options!.forEach((describe: string, key: string) => { if (key === PART || allowed.indexOf(key) >= 0) { narrowed.set(key, describe) } })
       if (asksPoints(prompt) || reading) {
         narrowed = new Map<string, string>([[reading ? 'reading_status' : 'points_ledger', 'the request says so']])
       } else if (oneTap) {
-        let says: Record<string, Object> = {}
-        says['type'] = 'choice'
-        says['choice'] = 'quick_log'
-        says['confidence'] = 1
-        out.forced['list.part'] = says
+        out.forced['list.part'] = forcedChoice('quick_log')
         narrowed = new Map<string, string>([['quick_log', 'the request says one tap']])
       } else if (narrowed.size > 1) {
         questions['list.part'] = choice('The person keeps ' + sketch.list!.label + '.' + listNeeds(sketch) + ' Which of these does exactly that?', narrowed)

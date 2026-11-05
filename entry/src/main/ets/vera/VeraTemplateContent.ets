@@ -162,14 +162,6 @@ function renderListRows(spec: ListFieldSpec, rows: string[][]): string {
   return out.join(spec.separator)
 }
 
-/**
- * Turns the model's answer for one list field into the text spliced at the field's token. The
- * answer is accepted only as an array: its elements are strings (one-column lists) or arrays of
- * strings (more columns); anything else is skipped. Rows with an empty first column are dropped,
- * the rest is cut to spec.maxRows, every cell is escaped and capped. No usable row at all means
- * the spec's fallback rows, and the note says so -- a defaulted list never passes as a filled one.
- * Exported for the host checks; never throws.
- */
 /** Words that name a kind of thing, not a thing: "my pills" names no medicine, "my food" no food. */
 const KIND_WORDS: string[] = ['pill', 'pills', 'medicine', 'medicines', 'meds', 'tablet', 'tablets', 'capsule', 'capsules', 'dose', 'doses',
   'food', 'foods', 'item', 'items', 'thing', 'things', 'drink', 'drinks', 'glass', 'stuff', 'the', 'and', 'for', 'with', 'daily']
@@ -181,6 +173,14 @@ export function namedIn(name: string, request: string): boolean {
     w.length >= 3 && KIND_WORDS.indexOf(w) < 0 && said.indexOf(w) >= 0)
 }
 
+/**
+ * Turns the model's answer for one list field into the text spliced at the field's token. The
+ * answer is accepted only as an array: its elements are strings (one-column lists) or arrays of
+ * strings (more columns); anything else is skipped. Rows with an empty first column are dropped,
+ * the rest is cut to spec.maxRows, every cell is escaped and capped. No usable row at all means
+ * the spec's fallback rows, and the note says so -- a defaulted list never passes as a filled one.
+ * Exported for the host checks; never throws.
+ */
 export function expandListRows(raw: Object | undefined, spec: ListFieldSpec, request: string = ''): ListExpansion {
   let columns = spec.columnHints.length
   let rows: string[][] = []
