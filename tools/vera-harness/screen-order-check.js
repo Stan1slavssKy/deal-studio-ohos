@@ -206,3 +206,18 @@ console.log('screen-order-check: ok')
   assert.deepEqual(table.inputs.map(i => i.id), [], 'the ledger names its people')
   console.log('screen-order-check: points to the ledger')
 }
+
+// A reading the request gives, in a unit the list keeps: readings with a status, starting from it.
+{
+  const nc5 = loadVera('NeedsChoose')
+  const s = c.parseSketch(JSON.stringify({title: 'Fever', inputs: [], constants: [],
+    list: {label: 'Temperature readings', fields: [{id: 'temperature', label: 'Temperature', kind: 'number', unit: '°C'}, {id: 'note', label: 'Note', kind: 'text'}]},
+    values: [], events: [{id: 'warn', when: 'a reading is added', what: 'checks whether it is a fever', asked: true}], other: []}))
+  assert.ok(nc5.readsMeasure(s, 'My baby has a fever of 37.5°C.'))
+  assert.ok(!nc5.readsMeasure(s, 'a baby care card'))
+  nc5.seedFromRequest(s, 'My baby has a fever of 37.5°C.')
+  const comp = c.readComposition(JSON.stringify({answers: {'list.part': {type: 'choice', choice: 'reading_status', confidence: 1}}}), s, false)
+  assert.deepEqual(comp.blocks, ['reading_status'], comp.note)
+  assert.match(comp.replaced[0].detail, /first reading of Temperature 37\.5/)
+  console.log('screen-order-check: readings')
+}

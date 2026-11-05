@@ -2002,7 +2002,8 @@ function ledgerNames(comp: Composition): string[] {
     /\b(kids?|child(ren)?|person|people|names?|first|second)\b/i.test(i.label)).map((i: SketchInput): string => i.id)
 }
 
-function handTapsToLedger(comp: Composition): void {
+/** The events the plan put on adding or tapping an entry leave with the list, to the section that takes it; each is said in the trace. */
+function handEntryEvents(comp: Composition, why: string): void {
   let entryMoment = (id: string): boolean => { let m = comp.moments.get(id) ?? ''; return m === 'entry_added' || m === 'row_button' }
   let gone = comp.events.filter((e: SketchEvent): boolean => entryMoment(e.id))
   comp.events = comp.events.filter((e: SketchEvent): boolean => !entryMoment(e.id))
@@ -2010,8 +2011,13 @@ function handTapsToLedger(comp: Composition): void {
     comp.moments.delete(e.id)
     comp.effects.delete(e.id)
     comp.args.delete(e.id)
-    comp.dropped.push('event "' + e.what + '": the points ledger does it')
+    comp.dropped.push('event "' + e.what + '": ' + why)
   }
+  // An argument taken from an entry, on an event that stays, keeps the list part: those are left as they were.
+}
+
+function handTapsToLedger(comp: Composition): void {
+  handEntryEvents(comp, 'the points ledger does it')
   // The ledger names its people, keeps the rewards and what was redeemed, and shows each balance: the plan's inputs for the kids'
   // names, its second lists of rewards and redemptions and its figures over stars were all drawn again beside it (Chore stars).
   let names = ledgerNames(comp)
@@ -2183,6 +2189,10 @@ export function planNumbers(sketch: Sketch): string {
     if (value.length > 0) { out.push(i.label + ' ' + value) }
   }
   for (let k of sketch.constants) { out.push(k.label + ' ' + numberLiteral(k.value)) }
+  // The reading the request gives is the section's first one (seedFromRequest).
+  if (sketch.list !== null) {
+    for (let f of sketch.list!.fields) { if (!isNaN(f.seed)) { out.push('first reading of ' + f.label + ' ' + numberLiteral(f.seed) + (f.unit.length > 0 ? ' ' + f.unit : '')) } }
+  }
   return out.join('; ')
 }
 
@@ -2252,6 +2262,8 @@ function chooseSections(comp: Composition, answers: Record<string, Object>): voi
     // Points earned for tasks and spent on rewards are the ledger's whole job, taps on a task or a reward among it: what the plan
     // wired to those taps is the ledger's, and a checklist of the same tasks beside it is the same list twice (Chore stars).
     if (kind === 'points_ledger') { handTapsToLedger(comp) }
+    // A reading's status is worked out by the section as each reading is added: what the plan wired to adding one is its.
+    if (kind === 'reading_status') { handEntryEvents(comp, 'the reading section shows the status of each reading') }
     let can = kind.length > 0 && canReplaceList(comp, kind)
     console.info('VERA-CHOOSE list.part=' + (kind.length > 0 ? kind : 'part') + (kind.length > 0 && !can ? ' (refused: the part is wired to)' : ''))
     if (can) { replaceList(comp, kind) }

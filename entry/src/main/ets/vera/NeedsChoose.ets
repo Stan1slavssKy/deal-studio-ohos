@@ -19,6 +19,14 @@ import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_N
  * Whether the `timer` section may take the countdown's place: its length is one fixed time of the plan's (a person who sets it
  * needs the part, which follows the input), nothing happens when it ends, and no figure reads the time left or passed.
  */
+/** Whether the list keeps a reading in a unit the request gives a number in: a temperature, a pressure, a weight. */
+export function readsMeasure(sketch: Sketch, prompt: string): boolean {
+  if (sketch.list === null) { return false }
+  let units = requestedMeasures(prompt).map((p: [number, string]): string => p[1]).filter((u: string): boolean => u !== 'ml' && u !== 'km')
+  return units.length > 0 && sketch.list!.fields.some((f: ListField): boolean => f.kind === 'number' &&
+    units.indexOf(unitKey(f.unit.length > 0 ? f.unit : f.label)) >= 0)
+}
+
 /** Whether the request asks for points or stars earned for tasks and spent on rewards. */
 export function asksPoints(prompt: string): boolean {
   return /\b(stars?|points?|tokens?)\b/i.test(prompt) && /\b(rewards?|redeem\w*|spend|prizes?)\b/i.test(prompt)
@@ -108,16 +116,18 @@ export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sket
       // Asked between the two, Jev still took the typed form, so the request's own words decide.
       let oneTap = asksOneTap(prompt) && allowed.indexOf('quick_log') >= 0
       // Points or stars earned and spent on rewards: the ledger, whatever is wired to a tap (it awards and redeems on taps itself).
-      if (asksPoints(prompt)) {
+      // A reading the request gives in a unit the list keeps ("a fever of 37.5°C", a Temperature field): readings with a status.
+      let reading = !asksPoints(prompt) && readsMeasure(sketch, prompt)
+      if (asksPoints(prompt) || reading) {
         let says: Record<string, Object> = {}
         says['type'] = 'choice'
-        says['choice'] = 'points_ledger'
+        says['choice'] = reading ? 'reading_status' : 'points_ledger'
         says['confidence'] = 1
         out.forced['list.part'] = says
       }
       options!.forEach((describe: string, key: string) => { if (key === PART || allowed.indexOf(key) >= 0) { narrowed.set(key, describe) } })
-      if (asksPoints(prompt)) {
-        narrowed = new Map<string, string>([['points_ledger', 'the request says points earned and spent']])
+      if (asksPoints(prompt) || reading) {
+        narrowed = new Map<string, string>([[reading ? 'reading_status' : 'points_ledger', 'the request says so']])
       } else if (oneTap) {
         let says: Record<string, Object> = {}
         says['type'] = 'choice'
