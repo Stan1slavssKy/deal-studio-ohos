@@ -148,7 +148,7 @@ export function foundTargets(phone: string): string[] {
 /** '' when every sdk.call in the reply calls a target found, else what is wrong. */
 function callProblem(reply: string, found: string[]): string {
   // Words written while the program runs (VeraAsk.ets) are the app's own function, open to every section.
-  let asks = reply.split('sdk.call("' + ASK_TARGET + '"').length - 1
+  let asks = (reply.match(new RegExp('sdk\\.call\\(\\s*"' + ASK_TARGET.split('.').join('\\.') + '"', 'g')) ?? []).length
   let calls = reply.split('sdk.call(').length - 1 - asks
   if (calls === 0) { return '' }
   if (found.length === 0) { return 'The section calls sdk.call, which it never may: write it without phone calls.' }

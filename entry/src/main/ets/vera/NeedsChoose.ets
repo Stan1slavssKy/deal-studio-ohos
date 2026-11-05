@@ -15,10 +15,6 @@ import { Sketch, SketchInput, ListField, SketchOption, SketchAsk, JevAsk, PlanRe
 import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
   needOf } from './NeedsPlan'
 
-/**
- * Whether the `timer` section may take the countdown's place: its length is one fixed time of the plan's (a person who sets it
- * needs the part, which follows the input), nothing happens when it ends, and no figure reads the time left or passed.
- */
 /** Whether the list keeps a reading in a unit the request gives a number in: a temperature, a pressure, a weight. */
 export function readsMeasure(sketch: Sketch, prompt: string): boolean {
   if (sketch.list === null) { return false }
@@ -42,6 +38,10 @@ export function asksForRounds(prompt: string): boolean {
   return /\b(breaks?|rest|rounds?|intervals?|pomodoro|sets? of|cycles?|blocks? of|reps?)\b/i.test(prompt) || /番茄|休息|轮/.test(prompt)
 }
 
+/**
+ * Whether the `timer` section may take the countdown's place: its length is one fixed time of the plan's (a person who sets it
+ * needs the part, which follows the input), nothing happens when it ends, and no figure reads the time left or passed.
+ */
 export function timerMayTakeCountdown(plan: NeedsPlan): boolean {
   let countdown = needOf(plan, NEED_COUNTDOWN)
   if (countdown === null) { return false }
@@ -211,8 +211,9 @@ export function startOnRequested(sketch: Sketch, prompt: string): string {
 /** The unit a number in the request or a field's unit or label is in, as one key; '' when none is recognised. */
 export function unitKey(text: string): string {
   let t = text.toLowerCase()
+  // Fahrenheit first: "degrees fahrenheit" and "Temperature (°F)" say degrees and temperature too.
+  if (/°\s*f\b|℉|fahrenheit/.test(t)) { return 'fahrenheit' }
   if (/°\s*c\b|℃|celsius|\bdegrees?\b|temperature|\btemp\b/.test(t)) { return 'celsius' }
-  if (/°\s*f\b|fahrenheit/.test(t)) { return 'fahrenheit' }
   if (/\bml\b|millilit/.test(t)) { return 'ml' }
   if (/\bkg\b|kilo(gram)?s?\b/.test(t)) { return 'kg' }
   if (/\bkm\b|kilomet/.test(t)) { return 'km' }
@@ -271,7 +272,10 @@ export function markSettings(sketch: Sketch, prompt: string): string[] {
   for (let input of sketch.inputs) {
     let byWords = SETTING_WORDS.test(input.label) && input.kind !== 'text' && input.kind !== 'choice'
     if (!input.setting && !byWords) { continue }
-    let stated = numbers.some((n: number): boolean => n === input.value) && input.value !== 0
+    // As the request says it: a time of day as 7:30 (450 minutes), a length in hours or minutes (2 hours as 120 minutes).
+    let said = (n: number): boolean => n === input.value || n * 60 === input.value || n === input.value * 60 ||
+      (input.kind === 'time' && Math.floor(n) * 60 + Math.round((n - Math.floor(n)) * 100) === input.value)
+    let stated = numbers.some(said) && input.value !== 0
     input.setting = !stated
     if (input.setting) { marked.push(input.label) }
   }

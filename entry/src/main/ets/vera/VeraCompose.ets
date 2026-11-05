@@ -2030,14 +2030,22 @@ function handTapsToLedger(comp: Composition): void {
   comp.unboundNeeds = comp.unboundNeeds.filter((n: string): boolean => ledgers.indexOf(n) < 0)
   for (let n of ledgers) { comp.claimed.push(n) }
   // A list of the same tasks as a checklist or a deck of ideas ("pick a chore") beside the ledger is the same list twice.
+  // The blocks of the ready needs are in the order of those needs that have one (screenPlan numbers them so): the one for this need is
+  // taken out at its own place, and the need is left with no block, so no slot points past the blocks.
+  let at = 0
   for (let i = 0; i < comp.readyKinds.length; i++) {
     let kind = comp.readyKinds[i]
-    if (LEDGER_TAKES.indexOf(kind) < 0 || !LEDGER_WORDS.test(comp.sketch.ready[i] ?? '')) { continue }
-    comp.blocks = comp.blocks.filter((k: string): boolean => k !== kind)
-    comp.readyKinds[i] = 'points_ledger'
+    if (kind.length === 0) { continue }
+    if (LEDGER_TAKES.indexOf(kind) < 0 || !LEDGER_WORDS.test(comp.sketch.ready[i] ?? '') || comp.blocks[at] !== kind) { at++; continue }
+    comp.blocks.splice(at, 1)
+    comp.readyKinds[i] = ''
     comp.dropped.push('"' + comp.sketch.ready[i] + '": the points ledger lists the tasks')
   }
 }
+
+/** A length that is one of the interval timer's phases, and a count that is its rounds. */
+const PHASE_WORDS: RegExp = /\b(focus|work|break|rest|blocks?|rounds?|intervals?|phases?|sprints?|pomodoros?)\b/i
+const COUNT_WORDS: RegExp = /\b(rounds?|blocks?|sets?|cycles?|reps?|pomodoros?)\b/i
 
 /** What says a length of a phase or a number of rounds: the interval timer's own settings. */
 const ROUND_WORDS: RegExp = /\b(rounds?|blocks?|sets?|cycles?|reps?|intervals?|breaks?|rest|focus|work|phases?|sessions?)\b/i
@@ -2050,8 +2058,10 @@ const ROUND_WORDS: RegExp = /\b(rounds?|blocks?|sets?|cycles?|reps?|intervals?|b
  */
 function handRoundsToTimer(comp: Composition): void {
   let sketch = comp.sketch
+  // Only the lengths of a phase and the number of rounds: "Reminder every (minutes)" or "Work hours today" stay.
   let leaving = sketch.inputs.filter((i: SketchInput): boolean => i.kind !== 'text' && i.kind !== 'toggle' &&
-    (i.measure === 'seconds' || i.measure === 'minutes' || ROUND_WORDS.test(i.label))).map((i: SketchInput): string => i.id)
+    ((i.measure === 'seconds' || i.measure === 'minutes' || i.kind === 'choice') ? PHASE_WORDS.test(i.label) : COUNT_WORDS.test(i.label)))
+    .map((i: SketchInput): string => i.id)
   if (leaving.length === 0) { return }
   sketch.inputs = sketch.inputs.filter((i: SketchInput): boolean => leaving.indexOf(i.id) < 0)
   comp.inputs = comp.inputs.filter((i: SketchInput): boolean => leaving.indexOf(i.id) < 0)
@@ -2161,11 +2171,14 @@ function valuesOverEntries(comp: Composition): string[] {
  * except for `record_log`: it publishes totals, averages, balances and counts for the readers of the catalogue to show, so those
  * values go to them (replaceList).
  */
-export function canReplaceList(comp: Composition, kind: string): boolean {
+export function canReplaceList(comp: Composition, kind: string, takesTaps: boolean = false): boolean {
   if (comp.sketch.list === null || LIST_SECTIONS.indexOf(kind) < 0 || comp.blocks.indexOf(kind) >= 0) { return false }
   let onEntry = false
-  comp.moments.forEach((moment: string) => { if (moment === 'entry_added' || moment === 'row_button') { onEntry = true } })
-  comp.args.forEach((given: Map<string, string>) => {
+  let entryMoment = (id: string): boolean => { let m = comp.moments.get(id) ?? ''; return m === 'entry_added' || m === 'row_button' }
+  // A section that takes the taps on its entries over (takesTaps) takes their events too; an event that stays may still read an entry.
+  comp.moments.forEach((moment: string, id: string) => { if (entryMoment(id) && !takesTaps) { onEntry = true } })
+  comp.args.forEach((given: Map<string, string>, id: string) => {
+    if (takesTaps && entryMoment(id)) { return }
     given.forEach((source: string) => { if (source.startsWith('entry.')) { onEntry = true } })
   })
   return !onEntry && (LIST_PUBLISHERS.indexOf(kind) >= 0 || valuesOverEntries(comp).length === 0)
@@ -2261,10 +2274,12 @@ function chooseSections(comp: Composition, answers: Record<string, Object>): voi
     let kind = answerOf(answers, 'list.part', LIST_SECTIONS, comp.answers, READY_ABOVE)
     // Points earned for tasks and spent on rewards are the ledger's whole job, taps on a task or a reward among it: what the plan
     // wired to those taps is the ledger's, and a checklist of the same tasks beside it is the same list twice (Chore stars).
-    if (kind === 'points_ledger') { handTapsToLedger(comp) }
-    // A reading's status is worked out by the section as each reading is added: what the plan wired to adding one is its.
-    if (kind === 'reading_status') { handEntryEvents(comp, 'the reading section shows the status of each reading') }
-    let can = kind.length > 0 && canReplaceList(comp, kind)
+    // A reading's status is worked out by the section as each reading is added: what the plan wired to adding one is its. Both are
+    // decided before anything is handed over, so a refusal leaves the composition as it was.
+    let takesTaps = kind === 'points_ledger' || kind === 'reading_status'
+    let can = kind.length > 0 && canReplaceList(comp, kind, takesTaps)
+    if (can && kind === 'points_ledger') { handTapsToLedger(comp) }
+    if (can && kind === 'reading_status') { handEntryEvents(comp, 'the reading section shows the status of each reading') }
     console.info('VERA-CHOOSE list.part=' + (kind.length > 0 ? kind : 'part') + (kind.length > 0 && !can ? ' (refused: the part is wired to)' : ''))
     if (can) { replaceList(comp, kind) }
   }

@@ -2980,7 +2980,8 @@ function soonNamesIDX(state: AppState): string {
   let out: string = "";
   for (let i: number of sortedIDX(state)) {
     let it: DueItem = state.itemsIDX[i];
-    if (it.dueDay - state.todayIDX <= state.soonIDX) {
+    let left: number = it.dueDay - state.todayIDX;
+    if (left >= 0 && left <= state.soonIDX) {
       if (out.length() > 0) { out = out + ", "; }
       out = out + it.name;
     }

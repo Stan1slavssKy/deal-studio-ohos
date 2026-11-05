@@ -154,6 +154,8 @@ export function withoutRepeatedButtons(view: string, rest: string): string {
     }
     let after = out.substring(end)
     let lead = out.substring(0, start)
+    // Only an element of a list can go: anywhere else (an argument, a let) the code left would not compile.
+    if (!/[\[,]\s*$/.test(lead) || !/^\s*[,\]]/.test(after)) { from = end; continue }
     if (/^\s*,/.test(after)) { after = after.replace(/^\s*,\s*/, '') }
     else if (/,\s*$/.test(lead)) { lead = lead.replace(/,\s*$/, '') }
     out = lead + after

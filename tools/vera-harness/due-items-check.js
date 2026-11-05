@@ -49,8 +49,8 @@ const today = Math.floor((now.getTime() - now.getTimezoneOffset() * 60000) / 864
   assert.deepEqual(rows(vm, st).map(r => r[0]), ['Bread', 'Milk', 'Yogurt', 'Water filter'])
   assert.deepEqual(rows(vm, st)[2], ['Yogurt', 'In 3 days', 'warning'])
   assert.deepEqual(stats(vm, st), [['Expired', 1, 'danger'], ['Due soon', 2, 'warning']])
-  // What is expired or due soon, soonest first, for a section that reads soon_names.
-  assert.equal(vm.execute('soonNames1', [st]).value, 'Bread, Milk, Yogurt')
+  // What is due soon (not what is past its date), soonest first, for a section that reads soon_names; it agrees with soon_count.
+  assert.equal(vm.execute('soonNames1', [st]).value, 'Milk, Yogurt')
   assert.equal(vm.execute('soonCount1', [st]).value, 2)
   assert.equal(vm.execute('expiredCount1', [st]).value, 1)
   // A blank name adds nothing; the form is cleared after an add.

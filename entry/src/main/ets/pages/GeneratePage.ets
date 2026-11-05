@@ -337,7 +337,7 @@ export struct GeneratePage {
   @State toolsOpen: boolean = false
   /** The Metrics pane's real width, measured: a percentage inside the Scroll resolves against a wider box than the one drawn. */
   @State metricsWidth: number = 0
-  @State compiledVbc2: string = ''
+  @State @Watch('showCorner') compiledVbc2: string = ''
   /** The running preview's state as it last changed; not @State, as writing it must not redraw the page. */
   private liveState: string = ''
   /** What the next compiled program starts from (VeraPreview.seedState): the state at the moment a refine was asked for. */
@@ -3126,6 +3126,9 @@ export struct GeneratePage {
   }
 
   /** What was typed into the program goes with it to the other view, which draws a program of its own. */
+  /** A new program starts at its top: the corner buttons show again (a short one may never scroll to bring them back). */
+  showCorner(): void { this.cornerHidden = false }
+
   private setFullscreen(on: boolean): void {
     this.cornerHidden = false
     this.carriedState = this.liveState

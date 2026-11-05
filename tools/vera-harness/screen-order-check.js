@@ -221,3 +221,41 @@ console.log('screen-order-check: ok')
   assert.match(comp.replaced[0].detail, /first reading of Temperature 37\.5/)
   console.log('screen-order-check: readings')
 }
+
+// From the review of PR 46.
+{
+  const nc6 = loadVera('NeedsChoose')
+  const {withoutRepeatedButtons} = loadVera('agent/AgentClaims')
+  // Fahrenheit is not Celsius.
+  assert.deepEqual(nc6.requestedMeasures('a fever of 101 degrees Fahrenheit'), [[101, 'fahrenheit']])
+  assert.equal(nc6.unitKey('Temperature (°F)'), 'fahrenheit')
+  // A time or a length the request states, in its own words, is not a setting.
+  const s = c.parseSketch(JSON.stringify({title: 'T', inputs: [
+    {id: 'wake', label: 'Wake time', kind: 'time', measure: 'minutes', min: 0, max: 1439, value: 450},
+    {id: 'gap', label: 'Reminder every', kind: 'count', measure: 'minutes', min: 1, max: 600, value: 120}], values: [], events: [], other: []}))
+  assert.deepEqual(nc6.markSettings(s, 'wake me at 7:30 and remind me every 2 hours'), [])
+  // A button that is not an element of a list stays: cut out, the code would not compile.
+  const rest = 'ui.Button("secondary", "Remove last", "x", 0, true)'
+  const pushed = 'buttons.push(ui.Button("secondary", "Remove last", "c_undo", 0, true));'
+  assert.equal(withoutRepeatedButtons(pushed, rest), pushed)
+  // Ready blocks keep their places when the ledger takes one of them.
+  const sk = c.parseSketch(JSON.stringify({title: 'Stars', inputs: [], constants: [],
+    list: {label: 'Stars earned', fields: [{id: 'task', label: 'Task', kind: 'text'}]},
+    ready: ['facts about chores', 'the chores the kids can do for stars', 'a timeline of the week'], values: [], events: [], other: []}))
+  const says = (k, p = 0.9) => ({type: 'choice', choice: k, confidence: p})
+  const comp = c.readComposition(JSON.stringify({answers: {'list.part': says('points_ledger', 1), 'ready.0': says('key_facts'), 'whose.0': says('written'),
+    'ready.1': says('checklist'), 'whose.1': says('written'), 'ready.2': says('timeline'), 'whose.2': says('written')}}), sk, false)
+  const plan = c.screenPlan(comp, [])
+  for (const slot of plan.slots.filter(x => x.id.startsWith('ready.') || x.id.startsWith('section.'))) {
+    assert.ok(slot.by >= 0 && slot.by < plan.components.length && plan.components[slot.by].spec.kind === (slot.id.startsWith('section.') ? slot.id.slice(8) :
+      comp.readyKinds[Number(slot.id.slice(6))]), slot.id + ' points at its own block')
+  }
+  // A refused ledger leaves the list and its events alone.
+  const kept = c.parseSketch(JSON.stringify({title: 'Stars', inputs: [{id: 'kid', label: 'First kid', kind: 'text', value: 0}], constants: [],
+    list: {label: 'Stars earned', fields: [{id: 'task', label: 'Task', kind: 'text'}]}, values: [],
+    events: [{id: 'cal', when: 'a star is added', what: 'adds it to the calendar', asked: true}], other: []}))
+  const refused = c.readComposition(JSON.stringify({answers: {'list.part': says('points_ledger', 1), 'effect.cal': says('calendar_add', 1),
+    'moment.cal': says('entry_added', 1), 'arg.cal.calendar_add.title': says('entry.task', 1)}}), kept, false)
+  if (refused.blocks.indexOf('points_ledger') < 0) { assert.ok(refused.inputs.some(i => i.id === 'kid'), 'nothing was handed over') }
+  console.log('screen-order-check: review of PR 46')
+}

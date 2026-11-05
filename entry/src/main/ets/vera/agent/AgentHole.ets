@@ -7,10 +7,9 @@
 import { AgentHost, HoleRecord, checkAgent, agentCancellation } from './AgentHost'
 import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
-import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED } from '../ScreenPlan'
+import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED, NOTICE_SPLIT, NOTICE_INSTEAD_TITLE } from '../ScreenPlan'
 import { PartsContract } from '../VeraCompose'
 import { withoutRepeatedButtons } from './AgentClaims'
-import { NOTICE_SPLIT, NOTICE_INSTEAD_TITLE } from '../ScreenPlan'
 
 const OUTCOME_WRITTEN: string = 'written'
 const OUTCOME_PARTIAL: string = 'partial'
@@ -45,7 +44,6 @@ function literal(text: string): string {
   return text.split('\\').join('/').split('"').join("'").split('\n').join(' ').trim()
 }
 
-/** The first sentence of `text`, at most 140 characters. */
 /** The title of a notice that says what the screen does instead of what was asked: shown after the rest, not as a warning. */
 export const NOTICE_INSTEAD: string = NOTICE_INSTEAD_TITLE
 
@@ -54,6 +52,7 @@ export function offersInstead(why: string): boolean {
   return /\binstead\b|,\s*so\s+(it|you|the app|this app|this)\b|\bbut (it|you) can\b/i.test(why)
 }
 
+/** The first sentence of `text`, at most 140 characters. */
 function firstSentence(text: string): string {
   let t = text.trim()
   let at = t.search(/[.!?](\s|$)/)

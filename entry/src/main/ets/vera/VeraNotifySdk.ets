@@ -61,6 +61,8 @@ function failure(e: Object): string {
   return 'error' + (code !== undefined ? ' ' + code.toString() : '') + ': ' + message
 }
 
+let lastId: number = 0
+
 async function notificationsOn(): Promise<boolean> {
   try { return await notificationManager.isNotificationEnabled() } catch (_e) { return true }
 }
@@ -78,7 +80,9 @@ export async function runNotifySdkAdapter(target: string, params: Map<string, st
       return 'error: notifications are off for this app -- call NotificationKit.notificationManager.requestEnableNotification'
     }
     if (target === NOTIFICATION + 'publish') {
-      let id = Math.floor(Date.now() / 1000) % 2000000000
+      // Each its own id: two in the same second would replace each other.
+      lastId = Math.max(lastId + 1, Math.floor(Date.now() / 1000) % 2000000000)
+      let id = lastId
       let request: notificationManager.NotificationRequest = {
         id: id,
         content: {
