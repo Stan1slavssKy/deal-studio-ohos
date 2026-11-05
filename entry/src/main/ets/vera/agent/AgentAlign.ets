@@ -21,7 +21,8 @@ export const ALIGN_KINDS: string[] = READY_KINDS.concat(['reminders', 'calendar_
 /** Of those, the two that do phone work: their content is the person's own entry, never looked up. */
 const PHONE_KINDS: string[] = ['reminders', 'calendar_event']
 /** The sections of the wide pool whose content is the person's own or a setting, so nothing in it is looked up either. */
-const OWN_CONTENT_KINDS: string[] = PHONE_KINDS.concat(['timer', 'note', 'rating', 'record_log', 'progress_goal'])
+const OWN_CONTENT_KINDS: string[] = PHONE_KINDS.concat(['timer', 'note', 'rating', 'record_log', 'progress_goal', 'quick_log',
+  'dose_schedule', 'due_items', 'points_ledger', 'reading_status', 'interval_timer'])
 /** Sections that stand alone and still are not offered, in the wide pool as in the plain one. */
 const NOT_OFFERED: string[] = ['actions', 'metrics', 'intent_panel', 'filter_box']
 /** How sure Jev must be of a section for a need, as for a section's pick (VeraSectionCompose.ets). */
@@ -57,7 +58,7 @@ function standsAlone(spec: FragmentSpec): boolean {
  */
 export function alignKindsFor(comp: Composition): string[] {
   return alignKinds().filter((kind: string): boolean => {
-    if (kind === 'timer' && hasClock(comp.sketch)) { return false }
+    if ((kind === 'timer' || kind === 'interval_timer') && hasClock(comp.sketch)) { return false }
     if (LIST_SECTIONS.indexOf(kind) >= 0 && comp.sketch.list !== null) { return canReplaceList(comp, kind) }
     return true
   })

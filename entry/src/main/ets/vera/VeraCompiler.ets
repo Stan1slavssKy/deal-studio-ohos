@@ -2179,8 +2179,8 @@ class Analyzer {
             '"bundle/module/ability/IntentName", or "bundle/module/ability" to just launch it; got "' +
             target + '"', arg.span)
         }
-      } else if (target !== 'Vera.Live.fetch' && target !== 'Vera.Source.fetch' && !isValidSdkTarget(target)) {
-        // The host functions that are not SDK entries (VeraLive.ets, VeraSource.ets); any other made-up "Vera." address is still refused.
+      } else if (target !== 'Vera.Live.fetch' && target !== 'Vera.Source.fetch' && target !== 'Vera.Ask.text' && !isValidSdkTarget(target)) {
+        // The host functions that are not SDK entries (VeraLive.ets, VeraSource.ets, VeraAsk.ets); any other made-up "Vera." address is still refused.
         this.addError('E2110', 'sdk.call target "' + target + '" is not one find_sdk_function ' +
           'returned; call it first and use a target exactly as it came back', arg.span)
       }

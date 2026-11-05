@@ -68,12 +68,13 @@ export const NEEDS_PROMPT: string =
   '{"title": short app title, "eyebrow": 1-3 word label in capitals, "subtitle": one short line,\n' +
   ' "inputs": [{"id": camelCase, "label": shown label, "kind": "amount" | "percent" | "count" | "choice" | "toggle" | "text" | "time",\n' +
   '   "measure": "money" | "percent" | "count" | "seconds" | "minutes" | "number", "min": number, "max": number, "value": starting number, "unit": the currency or unit the request uses, or "",\n' +
+  '   "setting": true for a value set once and rarely changed afterwards (a goal, a threshold, a size, a gap, sleep hours) that the request does not state, else leave it out,\n' +
   '   "options": only for choice: [{"label": shown text, "value": the number the option stands for, such as a length of time}];\n' +
   '   a choice\'s own "value" is the index of the starting option}],\n' +
   ' "constants": [{"id": camelCase, "label": what it is, "value": number, "measure": as for inputs}],\n' +
   ' "needs": [one object for each thing the app shows or does beyond inputs and constants, in the order the screen shows them, each of one type:\n' +
   '   {"type": "figure", "id": camelCase, "label": shown label, "means": what the number is, in plain words,\n' +
-  '    "format": "money" | "percent" | "count" | "seconds" | "minutes" | "time_of_day" | "fraction" | "plain", "unit": as for inputs,\n' +
+  '    "format": "money" | "percent" | "count" | "seconds" | "minutes" | "time_of_day" | "fraction" | "yes_no" (a condition, 1 for yes and 0 for no) | "plain", "unit": as for inputs,\n' +
   '    "decimals": for a plain number, how many digits after the point to show, 0 to 6, only when one digit would lose what matters,\n' +
   '    "shown": false for every figure that only feeds another figure and is not what the request names, however informative it looks; otherwise leave it out,\n' +
   '    "formula": how it is worked out, as an expression over the ids of inputs, constants, the figures before it and the quantities below,\n' +
@@ -83,7 +84,8 @@ export const NEEDS_PROMPT: string =
   '   {"type": "countdown", "label": what is being timed, "length": the id of the input, constant or figure that sets how long it runs},\n' +
   '   {"type": "stopwatch", "label": what is being timed},\n' +
   '   {"type": "entries", "label": what the entries are, "fields": what each entry holds, up to 4: [{"id": camelCase, "label": shown label,\n' +
-  '    "kind": "text" | "number" | "time" | "toggle", "measure": for a number, as for inputs, "unit": as for inputs, "value": starting value,\n' +
+  '    "kind": "text" | "number" | "time" | "date" | "toggle" ("date" for a calendar day: an expiry, a due date, a birthday), "measure": ' +
+  'for a number, as for inputs, "unit": as for inputs, "value": starting value,\n' +
   '    "decimals": for a plain number, as for a figure}] (no fields when adding an entry takes only a tap)},\n' +
   '   {"type": "content", "what": in plain words everything the need involves: what it lists or shows, what the person does with it, what the phone does,\n' +
   '    "from": the words of the request that ask for it, copied exactly},\n' +
@@ -103,12 +105,19 @@ export const NEEDS_PROMPT: string =
   'clock.remaining, clock.elapsed and clock.duration, in seconds, when there is a countdown; clock.elapsed, in seconds, when there is a stopwatch. ' +
   'The app keeps its state between visits.\n' +
   'Rules: inputs are only what the person sets once for the whole screen; what each entry holds goes in its fields. ' +
+  'A quantity is in one place: one the person records again and again (a temperature, a weight, a dose taken) is a field of the entries ' +
+  'and the figures read the latest or all of them, never also an input. ' +
+  'When several named people each do something that is counted for them (two kids earning stars for chores, friends paying), each ' +
+  'time is an entry with a field for who did it and its amount, so each person\'s total can be worked out; a list ticked once for ' +
+  'everyone cannot say whose it was. ' +
   'content is what the app starts with, written for the request: items, places, steps, facts or figures that anyone could look up or suggest. ' +
   'What the person keeps themselves -- their notes, entries, records, contacts or messages -- is never content: it starts empty, and is entries. ' +
   'Everything a need brings -- its items, its buttons, what the phone does from them, its counts -- belongs to that need alone: ' +
   'it is never also an input, a figure, an action or an other. ' +
   'A time of day (an input or field of kind time, a figure of format time_of_day) is minutes since midnight, 07:30 being 450; ' +
   'a length of time, such as time left or a pace, is never a time of day. constants are fixed numbers the app needs and the person does not set. ' +
+  'A number the request names itself (three undos, 15-minute blocks, four friends) is a constant, not an input, unless the request asks ' +
+  'the person to set or change it. ' +
   'figures are every number the request asks to show, in an order where each can be worked out from inputs, constants, the quantities above ' +
   'and the figures before it, in one step: two numbers added, subtracted, multiplied or divided, a percent of a number, one number as a percent ' +
   'of another, a number rounded up, or one number divided by another and rounded up. A number that takes more steps gets a figure for each step ' +

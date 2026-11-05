@@ -39,7 +39,6 @@ import { util } from '@kit.ArkTS'
 import { GenerateRequest, GenerateResult, TokenCallback } from './LlamaEngine'
 import { settings } from './SettingsStore'
 import { findSdkFunctionFromCache, SdkEntry } from './VeraSdkIndex'
-import { calendarSdkContract } from './VeraCalendarSdk'
 import { sdkContract } from './VeraSdkContracts'
 import { findIntentFunction, IntentEntry } from './VeraIntentIndex'
 import { findSdkFunctionByEmbedding } from './VeraSdkEmbeddingCache'
@@ -119,11 +118,17 @@ class ToolCallAccumulator {
   arguments: string = ''
 }
 
-/** What one HTTP request/response cycle produced. */
 /** How a request offers the tools: callable, defined but not callable, or not sent at all. */
 const TOOLS_AUTO = 'auto'
 const TOOLS_NONE = 'none'
 const TOOLS_OFF = 'off'
+
+/** A side call's reply and why the model stopped ("length" when the token limit ended it, "stop" when it ended it itself, "" unknown). */
+export class SideAnswer {
+  text: string | null
+  finishReason: string
+  constructor(text: string | null, finishReason: string) { this.text = text; this.finishReason = finishReason }
+}
 
 /**
  * One of the small model calls that is not the program itself: the text for a block, a block's function bodies, the second
@@ -138,6 +143,7 @@ export class SideCall {
   ok: boolean = true
 }
 
+/** What one HTTP request/response cycle produced. */
 class StreamTurn {
   content: string = ''
   reasoning: string = ''
@@ -391,7 +397,7 @@ async function curatedSdkAlso(need: string, cancellation?: OperationCancellation
   let out: SdkEntry[] = []
   for (let e of ranked) {
     if (out.length >= SDK_ALSO_LIMIT) { break }
-    if (calendarSdkContract(e.kit + '.' + e.module + '.' + e.name) !== undefined) { out.push(e) }
+    if (sdkContract(e.kit + '.' + e.module + '.' + e.name) !== undefined) { out.push(e) }
   }
   return out
 }
@@ -946,7 +952,9 @@ export class DeepSeekEngine {
     let startedAt = Date.now()
     try {
       let soFar = ''
-      let turn = await this.streamOnce(messages, 0, thinking ? 6000 : 1500, (token: string): void => {
+      // A plan of fourteen figures (Shared costs: each friend's total and balance) runs past 1500 tokens and was cut off three times
+      // over, the thinking try spending all of its 6000 on reasoning; the limit is a ceiling, not a cost.
+      let turn = await this.streamOnce(messages, 0, thinking ? 12000 : 3000, (token: string): void => {
         if (isCancelled(this.operationCancellation)) { return }
         soFar += token
         onText(soFar)
@@ -1037,20 +1045,28 @@ export class DeepSeekEngine {
   async extractTemplateContent(systemPrompt: string, userPrompt: string, maxTokens: number,
       purpose: string = 'Text for the blocks', thinking: boolean = false,
       cancellation?: OperationCancellation): Promise<string | null> {
+    let answer = await this.extractTemplateAnswer(systemPrompt, userPrompt, maxTokens, purpose, thinking, cancellation)
+    return answer.text
+  }
+
+  /** extractTemplateContent with why the model stopped: "length" when it ran out of tokens, "stop" when it ended the reply. */
+  async extractTemplateAnswer(systemPrompt: string, userPrompt: string, maxTokens: number,
+      purpose: string = 'Text for the blocks', thinking: boolean = false,
+      cancellation?: OperationCancellation): Promise<SideAnswer> {
     throwIfCancelled(cancellation)
-    if (!settings.hasApiKey()) { return null }
+    if (!settings.hasApiKey()) { return new SideAnswer(null, '') }
     let worker = this.newOperation(cancellation)
     let version = this.sideCallsVersion
-    return this.runOperation<string | null>(worker,
-      (): Promise<string | null> => worker.extractTemplateContentInternal(systemPrompt, userPrompt, maxTokens, purpose, thinking), (): void => {
+    return this.runOperation<SideAnswer>(worker,
+      (): Promise<SideAnswer> => worker.extractTemplateContentInternal(systemPrompt, userPrompt, maxTokens, purpose, thinking), (): void => {
         this.publishSideCalls(worker, version)
       })
   }
 
   private async extractTemplateContentInternal(systemPrompt: string, userPrompt: string, maxTokens: number,
-      purpose: string, thinking: boolean): Promise<string | null> {
+      purpose: string, thinking: boolean): Promise<SideAnswer> {
     throwIfCancelled(this.operationCancellation)
-    if (!settings.hasApiKey()) { return null }
+    if (!settings.hasApiKey()) { return new SideAnswer(null, '') }
     let messages: Record<string, Object>[] = []
     messages.push(plainMessage('system', systemPrompt))
     messages.push(plainMessage('user', userPrompt))
@@ -1065,12 +1081,12 @@ export class DeepSeekEngine {
       throwIfCancelled(this.operationCancellation)
       this.recordSideCall(purpose, startedAt, turn)
       console.info('VERA-TEMPLATE-CONTENT ms=' + (Date.now() - startedAt).toString())
-      return extractVeraSource(turn.content)
+      return new SideAnswer(extractVeraSource(turn.content), turn.finishReason)
     } catch (e) {
       throwIfCancelled(this.operationCancellation)
       this.recordSideCall(purpose, startedAt, null)
       console.warn('VERA-TEMPLATE-CONTENT failed: ' + (e as Error).message)
-      return null
+      return new SideAnswer(null, '')
     } finally {
       this.thinking = savedThinking
       this.generating = false

@@ -24,4 +24,6 @@ assert.match(note, /\+3 C, cloudy$/)
 // The side call's prompt names what is not a current figure, so a tip calculator or a timer goes to the agent as before.
 assert.match(live.LIVE_QUERY_PROMPT, /weather/)
 assert.match(live.LIVE_QUERY_PROMPT, /a timer, a game, a converter between fixed units/)
+// no example answer in the question: a sample query with a city in it was returned as is for any request naming that city
+assert.doesNotMatch(live.LIVE_QUERY_PROMPT, /for example|e\.g\.|"/)
 console.log('live-figures-check: ok')

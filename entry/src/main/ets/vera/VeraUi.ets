@@ -59,6 +59,8 @@ export class VeraUiNode {
   suffix: string = ''
   minimumDigits: number = 1
   decimals: number = -1
+  /** How much one tap of a ui.NumberField's - or + changes it; 1 when the program leaves it off. */
+  step: number = 1
 
   /** The name of an icon in VeraIcons; '' for none. */
   icon: string = ''
@@ -793,6 +795,7 @@ export class UiHostEnvironment extends HostEnvironment {
           ['minimum', new VeraNumberValue(argNum(args, 3))],
           ['maximum', new VeraNumberValue(argNum(args, 4))],
           ['action', new VeraStringValue(argString(args, 5))],
+          ['step', new VeraNumberValue(argNum(args, 6, 1))],
         ])
       case 'TimeField':
         return viewNode('timefield', [
@@ -1076,6 +1079,9 @@ function decodeNode(obj: VeraObjectValue, depth: number): VeraUiNode {
         break
       case 'decimals':
         if (v instanceof VeraNumberValue) { node.decimals = (v as VeraNumberValue).value }
+        break
+      case 'step':
+        if (v instanceof VeraNumberValue) { node.step = (v as VeraNumberValue).value }
         break
       case 'spinPeriodMs':
         if (v instanceof VeraNumberValue) { node.spinPeriodMs = (v as VeraNumberValue).value }

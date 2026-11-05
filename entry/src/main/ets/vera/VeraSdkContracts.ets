@@ -10,6 +10,7 @@
  */
 
 import { CalendarSdkContract, calendarSdkContract } from './VeraCalendarSdk'
+import { notifySdkContract } from './VeraNotifySdk'
 
 const AUDIO_WRITE_PARAMS: string = 'buffer?: comma-separated 16-bit samples (-32768..32767) as one string, sampleRate?: 8000|16000|44100|48000 (default 48000), frequencyHz?: number, durationMs?: number, volume?: 0-1 (default 0.3)'
 
@@ -42,5 +43,8 @@ export function adapterSdkContract(target: string): CalendarSdkContract | undefi
 /** The contract find_sdk_function shows for a target, if its adapter has one. */
 export function sdkContract(target: string): CalendarSdkContract | undefined {
   let calendar = calendarSdkContract(target)
-  return calendar !== undefined ? calendar : adapterSdkContract(target)
+  if (calendar !== undefined) { return calendar }
+  let notify = notifySdkContract(target)
+  if (notify !== undefined) { return new CalendarSdkContract(notify.params, notify.returns, notify.description, notify.example) }
+  return adapterSdkContract(target)
 }

@@ -65,6 +65,8 @@ import { compositionFromJson, compositionToJson, editComposition, selectEdit, Co
 /** How the system prompt picks the std/ui components it describes: 'full', 'phrases' or 'prompt' (VeraUiSelect.ets). */
 const UI_SELECT_MODE: string = UI_SELECT_PROMPT
 const MAX_RETRIES: number = 3
+/** How long a new app opened full screen keeps the run's line over it. */
+const READY_NOTE_MS: number = 4000
 
 // vera-server's address is not written down here. It lives in settings, given
 // the same way as the API key -- `--ps veraServer http://host:port` -- because
@@ -309,6 +311,8 @@ export struct GeneratePage {
   // What the USB-network VPN last reported (UsbNet.ets), read once a second while Advanced is open (syncUsbNetPoll).
   @State usbNetStatus: string = 'off'
   private usbNetTimer: number = -1
+  /** The timer that takes the run's line off the full screen (openWhole); -1 when none. */
+  private readyNoteTimer: number = -1
   @State attempt: number = 0
   @State compiled: boolean = false
   @State compileErrors: string = ''
@@ -329,17 +333,21 @@ export struct GeneratePage {
   @State stages: Stage[] = []
   /** Which of Jev, Exa and DeepSeek answered in this run and which did not: the Metrics tab's last card. */
   @State services: ServiceNote[] = []
+  /** What the composer left out of the last screen, and why (ComposeResult.dropped), for the Metrics tab. */
+  @State leftOut: string[] = []
   /** The lookups of this run (find_sdk_function, find_intent_function, find_ui_component, web_search), for the Metrics tab. */
   @State tools: ToolCall[] = []
   /** Whether the tool calls card shows every call or only its total: closed until tapped. */
   @State toolsOpen: boolean = false
   /** The Metrics pane's real width, measured: a percentage inside the Scroll resolves against a wider box than the one drawn. */
   @State metricsWidth: number = 0
-  @State compiledVbc2: string = ''
+  @State @Watch('showCorner') compiledVbc2: string = ''
   /** The running preview's state as it last changed; not @State, as writing it must not redraw the page. */
   private liveState: string = ''
   /** What the next compiled program starts from (VeraPreview.seedState): the state at the moment a refine was asked for. */
   @State carriedState: string = ''
+  /** The run's own line ("Ready in 8.3 s") over a new app just opened full screen, for a few seconds. */
+  @State readyNote: boolean = false
   /**
    * A picture of the screen drawn from the composer's sketch while the real program is still on its way:
    * it builds up as the sketch streams in, and stays up through a fallback generation. Taps are off;
@@ -402,6 +410,8 @@ export struct GeneratePage {
   @State @Watch('syncUsbNetPoll') advancedOpen: boolean = false
   /** The program alone over the whole screen, with the box under it; see fullscreenPane. */
   @State fullscreen: boolean = false
+  /** The full-screen corner buttons stepped aside while the program is read further down (VeraPreview onReadingDown). */
+  @State cornerHidden: boolean = false
   /** Full screen with the request box folded away; see composer. */
   @State composerHidden: boolean = false
   /** True while another destination covers this page; flows to VeraPreview so its surface frame loop stops underneath. */
@@ -736,6 +746,10 @@ export struct GeneratePage {
       clearInterval(this.usbNetTimer)
       this.usbNetTimer = -1
     }
+    if (this.readyNoteTimer >= 0) {
+      clearTimeout(this.readyNoteTimer)
+      this.readyNoteTimer = -1
+    }
     if (this.generating) {
       this.stopGeneration()
     } else {
@@ -1019,6 +1033,7 @@ export struct GeneratePage {
     this.sideCalls = []
     this.stages = []
     this.services = []
+    this.leftOut = []
     resetServiceHealth()
     this.troubleNote = ''
     this.tools = []
@@ -1218,6 +1233,7 @@ export struct GeneratePage {
   }
 
   private showAgent(result: AgentResult): void {
+    let hadProgram = this.compiledVbc2.length > 0
     let composed: ComposeResult = result.composed
     this.generatedSource = result.source
     this.compiledSource = result.source
@@ -1238,15 +1254,21 @@ export struct GeneratePage {
     // Where the time went (the plan, the choosing, the sketch) is on the Metrics tab, not in this line.
     this.status = 'Ready in ' + ((this.totalMs - waited) / 1000).toFixed(1) + ' s' +
       (waited > 0 ? ' (and ' + (waited / 1000).toFixed(1) + ' s waiting for your answer)' : '') +
-      (composed.dropped.length > 0 ? '. Left out: ' + composed.dropped.join('; ') : '')
+      (composed.dropped.length > 0 ? ' · ' + composed.dropped.length.toString() + (composed.dropped.length === 1 ? ' part' : ' parts') +
+        ' not included (Metrics)' : '')
+    // Which, and why, on the Metrics tab: the line has room for the count only, and only the count left a person missing a figure
+    // with no way to see which (review of #46).
+    this.leftOut = composed.dropped.slice()
     let endFields: Record<string, Object> = {}
     endFields['ok'] = true
     endFields['attempt'] = 0
     endFields['totalMs'] = this.totalMs
     endFields['waitedMs'] = waited
     endFields['via'] = 'compose'
+    endFields['dropped'] = composed.dropped.join('; ')
     trace('gen-end', endFields)
     this.closeRun(true, 0)
+    if (!hadProgram) { this.openWhole() }
   }
 
   /**
@@ -1642,6 +1664,7 @@ export struct GeneratePage {
       this.compositionJson = ''
       this.acceptRequest()
       this.status = 'Compiled successfully on attempt ' + this.attempt
+      if (!hadProgram) { this.openWhole() }
       logMark('gen-compiled', 'attempt=' + this.attempt.toString())
       let endFields: Record<string, Object> = {}
       endFields['ok'] = true
@@ -2698,6 +2721,19 @@ export struct GeneratePage {
     }
   }
 
+  /** What the screen does not include of the plan, one line each with why: "Day length": the itinerary's own times. */
+  @LocalBuilder
+  leftOutPanel() {
+    MetricCard({ title: 'Not included', value: this.leftOut.length.toString() }) {
+      ForEach(this.leftOut, (line: string) => {
+        Text(leftOutLine(line))
+          .fontSize(12)
+          .fontColor(app.inkStrong)
+          .width('100%')
+      }, (line: string, index: number) => index.toString() + line)
+    }
+  }
+
   /**
    * The program the model wrote itself (a run the agent did not serve, or a refine): how long it took, what the compiler cost,
    * each attempt, and the runs before it.
@@ -3103,8 +3139,26 @@ export struct GeneratePage {
     return items
   }
 
+  /**
+   * A new app opens over the whole screen: in the pane under the request it had a third of the height and was read through
+   * a slot (the Try one of these demos). Only a new one: a change keeps whichever view the person was in. The run's line stays
+   * over it for a few seconds; the collapse button and Back return to the pane, where the line, Code and Metrics are.
+   */
+  private openWhole(): void {
+    if (this.fullscreen) { return }
+    this.setFullscreen(true)
+    this.readyNote = true
+    // The line of an earlier run goes with its own timer, not this run's line with it.
+    if (this.readyNoteTimer >= 0) { clearTimeout(this.readyNoteTimer) }
+    this.readyNoteTimer = setTimeout(() => { this.readyNoteTimer = -1; this.readyNote = false }, READY_NOTE_MS)
+  }
+
+  /** A new program starts at its top: the corner buttons show again (a short one may never scroll to bring them back). */
+  showCorner(): void { this.cornerHidden = false }
+
   /** What was typed into the program goes with it to the other view, which draws a program of its own. */
   private setFullscreen(on: boolean): void {
+    this.cornerHidden = false
     this.carriedState = this.liveState
     this.tab = TAB_PREVIEW
     this.composerHidden = false
@@ -3122,7 +3176,10 @@ export struct GeneratePage {
         // With the box folded, the round button lies over the bottom corner: the program gets room to scroll clear of it.
         VeraPreview({ vbc2: this.compiledVbc2, seedState: this.carriedState, destinationHidden: this.destinationHidden,
           bottomRoom: this.composerHidden ? FOLD_ROOM : 0,
-          onStateSnapshot: (encoded: string): void => { if (!this.disposed) { this.liveState = encoded } } })
+          onStateSnapshot: (encoded: string): void => { if (!this.disposed) { this.liveState = encoded } },
+          // The two round buttons lie over the program's corner: on the way down they would cover its rows (a stop's
+          // Navigate button, measured on Istanbul layover), so they step aside and come back on the way up.
+          onReadingDown: (down: boolean): void => { animateTo({ duration: 180 }, () => { this.cornerHidden = down }) } })
           .width('100%')
           .height('100%')
         Row({ space: 8 }) {
@@ -3148,11 +3205,14 @@ export struct GeneratePage {
           .onClick(() => { this.setFullscreen(false) })
         }
         .margin({ top: 8, right: 8 })
-        if (this.generating || !this.compiled) {
+        .opacity(this.cornerHidden ? 0 : 1)
+        .translate({ y: this.cornerHidden ? -56 : 0 })
+        .hitTestBehavior(this.cornerHidden ? HitTestMode.None : HitTestMode.Default)
+        if (this.generating || !this.compiled || this.readyNote) {
           Row({ space: 8 }) {
             if (this.generating) { LoadingProgress().width(16).height(16) }
             Text(this.status.length > 0 ? this.status : 'Working...')
-              .fontSize(12).fontColor(this.generating ? app.inkSoft : app.warningInk).maxLines(3)
+              .fontSize(12).fontColor(this.generating ? app.inkSoft : (this.compiled ? app.successInk : app.warningInk)).maxLines(3)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
           .padding({ left: 10, right: 10, top: 6, bottom: 6 })
@@ -3313,6 +3373,7 @@ export struct GeneratePage {
           if (this.mode !== MODE_SERVER && (this.sideCalls.length > 0 || this.attempts.length > 0)) { this.tokensPanel() }
           if (this.stages.length > 0 || this.attempts.length > 0 || this.tools.length > 0) { this.toolsPanel() }
           if (this.services.length > 0) { this.servicesPanel() }
+          if (this.leftOut.length > 0) { this.leftOutPanel() }
           if (this.attempts.length === 0 && this.stages.length === 0) {
             Text('No run yet').fontSize(13).fontColor(app.inkDisabled).width('100%').textAlign(TextAlign.Center).padding({ top: 12 })
           }
@@ -3670,4 +3731,9 @@ export struct GeneratePage {
     .onShown(() => { this.destinationShown() })
     .onHidden(() => { this.destinationHidden = true })
   }
+}
+
+/** One of the composer's left-out notes as a person reads it: 'value "Pace": ...' is '"Pace": ...'. */
+function leftOutLine(line: string): string {
+  return line.replace(/^(value|input|field|figure) (?=")/, '')
 }

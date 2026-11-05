@@ -103,5 +103,23 @@ const lower = 'return query.length() === 0 || strings.contains(strings.toLowerCa
   assert.equal(parseHoleAnswer(answer('```\nreturn true;\n```'), holes).get('rowMatches2'), '  return true;')
   assert.equal(parseHoleAnswer(answer('return true; //@hole x end'), holes).size, 0)
   assert.equal(parseHoleAnswer(answer('let x = 1;'), holes).size, 0)
+  // The notices of a screen are one banner, each its own line, under the title: three stacked banners took half of Timetable.
+  {
+    const {ScreenPlan, PlanComponent, FILL_REPORTED, assemblePlan} = loadVera('ScreenPlan')
+    const {noticeBlock} = loadVera('agent/AgentHole')
+    const plan = new ScreenPlan()
+    plan.globals = new Map([['__THEME__', 'clean'], ['__HEADER_STYLE__', 'default'], ['__TITLE__', 'Timetable']])
+    for (const why of ['It cannot set a repeating alarm.', 'It cannot read the photo.']) {
+      plan.components.push(new PlanComponent(FILL_REPORTED, noticeBlock(true, why), new Map()))
+    }
+    const src = assemblePlan(plan, true)
+    assert.equal((src.match(/ui\.InsetBanner\(/g) || []).length, 1, 'one banner')
+    const vm = new VirtualMachine(deserializeVbc2(compileVeraSource(src).vbc2), new UiHostEnvironment())
+    const walk = (n, f) => { f(n); (n.children || []).forEach(x => walk(x, f)) }
+    const banners = []; walk(decodeVeraUi(vm.execute('view', [vm.execute('init')]))[0], n => { if (n.kind === 'banner') banners.push(n) })
+    assert.equal(banners.length, 1)
+    assert.equal(banners[0].text, 'Not available on this phone')
+    assert.equal(banners[0].label, '- It cannot set a repeating alarm.\n- It cannot read the photo.')
+  }
   console.log('hole-check ok')
 })().catch(e => { console.error(e); process.exit(1) })

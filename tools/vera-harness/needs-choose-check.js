@@ -445,7 +445,10 @@ async function appHostOwnershipChecks() {
     assert.deepEqual(nc.listSectionsFor(plan({...pill, events: [{id: 'a', when: 'when an entry is added', what: 'x', asked: true}]})), [])
     const log = JSON.parse(fixture('expenses', 'sketch.json'))
     log.values = [{id: 'sum', label: 'Sum', means: 'sum', format: 'plain', formula: 'entryTotal', example: {given: {entryTotal: 1}, result: 1}}]
-    assert.deepEqual(nc.listSectionsFor(plan(log)), ['record_log'], 'a figure over the entries is only for the log to publish')
+    // A figure over the entries is for a section that shows figures of its own over them: never reminders, which shows none.
+    const sections = nc.listSectionsFor(plan(log))
+    assert.ok(sections.includes('record_log') && sections.includes('quick_log'), sections)
+    assert.ok(!sections.includes('reminders'), 'a figure over the entries is not left to reminders')
   }
 
   // A countdown of one fixed time: Jev is asked once, with the part and the section; the second call does not ask it again.
@@ -475,10 +478,11 @@ async function appHostOwnershipChecks() {
     assert.deepEqual(r.blocks || [], [])
     assert.ok(r.vbc2.length > 0, r.note)
   }
-  // A list the person fills in: the part, the log and the reminders side by side; the log takes it.
+  // A list the person fills in: the part and every section that keeps entries side by side; the log takes it.
   {
     const {r, asked} = await run('expenses', {'list.part': says('record_log')})
-    assert.deepEqual(Object.keys(asked[0].q['list.part'].criteria).sort(), ['part', 'record_log', 'reminders'])
+    assert.deepEqual(Object.keys(asked[0].q['list.part'].criteria).sort(), ['dose_schedule', 'due_items', 'part', 'points_ledger',
+      'quick_log', 'reading_status', 'record_log', 'reminders'])
     assert.ok(!asked[1].keys.includes('list.part'))
     assert.deepEqual(r.blocks, ['record_log'], r.note)
   }

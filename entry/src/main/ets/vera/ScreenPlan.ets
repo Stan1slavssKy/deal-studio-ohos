@@ -144,11 +144,69 @@ export function assemblePlan(plan: ScreenPlan, partial: boolean = false): string
   if (!partial && plan.open().length > 0) { return '' }
   let specs: (FragmentSpec | null)[] = []
   let values: Map<string, string>[] = []
+  // A notice that part of the screen is missing shows first, under the title: at the bottom of a long screen the person never
+  // reaches it and takes what is there for everything asked (measured: Exam prep, a form and a list above it). It is drawn first
+  // (FragmentSpec.viewFirst) but placed last: put first, it took block 1 and renumbered every block after it, so a section written
+  // against the program before the notice existed read another block's names (review of #46).
+  // Several are one banner, each its own line: three stacked banners took half the screen above anything that works (Timetable).
+  // A notice that only says what the screen does instead (NOTICE_INSTEAD) is not a warning: it goes last, after what it explains.
+  let notices: FragmentSpec[] = []
+  let insteads: FragmentSpec[] = []
   for (let c of plan.components) {
+    if (c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') {
+      if (c.spec!.criteria.startsWith(NOTICE_INSTEAD_TITLE + NOTICE_SPLIT)) { insteads.push(c.spec!) } else { notices.push(c.spec!) }
+    }
+  }
+  // The folded settings (VeraCompose.ets's settingsPart) go under every section: what the screen is for comes first.
+  let settings: PlanComponent[] = []
+  for (let c of plan.components) {
+    if (c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') { continue }
+    if (c.spec !== null && c.spec!.kind === SETTINGS_PART) { settings.push(c); continue }
     specs.push(c.spec)
     values.push(c.values)
   }
+  for (let c of settings) { specs.push(c.spec); values.push(c.values) }
+  if (notices.length > 0) {
+    specs.push(notices.length > 1 ? oneNotice(notices) : notices[0])
+    values.push(new Map<string, string>())
+  }
+  if (insteads.length > 0) {
+    specs.push(insteads.length > 1 ? oneNotice(insteads, 'info') : insteads[0])
+    values.push(new Map<string, string>())
+  }
   return composeFragments(specs, plan.globals, values)
+}
+
+/** Between a notice's title and its words in FragmentSpec.criteria (agent/AgentHole.ets's noticeBlock). */
+export const NOTICE_SPLIT: string = '\u0001'
+
+/** The title of a notice that says what the screen does instead (agent/AgentHole.ets's NOTICE_INSTEAD; kept here to avoid a cycle). */
+export const NOTICE_INSTEAD_TITLE: string = 'Done differently'
+
+/** The kind of the composer's folded settings part (VeraCompose.ets's SETTINGS_KIND; kept here to avoid a cycle). */
+export const SETTINGS_PART: string = 'settings'
+
+/** The notices of a screen as one banner: their common title, or a general one, and each one's words on a line of its own. */
+function oneNotice(notices: FragmentSpec[], icon: string = 'warning'): FragmentSpec {
+  let style = icon === 'warning' ? 'warning' : 'default'
+  let titles: string[] = []
+  let lines: string[] = []
+  for (let n of notices) {
+    let at = n.criteria.indexOf(NOTICE_SPLIT)
+    if (at < 0) { continue }
+    let title = n.criteria.substring(0, at)
+    let body = n.criteria.substring(at + NOTICE_SPLIT.length)
+    if (titles.indexOf(title) < 0) { titles.push(title) }
+    if (lines.indexOf(body) < 0) { lines.push(body) }
+  }
+  let title = titles.length === 1 ? titles[0] : 'Some parts are limited'
+  let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("' + style + '", "' + title + '", "' +
+    lines.map((l: string): string => '- ' + l).join('\\n') + '", "", "", "' + icon + '")]));\n}'
+  let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
+  spec.indexed = false
+  // A banner of what is done differently goes where a single one does (noticeBlock): last, not above every section.
+  spec.viewFirst = icon !== 'info'
+  return spec
 }
 
 /** One line per slot, for the trace and the host checks: "id fill(detail) by=N: need". */

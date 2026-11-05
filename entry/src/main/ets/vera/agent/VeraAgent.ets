@@ -20,7 +20,7 @@ import { compileVeraSource } from '../VeraCompiler'
 import { Repaired, settleProgram } from './AgentRepair'
 import { FragmentSpec } from '../VeraTemplates'
 import { buildSlotRequest, readSlotValues, specsOf } from '../VeraSectionCompose'
-import { claimsDone, claimsUndone, putBack } from './AgentClaims'
+import { buttonsOnScreen, claimsDone, claimsUndone, putBack } from './AgentClaims'
 import { composeNeeds } from '../NeedsChoose'
 import { AlignResult, alignCandidates, alignIsEnabled, alignLeftovers } from './AgentAlign'
 import { Composition as ScreenRecord, compositionFromPlan, rebuilds } from '../VeraComposition'
@@ -269,8 +269,16 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       let byPart = own < 0
       if (byPart) { own = plan.components.findIndex((c: PlanComponent): boolean => c.fill === FILL_PART) }
       let open = plan.toWrite().filter((s: PlanSlot): boolean => !s.phone && s.id.startsWith('custom.') && !s.need.startsWith('the figure "'))
-      let done = own < 0 || open.length === 0 ? [] : await claimsDone(open.map((s: PlanSlot): string => s.need), request.prompt, assemblePlan(plan, true), host.askJev, cancellation)
+      let screenSoFar = assemblePlan(plan, true)
+      // A need that names a button the screen already draws is done by it, whatever Jev reads (Shared costs: Remove last, Start over).
+      // Any open need, an event's as much as an item's: "the remove-last button is tapped" is an event of the plan.
+      let anyOpen = plan.toWrite().filter((s: PlanSlot): boolean => !s.phone)
+      let byButton = own < 0 ? [] : buttonsOnScreen(anyOpen.map((s: PlanSlot): string => s.need), screenSoFar)
+      for (let s of anyOpen) { if (byButton.indexOf(s.need) >= 0 && open.indexOf(s) < 0) { open.push(s) } }
+      let asked = open.filter((s: PlanSlot): boolean => byButton.indexOf(s.need) < 0)
+      let done = own < 0 || asked.length === 0 ? [] : await claimsDone(asked.map((s: PlanSlot): string => s.need), request.prompt, screenSoFar, host.askJev, cancellation)
       checkAgent(host)
+      done = byButton.concat(done)
       if (done.length > 0) {
         for (let slot of open) { if (done.indexOf(slot.need) >= 0) { plan.fillWith(slot, byPart ? FILL_PART : FILL_BLOCK, own, 'already on the screen') } }
         result.note += '; already on the screen: ' + done.join('; ')

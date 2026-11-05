@@ -10,8 +10,10 @@
 export const LIVE_QUERY_PROMPT: string =
   'Decide whether the app in the request has to show a figure of the real world that changes and that you cannot know: ' +
   'the weather or a forecast, an exchange rate, a price, a score, a timetable, the news. If it does, return one short ' +
-  'English web search query that finds that figure, with the place and the day the request names (for example ' +
-  '"Moscow weather today"). If it does not, return NONE: an app that only keeps, counts or calculates what the person ' +
+  'English web search query that finds that figure, with the place and the day the request names. ' +
+  // No example query: one with a city in it ("Moscow weather today") came back word for word for a request that named the
+  // city and asked for no figure at all ("Plan my connected fly for 5 hours in Moscow"), and sent it past the agent.
+  'If it does not, return NONE: an app that only keeps, counts or calculates what the person ' +
   'enters, a timer, a game, a converter between fixed units, or anything the phone itself measures, is NONE. ' +
   'Return only the query or NONE, with no quotes or other text.'
 

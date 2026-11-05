@@ -59,6 +59,8 @@ export class AgentHost {
   fillBlocks: (request: BlockRequest) => Promise<BlockFill> = defaultBlockFill
   /** The model that writes a custom section, null when there is none to ask: then a need nothing does refuses the screen. */
   askCode: CodeAsk | null = null
+  /** Why the model stopped its last askCode reply: "length" at the token limit, "stop" when it ended it; "" when not known. */
+  lastCodeFinish: string = ''
   /**
    * The phone's functions for something the phone or another app is to do: what find_intent_function and find_sdk_function
    * answer for the need, as text with each result's call; '' when nothing can be looked up (then nothing is called).

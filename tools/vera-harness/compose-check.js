@@ -294,6 +294,14 @@ const pick = choice => ({type: 'choice', choice, confidence: 0.95})
     {id: 'km', label: 'Distance', kind: 'amount', value: 8}], values: [{id: 'pace', label: 'Pace', format: 'minutes'}]}),
   {'expr.pace': pick('divide:mins:km'), 'steps.pace': pick('one'), 'widget.mins': pick('stepper'), 'widget.km': pick('stepper')})
   assert.match(p.screen(), /6:15/)
+  // Hours: the plan writes a number of hours as measure number, unit hours; a countdown runs from it, 5 hours as 5:00:00, and no
+  // 5-minute length of its own is put beside it (a 5-hour layover came out as a 5-minute timer and an unused field in hours)
+  const hoursSketch = JSON.stringify({title: 'T', inputs: [{id: 'dur', label: 'Layover', kind: 'count', measure: 'number', unit: 'hours', min: 1, max: 24, value: 5}],
+    countdown: {label: 'Layover', length: 'dur'}})
+  const hours = c.readComposition(JSON.stringify({answers: {'countdown.length': pick('dur')}}), c.parseSketch(hoursSketch))
+  assert.deepEqual([hours.countdownFrom, hours.countdownUnit], ['dur', 'hours'])
+  assert.ok(!hours.inputs.some(i => /length/i.test(i.label)), hours.inputs.map(i => i.label).join(' | '))
+  assert.match(runSketch(hoursSketch, {'countdown.length': pick('dur')}).screen(), /5:00:00/)
   // Seconds left on the countdown, shown as a value in minutes: converted, not read as minutes.
   const left = runSketch(JSON.stringify({title: 'T', constants: [{id: 'pasta', label: 'Pasta', value: 11, measure: 'minutes'}],
     countdown: {label: 'Pasta', length: 'pasta'}, values: [{id: 'left', label: 'Left', format: 'minutes'}]}),
@@ -739,7 +747,8 @@ console.log('compose-check: ok')
   const withSection = asked(new Map([['ready.0', 'itinerary']]))
   assert.match(withSection, /the section already has: the start time of the day/)
   assert.doesNotMatch(asked(new Map()), /the section already has/, 'no section chosen: nothing to say of it')
-  assert.doesNotMatch(asked(new Map([['ready.0', 'checklist']])), /the section already has/, 'a block with no `owns` adds nothing')
+  assert.doesNotMatch(asked(new Map([['ready.0', 'master_list']])), /the section already has/, 'a block with no `owns` adds nothing')
+  assert.match(asked(new Map([['ready.0', 'checklist']])), /the section already has: its list of items/, 'SECTION_OWNS fills the catalogue\'s own')
 }
 console.log('compose: a chosen section says what it holds')
 

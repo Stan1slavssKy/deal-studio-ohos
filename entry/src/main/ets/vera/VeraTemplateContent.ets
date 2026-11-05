@@ -162,6 +162,17 @@ function renderListRows(spec: ListFieldSpec, rows: string[][]): string {
   return out.join(spec.separator)
 }
 
+/** Words that name a kind of thing, not a thing: "my pills" names no medicine, "my food" no food. */
+const KIND_WORDS: string[] = ['pill', 'pills', 'medicine', 'medicines', 'meds', 'tablet', 'tablets', 'capsule', 'capsules', 'dose', 'doses',
+  'food', 'foods', 'item', 'items', 'thing', 'things', 'drink', 'drinks', 'glass', 'stuff', 'the', 'and', 'for', 'with', 'daily']
+
+/** Whether the request names the row's thing: one of its own words of three letters or more is in the request. */
+export function namedIn(name: string, request: string): boolean {
+  let said = request.toLowerCase()
+  return name.toLowerCase().split(/[^a-z0-9\u00c0-\uffff]+/).some((w: string): boolean =>
+    w.length >= 3 && KIND_WORDS.indexOf(w) < 0 && said.indexOf(w) >= 0)
+}
+
 /**
  * Turns the model's answer for one list field into the text spliced at the field's token. The
  * answer is accepted only as an array: its elements are strings (one-column lists) or arrays of
@@ -170,9 +181,10 @@ function renderListRows(spec: ListFieldSpec, rows: string[][]): string {
  * the spec's fallback rows, and the note says so -- a defaulted list never passes as a filled one.
  * Exported for the host checks; never throws.
  */
-export function expandListRows(raw: Object | undefined, spec: ListFieldSpec): ListExpansion {
+export function expandListRows(raw: Object | undefined, spec: ListFieldSpec, request: string = ''): ListExpansion {
   let columns = spec.columnHints.length
   let rows: string[][] = []
+  let dropped = 0
   if (raw !== undefined && raw !== null && Array.isArray(raw)) {
     let items = raw as Object[]
     for (let item of items) {
@@ -187,6 +199,7 @@ export function expandListRows(raw: Object | undefined, spec: ListFieldSpec): Li
         continue
       }
       if (cells.length === 0 || cells[0].trim().length === 0) { continue }
+      if (spec.ownRows && request.length > 0 && !namedIn(cells[0], request)) { dropped++; continue }
       let row: string[] = []
       for (let c = 0; c < columns; c++) {
         let cell = c < cells.length ? cells[c] : ''
@@ -195,6 +208,10 @@ export function expandListRows(raw: Object | undefined, spec: ListFieldSpec): Li
       rows.push(row)
       if (rows.length >= spec.maxRows) { break }
     }
+  }
+  // The person's own things the request does not name are theirs to add: an empty list, not the fallback.
+  if (spec.ownRows && (rows.length === 0 && (dropped > 0 || (raw !== undefined && raw !== null && Array.isArray(raw))))) {
+    return new ListExpansion(renderListRows(spec, []), spec.key + '=0(own' + (dropped > 0 ? ', ' + dropped.toString() + ' not in the request' : '') + ')', 0)
   }
   if (rows.length === 0) {
     let shape = raw === undefined || raw === null ? 'missing' : 'bad shape'
@@ -288,6 +305,7 @@ export function parseContentResponse(raw: string | null, fields: ContentFieldSpe
   let notes: string[] = []
   for (let field of fields) {
     let raw_value = parsed[field.key]
+    if (field.numeric && typeof raw_value === 'number' && isFinite(raw_value as number)) { raw_value = (raw_value as number).toString() }
     if (typeof raw_value !== 'string' || (raw_value as string).trim().length === 0) {
       values.set(field.token, field.fallback)
       notes.push(field.key + '=default')
@@ -446,6 +464,9 @@ export async function fillSectionsContent(chosenKinds: string[], userPrompt: str
     let filled = false
     if (ok) {
       let rawValue = parsed[f.jsonKey]
+      // A number field may come back as a JSON number (250), not as text ("250"): read as text it was dropped for the fallback, and a
+      // water log added 1 ml a tap toward no goal (quick_log on the phone).
+      if (f.numeric && typeof rawValue === 'number' && isFinite(rawValue as number)) { rawValue = (rawValue as number).toString() }
       if (typeof rawValue === 'string' && (rawValue as string).trim().length > 0) {
         value = f.numeric ? sanitizeVeraInt(rawValue as string, f.fallback) : escapeForVeraString(rawValue as string, f.maxLength)
         filled = true
@@ -455,7 +476,7 @@ export async function fillSectionsContent(chosenKinds: string[], userPrompt: str
     notes.push(f.jsonKey + '=' + (filled ? 'filled' : 'default'))
   }
   for (let list of lists) {
-    let expansion = expandListRows(ok ? parsed[list.jsonKey] : undefined, list.spec)
+    let expansion = expandListRows(ok ? parsed[list.jsonKey] : undefined, list.spec, userPrompt)
     instanceValues[list.slotIndex].set(list.spec.token, expansion.text)
     notes.push(list.jsonKey.replace('section', 's') + '=' + expansion.note.substring(list.spec.key.length + 1))
   }

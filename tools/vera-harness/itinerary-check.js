@@ -114,4 +114,88 @@ assert.equal(e.rawTarget, 'com.huawei.hmos.calendar/phone/MainAbility'); assert.
   assert.match(text(both, b), /0 of 3/)
   assert.match(text(both, act(both, 'toggle1', b, num(0)).st), /1 of 3/)
 }
+// the day's end and length come from the stops: 09:00 start, 90 + 75 + 60 minutes and two 15-minute gaps end at 13:15
+{
+  const day = build(['itinerary'], ON)
+  const shown = text(day, day.vm.execute('init'))
+  assert.match(shown, /13:15\|Day ends\|after the last stop/)
+  assert.match(shown, /4 h 15 min\|Day length\|3 stops/)
+  assert.match(shown, /Day starts/)
+}
+// a start time the screen's own form sets (port "start"): the stops follow it, and the block draws no start field of its own
+{
+  const {FragmentSpec, StateFieldSpec, PortSpec} = loadVera('VeraTemplates')
+  const {composeFragments} = loadVera('VeraSectionCompose')
+  const form = new FragmentSpec('form', '', '', [new StateFieldSpec('dayAt', 'number')], '', 'dayAt: 600', '',
+    '{ sections.push(ui.Section("content", "", "", [ui.TimeField("default", "Start time", state.dayAt, "setDay")])); }', [], [])
+  form.functions = 'function setDay(state: AppState, v: number): AppState {\n  return {dayAt: v__PASSTHROUGH__};\n}'
+  form.indexed = false
+  form.ports = [new PortSpec('writes', 'start', 'number', 'dayAt')]
+  const itinerary = fragments().find(f => f.kind === 'itinerary')
+  const src = composeFragments([form, itinerary], globals, [new Map(), values('itinerary', ON)])
+  const r = compileVeraSource(src)
+  const h = {env: new UiHostEnvironment()}
+  h.vm = new VirtualMachine(deserializeVbc2(r.vbc2 !== undefined ? r.vbc2 : r), h.env)
+  let st = h.vm.execute('init')
+  let shown = text(h, st)
+  assert.match(shown, /10:00 - 11:30/)
+  assert.match(shown, /14:15\|Day ends/)
+  assert.doesNotMatch(shown, /Day starts/)
+  st = h.vm.execute('setDay', [st, num(480)])
+  assert.match(text(h, st), /08:00 - 09:30/)
+  // the calendar event of the first stop starts at the form's time too
+  const ev = act(h, 'addEvent2', st, num(0)).effects[0]
+  assert.ok([...ev.values.values()].some(v => String(v) === '8'), 'the event starts at 8 o\'clock')
+}
+// Minutes between stops: + and - move it by 5, and a day that runs past midnight says so on the stop and on the day's end
+{
+  const h = build(['itinerary'])
+  let st = h.vm.execute('init')
+  const fields = []
+  walk(decodeVeraUi(h.vm.execute('view', [st]))[0], n => { if (n.kind === 'numberfield') fields.push(n) })
+  assert.equal(fields.length, 1); assert.equal(fields[0].step, 5, 'the gap steps by 5 minutes')
+  assert.doesNotMatch(text(h, st), /\+1 day/)
+  st = act(h, 'setGap1', st, num(180)).st
+  // 09:00 start, stops of 90, 75, 60 and two 180-minute gaps: the last stop is 19:45 - 20:45, still the same day
+  assert.doesNotMatch(text(h, st), /\+1 day/)
+  st = act(h, 'setStart1', st, num(1260)).st
+  // from 21:00: 21:00 - 22:30, 01:30 - 02:45 +1 day, 05:45 - 06:45 +1 day, and the day ends the next day
+  const s = text(h, st)
+  assert.match(s, /21:00 - 22:30 \| 90 min/); assert.match(s, /01:30 - 02:45 \+1 day \| 75 min/)
+  assert.match(s, /05:45 - 06:45 \+1 day \| 60 min/); assert.match(s, /the next day/)
+}
+// The row's one button: Navigate where the stops are places to travel between (none on a meal with no coordinates), else a check;
+// with no check, the section says a tap marks a stop reached
+{
+  const withStops = (nav) => {
+    const spec = fragments().find(f => f.kind === 'itinerary'), m = new Map()
+    spec.slots.forEach(x => m.set(x.token, x.token === '__NAVIGATE_IDX__' ? nav : x.values[0]))
+    spec.contentFields.forEach(x => m.set(x.token, x.fallback))
+    spec.listFields.forEach(l => m.set(l.token, expandListRows([['The Bund', '90', '31.2397', '121.4900'], ['Lunch', '60', '', ''],
+      ['Yu Garden', '75', '', ''], ['Lunch at Nanxiang', '45', '31.2272', '121.4921']], l).text))
+    const r = compileVeraSource(composeProgram(['itinerary'], globals, [m]))
+    const vm = new VirtualMachine(deserializeVbc2(r.vbc2 !== undefined ? r.vbc2 : r), new UiHostEnvironment())
+    const root = decodeVeraUi(vm.execute('view', [vm.execute('init')]))[0]
+    const buttons = [], subtitles = []
+    walk(root, n => { if (n.kind === 'iconbutton') buttons.push(n.icon + ':' + n.eventValue); if (n.kind === 'section') subtitles.push(n.label) })
+    return {buttons, subtitles}
+  }
+  const on = withStops('true')
+  // a stop with no coordinates has no button, whatever its name: Lunch and Yu Garden; a lunch with coordinates is a place
+  assert.deepEqual(on.buttons, ['navigate:0', 'navigate:3'])
+  assert.ok(on.subtitles.indexOf('Tap a stop when you reach it') >= 0, on.subtitles.join(' | '))
+  const off = withStops('false')
+  assert.deepEqual(off.buttons, ['check:0', 'check:1', 'check:2', 'check:3'])
+  assert.ok(off.subtitles.indexOf('Tap a stop when you reach it') < 0)
+}
+// a NumberField without a step steps by 1, so programs written before step existed are unchanged
+{
+  const {UiHostEnvironment: E} = loadVera('VeraUi')
+  const src = 'import * as ui from "std/ui"\n@jsonable class AppState { n: number; }\nfunction init(): AppState { return {n: 3}; }\n' +
+    'function setN(state: AppState, value: number): AppState { return {n: value}; }\n' +
+    'function view(state: AppState): ui.View { return ui.NumberField("default", "N", state.n, 0, 10, "setN"); }\n'
+  const r = compileVeraSource(src)
+  const vm = new VirtualMachine(deserializeVbc2(r.vbc2 !== undefined ? r.vbc2 : r), new E())
+  assert.equal(decodeVeraUi(vm.execute('view', [vm.execute('init')]))[0].step, 1)
+}
 console.log('itinerary-check ok')

@@ -61,6 +61,7 @@ export class LiveNode {
   @Trace suffix: string = ''
   @Trace minimumDigits: number = 1
   @Trace decimals: number = -1
+  @Trace step: number = 1
   @Trace icon: string = ''
   // ui.TextField validation; see VeraUiNode.
   @Trace keyboardType: string = ''
@@ -74,12 +75,37 @@ export class LiveNode {
   @Trace patternMessage: string = ''
   @Trace email: boolean = false
   @Trace emailMessage: string = ''
+  /**
+   * ui.TextField: whether its check may be shown. Not before the person has typed in it or pressed a button: an empty
+   * required field on a form just opened is not a mistake. Renderer state, never the program's.
+   */
+  @Trace touched: boolean = false
+  /** What the person last typed in this field, to tell their own clearing from the program's reset of the form. */
+  typed: string = ''
   @Trace children: LiveNode[] = []
   /**
    * Renderer state: this node appeared because of something the person just did (a card opened, a result banner came up),
    * so the renderer brings it into view once it has a size. Never traced: reading it must not redraw anything.
    */
   reveal: boolean = false
+  /**
+   * A ListItem with no icon of its own in a ListGroup where another row has one: it keeps the icon's room empty, so every row's
+   * words start at one edge. Without it a care card's rows started at two (Baby fever: "Keep baby hydrated" at the margin, "Check
+   * temperature" beside a clock). Renderer state, set by markIconRoom after each reconcile.
+   */
+  @Trace iconRoom: boolean = false
+}
+
+/** Sets iconRoom on the rows of every ListGroup from here down; see LiveNode.iconRoom. */
+export function markIconRoom(node: LiveNode): void {
+  if (node.kind === 'listgroup') {
+    let any = node.children.some((c: LiveNode): boolean => c.kind === 'listitem' && c.icon.length > 0)
+    for (let c of node.children) {
+      let room = any && c.kind === 'listitem' && c.icon.length === 0
+      if (c.iconRoom !== room) { c.iconRoom = room }
+    }
+  }
+  for (let c of node.children) { markIconRoom(c) }
 }
 
 /** The kinds that are brought into view when a tap makes them appear: what opens, not a row added to a list. */
@@ -126,6 +152,7 @@ export function toLive(node: VeraUiNode): LiveNode {
   live.suffix = node.suffix
   live.minimumDigits = node.minimumDigits
   live.decimals = node.decimals
+  live.step = node.step
   live.icon = node.icon
   live.keyboardType = node.keyboardType
   live.required = node.required
@@ -181,10 +208,14 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.enabled !== next.enabled) { live.enabled = next.enabled }
   if (live.commands !== next.commands) { live.commands = next.commands }
   if (live.spinPeriodMs !== next.spinPeriodMs) { live.spinPeriodMs = next.spinPeriodMs }
-  if (live.label !== next.label) { live.label = next.label }
+  if (live.label !== next.label) { live.label = next.label; live.touched = false; live.typed = '' }
   if (live.tickerId !== next.tickerId) { live.tickerId = next.tickerId }
   if (live.columns !== next.columns) { live.columns = next.columns }
-  if (live.value !== next.value) { live.value = next.value }
+  if (live.value !== next.value) {
+    // The program emptied the field (a form reset after a successful add): untouched again, so nothing is flagged.
+    if (next.value.length === 0 && live.typed !== next.value) { live.touched = false }
+    live.value = next.value
+  }
   if (live.checked !== next.checked) { live.checked = next.checked }
   if (live.minimum !== next.minimum) { live.minimum = next.minimum }
   if (live.maximum !== next.maximum) { live.maximum = next.maximum }
@@ -201,6 +232,7 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.suffix !== next.suffix) { live.suffix = next.suffix }
   if (live.minimumDigits !== next.minimumDigits) { live.minimumDigits = next.minimumDigits }
   if (live.decimals !== next.decimals) { live.decimals = next.decimals }
+  if (live.step !== next.step) { live.step = next.step }
   if (live.icon !== next.icon) { live.icon = next.icon }
   if (live.keyboardType !== next.keyboardType) { live.keyboardType = next.keyboardType }
   if (live.required !== next.required) { live.required = next.required }

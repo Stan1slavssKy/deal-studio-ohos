@@ -5,10 +5,11 @@
  */
 
 import { AgentHost, HoleRecord, checkAgent, agentCancellation } from './AgentHost'
-import { CustomRequest, CustomResult, writeSection } from './AgentCustom'
+import { CustomRequest, CustomResult, writeSection, stillWorks } from './AgentCustom'
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
-import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED } from '../ScreenPlan'
+import { ScreenPlan, PlanComponent, PlanSlot, assemblePlan, FILL_HOLE, FILL_REPORTED, NOTICE_SPLIT, NOTICE_INSTEAD_TITLE } from '../ScreenPlan'
 import { PartsContract } from '../VeraCompose'
+import { withoutRepeatedButtons } from './AgentClaims'
 
 const OUTCOME_WRITTEN: string = 'written'
 const OUTCOME_PARTIAL: string = 'partial'
@@ -43,6 +44,14 @@ function literal(text: string): string {
   return text.split('\\').join('/').split('"').join("'").split('\n').join(' ').trim()
 }
 
+/** The title of a notice that says what the screen does instead of what was asked: shown after the rest, not as a warning. */
+export const NOTICE_INSTEAD: string = NOTICE_INSTEAD_TITLE
+
+/** Whether the writer's sentence says what the screen offers in place of the thing it cannot do. */
+export function offersInstead(why: string): boolean {
+  return /\binstead\b|,\s*so\s+(it|you|the app|this app|this)\b|\bbut (it|you) can\b/i.test(why)
+}
+
 /** The first sentence of `text`, at most 140 characters. */
 function firstSentence(text: string): string {
   let t = text.trim()
@@ -57,13 +66,24 @@ function firstSentence(text: string): string {
  */
 export function noticeBlock(cannot: boolean, why: string): FragmentSpec {
   let unchecked = !cannot && why.startsWith('It may not do')
-  let title = cannot ? 'Not available on this phone' : (unchecked ? 'Not checked' : 'Part of this app could not be built')
+  // A refusal that says what is offered instead is not a refusal: the screen does the nearest thing (Baby fever: "cannot show a
+  // care card of its own, so the guidance is written out"; Water: "cannot post a notification, so ..."). A warning above
+  // everything that works read as if the app were broken; it is a quiet line after the rest (ScreenPlan.ets's assemblePlan).
+  let instead = cannot && offersInstead(why)
+  let title = instead ? NOTICE_INSTEAD :
+    (cannot ? 'Not available on this phone' : (unchecked ? 'Not checked' : 'Part of this app could not be built'))
   // The person sees one short sentence: the plan's needs and the writer's failure are its own wording and stay in the trace.
   let body = cannot ? firstSentence(why) : (unchecked ? 'This part may not work exactly as described.' : 'Try asking for it again, or describe it differently.')
-  let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("warning", "' + literal(title) + '", "' +
-    literal(body) + '", "", "", "warning")]));\n}'
+  let style = instead ? 'default' : 'warning'
+  let icon = instead ? 'info' : 'warning'
+  let view = '{\n  sections.push(ui.Section("supporting", "", "", [ui.InsetBanner("' + style + '", "' + literal(title) + '", "' +
+    literal(body) + '", "", "", "' + icon + '")]));\n}'
   let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
   spec.indexed = false
+  // A warning shows under the title; one that says what is done instead goes after what it explains (ScreenPlan.ets).
+  spec.viewFirst = !instead
+  // Its title and words, for the notices of one screen to be shown as one (ScreenPlan.ets's assemblePlan).
+  spec.criteria = literal(title) + NOTICE_SPLIT + literal(body)
   return spec
 }
 
@@ -152,7 +172,7 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   }
   asked.phone = found.join('\n\n')
   checkAgent(host)
-  let written = await writeSection(asked, host.language, host.askCode!, cancellation)
+  let written = await writeSection(asked, host.language, host.askCode!, cancellation, (): string => host.lastCodeFinish)
   checkAgent(host)
   // A refusal of several needs at once says nothing of each: a need the phone can do is not lost with one it cannot. Each is
   // then written on its own, with only the functions found for it.
@@ -169,7 +189,7 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
       one.compose = asked.compose
       one.verify = host.askJev
       one.phone = texts[i].length > 0 ? 'For "' + slots[i].need + '":\n' + texts[i].substring(0, LOOKUP_CHARS) : ''
-      let single = await writeSection(one, host.language, host.askCode!, cancellation)
+      let single = await writeSection(one, host.language, host.askCode!, cancellation, (): string => host.lastCodeFinish)
       checkAgent(host)
       settle(plan, prompt, [slots[i]], one, single, host)
     }
@@ -195,6 +215,15 @@ function settle(plan: ScreenPlan, prompt: string, slots: PlanSlot[], asked: Cust
   host.onHole(record)
   checkAgent(host)
   if (written.section !== null) {
+    // What the rest of the screen already has a button for is not drawn twice, whatever the writer was told. The section was
+    // checked with its own: without them it is checked again, and kept as written when it no longer compiles, runs or reads
+    // every field it sets (a field only the removed button set).
+    let view = written.section.viewBlock
+    let trimmed = withoutRepeatedButtons(view, assemblePlan(plan, true), written.section.functions)
+    if (trimmed !== view) {
+      written.section.viewBlock = trimmed
+      if (!stillWorks(asked.compose(written.section))) { written.section.viewBlock = view }
+    }
     plan.components.push(new PlanComponent(FILL_HOLE, written.section, new Map<string, string>()))
     let at = plan.components.length - 1
     let missed = slots.filter((s: PlanSlot): boolean => written.missed.indexOf(s.need) >= 0)

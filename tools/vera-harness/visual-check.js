@@ -362,7 +362,7 @@ if (!baseline) {
      const L=loadSource(path.join(sourceRoot,'components/VeraLiveTree.ets'))
      let now=10000, probe, nextHandle=0
      const events=[], executions=[], syncs=[], scheduled=new Map()
-     const mocks={...V,UiHostEnvironment:U.UiHostEnvironment,decodeVeraUi:U.decodeVeraUi,toLive:L.toLive,reconcile:L.reconcile,Date:{now:()=>now},catalogKinds:()=>{events.push(['catalogue',probe.disposed,probe.pageHidden]);return []},console:{info(){},warn(){},error(){}},displaySync:{create(){
+     const mocks={...V,UiHostEnvironment:U.UiHostEnvironment,decodeVeraUi:U.decodeVeraUi,toLive:L.toLive,reconcile:L.reconcile,markIconRoom:L.markIconRoom,Date:{now:()=>now},catalogKinds:()=>{events.push(['catalogue',probe.disposed,probe.pageHidden]);return []},console:{info(){},warn(){},error(){}},displaySync:{create(){
       events.push(['create'])
       if(route==='interval')throw Error('fixture: no displaySync')
       const sync={callback:null,active:false,setExpectedFrameRateRange(range){assert.deepEqual(range,{expected:60,min:30,max:120})},on(event,callback){assert.equal(event,'frame');this.callback=callback},start(){this.active=true;events.push(['start'])},stop(){this.active=false;events.push(['stop'])},off(event){assert.equal(event,'frame');events.push(['off'])}}

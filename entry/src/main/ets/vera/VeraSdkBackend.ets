@@ -42,7 +42,9 @@ import {
 } from '@kit.CoreFileKit'
 import { AbilityContext } from './VeraPermissions'
 import { calendarSdkTargets, runCalendarSdkAdapter } from './VeraCalendarSdk'
+import { notifySdkTargets, runNotifySdkAdapter } from './VeraNotifySdk'
 import { LIVE_TARGET, liveFetch } from './VeraLive'
+import { ASK_TARGET, askText } from './VeraAsk'
 import { camera } from '@kit.CameraKit'
 import { audio } from '@kit.AudioKit'
 import {
@@ -5394,8 +5396,12 @@ export async function runSdkAdapter(target: string, params: Map<string, string>)
   if (target === LIVE_TARGET) { return await liveFetch(params) }
   // A live source found at generation (VeraSource.ets): one GET, read at the paths the program names.
   if (target === SOURCE_TARGET) { return await sourceFetch(params) }
+  if (target === ASK_TARGET) { return await askText(params) }
   if (calendarSdkTargets.indexOf(target) >= 0) {
     return await runCalendarSdkAdapter(target, params)
+  }
+  if (notifySdkTargets.indexOf(target) >= 0) {
+    return await runNotifySdkAdapter(target, params)
   }
   let adapter = ADAPTERS.get(target)
   if (adapter === undefined) {
@@ -5419,5 +5425,6 @@ export async function runSdkAdapter(target: string, params: Map<string, string>)
  * recall is still measured against everything the SDK has.
  */
 export function isSdkTargetImplemented(target: string): boolean {
-  return calendarSdkTargets.indexOf(target) >= 0 || ADAPTERS.has(target) || target === LIVE_TARGET || target === SOURCE_TARGET
+  return calendarSdkTargets.indexOf(target) >= 0 || notifySdkTargets.indexOf(target) >= 0 || ADAPTERS.has(target) || target === LIVE_TARGET ||
+    target === SOURCE_TARGET || target === ASK_TARGET
 }

@@ -136,11 +136,12 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       'sections.push(ui.Section("content", "", "", [ui.Button("primary", "Count " + ui.numberToString(state.c_count), "c_bump", 0, true)]));')
     const broken = good.replace('state.c_count + 1', 'state.c_cuont + 1')
     const asks = []
-    const run = async replies => {
+    const run = async (replies, finish) => {
       const request = Object.assign(new CustomRequest(), {needs: ['a counter'], prompt: 'tip calculator with a counter',
         compose: s => c.assembleProgram(comp, [], s)})
       asks.length = 0
-      return writeSection(request, 'LANGUAGE', async (system, user, budget, think) => { asks.push({system, user, budget, think}); return replies.shift() })
+      return writeSection(request, 'LANGUAGE', async (system, user, budget, think) => { asks.push({system, user, budget, think}); return replies.shift() },
+        undefined, finish)
     }
     assert.equal(parseSection('no tags'), null)
     assert.equal(parseSection(good).stateFields[0].name, 'c_count')
@@ -152,6 +153,41 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     r = await run([broken, good])
     assert.ok(r.section !== null && r.attempts === 2, r.failed)
     assert.match(asks[1].user, /It failed:[\s\S]*c_cuont/)
+    // A section that fails is mended by edits, asked for with a small budget, not written again.
+    {
+      const fix = '<<<<<<< SEARCH\n  return {c_count: state.c_cuont + 1__PASSTHROUGH__};\n=======\n  return {c_count: state.c_count + 1__PASSTHROUGH__};\n>>>>>>> REPLACE'
+      r = await run([broken, fix])
+      assert.ok(r.section !== null && r.attempts === 2, r.failed)
+      assert.match(asks[1].user, /Mend your section by edits/)
+      assert.match(asks[1].user, /c_cuont/)
+      assert.ok(asks[1].budget < asks[0].budget, 'edits are asked for with less room than a whole section')
+      assert.match(c.assembleProgram(comp, [], r.section), /return \{c_count: state\.c_count \+ 1, /)
+      // Edits whose SEARCH is not in the section mend nothing: the next try writes the section whole.
+      const miss = '<<<<<<< SEARCH\n  return {nothing: like this};\n=======\n  return state;\n>>>>>>> REPLACE'
+      r = await run([broken, miss, good])
+      assert.ok(r.section !== null && r.attempts === 3, r.failed)
+      assert.match(asks[2].user, /Write the whole section again/)
+      assert.match(asks[2].user, /c_cuont/)
+      // An answer with no blocks is a whole section after all; one that is neither mends nothing, and a whole try follows.
+      r = await run([broken, good])
+      assert.ok(r.section !== null)
+      r = await run([broken, 'I changed c_cuont to c_count.', good])
+      assert.ok(r.section !== null && r.attempts === 3, r.failed)
+      assert.match(asks[2].user, /Write the whole section again/)
+      assert.equal(asks[2].think, false)
+      // A need declined in the edits' answer goes with the section they make.
+      const two = Object.assign(new CustomRequest(), {needs: ['a counter', 'a photo'], prompt: 'p', compose: s => c.assembleProgram(comp, [], s)})
+      const answers = [broken, fix + '\n<cannot need="a photo">This phone gives apps no camera here.</cannot>']
+      const declined = await writeSection(two, 'L', async () => answers.shift())
+      assert.ok(declined.section !== null)
+      assert.equal(declined.declined.get('a photo'), 'This phone gives apps no camera here.')
+      // The thinking try, after the three edit rounds, writes the section whole; the edit rounds do not use up the quick tries.
+      r = await run([broken, broken.replace('c_cuont', 'c_cnt'), broken.replace('c_cuont', 'c_cnut'), broken.replace('c_cuont', 'c_cotn'), good])
+      assert.deepEqual(asks.map(a => a.think), [false, false, false, false, true])
+      assert.deepEqual(asks.map(a => /Mend your section by edits/.test(a.user)), [false, true, true, true, false])
+      assert.match(asks[4].user, /Write the whole section again/)
+      assert.ok(r.section !== null && r.thought)
+    }
     // A field the section keeps and nothing reads is an input that changes nothing: it is sent back, saying which.
     {
       const unread = section('function c_bump(state: AppState, value: number): AppState {\n  return {c_count: state.c_count + 1, c_ghost: value__PASSTHROUGH__};\n}\n' +
@@ -161,6 +197,10 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       r = await run([unread, good])
       assert.equal(r.attempts, 2, r.failed)
       assert.match(asks[1].user, /state field c_ghost is set by a handler but nothing reads it/)
+      // Asked about once: a section that still keeps a field nothing reads runs, and is served rather than thrown away.
+      r = await run([unread, unread])
+      assert.ok(r.section !== null, r.failed)
+      assert.equal(r.attempts, 2)
     }
     r = await run([good.replace('return {', 'sdk.call("x/y", [], "c_bump");\n  return {'), good])
     assert.equal(r.attempts, 2)
@@ -182,7 +222,8 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       assert.ok(partial.section !== null)
       assert.deepEqual(partial.missed, ['a photo'])
       assert.match(partial.failed, /does not do: a photo/)
-      assert.equal(partial.attempts, 4)
+      // The same need missed twice running stops the tries: a third ask would write the same section again.
+      assert.equal(partial.attempts, 2)
       assert.match(users[1], /it does not do: a photo/)
       assert.match(body.state, /saved and restored by the phone between visits/)
       let reads = [said(0.9, 0.2), said(0.9, 0.8)]
@@ -190,6 +231,21 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       const second = await writeSection(request, 'L', async () => good)
       assert.ok(second.section !== null)
       assert.equal(second.attempts, 2)
+    }
+    // One need, which Jev never reads the section as doing: the section runs, so it is served as the last resort, reported as
+    // missing that need, once the same miss comes back -- not thrown away for a notice alone.
+    {
+      const {CustomRequest: Req} = loadVera('agent/AgentCustom')
+      const request = Object.assign(new Req(), {needs: ['a photo'], prompt: 'p', compose: s => c.assembleProgram(comp, [], s)})
+      request.verify = async () => JSON.stringify({answers: {'does.0': {probabilities: {yes: 0.1, no: 0.9}}}})
+      const only = await writeSection(request, 'L', async () => good)
+      assert.ok(only.section !== null)
+      assert.deepEqual(only.missed, ['a photo'])
+      assert.equal(only.attempts, 2)
+      // The whole screen as one section is not served so: the route builds it another way.
+      request.whole = true
+      const whole = await writeSection(request, 'L', async () => good)
+      assert.equal(whole.section, null)
     }
     // A need declined on its own is reported as the writer said and not asked for again; the section serves the others.
     {
@@ -206,13 +262,31 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     assert.match(r.failed, /cannot: it needs the camera/)
     assert.equal(asks.length, 1)
     // The quick tries and their repairs fail: one more, thinking, with a larger budget; then it is refused.
-    r = await run([broken, broken, broken, broken])
+    const differs = n => broken + '\n// ' + n
+    // The first try, three edit rounds (answered here with whole sections), then the thinking one; then it is refused.
+    r = await run([differs(1), differs(2), differs(3), differs(4), differs(5)])
     assert.equal(r.section, null)
-    assert.equal(r.attempts, 4)
-    assert.deepEqual(asks.map(a => a.think), [false, false, false, true])
-    assert.ok(asks[3].budget > asks[0].budget)
-    r = await run([broken, broken, broken, good])
+    assert.equal(r.attempts, 5)
+    assert.deepEqual(asks.map(a => a.think), [false, false, false, false, true])
+    assert.ok(asks[4].budget > asks[0].budget)
+    r = await run([differs(1), differs(2), differs(3), differs(4), good])
     assert.ok(r.section !== null && r.thought)
+    // The same reply twice is the same failure twice: the next try is the thinking one, not a third quick one.
+    r = await run([broken, broken, good])
+    assert.deepEqual(asks.map(a => a.think), [false, false, true])
+    assert.ok(r.section !== null && r.thought)
+    // A reply cut off before </view> is asked for again with the whole-screen budget, not the same limit.
+    r = await run([good.split('<view>')[0] + '<view>\nsections.push(', good])
+    assert.ok(r.section !== null)
+    assert.ok(asks[1].budget > asks[0].budget)
+    // Cut off is the model stopping at the limit: told it did, the same; told it ended the reply itself, a reply without the
+    // tags is not in the form, and the next ask has the section's room, not the screen's (review of #46).
+    r = await run([good.split('<view>')[0] + '<view>\nsections.push(', good], () => 'length')
+    assert.ok(r.section !== null && asks[1].budget > asks[0].budget)
+    r = await run(['Here is a counter: tap to count.', good], () => 'stop')
+    assert.ok(r.section !== null)
+    assert.equal(asks[1].budget, asks[0].budget)
+    assert.doesNotMatch(r.failed, /cut off/)
   }
 
   // Questions: Jev keeps only those a default cannot stand in for; the person's answer, when it differs from the

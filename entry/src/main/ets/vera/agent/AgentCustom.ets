@@ -11,12 +11,14 @@
  */
 
 import { OperationCancellation, throwIfCancelled } from '../OperationCancellation'
+import { ASK_TARGET, ASK_RULE } from '../VeraAsk'
 import { FragmentSpec, StateFieldSpec } from '../VeraTemplates'
 import { compileVeraSource, CompileError } from '../VeraCompiler'
 import { smokeRun } from '../VeraSmoke'
 import { playSurface } from '../VeraSurfacePlay'
 import { isScene } from '../VeraCompose'
 import { SCENE_GUIDE, SCENE_TOKENS } from './AgentScene'
+import { applyRepair, SEARCH_MARK, SPLIT_MARK, REPLACE_MARK } from '../VeraRepair'
 
 /**
  * Asks the model for code: (system prompt, request, most tokens to write, whether it thinks first) -> its reply, or null
@@ -25,11 +27,22 @@ import { SCENE_GUIDE, SCENE_TOKENS } from './AgentScene'
 export type CodeAsk = (system: string, user: string, budget: number, think: boolean) => Promise<string | null>
 
 /** Room for one section with its handlers and view. */
-export const SECTION_TOKENS: number = 3000
+export const SECTION_TOKENS: number = 6000
 /** Room for a whole screen written as one section. */
 export const SCREEN_TOKENS: number = 8000
 
 const REPAIRS: number = 2
+/**
+ * A section that fails is mended by edits to it, at most this many rounds, before it is written whole again: rewriting it
+ * cost 10-18 s a try (3500-5300 tokens) to change a line or two (Timetable on the phone: 69 s, 61 of them four tries).
+ */
+const EDIT_ROUNDS: number = 3
+/** Every ask of one section: whole tries, edit rounds and the thinking try together. */
+const MAX_ASKS: number = 7
+/** Room for edits that mend what failed to compile or run, or a rule broken: a few blocks of a few lines. */
+const EDIT_TOKENS: number = 2000
+/** Room for edits that add what Jev reads the section as not doing: a function and a few lines of view. */
+const EDIT_NEED_TOKENS: number = 4000
 /** A thinking reply spends tokens on its reasoning before the section: this many times the budget. */
 const THINKING_ROOM: number = 3
 
@@ -49,7 +62,34 @@ const CONTRACT: string = '\n\nNow you do not write a whole program. You add ONE 
   '- If the program already has a clock (Start, Stop, Reset buttons, a time shown) or a list of entries with its own Add button, ' +
   'the section draws no clock, no Start/Stop/Reset buttons and no second list of the same entries: it works with that state and shows only what is new.\n' +
   '- A message about an empty or wrong field (such as "Enter a task name") is shown only after the person has tried to add it, never while the field is still untouched.\n' +
-  '- Show each piece of information once: no heading and caption that say the same thing, and no second view (a table, "splits") of entries the program already lists in rows.\n'
+  '- Show each piece of information once: no heading and caption that say the same thing, and no second view (a table, "splits") of entries the program already lists in rows. ' +
+  'A figure is a progress bar or a number, not both; a list the program already has (its stops, its entries) is not listed again with a ' +
+  'button added to each row -- the button goes where the program can take it, or the section names the item to act on; and one set of tabs ' +
+  'or switches for one choice.\n' +
+  '- A list the section keeps that starts empty has its own way to add to it, and to remove from it: an empty list nothing can fill is a ' +
+  'dead end (Chore stars: "No rewards yet" with no way to add one).\n' +
+  '- Every number the section shows is worked out from something on the screen or named in the request: progress toward a goal needs the ' +
+  'goal, set on the screen or fixed by the request, not a percent of nothing.\n' +
+  '- Never write a phone number, address or other real-world contact the request did not give: a made-up number (such as +1 800 555 0100) looks real to the person. ' +
+  'Show a field for the person to fill in, or say to call their local emergency number.\n'
+
+/** How a section is mended: SEARCH/REPLACE blocks against its own text (VeraRepair.ets applies them). */
+const SECTION_EDIT_RULES: string = 'Mend your section by edits, not by writing it again. Write one block per change:\n' +
+  SEARCH_MARK + '\n' +
+  'lines copied exactly from your section above\n' +
+  SPLIT_MARK + '\n' +
+  'the lines that replace them\n' +
+  REPLACE_MARK + '\n' +
+  'Each SEARCH part must match exactly one place in your section -- not in the program so far -- so copy whole lines, with ' +
+  'enough of them to be unique; to add a function or a field, replace a nearby line with itself and the new lines. Fix what ' +
+  'failed and anything else that would fail the same way. Write nothing outside the blocks, except <cannot need="...">...' +
+  '</cannot> for a need this phone cannot do.'
+
+/** The <cannot need="...">...</cannot> tags of an answer, to go with the section its edits make. */
+function cannotTags(answer: string): string {
+  let tags = answer.match(new RegExp('<cannot\\s+need\\s*=\\s*"[^"]*"\\s*>[\\s\\S]*?</cannot>', 'g'))
+  return tags === null ? '' : '\n' + tags.join('\n')
+}
 
 /** What <cannot> holds: it is shown to the person on the screen, in place of what could not be built. */
 const CANNOT_FORM: string = 'one short sentence for the person using the app, in plain words about their phone and its apps: ' +
@@ -57,17 +97,25 @@ const CANNOT_FORM: string = 'one short sentence for the person using the app, in
 
 /** A need that cannot be done is declined on its own; the others are still written. */
 const DECLINE_RULE: string = '- When some of the needs cannot be done but others can, write the section for the ones that can and add, for each one ' +
-  'that cannot, <cannot need="the need, copied exactly">' + CANNOT_FORM + '</cannot> beside it. Answer a bare <cannot> only when none can be done.\n'
+  'that cannot, <cannot need="the need, copied exactly">' + CANNOT_FORM + '</cannot> beside it. Answer a bare <cannot> only when none can be done.\n' +
+  '- A need declined has no button or row that claims to do it. If the section offers the nearest thing instead (an event in the ' +
+  'phone calendar for a notification it cannot send), its button says that thing ("Add to calendar"), and the <cannot> sentence ' +
+  'says what is offered instead. A notice saying it cannot beside a button named for the same thing reads as broken.\n' +
+  '- A need the section does in its own way is done, not declined: guidance written out as rows is the care card or tips card ' +
+  'asked for, a list is a "card", a field the person fills in is a setting. <cannot need> is only for what the person does not get ' +
+  'at all on this screen, never for how it looks.\n'
 
 /** The rule for phone calls: none, or only the targets the phone's lookups found. */
 function phoneRule(phone: string): string {
   if (phone.length === 0) {
-    return DECLINE_RULE + '- The section never calls sdk.call: what the phone does is not its job.\n' +
+    return DECLINE_RULE + '- The section never calls sdk.call, except "' + ASK_TARGET + '" as said below: what the phone does is not its job.\n' +
+      '- Words written from what the person entered (suggestions, recipes, ideas) are never declined: "' + ASK_TARGET + '" writes them.\n' +
       '- If the section cannot really do it with this language and these components -- it needs a camera, a live feed, ' +
-      'the person\'s location or data the phone does not hold -- answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it with made-up data.\n'
+      'the person\'s location or data the phone does not hold -- decline that need as above, beside the rest; a bare <cannot>' + CANNOT_FORM +
+      '</cannot> only when none of the needs can be done. Never fake it with made-up data.\n'
   }
   return DECLINE_RULE + '- What the phone or another app must do, the section does with sdk.call from a handler, calling ONLY targets from ' +
-    '"Phone functions found" in the request, copied exactly, with the parameters they show, values from the screen\'s state. ' +
+    '"Phone functions found" in the request (and "' + ASK_TARGET + '", as said below), copied exactly, with the parameters they show, values from the screen\'s state. ' +
     'Its answer handler shows what came back: an answer starting with "declined" or "error" is a failure, anything else succeeded.\n' +
     '- A function that opens another app with the action ready for the person to confirm (a message filled in, a contact ' +
     'form, a route) does the job: use it, and say on the screen that the person confirms it there.\n' +
@@ -76,8 +124,10 @@ function phoneRule(phone: string): string {
     '- A need worded as something to do inside this app that the app cannot do (it has no such component) is not refused ' +
     'if a function found does the nearest useful thing for the person -- shows or opens the same thing in the app made for it: ' +
     'write the section with that function, and say in a line on the screen what it does instead.\n' +
+    '- Words written from what the person entered (suggestions, recipes, ideas) are never declined: "' + ASK_TARGET + '" writes them, as said below.\n' +
     '- If none of the phone functions found does what is needed, or it needs something the phone cannot give a program ' +
-    '(a camera, a live feed, the person\'s location), answer only <cannot>' + CANNOT_FORM + '</cannot>. Never fake it, never pretend a call happened, ' +
+    '(a camera, a live feed, the person\'s location), decline that need as above, beside the rest; a bare <cannot>' + CANNOT_FORM +
+    '</cannot> only when none of the needs can be done. Never fake it, never pretend a call happened, ' +
     'never call a target that is not listed.\n'
 }
 
@@ -97,13 +147,16 @@ export function foundTargets(phone: string): string[] {
 
 /** '' when every sdk.call in the reply calls a target found, else what is wrong. */
 function callProblem(reply: string, found: string[]): string {
-  let calls = reply.split('sdk.call(').length - 1
+  // Words written while the program runs (VeraAsk.ets) are the app's own function, open to every section.
+  let asks = (reply.match(new RegExp('sdk\\.call\\(\\s*"' + ASK_TARGET.split('.').join('\\.') + '"', 'g')) ?? []).length
+  let calls = reply.split('sdk.call(').length - 1 - asks
   if (calls === 0) { return '' }
   if (found.length === 0) { return 'The section calls sdk.call, which it never may: write it without phone calls.' }
   let literal = new RegExp('sdk\\.call\\(\\s*"([^"]+)"', 'g')
   let named = 0
   let m: RegExpExecArray | null = literal.exec(reply)
   while (m !== null) {
+    if (m[1] === ASK_TARGET) { m = literal.exec(reply); continue }
     named++
     if (found.indexOf(m[1]) < 0) {
       return 'The section calls "' + m[1] + '", which is not one of the phone functions found. Call only those, copied exactly:\n' + found.join('\n')
@@ -267,6 +320,9 @@ export function parseSection(reply: string): FragmentSpec | null {
   return spec
 }
 
+/** How check() begins the problem of a state field nothing reads. */
+const UNREAD_PROBLEM: string = 'The state field'
+
 /** The diagnostics with the program line each one points at, so the repair sees what it wrote there. */
 /**
  * How to fix a diagnostic the message alone does not say how to: a writer told only "expected View, found View[]" wrote
@@ -274,7 +330,13 @@ export function parseSection(reply: string): FragmentSpec | null {
  */
 const FIXES: string[][] = [
   ['expected View, found View[]', 'a list of views is not one view: wrap it as ui.Column("default", theList)'],
-  ['expected View[], found View', 'one view is not a list: put it in brackets, [theView]']
+  ['expected View[], found View', 'one view is not a list: put it in brackets, [theView]'],
+  ['hands its handler a boolean', 'a Checkbox or Toggle tells its handler only true or false, not which one was tapped: for one per ' +
+    'item of a loop, use ui.Cell or ui.Button with the item\'s index as its value, so the handler takes (state, value: number) and ' +
+    'flips that item'],
+  ['found ?', 'there is no ?: in VERA: declare the value with let, then set it in an if/else before the line that uses it'],
+  ['expected :, found of', 'a for-of loop names the element type: for (let q: C_Question of state.c_questions) { ... } -- there is no other loop over a list'],
+  ['expected :, found in', 'there is no for-in loop: for (let q: C_Question of state.c_questions) { ... } names the element type and loops over a list']
 ]
 
 function quoted(source: string, errors: string): string {
@@ -294,7 +356,7 @@ function quoted(source: string, errors: string): string {
  * '' when the program compiles and runs, else what went wrong with the lines it points at. A section with a scene is also
  * played: fingers on it, then each button pressed, every frame drawn.
  */
-function check(source: string, scene: boolean = false): string {
+function check(source: string, scene: boolean = false, unreadToo: boolean = true): string {
   try {
     let compiled = compileVeraSource(source)
     let ran = smokeRun(compiled)
@@ -305,8 +367,8 @@ function check(source: string, scene: boolean = false): string {
     }
     // A field the section keeps that nothing reads is something the person can set that changes nothing they can see.
     let unread = compiled.unreadFields.filter((f: string): boolean => f.startsWith('c_'))
-    if (unread.length > 0) {
-      return 'The state field' + (unread.length > 1 ? 's ' : ' ') + unread.join(', ') + (unread.length > 1 ? ' are' : ' is') +
+    if (unread.length > 0 && unreadToo) {
+      return UNREAD_PROBLEM + (unread.length > 1 ? 's ' : ' ') + unread.join(', ') + (unread.length > 1 ? ' are' : ' is') +
         ' set by a handler but nothing reads ' + (unread.length > 1 ? 'them' : 'it') + ', so changing ' + (unread.length > 1 ? 'them does' : 'it does') +
         ' nothing the person can see. Show it or use it in view(), or remove it and whatever sets it.'
     }
@@ -317,19 +379,27 @@ function check(source: string, scene: boolean = false): string {
   }
 }
 
+/** Whether a section still compiles and runs after it was changed outside the writer's rounds, and leaves no field unread. */
+export function stillWorks(source: string): boolean {
+  return check(source) === ''
+}
+
 export async function writeSection(request: CustomRequest, language: string, ask: CodeAsk,
-    cancellation?: OperationCancellation): Promise<CustomResult> {
+    cancellation?: OperationCancellation, finish: () => string = (): string => ''): Promise<CustomResult> {
   throwIfCancelled(cancellation)
   let result = new CustomResult()
   let started = Date.now()
   let found = foundTargets(request.phone)
   let phone = found.length > 0 ? request.phone : ''
   let scene = request.needs.some((n: string): boolean => isScene(n))
-  let system = language + CONTRACT + phoneRule(phone) + (scene ? SCENE_GUIDE : '')
+  let system = language + CONTRACT + phoneRule(phone) + ASK_RULE + (scene ? SCENE_GUIDE : '')
   let asked = 'Request: ' + request.prompt + '\n\nThe section must do:\n- ' + request.needs.join('\n- ') +
     (request.inputs.length > 0 ? '\n\nThe person sets these on the screen and nothing else uses them yet; the section uses them:\n- ' +
       request.inputs.join('\n- ') : '') +
-    (request.parts.length > 0 ? '\n\nThe program already has these: use them, do not make your own:\n- ' + request.parts.join('\n- ') : '') +
+    (request.parts.length > 0 ? '\n\nThe program already has these: use them, do not make your own:\n- ' + request.parts.join('\n- ') +
+      '\n\nNothing they show is shown again: no second list, total, chart, Remove last or Start over button. While what the section ' +
+      'works from is still empty, it shows one plain line saying what will appear and when, never a ui.EmptyState: the list above ' +
+      'already has one (two empty states one under the other read as a broken screen).' : '') +
     (request.facts.length > 0 ? '\n\nFixed numbers the app uses:\n- ' + request.facts.join('\n- ') : '') +
     (phone.length > 0 ? '\n\nPhone functions found (the only targets the section may call):\n' + phone : '') +
     (request.whole ? '\n\nThe program has nothing yet but its header: your section is the whole screen, everything the request ' +
@@ -339,17 +409,74 @@ export async function writeSection(request: CustomRequest, language: string, ask
   // The best section that compiled and ran but that Jev reads as missing a need: kept, in case no try does them all.
   let best: FragmentSpec | null = null
   let bestMissed: string[] = []
-  // The first try and its repairs without thinking, then one more with it: slower, for what the quick tries got wrong.
-  for (let attempt = 0; attempt <= REPAIRS + 1; attempt++) {
+  // A reply that stops before its closing tag was cut off by the token limit: asking again at the same limit writes the
+  // same cut-off reply (measured: three in a row, then a thinking try, 70-80 s), so the next ask gets the whole-screen room.
+  let truncated = false
+  let previous = ''
+  let lastMissed = ''
+  let runnable: FragmentSpec | null = null
+  // The section the next answer's edits apply to, '' when the next answer is to be a whole section.
+  let mending = ''
+  let editBudget: number = EDIT_TOKENS
+  let editRounds = 0
+  let wholes = 0
+  let lastProblem = ''
+  // A field nothing reads is asked about once: it changes nothing the person sees, and a section that runs is not thrown away
+  // for it (Minesweeper on the phone: a game that compiled and ran, refused four times over c_mines and then c_lost).
+  let unreadAsked = false
+  // The first try written whole, then mended by edits (cheap: 2-4 s against 10-18 s for a whole one), a quick whole try when
+  // edits do not apply, and last the thinking try written whole: slower, for what the rest got wrong. Edit rounds do not use
+  // up the quick tries: counted as tries, two of them sent the next straight to a 33 s thinking try (Timetable on the phone).
+  for (let attempt = 0; attempt < MAX_ASKS; attempt++) {
     throwIfCancelled(cancellation)
-    let think = attempt > REPAIRS
+    let editing = mending.length > 0
+    let think = !editing && wholes > 0 && (editRounds >= EDIT_ROUNDS || wholes > REPAIRS)
+    if (!editing) { wholes++ }
     result.attempts = attempt + 1
     result.thought = think
-    let budget = request.whole ? SCREEN_TOKENS : (scene ? SCENE_TOKENS : SECTION_TOKENS)
+    let tryStart = Date.now()
+    let budget: number = (request.whole || truncated) ? SCREEN_TOKENS : (scene ? SCENE_TOKENS : SECTION_TOKENS)
     throwIfCancelled(cancellation)
-    let reply = await ask(system, user, think ? budget * THINKING_ROOM : budget, think)
+    let answer: string | null = await ask(system, user, editing ? editBudget : (think ? budget * THINKING_ROOM : budget), think)
     throwIfCancelled(cancellation)
-    if (reply === null) { result.failed = 'no answer for the custom section'; break }
+    if (answer === null) { result.failed = 'no answer for the custom section'; break }
+    let reply: string = answer
+    let mode = 'whole'
+    // Edits are applied to the section they were written against; an answer with no blocks is a whole section after all, and
+    // one that is neither edits nor a section mends nothing, as edits that do not apply.
+    let refused = editing && between(answer, 'cannot') !== null
+    let blocks = editing && !refused && answer.indexOf(SEARCH_MARK) >= 0
+    if (editing && !refused && !blocks && parseSection(answer) === null) {
+      result.failed = 'custom section: the answer to the edits asked for was neither edits nor a section'
+      console.info('VERA-CUSTOM attempt=' + (attempt + 1).toString() + ' mode=edit ms=' + (Date.now() - tryStart).toString() +
+        ' failed=' + result.failed)
+      user = asked + '\n\nYour section was:\n' + mending + '\n\nIt failed:\n' + lastProblem + '\n\nWrite the whole section again, fixed, in the same form.'
+      mending = ''
+      continue
+    }
+    if (blocks) {
+      let applied = applyRepair(mending, answer)
+      if (applied.source.length === 0) {
+        // Edits that do not apply mend nothing: the next try writes the section whole, told what failed before.
+        result.failed = 'custom section: the edits did not apply: ' + applied.error
+        console.info('VERA-CUSTOM attempt=' + (attempt + 1).toString() + ' mode=edit ms=' + (Date.now() - tryStart).toString() +
+          ' failed=' + result.failed.substring(0, 300))
+        user = asked + '\n\nYour section was:\n' + mending + '\n\nIt failed:\n' + lastProblem + '\n\nWrite the whole section again, fixed, in the same form.'
+        mending = ''
+        continue
+      }
+      reply = applied.source + cannotTags(answer)
+      mode = 'edit'
+    }
+    mending = ''
+    // Cut off at the token limit: no </view>, and the model did not end the reply itself. A reply that ended without the tags
+    // (prose, code in a fence) is not cut off and is not given the whole screen's room for it (review of #46); when the host
+    // cannot tell why it stopped, a missing </view> is taken as cut off, as before.
+    let stopped = finish()
+    truncated = reply.indexOf('</view>') < 0 && reply.indexOf('<cannot') < 0 && (stopped === 'length' || stopped === '')
+    // The same reply twice is the same failure twice (temperature 0): the next try is the thinking one.
+    if (reply === previous && !think) { editRounds = EDIT_ROUNDS; wholes = REPAIRS + 1 }
+    previous = reply
     let cannot = between(reply, 'cannot')
     if (cannot !== null) { result.cannot = cannot; result.failed = 'custom section cannot: ' + cannot; break }
     let section = parseSection(reply)
@@ -358,7 +485,8 @@ export async function writeSection(request: CustomRequest, language: string, ask
     // Asked for twice at most: a section that still makes its own clock or list is better than none, so it is then taken as it is.
     let again = section === null || attempt >= 2 ? '' : repeats(section, request)
     let problem = section === null ? 'The answer was not in the form asked for: <classes>, <fields>, <functions> and <view>.' :
-      (calls.length > 0 ? calls : (again.length > 0 ? again : check(request.compose(section), scene)))
+      (calls.length > 0 ? calls : (again.length > 0 ? again : check(request.compose(section), scene, !unreadAsked)))
+    if (problem.startsWith(UNREAD_PROBLEM)) { unreadAsked = true }
     if (problem.length === 0) {
       // It compiles and runs; whether it does what it is for is Jev's reading. One it reads as not doing a need is asked
       // for again, saying which.
@@ -384,23 +512,57 @@ export async function writeSection(request: CustomRequest, language: string, ask
         break
       }
       result.failed = 'custom section does not do: ' + missed.join('; ')
-      // One Jev reads as doing none of it is no part of the screen.
+      // One Jev reads as doing none of it is kept apart, as the last resort: a screen that runs, with a notice that it was not
+      // checked, is more use than a notice alone (measured: Exam prep, one need, a working form and practice thrown away). Not
+      // for the whole screen: the route then builds it another way.
       if (missed.length < request.needs.length && (best === null || missed.length < bestMissed.length)) {
         best = section
         bestMissed = missed
+      } else if (missed.length === request.needs.length && !request.whole) {
+        runnable = section
       }
-      problem = 'Read against the request, it does not do: ' + missed.join('; ') + '. It must really do that, used as written -- ' +
-        'or, if it cannot be done here, answer <cannot>.'
+      // The same need missed twice running: asking again repeats it (measured: three tries, then a thinking one, 85 s). The best
+      // section so far is served and says what it misses.
+      let missedNow = missed.join('\n')
+      if ((best !== null || runnable !== null) && missedNow === lastMissed) { break }
+      lastMissed = missedNow
+      // The way out offered is the need declined on its own, the rest kept: offered only the bare <cannot>, which throws the
+      // whole section away, the writer kept the section and explained on the screen that it could not (measured: Exam prep).
+      problem = 'Read against the request, it does not do: ' + missed.join('; ') + '. It must really do that, used as written. ' +
+        'If this phone cannot, keep the rest of the section and add, for each need it cannot do, <cannot need="the need, copied exactly">' +
+        CANNOT_FORM + '</cannot> beside it -- not an explanation inside the screen.'
+      editBudget = EDIT_NEED_TOKENS
     } else {
-      result.failed = 'custom section: ' + problem.split('\n')[0]
+      // A line that does not compile or run is mended in a few lines; a list or clock of its own, or a made-up phone call, is
+      // a change of structure: 2000 tokens cut such edits off half way (Grades & GPA on the phone).
+      editBudget = section !== null && calls.length === 0 && again.length === 0 ? EDIT_TOKENS : EDIT_NEED_TOKENS
+      // The first two lines: the diagnostic and the line of the program it points at, so the trace says what was written.
+      result.failed = 'custom section: ' + (truncated ? 'cut off at the token limit; ' : '') + problem.split('\n').slice(0, 2).join(' | ')
     }
-    user = asked + '\n\nYour section was:\n' + reply + '\n\nIt failed:\n' + problem + '\n\nWrite the whole section again, fixed, in the same form.'
+    console.info('VERA-CUSTOM attempt=' + (attempt + 1).toString() + ' mode=' + mode + ' think=' + think.toString() + ' truncated=' +
+      truncated.toString() + ' ms=' + (Date.now() - tryStart).toString() + ' failed=' + result.failed.substring(0, 600))
+    lastProblem = problem
+    // A section in the form asked for is mended by edits while rounds are left and the next try is a quick one; one cut off
+    // or not in the form, and the thinking try, are written whole.
+    // The thinking try was the last.
+    if (think) { break }
+    if (section !== null && !truncated && editRounds < EDIT_ROUNDS) {
+      editRounds++
+      mending = reply
+      user = asked + '\n\nYour section:\n' + reply + '\n\nIt failed:\n' + problem + '\n\n' + SECTION_EDIT_RULES
+    } else {
+      user = asked + '\n\nYour section was:\n' + reply + '\n\nIt failed:\n' + problem + '\n\nWrite the whole section again, fixed, in the same form.'
+    }
   }
   throwIfCancelled(cancellation)
   if (result.section === null && result.cannot.length === 0 && best !== null) {
     result.section = best
     result.missed = bestMissed
     result.failed = 'custom section does not do: ' + bestMissed.join('; ')
+  } else if (result.section === null && result.cannot.length === 0 && runnable !== null) {
+    result.section = runnable
+    result.missed = request.needs.slice()
+    result.failed = 'custom section does not do: ' + request.needs.join('; ')
   }
   result.ms = Date.now() - started
   return result

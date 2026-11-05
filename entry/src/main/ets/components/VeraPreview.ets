@@ -26,7 +26,7 @@ import { ResolvedTheme, resolveTheme, containerFill, toneFill, toneEdge, toneInk
   densityGap, spacerSize, readableInk } from '../vera/VeraTheme'
 import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
-import { LiveNode, toLive, reconcile, armReveal } from './VeraLiveTree'
+import { LiveNode, toLive, reconcile, armReveal, markIconRoom } from './VeraLiveTree'
 import { carryState } from '../vera/VeraStateCarry'
 import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
   columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
@@ -161,6 +161,13 @@ const EMBEDDED_WINDOW: number = 360
 /** The height of the band a lone ui.Path is centred in. */
 const PATH_BAND_HEIGHT: number = 240
 
+/** How far into the program, in vp, it still counts as at its top: the host's corner buttons stay shown. */
+const READING_TOP: number = 40
+
+
+/** Nodes a button's form does not reach past (touchFormOf). */
+const FORM_BOUNDS: string[] = ['section', 'card', 'sheet', 'dialog']
+
 @Component
 export struct VeraPreview {
   /**
@@ -232,6 +239,12 @@ export struct VeraPreview {
   }
   /** Read-only snapshot for a hosting chat. It does not migrate state between programs. */
   onStateSnapshot: (encoded: string) => void = (_encoded: string): void => {}
+  /**
+   * Told when the program is being read further down (true) or back towards its top (false), for a host that lays buttons
+   * over the program's corner: they cover its rows while it scrolls, so the host hides them on the way down.
+   */
+  onReadingDown: (down: boolean) => void = (_down: boolean): void => {}
+  private readingDown: boolean = false
   /**
    * Drawn inside something that scrolls, such as a chat message: the program
    * takes the height it needs and has no scrolling of its own.
@@ -431,6 +444,9 @@ export struct VeraPreview {
   }
 
   onProgramChanged(): void {
+    // A new program is read from its top, and the host shows its corner again (GeneratePage.showCorner): the next scroll down
+    // has to tell it again, which it would not while this still said "down".
+    this.readingDown = false
     this.load()
   }
 
@@ -964,6 +980,7 @@ export struct VeraPreview {
       } else {
         reconcile(this.liveRoot!, root!)
       }
+      if (this.liveRoot !== null) { markIconRoom(this.liveRoot!) }
       this.revision += 1
       this.reconcileTimers(this.previewOnly ? null : root)
       this.reconcileSpin(root)
@@ -991,6 +1008,43 @@ export struct VeraPreview {
     for (let node of found) { if (node.action.length > 0) { animated = true } }
     if (animated && !this.previewOnly && !this.pageHidden && this.error.length === 0) { this.startSurfaceLoop() } else { this.stopSurfaceLoop() }
     if (paint) { this.paintSurfaces() }
+  }
+
+  /** Every text field from here down may show its check now; see LiveNode.touched. */
+  private touchFields(node: LiveNode): void {
+    if (node.kind === 'field') { node.touched = true }
+    for (let child of node.children) { this.touchFields(child) }
+  }
+
+  /**
+   * The fields a button submits: those under its nearest enclosing node that has a field, its form; none for a button with no
+   * field around it. Touching every field on the screen, Start on a stopwatch flagged "Enter a task name" on an Add form beside
+   * it, which is what touched was for (review of #46).
+   */
+  private touchFormOf(button: LiveNode): void {
+    if (this.liveRoot === null) { return }
+    let path: LiveNode[] = []
+    if (!this.pathTo(this.liveRoot!, button, path)) { return }
+    for (let i = path.length - 2; i >= 0; i--) {
+      if (this.hasField(path[i])) { this.touchFields(path[i]); return }
+      // A section or a card is as far as a form goes: a Start in its own section has none, though the screen around it has fields.
+      if (FORM_BOUNDS.indexOf(path[i].kind) >= 0) { return }
+    }
+  }
+
+  /** The nodes from `node` down to `target`, both included, into `path`; false when `target` is not under `node`. */
+  private pathTo(node: LiveNode, target: LiveNode, path: LiveNode[]): boolean {
+    path.push(node)
+    if (node === target) { return true }
+    for (let child of node.children) { if (this.pathTo(child, target, path)) { return true } }
+    path.pop()
+    return false
+  }
+
+  private hasField(node: LiveNode): boolean {
+    if (node.kind === 'field') { return true }
+    for (let child of node.children) { if (this.hasField(child)) { return true } }
+    return false
   }
 
   private collectSurfaces(node: LiveNode, found: LiveNode[]): void {
@@ -1575,6 +1629,14 @@ export struct VeraPreview {
               this.rootTop = Number(now.globalPosition.y)
               this.rootHeight = Number(now.height)
             })
+            .onDidScroll((_x: number, dy: number) => {
+              let top = this.rootScroller.currentOffset().yOffset <= READING_TOP
+              let down = !top && (dy > 2 ? true : (dy < -2 ? false : this.readingDown))
+              if (down !== this.readingDown) {
+                this.readingDown = down
+                this.onReadingDown(down)
+              }
+            })
             // Scroll centres its content by default, which leaves a generated
             // program floating in the middle of the box instead of starting where
             // a real app would.
@@ -1758,7 +1820,8 @@ export struct VeraPreview {
 
   /**
    * A list group's children without the action bars that hold one button for the row above them: that button is drawn at the
-   * end of the row (rowButton), so a stop with a Navigate button is one line, not a line and a bar. A bar of two buttons stays below.
+   * end of the row (rowButton), so a stop with a Navigate button is one line, not a line and a bar, and a row's tone (a stop
+   * reached) covers the whole of it. A bar of two buttons stays below.
    */
   private rowChildren(node: LiveNode): LiveNode[] {
     let out: LiveNode[] = []
@@ -1768,7 +1831,7 @@ export struct VeraPreview {
       out.push(row)
       let next = i + 1 < node.children.length ? node.children[i + 1] : null
       if (row.kind === 'listitem' && next !== null && next.kind === 'actionbar' && next.children.length === 1 &&
-          next.children[0].kind === 'button') {
+          (next.children[0].kind === 'button' || next.children[0].kind === 'iconbutton')) {
         this.rowBar.set(row, next.children[0])
         i += 2
       } else {
@@ -1798,6 +1861,12 @@ export struct VeraPreview {
       if (value !== node.numberValue) { this.handleAction(node.action, value) }
     }
     this.numberEpoch++
+  }
+
+  /** A ui.NumberField's step as a whole number of at least 1, whatever the program passed (0, -5 and 2.5 included). */
+  private numberStep(node: LiveNode): number {
+    let step = Math.round(node.step)
+    return isNaN(step) || step < 1 ? 1 : step
   }
 
   /** The pane ui.Tabs shows: its selected child, kept inside the children there are. */
@@ -2758,21 +2827,24 @@ export struct VeraPreview {
               .fontColor(this.t().inkStrong)
               .width('100%')
           }
+          // Under the words, not beside them: beside, a button like "Open camera" took half the row and the message
+          // wrapped two words to a line (Exam prep).
+          if (node.value.length > 0) {
+            Button(node.value)
+              .height(this.t().chipHeight)
+              .fontSize(this.t().sizeBody)
+              .fontFamily(this.textFamily())
+              .type(ButtonType.Capsule)
+              .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
+              .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().primary)))
+              .margin({ top: this.t().gapTight })
+              .onClick(() => {
+                if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
+              })
+          }
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
-        if (node.value.length > 0) {
-          Button(node.value)
-            .height(this.t().chipHeight)
-            .fontSize(this.t().sizeBody)
-            .fontFamily(this.textFamily())
-            .type(ButtonType.Capsule)
-            .backgroundColor(toneEdge(this.t(), node.style, this.t().primary))
-            .fontColor(readableInk(toneEdge(this.t(), node.style, this.t().primary)))
-            .onClick(() => {
-              if (node.action.length > 0) { this.handleAction(node.action, node.eventValue) }
-            })
-        }
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -2918,9 +2990,12 @@ export struct VeraPreview {
     } else if (node.kind === 'tile') {
       Column({ space: this.t().gapTight }) {
         if (node.icon.length > 0) {
-          this.iconChip(node.icon, this.t().controlHeight - 8,
-            node.style === 'default' ? this.t().primaryFill : this.t().surface,
-            toneInk(this.t(), node.style, this.t().primaryInk))
+          // Keyed for the reason given at the list row's chip.
+          ForEach([node.icon + '|' + node.style], (_key: string) => {
+            this.iconChip(node.icon, this.t().controlHeight - 8,
+              node.style === 'default' ? this.t().primaryFill : this.t().surface,
+              toneInk(this.t(), node.style, this.t().primaryInk))
+          }, (key: string) => key)
         }
         if (node.label.length > 0) {
           Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
@@ -3032,8 +3107,9 @@ export struct VeraPreview {
             .fontColor(this.t().primary)
             .onClick(() => {
               if (node.action.length === 0) { return }
-              let next = node.numberValue - 1
-              if (next >= node.minimum) { this.handleAction(node.action, next) }
+              // A step that does not fit stops at the limit: 3 with a step of 5 and a minimum of 0 goes to 0.
+              let next = Math.max(node.minimum, node.numberValue - this.numberStep(node))
+              if (next < node.numberValue) { this.handleAction(node.action, next) }
             })
           // The value is typed as well as stepped: tap it and write 60, rather than tapping + sixty times. It is taken when the
           // person is done editing and kept inside the field's own limits.
@@ -3066,8 +3142,8 @@ export struct VeraPreview {
             .fontColor(this.t().primary)
             .onClick(() => {
               if (node.action.length === 0) { return }
-              let next = node.numberValue + 1
-              if (next <= node.maximum) { this.handleAction(node.action, next) }
+              let next = Math.min(node.maximum, node.numberValue + this.numberStep(node))
+              if (next > node.numberValue) { this.handleAction(node.action, next) }
             })
         }
         .width('100%')
@@ -3505,6 +3581,8 @@ export struct VeraPreview {
         .fontColor(buttonInk(this.t(), node.style))
         .onClick(() => {
           if (node.action.length > 0 && node.enabled) {
+            // A button press is the attempt after which an empty required field of its own form is worth pointing out.
+            this.touchFormOf(node)
             this.handleAction(node.action, node.eventValue)
           }
         })
@@ -3563,10 +3641,16 @@ export struct VeraPreview {
           .type(this.textFieldKeyboard(node))
           .onSubmit((_key: EnterKeyType, _event: SubmitEvent) => {})
           .onChange((v: string) => {
+            // ArkUI also calls this when the program itself sets the text (a form cleared after Add): that echo is not typing.
+            if (v !== node.value) {
+              node.typed = v
+              node.touched = true
+            }
             if (node.action.length > 0) { this.handleStringAction(node.action, v) }
           })
-        if (this.textFieldIssue(node).length > 0) {
+        if (node.touched && this.textFieldIssue(node).length > 0) {
           Text(this.textFieldIssue(node)).fontSize(this.t().sizeCaption).fontFamily(this.textFamily()).fontColor(this.t().dangerInk)
+            .width('100%')
         }
       }
       .width('100%')
@@ -3723,9 +3807,16 @@ export struct VeraPreview {
     } else if (node.kind === 'listitem') {
       Row({ space: this.t().gapBase + 2 }) {
         if (node.icon.length > 0) {
-          this.iconChip(node.icon, this.t().controlHeight - 4,
-            toneFill(this.t(), node.style, this.t().primaryFill),
-            toneInk(this.t(), node.style, this.t().primaryInk))
+          // Keyed on the icon and the tone: iconChip takes its arguments by value and is not drawn again when they change, so a
+          // stop ticked as reached kept its pin on a neutral disc while the row around it turned green.
+          ForEach([node.icon + '|' + node.style], (_key: string) => {
+            this.iconChip(node.icon, this.t().controlHeight - 4,
+              toneFill(this.t(), node.style, this.t().primaryFill),
+              toneInk(this.t(), node.style, this.t().primaryInk))
+          }, (key: string) => key)
+        } else if (node.iconRoom) {
+          // Not a Blank: in a Row that grows to take the free width.
+          Column().width(this.t().controlHeight - 4).height(this.t().controlHeight - 4)
         }
         Column({ space: 2 }) {
           Text(node.text).fontSize(this.t().sizeBody + 1).fontFamily(this.textFamily()).width('100%')

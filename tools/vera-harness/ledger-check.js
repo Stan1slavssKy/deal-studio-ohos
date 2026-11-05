@@ -110,4 +110,29 @@ const names = ['Anna', 'Ben', 'Carol', 'Dan']
   const s = strings(vm, st).join('|')
   assert.match(s, /Blue/); assert.match(s, /\$7\.00/)
 }
+// A bar chart chosen for a ready need beside a log of records charts the log: series_chart, not numbers written for it.
+{
+  const {readLogInCharts} = loadVera('VeraCompose')
+  const comp = {blocks: ['bar_chart', 'record_log'], readyKinds: ['bar_chart'], dropped: []}
+  readLogInCharts(comp)
+  assert.deepEqual(comp.blocks, ['series_chart', 'record_log'])
+  assert.deepEqual(comp.readyKinds, ['series_chart'])
+  const table = {blocks: ['data_table', 'bar_chart', 'record_log'], readyKinds: ['data_table', 'bar_chart'], dropped: []}
+  readLogInCharts(table)
+  assert.deepEqual(table.blocks, ['breakdown_table', 'series_chart', 'record_log'])
+  const alone = {blocks: ['bar_chart'], readyKinds: ['bar_chart'], dropped: []}
+  readLogInCharts(alone)
+  assert.deepEqual(alone.blocks, ['bar_chart'], 'with no log on the screen the chart draws what is written for it')
+}
+// Before anything is recorded the chart is one line, not a card of zeros; the bars come with the first record.
+{
+  const vm = build(['record_log', 'series_chart'])
+  let st = vm.execute('init')
+  const kinds = []; walk(view(vm, st), n => kinds.push(n.kind))
+  assert.ok(!kinds.includes('sparkline'), 'no chart of zeros')
+  assert.match(strings(vm, st).join('|'), /the bars appear once something is added/)
+  st = vm.execute('setAmount1', [st, str('7')]); st = vm.execute('addRecord1', [st, num(0)])
+  const after = []; walk(view(vm, st), n => after.push(n.kind))
+  assert.ok(after.includes('sparkline'), 'the chart once there is a record')
+}
 console.log('ledger-check ok')
