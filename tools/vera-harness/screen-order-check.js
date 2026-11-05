@@ -271,3 +271,28 @@ console.log('screen-order-check: ok')
   assert.equal(comp.sketch.list, null)
   console.log('screen-order-check: stops reached are the itinerary\'s')
 }
+
+// Beside an itinerary, its own times -- any time of day or length of time the plan names -- leave unclaimed: read against the screen
+// by the plan's names, they came back as sections of their own (West Lake: "Lunch at", then "Walking time", then "Back at start").
+{
+  const sk = (values) => c.parseSketch(JSON.stringify({title: 'West Lake', inputs: [{id: 'start', label: 'Start time', kind: 'time', value: 540}],
+    constants: [], ready: ['the day\'s stops in order'], values, events: [], other: []}))
+  const answers = {'ready.0': {type: 'choice', choice: 'itinerary', confidence: 0.9}, 'whose.0': {type: 'choice', choice: 'written', confidence: 0.9}}
+  const values = [{id: 'lunch', label: 'Lunch at', means: 'when the family has lunch', format: 'time_of_day'},
+    {id: 'walk', label: 'Walking time', means: 'minutes walking between stops', format: 'minutes'},
+    {id: 'back', label: 'Back at start', means: 'when they are back where they began', format: 'time_of_day'},
+    {id: 'cost', label: 'Travel budget', means: 'money for the day', format: 'money'}]
+  const comp = c.readComposition(JSON.stringify({answers}), sk(values), false)
+  assert.deepEqual(comp.blocks, ['itinerary'])
+  for (const label of ['Lunch at', 'Walking time', 'Back at start']) {
+    assert.ok(comp.dropped.indexOf('value "' + label + '": the itinerary\'s own times') >= 0, label + ': ' + comp.dropped.join(' | '))
+  }
+  assert.ok(!comp.claimed.some(x => /Lunch|Walking|Back at start/.test(x)), 'none is read against the screen: ' + comp.claimed.join(' | '))
+  // money is not a time: not the itinerary's
+  assert.ok(!comp.dropped.some(d => /Travel budget.*itinerary/.test(d)), comp.dropped.join(' | '))
+  // the time the stops must be over by is not the itinerary's own: it reads it (deadline), and it stays in the plan
+  const flight = c.readComposition(JSON.stringify({answers: Object.assign({'deadline.dep': {type: 'choice', choice: 'yes', confidence: 0.9}}, answers)}),
+    sk([{id: 'dep', label: 'Flight departs', means: 'when the flight leaves', format: 'time_of_day'}]), false)
+  assert.ok(!flight.dropped.some(d => /Flight departs.*own times/.test(d)), flight.dropped.join(' | '))
+  console.log('screen-order-check: an itinerary\'s own times are not read against the screen')
+}

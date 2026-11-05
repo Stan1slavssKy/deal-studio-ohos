@@ -2722,17 +2722,12 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
     let label = labelOf(sketch, id)
     if (written.indexOf(id) >= 0) { return }
     if (leaving.indexOf(id) < 0) { comp.unbound.push('"' + label + '": ' + why) }
-    else if (sections.indexOf(id) >= 0) {
-      comp.dropped.push('value "' + label + '": a section shows it')
-      comp.claimed.push('shows ' + label)
-    }
+    else if (sections.indexOf(id) >= 0) { claimShown(comp, label, itinerary.indexOf(id) >= 0) }
     else { comp.dropped.push('value "' + label + '": not asked for, and ' + why) }
   })
   for (let id of unique(shownBySection.concat(itinerary))) {
     if (failed.has(id) || leaving.indexOf(id) < 0) { continue }
-    let label = labelOf(sketch, id)
-    comp.dropped.push('value "' + label + '": a section shows it')
-    comp.claimed.push('shows ' + label)
+    claimShown(comp, labelOf(sketch, id), itinerary.indexOf(id) >= 0)
   }
   if (leaving.length === 0) { return }
   for (let id of leaving) { comp.bindings.delete(id) }
@@ -3667,6 +3662,22 @@ function inputsPart(comp: Composition, fields: Field[]): FragmentSpec {
     if (input.id === dayStart(comp)) { spec.ports.push(new PortSpec('writes', 'start', 'number', input.id)) }
   }
   return spec
+}
+
+/**
+ * A value a section shows leaves the plan, and is read against the finished screen -- except the itinerary's own times
+ * (itineraryShows). They are read by the plan's names ("shows Lunch at", "shows Walking time", "shows Back at start"), which the
+ * itinerary does not use: it says the stops' windows, "Minutes between stops", "Day ends" and "Day length". Not found under the
+ * plan's name, each came back to be written as a section of its own beside the stops, a line of text or every stop again, often
+ * with a warning above the plan (West Lake, a family day, three runs, a new name each time).
+ */
+function claimShown(comp: Composition, label: string, itineraryOwn: boolean): void {
+  if (itineraryOwn) {
+    comp.dropped.push('value "' + label + '": the itinerary\'s own times')
+    return
+  }
+  comp.dropped.push('value "' + label + '": a section shows it')
+  comp.claimed.push('shows ' + label)
 }
 
 /**

@@ -2120,7 +2120,7 @@ function onOpenedIDX(state: AppState, value: string): AppState {
     ],
     ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"'],
     [new ListFieldSpec('__STOPS_IDX__', 'stops',
-      'The stops of the day in order, as many as the request needs (5 to 12): each with a name, how long it takes in minutes, and its latitude and longitude as decimals (an empty string when not known with confidence)',
+      'The stops of the day in order, as many as the request needs (5 to 12): each with a name, how long it takes in minutes, and its latitude and longitude as decimals (an empty string when not known with confidence). A meal or a break the request mentions is a stop of its own at its place in the day, named for it (Lunch, 60 minutes), with the coordinates of where it is eaten or empty strings',
       ['name of the place (1-4 words)', 'minutes spent there, a whole number', 'latitude as a decimal such as 31.2397, or an empty string', 'longitude as a decimal such as 121.4900, or an empty string'],
       [28, 4, 12, 12],
       '{name: "{0}", minutes: {1}, latitude: "{2}", longitude: "{3}", done: false, eventId: ""}', ',\n    ', 5, 12,
