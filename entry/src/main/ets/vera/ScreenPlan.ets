@@ -144,9 +144,10 @@ export function assemblePlan(plan: ScreenPlan, partial: boolean = false): string
   if (!partial && plan.open().length > 0) { return '' }
   let specs: (FragmentSpec | null)[] = []
   let values: Map<string, string>[] = []
-  // A notice that part of the screen is missing goes first, under the title: at the bottom of a long screen the person never
-  // reaches it and takes what is there for everything asked (measured: Exam prep, a form and a list above it). Only the order
-  // of the program changes; the components' indices, which the slots point at, stay as they are.
+  // A notice that part of the screen is missing shows first, under the title: at the bottom of a long screen the person never
+  // reaches it and takes what is there for everything asked (measured: Exam prep, a form and a list above it). It is drawn first
+  // (FragmentSpec.viewFirst) but placed last: put first, it took block 1 and renumbered every block after it, so a section written
+  // against the program before the notice existed read another block's names (review of #46).
   // Several are one banner, each its own line: three stacked banners took half the screen above anything that works (Timetable).
   // A notice that only says what the screen does instead (NOTICE_INSTEAD) is not a warning: it goes last, after what it explains.
   let notices: FragmentSpec[] = []
@@ -155,13 +156,6 @@ export function assemblePlan(plan: ScreenPlan, partial: boolean = false): string
     if (c.fill === FILL_REPORTED && c.spec !== null && c.spec!.kind === 'notice') {
       if (c.spec!.criteria.startsWith(NOTICE_INSTEAD_TITLE + NOTICE_SPLIT)) { insteads.push(c.spec!) } else { notices.push(c.spec!) }
     }
-  }
-  if (notices.length > 1) {
-    specs.push(oneNotice(notices))
-    values.push(new Map<string, string>())
-  } else if (notices.length === 1) {
-    specs.push(notices[0])
-    values.push(new Map<string, string>())
   }
   // The folded settings (VeraCompose.ets's settingsPart) go under every section: what the screen is for comes first.
   let settings: PlanComponent[] = []
@@ -172,6 +166,10 @@ export function assemblePlan(plan: ScreenPlan, partial: boolean = false): string
     values.push(c.values)
   }
   for (let c of settings) { specs.push(c.spec); values.push(c.values) }
+  if (notices.length > 0) {
+    specs.push(notices.length > 1 ? oneNotice(notices) : notices[0])
+    values.push(new Map<string, string>())
+  }
   if (insteads.length > 0) {
     specs.push(insteads.length > 1 ? oneNotice(insteads, 'info') : insteads[0])
     values.push(new Map<string, string>())
@@ -206,6 +204,7 @@ function oneNotice(notices: FragmentSpec[], icon: string = 'warning'): FragmentS
     lines.map((l: string): string => '- ' + l).join('\\n') + '", "", "", "' + icon + '")]));\n}'
   let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
   spec.indexed = false
+  spec.viewFirst = style !== 'info'
   return spec
 }
 

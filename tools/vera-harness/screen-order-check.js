@@ -258,6 +258,22 @@ console.log('screen-order-check: ok')
     'moment.cal': says('entry_added', 1), 'arg.cal.calendar_add.title': says('entry.task', 1)}}), kept, false)
   if (refused.blocks.indexOf('points_ledger') < 0) { assert.ok(refused.inputs.some(i => i.id === 'kid'), 'nothing was handed over') }
   console.log('screen-order-check: review of PR 46')
+  // A notice drawn under the title keeps the blocks' numbers: put first, it took block 1, and a section written against the
+  // program before it existed read another block's names (review of #46, ScreenPlan.ets).
+  {
+    const hole = loadVera('agent/AgentHole')
+    const before = sp.assemblePlan(plan, true)
+    plan.components.push(new sp.PlanComponent(sp.FILL_REPORTED, hole.noticeBlock(true, 'This phone cannot do that.'), new Map()))
+    const after = sp.assemblePlan(plan, true)
+    const fields = src => src.slice(src.indexOf('class AppState {'), src.indexOf('}', src.indexOf('class AppState {')))
+    assert.equal(fields(after), fields(before), 'the same state fields with and without the notice')
+    // the header, then the notice, then the blocks
+    const drawn = after.slice(after.indexOf('function view(')).split('\n').filter(l => /sections\.push\(/.test(l))
+    assert.match(drawn[0], /ui\.Header\(/)
+    assert.match(drawn[1], /InsetBanner\("warning", "Not available on this phone"/, drawn.slice(0, 3).join('\n'))
+    compileVeraSource(after)
+    plan.components.pop()
+  }
 }
 
 // Beside an itinerary, a list of the stops reached is the itinerary's own check.

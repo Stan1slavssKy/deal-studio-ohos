@@ -80,6 +80,8 @@ export function noticeBlock(cannot: boolean, why: string): FragmentSpec {
     literal(body) + '", "", "", "' + icon + '")]));\n}'
   let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
   spec.indexed = false
+  // A warning shows under the title; one that says what is done instead goes after what it explains (ScreenPlan.ets).
+  spec.viewFirst = !instead
   // Its title and words, for the notices of one screen to be shown as one (ScreenPlan.ets's assemblePlan).
   spec.criteria = literal(title) + NOTICE_SPLIT + literal(body)
   return spec

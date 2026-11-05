@@ -338,6 +338,12 @@ export class FragmentSpec {
    */
   indexed: boolean = true
   /**
+   * Drawn before the other blocks while keeping its own place in the order, and so in the numbering: a notice that part of the
+   * screen is missing shows under the title, yet put first it took position 1 and renumbered every block after it, so a written
+   * section that read state.items1 found items2 (review of #46). Set only on a block with no names of its own.
+   */
+  viewFirst: boolean = false
+  /**
    * What the block already holds or lets the person set, in words for whoever decides what else the screen needs (Jev's choice of what a
    * section covers): "the start time of the day", so that no separate input for it is put on the screen. '' when it says nothing beyond criteria.
    */

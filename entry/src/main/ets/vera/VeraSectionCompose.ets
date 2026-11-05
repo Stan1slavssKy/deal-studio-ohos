@@ -959,6 +959,8 @@ export function composeFragments(specAt: (FragmentSpec | null)[], globalValues: 
   let viewBlocks: string[] = []
   let tabNames: string[] = []
   let tabPanes: string[] = []
+  // Blocks drawn first (FragmentSpec.viewFirst) go before the rest, in their own order; their numbers stay those of their places.
+  let firstBlocks: string[] = []
   for (let i = 0; i < specAt.length; i++) {
     let spec = specAt[i]
     if (spec === null) { continue }
@@ -971,8 +973,9 @@ export function composeFragments(specAt: (FragmentSpec | null)[], globalValues: 
       tabNames.push(paneLabel(spec, tabNames))
       tabPanes.push('ui.Column("default", ' + name + ')')
     }
-    viewBlocks.push(block)
+    if (spec.viewFirst && pane < 0) { firstBlocks.push(block) } else { viewBlocks.push(block) }
   }
+  viewBlocks = firstBlocks.concat(viewBlocks)
 
   let bannerShow = globalValues.get('__BANNER_SECTION__') === 'show'
   let theme = globalValues.get('__THEME__')
