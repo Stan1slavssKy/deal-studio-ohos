@@ -61,6 +61,7 @@ export class LiveNode {
   @Trace suffix: string = ''
   @Trace minimumDigits: number = 1
   @Trace decimals: number = -1
+  @Trace step: number = 1
   @Trace icon: string = ''
   // ui.TextField validation; see VeraUiNode.
   @Trace keyboardType: string = ''
@@ -151,6 +152,7 @@ export function toLive(node: VeraUiNode): LiveNode {
   live.suffix = node.suffix
   live.minimumDigits = node.minimumDigits
   live.decimals = node.decimals
+  live.step = node.step
   live.icon = node.icon
   live.keyboardType = node.keyboardType
   live.required = node.required
@@ -230,6 +232,7 @@ export function reconcile(live: LiveNode, next: VeraUiNode): void {
   if (live.suffix !== next.suffix) { live.suffix = next.suffix }
   if (live.minimumDigits !== next.minimumDigits) { live.minimumDigits = next.minimumDigits }
   if (live.decimals !== next.decimals) { live.decimals = next.decimals }
+  if (live.step !== next.step) { live.step = next.step }
   if (live.icon !== next.icon) { live.icon = next.icon }
   if (live.keyboardType !== next.keyboardType) { live.keyboardType = next.keyboardType }
   if (live.required !== next.required) { live.required = next.required }

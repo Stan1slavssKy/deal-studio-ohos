@@ -1825,6 +1825,12 @@ export struct VeraPreview {
     this.numberEpoch++
   }
 
+  /** A ui.NumberField's step as a whole number of at least 1, whatever the program passed (0, -5 and 2.5 included). */
+  private numberStep(node: LiveNode): number {
+    let step = Math.round(node.step)
+    return isNaN(step) || step < 1 ? 1 : step
+  }
+
   /** The pane ui.Tabs shows: its selected child, kept inside the children there are. */
   private tabSelected(node: LiveNode): number {
     return Math.max(0, Math.min(Math.floor(node.eventValue), node.children.length - 1))
@@ -3063,8 +3069,9 @@ export struct VeraPreview {
             .fontColor(this.t().primary)
             .onClick(() => {
               if (node.action.length === 0) { return }
-              let next = node.numberValue - 1
-              if (next >= node.minimum) { this.handleAction(node.action, next) }
+              // A step that does not fit stops at the limit: 3 with a step of 5 and a minimum of 0 goes to 0.
+              let next = Math.max(node.minimum, node.numberValue - this.numberStep(node))
+              if (next < node.numberValue) { this.handleAction(node.action, next) }
             })
           // The value is typed as well as stepped: tap it and write 60, rather than tapping + sixty times. It is taken when the
           // person is done editing and kept inside the field's own limits.
@@ -3097,8 +3104,8 @@ export struct VeraPreview {
             .fontColor(this.t().primary)
             .onClick(() => {
               if (node.action.length === 0) { return }
-              let next = node.numberValue + 1
-              if (next <= node.maximum) { this.handleAction(node.action, next) }
+              let next = Math.min(node.maximum, node.numberValue + this.numberStep(node))
+              if (next > node.numberValue) { this.handleAction(node.action, next) }
             })
         }
         .width('100%')
