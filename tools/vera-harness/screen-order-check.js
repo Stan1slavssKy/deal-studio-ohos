@@ -259,3 +259,15 @@ console.log('screen-order-check: ok')
   if (refused.blocks.indexOf('points_ledger') < 0) { assert.ok(refused.inputs.some(i => i.id === 'kid'), 'nothing was handed over') }
   console.log('screen-order-check: review of PR 46')
 }
+
+// Beside an itinerary, a list of the stops reached is the itinerary's own check.
+{
+  const s = c.parseSketch(JSON.stringify({title: 'Layover', inputs: [], constants: [],
+    list: {label: 'Stops reached', fields: [{id: 'stop', label: 'Stop', kind: 'text'}, {id: 'at', label: 'Reached at', kind: 'time', value: 540}]},
+    ready: ['the day\'s stops in order'], values: [], events: [], other: []}))
+  const comp = c.readComposition(JSON.stringify({answers: {'ready.0': {type: 'choice', choice: 'itinerary', confidence: 0.9},
+    'whose.0': {type: 'choice', choice: 'written', confidence: 0.9}}}), s, false)
+  assert.deepEqual(comp.blocks, ['itinerary'])
+  assert.equal(comp.sketch.list, null)
+  console.log('screen-order-check: stops reached are the itinerary\'s')
+}

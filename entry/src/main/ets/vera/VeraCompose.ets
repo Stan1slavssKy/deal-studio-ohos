@@ -2266,6 +2266,18 @@ export function readLogInCharts(comp: Composition): void {
  * section takes the part's place in the plan; what the person sets for it is the section's own.
  */
 function chooseSections(comp: Composition, answers: Record<string, Object>): void {
+  // The itinerary marks each stop reached itself: a list of the stops reached beside it is the same thing twice (Shanghai layover:
+  // "Stops reached" with a Stop field and an Add button above the stops, each with its own check).
+  if (comp.blocks.indexOf('itinerary') >= 0 && comp.sketch.list !== null &&
+      /\b(reached|visited|arrived|been)\b/i.test(comp.sketch.list!.label + ' ' + comp.sketch.list!.fields.map((f: ListField): string => f.label).join(' '))) {
+    let wired = false
+    comp.moments.forEach((m: string) => { if (m === 'entry_added' || m === 'row_button') { wired = true } })
+    if (!wired) {
+      let label = comp.sketch.list!.label
+      comp.sketch = withList(comp.sketch, null)
+      comp.dropped.push('"' + label + '": the itinerary marks each stop reached')
+    }
+  }
   let clock = comp.sketch.hasCountdown ? answerOf(answers, 'clock.part', CLOCK_SECTIONS, comp.answers, READY_ABOVE) : ''
   if (comp.sketch.hasCountdown) { console.info('VERA-CHOOSE clock.part=' + (clock.length > 0 ? clock : 'part')) }
   if (clock === 'timer' && canReplaceClock(comp)) { replaceClock(comp) }
