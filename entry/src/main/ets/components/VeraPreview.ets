@@ -164,6 +164,10 @@ const PATH_BAND_HEIGHT: number = 240
 /** How far into the program, in vp, it still counts as at its top: the host's corner buttons stay shown. */
 const READING_TOP: number = 40
 
+
+/** Nodes a button's form does not reach past (touchFormOf). */
+const FORM_BOUNDS: string[] = ['section', 'card', 'sheet', 'dialog']
+
 @Component
 export struct VeraPreview {
   /**
@@ -1007,6 +1011,37 @@ export struct VeraPreview {
   private touchFields(node: LiveNode): void {
     if (node.kind === 'field') { node.touched = true }
     for (let child of node.children) { this.touchFields(child) }
+  }
+
+  /**
+   * The fields a button submits: those under its nearest enclosing node that has a field, its form; none for a button with no
+   * field around it. Touching every field on the screen, Start on a stopwatch flagged "Enter a task name" on an Add form beside
+   * it, which is what touched was for (review of #46).
+   */
+  private touchFormOf(button: LiveNode): void {
+    if (this.liveRoot === null) { return }
+    let path: LiveNode[] = []
+    if (!this.pathTo(this.liveRoot!, button, path)) { return }
+    for (let i = path.length - 2; i >= 0; i--) {
+      if (this.hasField(path[i])) { this.touchFields(path[i]); return }
+      // A section or a card is as far as a form goes: a Start in its own section has none, though the screen around it has fields.
+      if (FORM_BOUNDS.indexOf(path[i].kind) >= 0) { return }
+    }
+  }
+
+  /** The nodes from `node` down to `target`, both included, into `path`; false when `target` is not under `node`. */
+  private pathTo(node: LiveNode, target: LiveNode, path: LiveNode[]): boolean {
+    path.push(node)
+    if (node === target) { return true }
+    for (let child of node.children) { if (this.pathTo(child, target, path)) { return true } }
+    path.pop()
+    return false
+  }
+
+  private hasField(node: LiveNode): boolean {
+    if (node.kind === 'field') { return true }
+    for (let child of node.children) { if (this.hasField(child)) { return true } }
+    return false
   }
 
   private collectSurfaces(node: LiveNode, found: LiveNode[]): void {
@@ -3543,8 +3578,8 @@ export struct VeraPreview {
         .fontColor(buttonInk(this.t(), node.style))
         .onClick(() => {
           if (node.action.length > 0 && node.enabled) {
-            // A button press is the attempt after which an empty required field is worth pointing out.
-            if (this.liveRoot !== null) { this.touchFields(this.liveRoot!) }
+            // A button press is the attempt after which an empty required field of its own form is worth pointing out.
+            this.touchFormOf(node)
             this.handleAction(node.action, node.eventValue)
           }
         })
