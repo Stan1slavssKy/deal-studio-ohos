@@ -182,3 +182,27 @@ console.log('screen-order-check: ok')
   assert.equal(smokeRun(compileVeraSource(sp.assemblePlan(plan, true)), false), '')
   console.log('screen-order-check: rounds to the interval timer')
 }
+
+// Stars earned for tasks and spent on rewards: the ledger takes the list, the taps wired to it and a checklist of the same tasks.
+{
+  const nc4 = loadVera('NeedsChoose')
+  assert.ok(nc4.asksPoints('Make a chore chart for two kids where stars are earned for tasks and redeemed for rewards we agree on.'))
+  assert.ok(!nc4.asksPoints('a list of chores for the week'))
+  const sketch = c.parseSketch(JSON.stringify({title: 'Stars', inputs: [{id: 'kidOne', label: 'First kid', kind: 'text', value: 0}], constants: [],
+    list: {label: 'Stars earned', fields: [{id: 'task', label: 'Task', kind: 'text'}, {id: 'stars', label: 'Stars', kind: 'number'}]},
+    ready: ['the chores the kids can do for stars'], values: [],
+    events: [{id: 'redeem', when: 'a reward is tapped', what: "takes the reward's star cost off that kid's star balance", asked: true}], other: []}))
+  const ans = {'list.part': {type: 'choice', choice: 'points_ledger', confidence: 1}, 'ready.0': {type: 'choice', choice: 'checklist', confidence: 0.9},
+    'whose.0': {type: 'choice', choice: 'written', confidence: 0.9}}
+  const comp = c.readComposition(JSON.stringify({answers: ans}), sketch, false)
+  assert.deepEqual(comp.blocks, ['points_ledger'], comp.note)
+  assert.ok(!comp.custom.some(n => /reward/.test(n)), comp.custom)
+  assert.equal(comp.sketch.list, null)
+  assert.equal(smokeRun(compileVeraSource(sp.assemblePlan(c.screenPlan(comp, []), true)), false), '')
+  const deck = c.readComposition(JSON.stringify({answers: {...ans, 'ready.0': {type: 'choice', choice: 'idea_deck', confidence: 0.9}}}), sketch, false)
+  assert.deepEqual(deck.blocks, ['points_ledger'], 'a deck of the same chores goes too')
+  const table = c.readComposition(JSON.stringify({answers: {...ans, 'ready.0': {type: 'choice', choice: 'data_table', confidence: 0.9}}}), sketch, false)
+  assert.deepEqual(table.blocks, ['points_ledger'], 'a table of the same chores goes too')
+  assert.deepEqual(table.inputs.map(i => i.id), [], 'the ledger names its people')
+  console.log('screen-order-check: points to the ledger')
+}

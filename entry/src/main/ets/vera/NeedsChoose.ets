@@ -19,6 +19,11 @@ import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_N
  * Whether the `timer` section may take the countdown's place: its length is one fixed time of the plan's (a person who sets it
  * needs the part, which follows the input), nothing happens when it ends, and no figure reads the time left or passed.
  */
+/** Whether the request asks for points or stars earned for tasks and spent on rewards. */
+export function asksPoints(prompt: string): boolean {
+  return /\b(stars?|points?|tokens?)\b/i.test(prompt) && /\b(rewards?|redeem\w*|spend|prizes?)\b/i.test(prompt)
+}
+
 /** Whether the request asks for something logged with one tap rather than typed in. */
 export function asksOneTap(prompt: string): boolean {
   return /\b(one|single|a|1)[ -]tap\b|\bwith a tap\b|\btap to (log|add|count)\b|一键|点一下/i.test(prompt)
@@ -102,8 +107,18 @@ export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sket
       // list's typed form two times of three (Water reminder on the phone).
       // Asked between the two, Jev still took the typed form, so the request's own words decide.
       let oneTap = asksOneTap(prompt) && allowed.indexOf('quick_log') >= 0
+      // Points or stars earned and spent on rewards: the ledger, whatever is wired to a tap (it awards and redeems on taps itself).
+      if (asksPoints(prompt)) {
+        let says: Record<string, Object> = {}
+        says['type'] = 'choice'
+        says['choice'] = 'points_ledger'
+        says['confidence'] = 1
+        out.forced['list.part'] = says
+      }
       options!.forEach((describe: string, key: string) => { if (key === PART || allowed.indexOf(key) >= 0) { narrowed.set(key, describe) } })
-      if (oneTap) {
+      if (asksPoints(prompt)) {
+        narrowed = new Map<string, string>([['points_ledger', 'the request says points earned and spent']])
+      } else if (oneTap) {
         let says: Record<string, Object> = {}
         says['type'] = 'choice'
         says['choice'] = 'quick_log'

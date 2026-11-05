@@ -1990,6 +1990,49 @@ export function canTakeRounds(comp: Composition): boolean {
   return !other && !readsAny(comp, CLOCK_OPERANDS)
 }
 
+/** What a points ledger does on a tap: award a task, redeem a reward, keep the balance. */
+const LEDGER_WORDS: RegExp = /\b(rewards?|tasks?|chores?|stars?|points?|balance|redeem\w*|earn\w*|spend\w*)\b/i
+
+/** The sections that would list the ledger's tasks or rewards a second time; the plan picked each of them in one run or another. */
+const LEDGER_TAKES: string[] = ['checklist', 'idea_deck', 'data_table', 'search_list', 'key_facts', 'timeline', 'bar_chart']
+
+/** The plan's inputs for the people's names: the ledger names its own. */
+function ledgerNames(comp: Composition): string[] {
+  return comp.inputs.concat(comp.sketch.inputs).filter((i: SketchInput): boolean => i.kind === 'text' &&
+    /\b(kids?|child(ren)?|person|people|names?|first|second)\b/i.test(i.label)).map((i: SketchInput): string => i.id)
+}
+
+function handTapsToLedger(comp: Composition): void {
+  let entryMoment = (id: string): boolean => { let m = comp.moments.get(id) ?? ''; return m === 'entry_added' || m === 'row_button' }
+  let gone = comp.events.filter((e: SketchEvent): boolean => entryMoment(e.id))
+  comp.events = comp.events.filter((e: SketchEvent): boolean => !entryMoment(e.id))
+  for (let e of gone) {
+    comp.moments.delete(e.id)
+    comp.effects.delete(e.id)
+    comp.args.delete(e.id)
+    comp.dropped.push('event "' + e.what + '": the points ledger does it')
+  }
+  // The ledger names its people, keeps the rewards and what was redeemed, and shows each balance: the plan's inputs for the kids'
+  // names, its second lists of rewards and redemptions and its figures over stars were all drawn again beside it (Chore stars).
+  let names = ledgerNames(comp)
+  comp.inputs = comp.inputs.filter((i: SketchInput): boolean => names.indexOf(i.id) < 0)
+  comp.sketch.inputs = comp.sketch.inputs.filter((i: SketchInput): boolean => names.indexOf(i.id) < 0)
+  for (let id of names) { comp.dropped.push('input "' + id + '": the points ledger names its people') }
+  let ledgers = comp.custom.filter((n: string): boolean => LEDGER_WORDS.test(n) || n.startsWith('a second list of entries'))
+  comp.custom = comp.custom.filter((n: string): boolean => ledgers.indexOf(n) < 0)
+  comp.phoneNeeds = comp.phoneNeeds.filter((n: string): boolean => ledgers.indexOf(n) < 0)
+  comp.unboundNeeds = comp.unboundNeeds.filter((n: string): boolean => ledgers.indexOf(n) < 0)
+  for (let n of ledgers) { comp.claimed.push(n) }
+  // A list of the same tasks as a checklist or a deck of ideas ("pick a chore") beside the ledger is the same list twice.
+  for (let i = 0; i < comp.readyKinds.length; i++) {
+    let kind = comp.readyKinds[i]
+    if (LEDGER_TAKES.indexOf(kind) < 0 || !LEDGER_WORDS.test(comp.sketch.ready[i] ?? '')) { continue }
+    comp.blocks = comp.blocks.filter((k: string): boolean => k !== kind)
+    comp.readyKinds[i] = 'points_ledger'
+    comp.dropped.push('"' + comp.sketch.ready[i] + '": the points ledger lists the tasks')
+  }
+}
+
 /** What says a length of a phase or a number of rounds: the interval timer's own settings. */
 const ROUND_WORDS: RegExp = /\b(rounds?|blocks?|sets?|cycles?|reps?|intervals?|breaks?|rest|focus|work|phases?|sessions?)\b/i
 
@@ -2206,6 +2249,9 @@ function chooseSections(comp: Composition, answers: Record<string, Object>): voi
   else if (clock === 'interval_timer' && canTakeRounds(comp)) { replaceClock(comp, 'interval_timer') }
   if (comp.sketch.list !== null) {
     let kind = answerOf(answers, 'list.part', LIST_SECTIONS, comp.answers, READY_ABOVE)
+    // Points earned for tasks and spent on rewards are the ledger's whole job, taps on a task or a reward among it: what the plan
+    // wired to those taps is the ledger's, and a checklist of the same tasks beside it is the same list twice (Chore stars).
+    if (kind === 'points_ledger') { handTapsToLedger(comp) }
     let can = kind.length > 0 && canReplaceList(comp, kind)
     console.info('VERA-CHOOSE list.part=' + (kind.length > 0 ? kind : 'part') + (kind.length > 0 && !can ? ' (refused: the part is wired to)' : ''))
     if (can) { replaceList(comp, kind) }
@@ -2479,6 +2525,16 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     }
   }
   dropValues(comp, answers, failed, served, shownBySection)
+  // Figures over points the plan could not work out are the ledger's balances, not a section to write.
+  if (comp.replaced.some((r: Replaced): boolean => r.kind === 'points_ledger')) {
+    let figures = comp.custom.filter((n: string): boolean => n.startsWith('the figure "') && LEDGER_WORDS.test(n))
+    comp.custom = comp.custom.filter((n: string): boolean => figures.indexOf(n) < 0)
+    for (let n of figures) { comp.dropped.push(n.substring(0, n.indexOf('":') + 1) + ': the points ledger shows the balances') }
+    // The names may come back with the inputs a figure read; they are still the ledger's.
+    let names = ledgerNames(comp)
+    comp.inputs = comp.inputs.filter((i: SketchInput): boolean => names.indexOf(i.id) < 0)
+    comp.customReads = comp.customReads.filter((id: string): boolean => names.indexOf(id) < 0)
+  }
   // An input nothing reads does nothing. A number the request did not ask for is the sketch's extra and is
   // left out, and the note says so; one it asked for, a switch or words mean the request wants something
   // the parts do not do with it. The day's start time is read by the itinerary (dayStart).
