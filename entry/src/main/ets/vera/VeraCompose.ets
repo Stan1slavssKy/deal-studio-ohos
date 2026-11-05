@@ -1509,7 +1509,9 @@ export function listNeeds(sketch: Sketch): string {
  * and "walking time between stops" were written again beside the itinerary, disagreeing with it ("Broken Bridge to Broken Bridge").
  */
 export function askItinerary(sketch: Sketch, questions: Record<string, Object>): void {
-  if (sketch.ready.length === 0 || sketch.other.length === 0) { return }
+  // Only where an itinerary could be the answer: a plan with content for a section and a time of day or a length of time in it.
+  // Asked of every plan with ready needs, a habit tracker's six "other" items were six questions on every call (review of #46).
+  if (sketch.ready.length === 0 || !hasTimes(sketch)) { return }
   let spec = fragments().find((f: FragmentSpec): boolean => f.kind === 'itinerary')
   if (spec === undefined) { return }
   let verdict: Map<string, string> = new Map<string, string>()
@@ -1520,6 +1522,24 @@ export function askItinerary(sketch: Sketch, questions: Record<string, Object>):
     questions['itinerary.other.' + i.toString()] = choice('If the places were shown as an itinerary that already has ' + spec!.owns +
       ', would "' + sketch.other[i] + '" be part of that itinerary?', verdict)
   }
+  // Each time of day or length of time the plan works out: the itinerary's own (a stop's time, when the day ends, how long it
+  // takes, the minutes between stops) or not. "Time at the airport before boarding" is not, and does not leave with them (itineraryShows).
+  let own: Map<string, string> = new Map<string, string>()
+  // A total of the stops' own numbers is theirs too: "Total walking" and "Time at stops" stood above the stops as the plan's own
+  // figures (1:30:00, 4:30:00), worked out from its inputs and not from the stops shown, so free to disagree with them.
+  own.set('yes', 'yes: it is one of those, a stop of the day with its time, or a total or count of the stops, their lengths or the time between them')
+  own.set('no', 'no: it is about something else than the stops (the time at an airport, daylight, a budget)')
+  for (let v of sketch.values) {
+    if (v.format !== 'clock' && v.format !== 'minutes') { continue }
+    questions['itinerary.value.' + v.id] = choice('If the places were shown as an itinerary that already has ' + spec!.owns +
+      ', would the figure "' + v.label + '" (' + v.means + ') be one of those?', own)
+  }
+}
+
+/** Whether the plan has a time of day the person sets, or a time of day or a length of time it works out: what an itinerary is made of. */
+function hasTimes(sketch: Sketch): boolean {
+  return sketch.inputs.some((i: SketchInput): boolean => i.kind === 'time') ||
+    sketch.values.some((v: SketchValue): boolean => v.format === 'clock' || v.format === 'minutes')
 }
 
 /**
@@ -2580,6 +2600,17 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       comp.sketch = withList(comp.sketch, trimmed)
     }
   }
+  // The time of day that ends the plan's list of places or steps, when one of the figures worked out is it. Before the values
+  // leave and the inputs are read: the itinerary's own times are not it (itineraryShows), nor is the day's start (dayStart).
+  let sure: number = 0
+  for (let v of comp.sketch.values) {
+    if (v.format !== 'clock' || !comp.bindings.has(v.id)) { continue }
+    if (answerOf(answers, 'deadline.' + v.id, ['yes'], comp.answers, DEADLINE_ABOVE) !== 'yes') { continue }
+    let a = answers['deadline.' + v.id] as Record<string, Object>
+    let confidence = typeof a['confidence'] === 'number' ? a['confidence'] as number : 1
+    // Two that say yes: the surer one.
+    if (confidence > sure) { sure = confidence; comp.deadline = v.id }
+  }
   dropValues(comp, answers, failed, served, shownBySection)
   // Figures over points the plan could not work out are the ledger's balances, not a section to write.
   if (comp.replaced.some((r: Replaced): boolean => r.kind === 'points_ledger')) {
@@ -2590,17 +2621,6 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     let names = ledgerNames(comp)
     comp.inputs = comp.inputs.filter((i: SketchInput): boolean => names.indexOf(i.id) < 0)
     comp.customReads = comp.customReads.filter((id: string): boolean => names.indexOf(id) < 0)
-  }
-  // The time of day that ends the plan's list of places or steps, when one of the figures worked out is it. Before the inputs are
-  // read: the day's start is not one the deadline is worked out from (dayStart).
-  let sure: number = 0
-  for (let v of comp.sketch.values) {
-    if (v.format !== 'clock' || !comp.bindings.has(v.id)) { continue }
-    if (answerOf(answers, 'deadline.' + v.id, ['yes'], comp.answers, DEADLINE_ABOVE) !== 'yes') { continue }
-    let a = answers['deadline.' + v.id] as Record<string, Object>
-    let confidence = typeof a['confidence'] === 'number' ? a['confidence'] as number : 1
-    // Two that say yes: the surer one.
-    if (confidence > sure) { sure = confidence; comp.deadline = v.id }
   }
   // An input nothing reads does nothing. A number the request did not ask for is the sketch's extra and is
   // left out, and the note says so; one it asked for, a switch or words mean the request wants something
@@ -3707,8 +3727,10 @@ function claimShown(comp: Composition, label: string, itineraryOwn: boolean): vo
  */
 function itineraryShows(comp: Composition, answers: Record<string, Object>): string[] {
   if (comp.blocks.indexOf('itinerary') < 0) { return [] }
-  return comp.sketch.values.filter((v: SketchValue): boolean => (v.format === 'clock' || v.format === 'minutes') &&
-    answerOf(answers, 'deadline.' + v.id, ['yes'], [], DEADLINE_ABOVE) !== 'yes').map((v: SketchValue): string => v.id)
+  // Only those Jev reads as the itinerary's own (askItinerary): every time on the screen went, "Minutes of sunlight left" with
+  // the rest, reported as shown although the itinerary shows nothing like it (review of #46). And not the deadline it reads.
+  return comp.sketch.values.filter((v: SketchValue): boolean => (v.format === 'clock' || v.format === 'minutes') && v.id !== comp.deadline &&
+    answerOf(answers, 'itinerary.value.' + v.id, ['yes'], comp.answers, COVERED_ABOVE) === 'yes').map((v: SketchValue): string => v.id)
 }
 
 /**
