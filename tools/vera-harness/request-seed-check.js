@@ -47,6 +47,10 @@ const sketchWith = unit => {
   assert.ok(Number.isNaN(s.list.fields[1].seed))
   const t = sketchWith('kg')
   assert.equal(nc.seedFromRequest(t, 'a fever of 37.5°C'), '')
+  // A goal or the size of a tap is no reading (review of #46).
+  const w = sketchWith('kg')
+  assert.equal(nc.seedFromRequest(w, 'help me get down to 70 kg'), '')
+  assert.equal(nc.seedFromRequest(sketchWith('ml'), 'Water tracker, log 250 ml with one tap'), '')
 }
 
 // "cannot X, so Y instead" is done differently: an info line, after the rest.

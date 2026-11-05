@@ -2093,13 +2093,23 @@ const ROUND_WORDS: RegExp = /\b(rounds?|blocks?|sets?|cycles?|reps?|intervals?|b
  * second countdown for the break are its, and drawn beside it they were all there twice (Homework timer on the phone). They leave;
  * what is left of them is claimed by the section and read against the finished screen.
  */
+/** Whether an event's argument is taken from the input `id`. */
+function argReads(comp: Composition, id: string): boolean {
+  let found = false
+  comp.args.forEach((given: Map<string, string>) => { given.forEach((source: string) => { if (source === 'input.' + id) { found = true } }) })
+  return found
+}
+
 function handRoundsToTimer(comp: Composition): void {
   let sketch = comp.sketch
   // Only the lengths of a phase and the number of rounds: "Reminder every (minutes)" or "Work hours today" stay.
   let leaving = sketch.inputs.filter((i: SketchInput): boolean => i.kind !== 'text' && i.kind !== 'toggle' &&
     ((i.measure === 'seconds' || i.measure === 'minutes' || i.kind === 'choice') ? PHASE_WORDS.test(i.label) : COUNT_WORDS.test(i.label)))
     .map((i: SketchInput): string => i.id)
+    // Not one an event that stays passes on, or the written section reads: it would read a name nothing defines.
+    .filter((id: string): boolean => !argReads(comp, id) && comp.customReads.indexOf(id) < 0)
   if (leaving.length === 0) { return }
+  for (let id of leaving) { comp.widgets.delete(id) }
   sketch.inputs = sketch.inputs.filter((i: SketchInput): boolean => leaving.indexOf(i.id) < 0)
   comp.inputs = comp.inputs.filter((i: SketchInput): boolean => leaving.indexOf(i.id) < 0)
   // A figure worked out from one that leaves leaves too ("Total session" from the focus and break totals).
@@ -2222,10 +2232,6 @@ export function canReplaceList(comp: Composition, kind: string, takesTaps: boole
 }
 
 /**
- * The section takes the list part's place. The values over the entries leave the plan as needs the catalogue is asked about
- * (AgentAlign.ets offers the readers of what the section publishes first), and a written section otherwise.
- */
-/**
  * The plan's own numbers, in words, for a section that takes a part's place: the glass of 250 ml and the goal of 2000 ml a water
  * plan set, the 15 minutes of focus and 5 of rest a homework plan set. Without them the section's content was written from the
  * request alone and came out at its defaults (1 ml a tap, no goal: Water reminder on the phone).
@@ -2252,6 +2258,10 @@ function clockWords(minutes: number): string {
   return (h < 10 ? '0' : '') + h.toString() + ':' + (m < 10 ? '0' : '') + m.toString()
 }
 
+/**
+ * The section takes the list part's place. The values over the entries leave the plan as needs the catalogue is asked about
+ * (AgentAlign.ets offers the readers of what the section publishes first), and a written section otherwise.
+ */
 export function replaceList(comp: Composition, kind: string): void {
   let need = comp.sketch.list!.label
   let numbers = kind === 'record_log' ? '' : planNumbers(comp.sketch)
@@ -2309,6 +2319,11 @@ function chooseSections(comp: Composition, answers: Record<string, Object>): voi
       /\b(reached|visited|arrived|been)\b/i.test(comp.sketch.list!.label + ' ' + comp.sketch.list!.fields.map((f: ListField): string => f.label).join(' '))) {
     let wired = false
     comp.moments.forEach((m: string) => { if (m === 'entry_added' || m === 'row_button') { wired = true } })
+    // Nor while something still reads the entries: an event's argument, a figure ("Stops done" counts them).
+    comp.args.forEach((given: Map<string, string>) => {
+      given.forEach((source: string) => { if (source.startsWith('entry.')) { wired = true } })
+    })
+    if (valuesOverEntries(comp).length > 0) { wired = true }
     if (!wired) {
       let label = comp.sketch.list!.label
       comp.sketch = withList(comp.sketch, null)

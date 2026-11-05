@@ -219,7 +219,7 @@ function settle(plan: ScreenPlan, prompt: string, slots: PlanSlot[], asked: Cust
     // checked with its own: without them it is checked again, and kept as written when it no longer compiles, runs or reads
     // every field it sets (a field only the removed button set).
     let view = written.section.viewBlock
-    let trimmed = withoutRepeatedButtons(view, assemblePlan(plan, true))
+    let trimmed = withoutRepeatedButtons(view, assemblePlan(plan, true), written.section.functions)
     if (trimmed !== view) {
       written.section.viewBlock = trimmed
       if (!stillWorks(asked.compose(written.section))) { written.section.viewBlock = view }

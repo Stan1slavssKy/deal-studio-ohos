@@ -6,8 +6,9 @@
  * they can only be templates ("Spinach skillet", "Eggs tray bake" from any two words: Pantry expiry on the phone, 2026-11-03).
  *
  * The answer is the text itself (any answer not starting with "error" is the text), or "error: <reason>". It goes to the configured
- * model with the app's own key; each call is one request, so the same prompt within ASK_REUSE_MS gets the answer already written, and a
- * program cannot make more than ASK_PER_MINUTE calls a minute (a ticker that asks every frame would spend the person's key).
+ * model with the app's own key; the same prompt within ASK_REUSE_MS (a double tap) gets the answer already written, and a program
+ * cannot make more than ASK_PER_MINUTE calls a minute (a ticker that asks every frame would spend the person's key). Asked again
+ * later, it is asked anew: "Another idea" that gave the same words looked broken.
  */
 
 import { http } from '@kit.NetworkKit'
@@ -15,7 +16,7 @@ import { settings } from './SettingsStore'
 
 /** The program's address for this function; the compiler lets the `Vera.` prefix through without the SDK index. */
 export const ASK_TARGET: string = 'Vera.Ask.text'
-export const ASK_REUSE_MS: number = 120000
+export const ASK_REUSE_MS: number = 3000
 export const ASK_PER_MINUTE: number = 6
 const PROMPT_CHARS: number = 2000
 const MAX_WORDS: number = 300

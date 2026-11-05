@@ -126,11 +126,33 @@ function buttonLabels(source: string): string[] {
 }
 
 /**
+ * Whether the section's handler `name` is its own action: it sets a field of the section's own (c_), as a game's "Start over" resets
+ * its score. A second "Start over" that only clears the record log's entries is the log's button again, as is one whose handler is not
+ * the section's (the log's own clearAll).
+ */
+function ownAction(functions: string, name: string): boolean {
+  if (name.length === 0) { return false }
+  let at = functions.search(new RegExp('function\\s+' + name + '\\s*\\('))
+  if (at < 0) { return false }
+  let open = functions.indexOf('{', at)
+  if (open < 0) { return false }
+  let depth = 0
+  let i = open
+  while (i < functions.length) {
+    let ch = functions.charAt(i)
+    if (ch === '{') { depth++ } else if (ch === '}') { depth--; if (depth === 0) { break } }
+    i++
+  }
+  return /\bc_\w+\s*:/.test(functions.substring(open, i))
+}
+
+/**
  * A written section's view without the buttons the rest of the screen already draws under the same label: a second "Remove last" and
  * "Start over" under the record log's (Shared costs), which the writer put in whatever it was told. A button inside ui.When goes with
- * its When; the comma that separated it goes too. Labels of one word ("Add") are left: they belong to the section's own form.
+ * its When; the comma that separated it goes too. Labels of one word ("Add") are left: they belong to the section's own form. So is a
+ * button whose handler sets the section's own state (ownAction): a quiz's "Start over" restarts the quiz, not the log.
  */
-export function withoutRepeatedButtons(view: string, rest: string): string {
+export function withoutRepeatedButtons(view: string, rest: string, functions: string = ''): string {
   let taken = buttonLabels(rest).filter(isTwoWords)
   if (taken.length === 0) { return view }
   let out = view
@@ -140,8 +162,8 @@ export function withoutRepeatedButtons(view: string, rest: string): string {
     if (at < 0) { break }
     let end = closeOf(out, at + 'ui.Button'.length)
     if (end < 0) { break }
-    let label = /^ui\.Button\(\s*"[a-z]+"\s*,\s*"([^"]+)"/.exec(out.substring(at, end))
-    if (label === null || taken.indexOf(wordsOf(label[1])) < 0) { from = end; continue }
+    let label = /^ui\.Button\(\s*"[a-z]+"\s*,\s*"([^"]+)"(?:\s*,\s*"(\w+)")?/.exec(out.substring(at, end))
+    if (label === null || taken.indexOf(wordsOf(label[1])) < 0 || ownAction(functions, label[2] ?? '')) { from = end; continue }
     let start = at
     // ui.When(cond, ui.Button(...)): the When goes with it.
     let before = out.substring(0, at)

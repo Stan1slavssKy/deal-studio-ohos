@@ -100,6 +100,12 @@ console.log('screen-order-check: ok')
   // The last in a list takes the comma before it.
   assert.equal(withoutRepeatedButtons('[ui.Text("body", "a"), ui.Button("danger", "Start over", "c", 0, true)]', rest), '[ui.Text("body", "a")]')
   assert.equal(withoutRepeatedButtons(view, 'ui.Button("primary", "Add", "a", 0, true)'), view, 'one-word labels stay')
+  // A button that sets the section's own state is its own action: a quiz's "Start over" restarts the quiz (review of #46).
+  const quiz = '[ui.Text("body", "a"), ui.Button("danger", "Start over", "c", 0, true)]'
+  const restarts = 'function c(state: AppState, ignored: number): AppState {\n  return {c_score: 0__PASSTHROUGH__};\n}'
+  assert.equal(withoutRepeatedButtons(quiz, rest, restarts), quiz, 'own action stays')
+  const clears = 'function c(state: AppState, ignored: number): AppState {\n  return {entries: []__PASSTHROUGH__};\n}'
+  assert.equal(withoutRepeatedButtons(quiz, rest, clears), '[ui.Text("body", "a")]', 'the log\'s action again goes')
   console.log('screen-order-check: no button twice')
 }
 
@@ -109,6 +115,12 @@ console.log('screen-order-check: ok')
   assert.ok(nc2.asksForRounds('Make a homework timer that splits a task into 15-minute focus blocks with real breaks in between.'))
   assert.ok(nc2.asksForRounds('interval training: 30 s work, 10 s rest, 8 rounds'))
   assert.ok(!nc2.asksForRounds('a 10 minute egg timer'))
+  // Review of #46: the words alone are not a turn of work and rest.
+  for (const p of ['Countdown for the rest of the day', 'A 25-minute countdown for the rest of my study session',
+    'tea timer, steep 3 minutes then let it rest', 'sets of reminders', 'blocks of text', '轮胎气压']) {
+    assert.ok(!nc2.asksForRounds(p), p)
+  }
+  assert.ok(nc2.asksForRounds('Pomodoro timer with breaks'))
   console.log('screen-order-check: rounds')
 }
 
@@ -188,6 +200,8 @@ console.log('screen-order-check: ok')
   const nc4 = loadVera('NeedsChoose')
   assert.ok(nc4.asksPoints('Make a chore chart for two kids where stars are earned for tasks and redeemed for rewards we agree on.'))
   assert.ok(!nc4.asksPoints('a list of chores for the week'))
+  assert.ok(!nc4.asksPoints('Track API tokens I spend'))
+  assert.ok(nc4.asksPoints('points the kids spend on screen time'))
   const sketch = c.parseSketch(JSON.stringify({title: 'Stars', inputs: [{id: 'kidOne', label: 'First kid', kind: 'text', value: 0}], constants: [],
     list: {label: 'Stars earned', fields: [{id: 'task', label: 'Task', kind: 'text'}, {id: 'stars', label: 'Stars', kind: 'number'}]},
     ready: ['the chores the kids can do for stars'], values: [],

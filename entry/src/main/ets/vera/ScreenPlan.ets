@@ -204,7 +204,8 @@ function oneNotice(notices: FragmentSpec[], icon: string = 'warning'): FragmentS
     lines.map((l: string): string => '- ' + l).join('\\n') + '", "", "", "' + icon + '")]));\n}'
   let spec = new FragmentSpec('notice', '', '', [], '', '', '', view, [], [])
   spec.indexed = false
-  spec.viewFirst = style !== 'info'
+  // A banner of what is done differently goes where a single one does (noticeBlock): last, not above every section.
+  spec.viewFirst = icon !== 'info'
   return spec
 }
 

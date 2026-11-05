@@ -38,7 +38,7 @@ export function asksOneTap(prompt: string): boolean {
 export function asksForRounds(prompt: string): boolean {
   // Each word with what makes it a turn of work and rest: "the rest of the day", "sets of reminders" and "blocks of text" are not.
   return /\b(pomodoro|rounds?|intervals?|reps|work and rest|rest (between|periods?|intervals?)|breaks? (in )?between|with (\w+ )?breaks|\d+ ?(s|sec|seconds?|min|minutes?) (of )?(rest|breaks?)|(\d+|\w+) sets\b|sets? of \d+|cycles? of (work|focus|\d+))\b/i.test(prompt) ||
-    /番茄|休息|轮/.test(prompt)
+    /番茄|休息|\d+\s*轮|几轮|每轮|轮次/.test(prompt)
 }
 
 /**
@@ -125,12 +125,12 @@ export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sket
       let oneTap = asksOneTap(prompt) && allowed.indexOf('quick_log') >= 0
       // Points or stars earned and spent on rewards: the ledger, whatever is wired to a tap (it awards and redeems on taps itself).
       // A reading the request gives in a unit the list keeps ("a fever of 37.5°C", a Temperature field): readings with a status.
-      let reading = !asksPoints(prompt) && readsMeasure(sketch, prompt)
-      if (asksPoints(prompt) || reading) {
-        out.forced['list.part'] = forcedChoice(reading ? 'reading_status' : 'points_ledger')
-      }
+      // Only where the plan's facts let a section take the list, as the one-tap log: "text me when a star is added" keeps the part.
+      let ledger = asksPoints(prompt) && allowed.indexOf('points_ledger') >= 0
+      let reading = !asksPoints(prompt) && readsMeasure(sketch, prompt) && allowed.indexOf('reading_status') >= 0
       options!.forEach((describe: string, key: string) => { if (key === PART || allowed.indexOf(key) >= 0) { narrowed.set(key, describe) } })
-      if (asksPoints(prompt) || reading) {
+      if (ledger || reading) {
+        out.forced['list.part'] = forcedChoice(reading ? 'reading_status' : 'points_ledger')
         narrowed = new Map<string, string>([[reading ? 'reading_status' : 'points_ledger', 'the request says so']])
       } else if (oneTap) {
         out.forced['list.part'] = forcedChoice('quick_log')
@@ -244,7 +244,10 @@ export function requestedMeasures(prompt: string): [number, string][] {
  */
 export function seedFromRequest(sketch: Sketch, prompt: string): string {
   if (sketch.list === null) { return '' }
-  let measures = requestedMeasures(prompt)
+  // Not the size of a tap or a goal ("log 250 ml with one tap", "get down to 70 kg"): what was not measured is no reading. Millilitres
+  // and kilometres are sizes and goals far more often than readings, as readsMeasure has them.
+  let measures = requestedMeasures(prompt).filter((p: [number, string]): boolean => p[1] !== 'ml' && p[1] !== 'km' &&
+    !aimedAt(prompt, p[0]))
   if (measures.length === 0) { return '' }
   let done: string[] = []
   for (let unit of measures.map((p: [number, string]): string => p[1]).filter((u: string, i: number, a: string[]): boolean => a.indexOf(u) === i)) {
@@ -257,6 +260,22 @@ export function seedFromRequest(sketch: Sketch, prompt: string): string {
     done.push(fields[0].label + ' starts with ' + values[0][0].toString())
   }
   return done.join('; ')
+}
+
+/** Whether the request names `value` as a goal, a limit or the size of a tap rather than as a reading it has now. */
+function aimedAt(prompt: string, value: number): boolean {
+  let digits = /(\d+(?:[.,]\d+)?)/g
+  let m = digits.exec(prompt)
+  while (m !== null) {
+    if (parseFloat(m[1].replace(',', '.')) === value) {
+      let before = prompt.substring(Math.max(0, m.index - 30), m.index)
+      let after = prompt.substring(m.index, Math.min(prompt.length, m.index + m[0].length + 30))
+      if (/\b(goal|target|aim|reach|get (down |up )?to|lose|gain|under|below|above|over|at least|at most|up to|limit|per|each|every|log|add)\b\W*(\w+\W+)?$/i.test(before) ||
+        /^[\d.,]+\s*[^\s\d]+\s+(a |per |each |with one |with a )?(goal|target|day|tap)\b/i.test(after)) { return true }
+    }
+    m = digits.exec(prompt)
+  }
+  return false
 }
 
 /** Labels of inputs that are settings by their words: a goal, a limit, a size, a gap, quiet or sleep hours, a warning level. */
@@ -426,7 +445,8 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
   // What the request's words settled stands whether or not Jev answered the rest.
   let forcedKeys = Object.keys(choose.forced)
   if (forcedKeys.length > 0) {
-    if (answers === null) { answers = {}; skipped = forcedKeys.slice() }
+    // Added to what is already settled, not in its place: the plan's facts settled clock.part and the rest whether or not Jev was asked.
+    if (answers === null) { answers = {}; skipped = skipped.concat(forcedKeys.filter((k: string): boolean => skipped.indexOf(k) < 0)) }
     for (let k of forcedKeys) { answers![k] = choose.forced[k] }
   }
   throwIfCancelled(cancellation)
