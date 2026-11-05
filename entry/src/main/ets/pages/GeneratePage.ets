@@ -331,6 +331,8 @@ export struct GeneratePage {
   @State stages: Stage[] = []
   /** Which of Jev, Exa and DeepSeek answered in this run and which did not: the Metrics tab's last card. */
   @State services: ServiceNote[] = []
+  /** What the composer left out of the last screen, and why (ComposeResult.dropped), for the Metrics tab. */
+  @State leftOut: string[] = []
   /** The lookups of this run (find_sdk_function, find_intent_function, find_ui_component, web_search), for the Metrics tab. */
   @State tools: ToolCall[] = []
   /** Whether the tool calls card shows every call or only its total: closed until tapped. */
@@ -1025,6 +1027,7 @@ export struct GeneratePage {
     this.sideCalls = []
     this.stages = []
     this.services = []
+    this.leftOut = []
     resetServiceHealth()
     this.troubleNote = ''
     this.tools = []
@@ -1245,7 +1248,11 @@ export struct GeneratePage {
     // Where the time went (the plan, the choosing, the sketch) is on the Metrics tab, not in this line.
     this.status = 'Ready in ' + ((this.totalMs - waited) / 1000).toFixed(1) + ' s' +
       (waited > 0 ? ' (and ' + (waited / 1000).toFixed(1) + ' s waiting for your answer)' : '') +
-      (composed.dropped.length > 0 ? ' · ' + composed.dropped.length.toString() + (composed.dropped.length === 1 ? ' part' : ' parts') + ' not included' : '')
+      (composed.dropped.length > 0 ? ' · ' + composed.dropped.length.toString() + (composed.dropped.length === 1 ? ' part' : ' parts') +
+        ' not included (Metrics)' : '')
+    // Which, and why, on the Metrics tab: the line has room for the count only, and only the count left a person missing a figure
+    // with no way to see which (review of #46).
+    this.leftOut = composed.dropped.slice()
     let endFields: Record<string, Object> = {}
     endFields['ok'] = true
     endFields['attempt'] = 0
@@ -2708,6 +2715,19 @@ export struct GeneratePage {
     }
   }
 
+  /** What the screen does not include of the plan, one line each with why: "Day length": the itinerary's own times. */
+  @LocalBuilder
+  leftOutPanel() {
+    MetricCard({ title: 'Not included', value: this.leftOut.length.toString() }) {
+      ForEach(this.leftOut, (line: string) => {
+        Text(leftOutLine(line))
+          .fontSize(12)
+          .fontColor(app.inkStrong)
+          .width('100%')
+      }, (line: string, index: number) => index.toString() + line)
+    }
+  }
+
   /**
    * The program the model wrote itself (a run the agent did not serve, or a refine): how long it took, what the compiler cost,
    * each attempt, and the runs before it.
@@ -3345,6 +3365,7 @@ export struct GeneratePage {
           if (this.mode !== MODE_SERVER && (this.sideCalls.length > 0 || this.attempts.length > 0)) { this.tokensPanel() }
           if (this.stages.length > 0 || this.attempts.length > 0 || this.tools.length > 0) { this.toolsPanel() }
           if (this.services.length > 0) { this.servicesPanel() }
+          if (this.leftOut.length > 0) { this.leftOutPanel() }
           if (this.attempts.length === 0 && this.stages.length === 0) {
             Text('No run yet').fontSize(13).fontColor(app.inkDisabled).width('100%').textAlign(TextAlign.Center).padding({ top: 12 })
           }
@@ -3702,4 +3723,9 @@ export struct GeneratePage {
     .onShown(() => { this.destinationShown() })
     .onHidden(() => { this.destinationHidden = true })
   }
+}
+
+/** One of the composer's left-out notes as a person reads it: 'value "Pace": ...' is '"Pace": ...'. */
+function leftOutLine(line: string): string {
+  return line.replace(/^(value|input|field|figure) (?=")/, '')
 }
