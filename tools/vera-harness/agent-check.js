@@ -136,11 +136,12 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
       'sections.push(ui.Section("content", "", "", [ui.Button("primary", "Count " + ui.numberToString(state.c_count), "c_bump", 0, true)]));')
     const broken = good.replace('state.c_count + 1', 'state.c_cuont + 1')
     const asks = []
-    const run = async replies => {
+    const run = async (replies, finish) => {
       const request = Object.assign(new CustomRequest(), {needs: ['a counter'], prompt: 'tip calculator with a counter',
         compose: s => c.assembleProgram(comp, [], s)})
       asks.length = 0
-      return writeSection(request, 'LANGUAGE', async (system, user, budget, think) => { asks.push({system, user, budget, think}); return replies.shift() })
+      return writeSection(request, 'LANGUAGE', async (system, user, budget, think) => { asks.push({system, user, budget, think}); return replies.shift() },
+        undefined, finish)
     }
     assert.equal(parseSection('no tags'), null)
     assert.equal(parseSection(good).stateFields[0].name, 'c_count')
@@ -278,6 +279,14 @@ const request = (prompt, widget = false) => Object.assign(new AgentRequest(), {p
     r = await run([good.split('<view>')[0] + '<view>\nsections.push(', good])
     assert.ok(r.section !== null)
     assert.ok(asks[1].budget > asks[0].budget)
+    // Cut off is the model stopping at the limit: told it did, the same; told it ended the reply itself, a reply without the
+    // tags is not in the form, and the next ask has the section's room, not the screen's (review of #46).
+    r = await run([good.split('<view>')[0] + '<view>\nsections.push(', good], () => 'length')
+    assert.ok(r.section !== null && asks[1].budget > asks[0].budget)
+    r = await run(['Here is a counter: tap to count.', good], () => 'stop')
+    assert.ok(r.section !== null)
+    assert.equal(asks[1].budget, asks[0].budget)
+    assert.doesNotMatch(r.failed, /cut off/)
   }
 
   // Questions: Jev keeps only those a default cannot stand in for; the person's answer, when it differs from the

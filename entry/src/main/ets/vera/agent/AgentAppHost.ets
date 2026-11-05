@@ -45,8 +45,10 @@ export function appAgentHost(status: (text: string) => void, preview: (vbc2: str
   host.askCode = async (system: string, user: string, budget: number, think: boolean): Promise<string | null> => {
     checkAgent(host)
     try {
-      return await deepseek.extractTemplateContent(system, user, budget,
+      let answer = await deepseek.extractTemplateAnswer(system, user, budget,
         think ? 'A section of its own, thinking' : 'A section of its own', think, operation)
+      host.lastCodeFinish = answer.finishReason
+      return answer.text
     } finally {
       checkAgent(host)
     }

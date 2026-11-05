@@ -380,7 +380,7 @@ function check(source: string, scene: boolean = false, unreadToo: boolean = true
 }
 
 export async function writeSection(request: CustomRequest, language: string, ask: CodeAsk,
-    cancellation?: OperationCancellation): Promise<CustomResult> {
+    cancellation?: OperationCancellation, finish: () => string = (): string => ''): Promise<CustomResult> {
   throwIfCancelled(cancellation)
   let result = new CustomResult()
   let started = Date.now()
@@ -464,7 +464,11 @@ export async function writeSection(request: CustomRequest, language: string, ask
       mode = 'edit'
     }
     mending = ''
-    truncated = reply.indexOf('</view>') < 0 && reply.indexOf('<cannot') < 0
+    // Cut off at the token limit: no </view>, and the model did not end the reply itself. A reply that ended without the tags
+    // (prose, code in a fence) is not cut off and is not given the whole screen's room for it (review of #46); when the host
+    // cannot tell why it stopped, a missing </view> is taken as cut off, as before.
+    let stopped = finish()
+    truncated = reply.indexOf('</view>') < 0 && reply.indexOf('<cannot') < 0 && (stopped === 'length' || stopped === '')
     // The same reply twice is the same failure twice (temperature 0): the next try is the thinking one.
     if (reply === previous && !think) { editRounds = EDIT_ROUNDS; wholes = REPAIRS + 1 }
     previous = reply

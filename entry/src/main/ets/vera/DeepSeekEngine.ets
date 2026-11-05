@@ -128,6 +128,14 @@ const TOOLS_OFF = 'off'
  * One of the small model calls that is not the program itself: the text for a block, a block's function bodies, the second
  * opinion on a weak pick, the choice of UI components. Kept per run so the Metrics tab can show what each cost.
  */
+
+/** A side call's reply and why the model stopped ("length" when the token limit ended it, "stop" when it ended it itself, "" unknown). */
+export class SideAnswer {
+  text: string | null
+  finishReason: string
+  constructor(text: string | null, finishReason: string) { this.text = text; this.finishReason = finishReason }
+}
+
 export class SideCall {
   purpose: string = ''
   ms: number = 0
@@ -1038,20 +1046,28 @@ export class DeepSeekEngine {
   async extractTemplateContent(systemPrompt: string, userPrompt: string, maxTokens: number,
       purpose: string = 'Text for the blocks', thinking: boolean = false,
       cancellation?: OperationCancellation): Promise<string | null> {
+    let answer = await this.extractTemplateAnswer(systemPrompt, userPrompt, maxTokens, purpose, thinking, cancellation)
+    return answer.text
+  }
+
+  /** extractTemplateContent with why the model stopped: "length" when it ran out of tokens, "stop" when it ended the reply. */
+  async extractTemplateAnswer(systemPrompt: string, userPrompt: string, maxTokens: number,
+      purpose: string = 'Text for the blocks', thinking: boolean = false,
+      cancellation?: OperationCancellation): Promise<SideAnswer> {
     throwIfCancelled(cancellation)
-    if (!settings.hasApiKey()) { return null }
+    if (!settings.hasApiKey()) { return new SideAnswer(null, '') }
     let worker = this.newOperation(cancellation)
     let version = this.sideCallsVersion
-    return this.runOperation<string | null>(worker,
-      (): Promise<string | null> => worker.extractTemplateContentInternal(systemPrompt, userPrompt, maxTokens, purpose, thinking), (): void => {
+    return this.runOperation<SideAnswer>(worker,
+      (): Promise<SideAnswer> => worker.extractTemplateContentInternal(systemPrompt, userPrompt, maxTokens, purpose, thinking), (): void => {
         this.publishSideCalls(worker, version)
       })
   }
 
   private async extractTemplateContentInternal(systemPrompt: string, userPrompt: string, maxTokens: number,
-      purpose: string, thinking: boolean): Promise<string | null> {
+      purpose: string, thinking: boolean): Promise<SideAnswer> {
     throwIfCancelled(this.operationCancellation)
-    if (!settings.hasApiKey()) { return null }
+    if (!settings.hasApiKey()) { return new SideAnswer(null, '') }
     let messages: Record<string, Object>[] = []
     messages.push(plainMessage('system', systemPrompt))
     messages.push(plainMessage('user', userPrompt))
@@ -1066,12 +1082,12 @@ export class DeepSeekEngine {
       throwIfCancelled(this.operationCancellation)
       this.recordSideCall(purpose, startedAt, turn)
       console.info('VERA-TEMPLATE-CONTENT ms=' + (Date.now() - startedAt).toString())
-      return extractVeraSource(turn.content)
+      return new SideAnswer(extractVeraSource(turn.content), turn.finishReason)
     } catch (e) {
       throwIfCancelled(this.operationCancellation)
       this.recordSideCall(purpose, startedAt, null)
       console.warn('VERA-TEMPLATE-CONTENT failed: ' + (e as Error).message)
-      return null
+      return new SideAnswer(null, '')
     } finally {
       this.thinking = savedThinking
       this.generating = false

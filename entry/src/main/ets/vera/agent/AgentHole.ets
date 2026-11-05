@@ -172,7 +172,7 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
   }
   asked.phone = found.join('\n\n')
   checkAgent(host)
-  let written = await writeSection(asked, host.language, host.askCode!, cancellation)
+  let written = await writeSection(asked, host.language, host.askCode!, cancellation, (): string => host.lastCodeFinish)
   checkAgent(host)
   // A refusal of several needs at once says nothing of each: a need the phone can do is not lost with one it cannot. Each is
   // then written on its own, with only the functions found for it.
@@ -189,7 +189,7 @@ export async function writeHole(plan: ScreenPlan, prompt: string, hints: string[
       one.compose = asked.compose
       one.verify = host.askJev
       one.phone = texts[i].length > 0 ? 'For "' + slots[i].need + '":\n' + texts[i].substring(0, LOOKUP_CHARS) : ''
-      let single = await writeSection(one, host.language, host.askCode!, cancellation)
+      let single = await writeSection(one, host.language, host.askCode!, cancellation, (): string => host.lastCodeFinish)
       checkAgent(host)
       settle(plan, prompt, [slots[i]], one, single, host)
     }
