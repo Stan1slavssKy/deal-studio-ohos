@@ -1801,8 +1801,10 @@ class Stop {
  */
 function itineraryFragment(): FragmentSpec {
   let navigate: Map<string, string> = new Map<string, string>()
-  navigate.set('true', 'yes, each stop has a button that opens it in the maps app for directions')
-  navigate.set('false', 'no navigation is asked for')
+  // Asked as what the stops are, not whether the request says "navigation": a day out or a trip seldom does (West Lake, a family
+  // day, had no button). Off when unsure: a button that opens the maps app on a hall of a museum is worse than none.
+  navigate.set('true', 'yes, the stops are separate places on a map that the person travels between (a trip, a tour, a day out in a city, a layover), or the request asks for directions')
+  navigate.set('false', 'no, the stops are in one venue (rooms of a museum, rides of a park, a conference or a wedding), or steps of a routine or a schedule rather than places')
   let calendar: Map<string, string> = new Map<string, string>()
   calendar.set('true', 'yes, each stop can be added to the phone calendar, with buttons to open the calendar and remove the added events')
   calendar.set('false', 'no calendar is asked for')
@@ -1847,6 +1849,24 @@ function firstIDX(state: AppState): number {
   let given: number = __PORT_start__;
   if (given >= 0 && given <= 1439) { return given; }
   return state.startMinIDX;
+}
+
+// " +1 day" after a time that is past midnight (a long day, or long gaps between stops), so 00:34 is not read as this night's
+// start; "" on the first day.
+function dayMarkIDX(at: number): string {
+  let days: number = 0;
+  let rest: number = at;
+  while (rest >= 1440) { days = days + 1; rest = rest - 1440; }
+  if (days === 0) { return ""; }
+  if (days === 1) { return " +1 day"; }
+  return " +" + ui.numberToString(days) + " days";
+}
+
+// Whether a stop has somewhere for the maps app to go. The stops' writer gives coordinates for a place it knows and leaves them empty
+// for one it does not, or for a meal or a break that is not a place (West Lake: every sight had them, "Lunch" had none); by name
+// alone the maps app opens whatever it finds for "Lunch".
+function navigableIDX(s: Stop): boolean {
+  return s.latitude !== "" && s.longitude !== "";
 }
 
 function visibleStopsIDX(state: AppState): number {
@@ -2012,20 +2032,28 @@ function onOpenedIDX(state: AppState, value: string): AppState {
         endsAt = at + s.minutes;
         let icon: string = "pin";
         let rowStyle: string = "default";
-        let reachedText: string = "";
-        if (s.done) { icon = "check"; rowStyle = "success"; reachedText = "Reached"; }
-        let subtitle: string = ui.clockToString(at) + " - " + ui.clockToString(at + s.minutes) + " | " + ui.numberToString(s.minutes) + " min";
-        rows.push(ui.ListItem(rowStyle, s.name, subtitle, reachedText, "toggleStopIDX", j, true, icon));
-        // Marking a stop reached is what Navigate starts from: a tap on the row did it, but nothing said so (Istanbul layover).
-        let reachStyle: string = "secondary";
-        if (s.done) { reachStyle = "success"; }
-        let buttons: ui.View[] = [ui.IconButton(reachStyle, "check", "Mark reached", "toggleStopIDX", j, true)];
+        // A reached stop keeps its pin and says so with the row's tone and its green check at the end: a "Reached" text made the
+        // row jump on a tap, and a second check in place of the pin was one too many (Hangzhou).
+        if (s.done) { rowStyle = "success"; }
+        let subtitle: string = ui.clockToString(at) + " - " + ui.clockToString(at + s.minutes) + dayMarkIDX(at + s.minutes) + " | " + ui.numberToString(s.minutes) + " min";
+        rows.push(ui.ListItem(rowStyle, s.name, subtitle, "", "toggleStopIDX", j, true, icon));
+        // A tap on the row marks the stop reached, and the whole row turns green. Where the stops are places to travel between, the
+        // row's one button opens the stop in the maps app, from the last stop reached; elsewhere it is a check that does what the
+        // tap does, since without it nothing said the row could be tapped (Istanbul layover). A stop with no coordinates has no
+        // button (navigableIDX).
+        let buttons: ui.View[] = [];
+        if (showNav && navigableIDX(s)) {
+          buttons.push(ui.IconButton("secondary", "navigate", "Navigate to " + s.name, "navigateIDX", j, true));
+        } else if (!showNav) {
+          let reachStyle: string = "secondary";
+          if (s.done) { reachStyle = "success"; }
+          buttons.push(ui.IconButton(reachStyle, "check", "Mark reached", "toggleStopIDX", j, true));
+        }
         if (showCal) {
           let calText: string = "Add to calendar";
           if (s.eventId !== "") { calText = "In calendar"; }
           buttons.push(ui.Button("secondary", calText, "addEventIDX", j, s.eventId === ""));
         }
-        if (showNav) { buttons.push(ui.Button("primary", "Navigate", "navigateIDX", j, true)); }
         if (buttons.length() > 0) { rows.push(ui.ActionBar("end", buttons)); }
         shown = shown + 1;
       }
@@ -2033,14 +2061,19 @@ function onOpenedIDX(state: AppState, value: string): AppState {
       j = j + 1;
     }
     let ownStartIDX: boolean = __PORT_start__ < 0;
-    // The day's start is what the person sets first; the minutes between stops are a setting, under the stops (Istanbul layover:
-    // they stood above the plan itself).
+    // The day's start is what the person sets first; the minutes between stops are a setting, right under the stops and above the
+    // day's end and length they change (Istanbul layover: they stood above the plan itself; Hangzhou: at the very bottom, under
+    // the summary, they were out of reach of what they move).
     if (ownStartIDX) { sections.push(ui.Section("content", "", "", [ui.TimeField("default", "Day starts", state.startMinIDX, "setStartIDX")])); }
     let emptyText: string = "Nothing is planned yet.";
     if (limit >= 0 && count > 0) { emptyText = "Nothing fits before " + ui.clockToString(limit) + "."; }
-    sections.push(ui.Section("content", "", "", [
+    // With no check on the rows, the section says what a tap on one does.
+    let tapHintIDX: string = "";
+    if (showNav && shown > 0) { tapHintIDX = "Tap a stop when you reach it"; }
+    sections.push(ui.Section("content", "", tapHintIDX, [
       ui.When(shown === 0, ui.EmptyState("default", "No stops", emptyText, "", "", "pin")),
-      ui.When(shown > 0, ui.ListGroup("default", "", rows))
+      ui.When(shown > 0, ui.ListGroup("default", "", rows)),
+      ui.NumberField("default", "Minutes between stops", state.gapIDX, 0, 180, "setGapIDX", 5)
     ]));
     if (shown > 0) {
       let hoursIDX: number = 0;
@@ -2049,8 +2082,11 @@ function onOpenedIDX(state: AppState, value: string): AppState {
       let lengthIDX: string = ui.numberToString(restIDX) + " min";
       if (hoursIDX > 0) { lengthIDX = ui.numberToString(hoursIDX) + " h " + lengthIDX; }
       if (hoursIDX > 0 && restIDX === 0) { lengthIDX = ui.numberToString(hoursIDX) + " h"; }
+      // Past midnight the caption says only that, so it fits on one line (a "+1 day" after it wrapped on the phone).
+      let endsCaptionIDX: string = "after the last stop";
+      if (dayMarkIDX(endsAt) !== "") { endsCaptionIDX = "the next day"; }
       sections.push(ui.Section("content", "", "", [ui.MetricGroup("default", 2, [
-        ui.Stat("default", "Day ends", ui.clockToString(endsAt), "after the last stop", "clock"),
+        ui.Stat("default", "Day ends", ui.clockToString(endsAt), endsCaptionIDX, "clock"),
         ui.Stat("default", "Day length", lengthIDX, ui.numberToString(shown) + " stops", "clock")
       ])]));
     }
@@ -2069,10 +2105,9 @@ function onOpenedIDX(state: AppState, value: string): AppState {
         ui.Button("danger", "Wipe added events", "wipeEventsIDX", 0, true)
       ]));
     }
-    notes.push(ui.NumberField("default", "Minutes between stops", state.gapIDX, 0, 180, "setGapIDX"));
-    sections.push(ui.Section("supporting", "", "", notes));
+    if (notes.length() > 0) { sections.push(ui.Section("supporting", "", "", notes)); }
   }`,
-    [new SlotSpec('__NAVIGATE_IDX__', ['false', 'true'], 'noul', 'Should each stop have a button that opens it in the maps app for directions?', navigate, 0.6,
+    [new SlotSpec('__NAVIGATE_IDX__', ['false', 'true'], 'noul', 'Are the stops separate places on a map that the person travels between, so that each can be opened in the maps app for directions?', navigate, 0.6,
       ['navigate']),
      new SlotSpec('__CALENDAR_IDX__', ['false', 'true'], 'noul', 'Should each stop be addable to the phone calendar, with buttons to open the calendar and to remove the events this app added?', calendar, 0.6,
       ['calendar_add', 'calendar_open', 'calendar_clear'])],
