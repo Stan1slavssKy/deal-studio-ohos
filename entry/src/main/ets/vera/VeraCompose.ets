@@ -1295,6 +1295,21 @@ function wordsOf(text: string): string[] {
 
 function isTime(measure: string): boolean { return measure === 'seconds' || measure === 'minutes' }
 
+/**
+ * A number the person sets in hours: the plan writes one as measure number with "hours" in its unit (NeedsPlan.ets), since
+ * seconds and minutes are the only time measures. It can be what a countdown runs for ("5 hours" became a 5-minute timer beside
+ * an unused "Fly duration" in hours: nothing took it as the length, and the fallback length is 5 minutes).
+ */
+function inHours(input: SketchInput): boolean {
+  return isNumeric(input.kind) && input.measure === 'number' && /^\s*(h|hrs?|hours?)\s*$/i.test(input.unit)
+}
+
+/** What a countdown's length is counted in: seconds, minutes, or hours for an input in hours (inHours). */
+function lengthUnitOf(sketch: Sketch, id: string): string {
+  for (let i of sketch.inputs) { if (i.id === id && inHours(i)) { return 'hours' } }
+  return measureOf(sketch, id)
+}
+
 const TIME_UNITS: Map<string, string> = new Map<string, string>([['seconds', 'a number of seconds'], ['minutes', 'a number of minutes'],
   ['neither', 'not a length of time']])
 
@@ -1334,6 +1349,7 @@ function lengthSources(sketch: Sketch): Map<string, string> {
   let sources: Map<string, string> = new Map<string, string>()
   for (let input of sketch.inputs) {
     if (isNumeric(input.kind) && isTime(input.measure)) { sources.set(input.id, describeInput(input) + ', in ' + input.measure) }
+    else if (inHours(input)) { sources.set(input.id, describeInput(input) + ', in hours') }
     // A choice's numbers are offered whatever measure the sketch wrote: its labels say what they are, and the
     // unit question reads them (a tea timer's 120 / 180 / 300 came marked as a count).
     else if (isLengthChoice(input)) { sources.set(input.id, describeInput(input)) }
@@ -1775,7 +1791,7 @@ export class Composition {
   widgets: Map<string, string> = new Map<string, string>()
   bindings: Map<string, Binding> = new Map<string, Binding>()
   countdownFrom: string = ''
-  /** seconds or minutes: what the countdown's length is counted in. */
+  /** seconds, minutes or hours: what the countdown's length is counted in. */
   countdownUnit: string = 'seconds'
   effects: Map<string, string> = new Map<string, string>()
   /** For each kept event, where each of its effect's arguments comes from (a paramSources key). */
@@ -2408,8 +2424,9 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
       dependsOn(comp, comp.countdownFrom).some((d: string): boolean => CLOCK_OPERANDS.indexOf(d) >= 0)
     if (!unclear) {
       // A worked-out value's unit is its format; an input's or a constant's is Jev's reading of its labels.
-      comp.countdownUnit = measureOf(sketch, comp.countdownFrom)
-      if (answers['unit.' + comp.countdownFrom] !== undefined) {
+      comp.countdownUnit = lengthUnitOf(sketch, comp.countdownFrom)
+      // Hours are the plan's own unit, written in words: no question is asked of them (they are not seconds or minutes).
+      if (comp.countdownUnit !== 'hours' && answers['unit.' + comp.countdownFrom] !== undefined) {
         comp.countdownUnit = answerOf(answers, 'unit.' + comp.countdownFrom, ['seconds', 'minutes'], comp.answers, UNIT_ABOVE)
         if (comp.countdownUnit.length === 0) {
           // Not a length of time at all -- a tea timer once ran from its choice's position, 0 to 2 -- is not used for one.
@@ -3423,7 +3440,7 @@ function clockPart(comp: Composition, fields: Field[]): FragmentSpec {
       let b = comp.bindings.get(v.id)
       if (needed.indexOf(v.id) >= 0 && b !== undefined) { seconds.push('  let ' + v.id + ': number = ' + formulaExpr(b) + ';') }
     }
-    let perUnit = comp.countdownUnit === 'minutes' ? ' * 60' : ''
+    let perUnit = comp.countdownUnit === 'minutes' ? ' * 60' : (comp.countdownUnit === 'hours' ? ' * 3600' : '')
     seconds.push('  return ' + (comp.countdownFrom.length > 0 ? comp.countdownFrom + perUnit : '0') + ';')
     seconds.push('}')
     functions.push(fn(seconds))
@@ -4380,7 +4397,7 @@ export function provisionalProgram(sketch: Sketch, widget: boolean = false): str
     let sources: string[] = []
     lengthSources(sketch).forEach((_d: string, key: string) => { sources.push(key) })
     comp.countdownFrom = sources.length > 0 ? sources[0] : ''
-    comp.countdownUnit = measureOf(sketch, comp.countdownFrom)
+    comp.countdownUnit = lengthUnitOf(sketch, comp.countdownFrom)
   }
   return assembleProgram(comp)
 }
