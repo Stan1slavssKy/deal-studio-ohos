@@ -1782,7 +1782,8 @@ export struct VeraPreview {
 
   /**
    * A list group's children without the action bars that hold one button for the row above them: that button is drawn at the
-   * end of the row (rowButton), so a stop with a Navigate button is one line, not a line and a bar. A bar of two buttons stays below.
+   * end of the row (rowButton), so a stop with a Navigate button is one line, not a line and a bar, and a row's tone (a stop
+   * reached) covers the whole of it. A bar of two buttons stays below.
    */
   private rowChildren(node: LiveNode): LiveNode[] {
     let out: LiveNode[] = []
@@ -1792,7 +1793,7 @@ export struct VeraPreview {
       out.push(row)
       let next = i + 1 < node.children.length ? node.children[i + 1] : null
       if (row.kind === 'listitem' && next !== null && next.kind === 'actionbar' && next.children.length === 1 &&
-          next.children[0].kind === 'button') {
+          (next.children[0].kind === 'button' || next.children[0].kind === 'iconbutton')) {
         this.rowBar.set(row, next.children[0])
         i += 2
       } else {
@@ -2945,9 +2946,12 @@ export struct VeraPreview {
     } else if (node.kind === 'tile') {
       Column({ space: this.t().gapTight }) {
         if (node.icon.length > 0) {
-          this.iconChip(node.icon, this.t().controlHeight - 8,
-            node.style === 'default' ? this.t().primaryFill : this.t().surface,
-            toneInk(this.t(), node.style, this.t().primaryInk))
+          // Keyed for the reason given at the list row's chip.
+          ForEach([node.icon + '|' + node.style], (_key: string) => {
+            this.iconChip(node.icon, this.t().controlHeight - 8,
+              node.style === 'default' ? this.t().primaryFill : this.t().surface,
+              toneInk(this.t(), node.style, this.t().primaryInk))
+          }, (key: string) => key)
         }
         if (node.label.length > 0) {
           Text(node.label).fontSize(this.t().sizeCaption).fontFamily(this.textFamily())
@@ -3758,9 +3762,13 @@ export struct VeraPreview {
     } else if (node.kind === 'listitem') {
       Row({ space: this.t().gapBase + 2 }) {
         if (node.icon.length > 0) {
-          this.iconChip(node.icon, this.t().controlHeight - 4,
-            toneFill(this.t(), node.style, this.t().primaryFill),
-            toneInk(this.t(), node.style, this.t().primaryInk))
+          // Keyed on the icon and the tone: iconChip takes its arguments by value and is not drawn again when they change, so a
+          // stop ticked as reached kept its pin on a neutral disc while the row around it turned green.
+          ForEach([node.icon + '|' + node.style], (_key: string) => {
+            this.iconChip(node.icon, this.t().controlHeight - 4,
+              toneFill(this.t(), node.style, this.t().primaryFill),
+              toneInk(this.t(), node.style, this.t().primaryInk))
+          }, (key: string) => key)
         } else if (node.iconRoom) {
           // Not a Blank: in a Row that grows to take the free width.
           Column().width(this.t().controlHeight - 4).height(this.t().controlHeight - 4)
