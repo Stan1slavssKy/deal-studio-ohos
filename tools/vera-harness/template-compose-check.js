@@ -19,7 +19,9 @@ const defaults = kind => {
 const globals = new Map([['__THEME__', 'clean'], ['__HEADER_STYLE__', 'default'], ['__BANNER_SECTION__', 'hide']])
 const cases = []
 for (const a of kinds) cases.push([a])
-for (const a of kinds) for (const b of kinds) cases.push([a, b])
+// A block whose names are not numbered (FragmentSpec.indexed false: live_figure) is one per screen, so it is not paired with itself.
+const single = new Set(fragments().filter(f => !f.indexed).map(f => f.kind))
+for (const a of kinds) for (const b of kinds) if (a !== b || !single.has(a)) cases.push([a, b])
 const results = cases.map(chosen => {
   const label = chosen.join('+')
   try {

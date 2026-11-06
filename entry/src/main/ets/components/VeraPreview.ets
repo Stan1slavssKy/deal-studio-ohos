@@ -168,6 +168,27 @@ const READING_TOP: number = 40
 /** Nodes a button's form does not reach past (touchFormOf). */
 const FORM_BOUNDS: string[] = ['section', 'card', 'sheet', 'dialog']
 
+/**
+ * A TileGrid's tiles in rows: a tile of span 2 alone, the others two at a time. What is not a tile (a ui.When that is off draws
+ * a spacer) takes no place, so it leaves no hole in a pair.
+ */
+function tileRows(children: LiveNode[]): LiveNode[][] {
+  let rows: LiveNode[][] = []
+  let open: LiveNode[] = []
+  for (let child of children) {
+    if (child.kind !== 'tile') { continue }
+    if (child.columns >= 2) {
+      if (open.length > 0) { rows.push(open); open = [] }
+      rows.push([child])
+      continue
+    }
+    open.push(child)
+    if (open.length === 2) { rows.push(open); open = [] }
+  }
+  if (open.length > 0) { rows.push(open) }
+  return rows
+}
+
 @Component
 export struct VeraPreview {
   /**
@@ -2967,22 +2988,23 @@ export struct VeraPreview {
         if (width > 0 && Math.abs(width - node.layoutWidth) >= 1) { node.layoutWidth = width }
       })
     } else if (node.kind === 'tilegrid') {
-      // Two to a row; a tile of span 2 takes the row. Widths are calc() shares of the row less half the gap,
-      // so the pair and the wide tile line up at both edges.
-      Flex({
-        wrap: FlexWrap.Wrap,
-        justifyContent: FlexAlign.Start,
-        alignItems: ItemAlign.Stretch,
-        space: { main: LengthMetrics.vp(this.t().gapLoose), cross: LengthMetrics.vp(this.t().gapLoose) }
-      }) {
-        ForEach(node.children, (child: LiveNode) => {
-          Column() {
-            this.renderNode(child, 'tilegrid')
+      // Two to a row; a tile of span 2 takes the row. Each row is a Flex of its own that stretches its tiles to the taller one, so
+      // a pair is one height whatever each holds (an icon, a second line). Not one wrapping Flex: in a scroll it had no height to
+      // stretch to, and each tile took the whole screen (live_figure, 2026-11-06).
+      Column({ space: this.t().gapLoose }) {
+        ForEach(tileRows(node.children), (row: LiveNode[]) => {
+          Flex({
+            justifyContent: FlexAlign.Start,
+            alignItems: ItemAlign.Stretch,
+            space: { main: LengthMetrics.vp(this.t().gapLoose) }
+          }) {
+            ForEach(row, (child: LiveNode) => {
+              this.renderNode(child, 'tilegrid')
+            }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
           }
-          .width(child.kind === 'tile' && child.columns >= 2 ? '100%' :
-            'calc(50% - ' + (this.t().gapLoose / 2).toString() + 'vp)')
+          .width('100%')
           // Same keying as renderChildren; see the note there.
-        }, (child: LiveNode, index: number) => index.toString() + ':' + child.kind)
+        }, (row: LiveNode[], index: number) => index.toString() + ':' + row.length.toString())
       }
       .width('100%')
       .padding({ left: this.t().padBase, right: this.t().padBase })
@@ -3010,8 +3032,9 @@ export struct VeraPreview {
             .fontColor(this.t().inkSoft).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
         }
       }
-      .width('100%')
-      .height('100%')
+      // The tile is its row's flex item (see the grid above): its width is its share of the row, less half the gap, so the pair and
+      // the wide tile line up at both edges; its height is the row's, stretched to the taller of the pair.
+      .width(node.columns >= 2 ? '100%' : 'calc(50% - ' + (this.t().gapLoose / 2).toString() + 'vp)')
       .alignItems(HorizontalAlign.Start)
       .padding(this.t().padCard)
       .backgroundColor(toneFill(this.t(), node.style, this.t().surface))

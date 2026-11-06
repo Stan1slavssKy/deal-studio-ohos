@@ -2,6 +2,8 @@ import { BlockCalls } from './SectionFill'
 import { deepseek, discoveryToolResult } from './DeepSeekEngine'
 import { webSearch } from './VeraWebSearch'
 import { OperationCancellation, PredicateCancellation, throwIfCancelled } from './OperationCancellation'
+import { findSource, SourceFound } from './VeraSourceFind'
+import { appSourceCalls } from './SourceAppCalls'
 
 export function appBlockCalls(canSearch: boolean, status: (text: string) => void = (_text: string): void => {},
     cancelled: () => boolean = (): boolean => false, cancellation?: OperationCancellation): BlockCalls {
@@ -16,6 +18,15 @@ export function appBlockCalls(canSearch: boolean, status: (text: string) => void
       check()
       try {
         return await webSearch(query, chars, operation)
+      } finally {
+        check()
+      }
+    }
+    // The live source finder starts from a search too: without one there is nothing to propose an address from.
+    calls.source = async (need: string): Promise<SourceFound> => {
+      check()
+      try {
+        return await findSource(need, appSourceCalls(operation))
       } finally {
         check()
       }

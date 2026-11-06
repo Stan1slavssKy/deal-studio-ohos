@@ -11,7 +11,7 @@
 
 import { OperationCancellation, isCancelled, throwIfCancelled } from './OperationCancellation'
 import { Sketch, SketchInput, ListField, SketchOption, SketchAsk, JevAsk, PlanReview, ComposeResult, composeFromSketch, closePartialJson, sketchSignature, describeSketch,
-  listNeeds, clockOptions, listOptions, choice, askReady, LIST_SECTIONS, LIST_PUBLISHERS, PART } from './VeraCompose'
+  listNeeds, clockOptions, listOptions, choice, askReady, askLive, SketchQuestion, answerTo, keepAnswers, LIST_SECTIONS, LIST_PUBLISHERS, PART } from './VeraCompose'
 import { NeedsPlan, Need, NEEDS_PROMPT, plainScenes, WIDGET_ROOM, WIDGET_NEEDS_NOTE, capForWidget, dropUnasked, NEED_COUNTDOWN, NEED_ACTION, NEED_FIGURE, ON_END, ON_ADDED, ON_TAP, parseNeedsPlan, sketchFrom,
   needOf } from './NeedsPlan'
 
@@ -147,6 +147,10 @@ export function buildChooseRequest(prompt: string, plan: NeedsPlan, sketch: Sket
     askReady(sketch, questions)
     out.settled.push('real_data')
     for (let i = 0; i < sketch.ready.length; i++) { out.settled.push('ready.' + i.toString(), 'whose.' + i.toString()) }
+  }
+  if (sketch.live.length > 0) {
+    askLive(sketch, questions)
+    for (let i = 0; i < sketch.live.length; i++) { out.settled.push('live.' + i.toString()) }
   }
   if (Object.keys(questions).length === 0) { return out }
   let body: Record<string, Object> = {}
@@ -390,6 +394,8 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
   throwIfCancelled(cancellation)
   let settled = review !== null && sketch.questions.length > 0 ? await review(sketch) : ''
   throwIfCancelled(cancellation)
+  // What each question stands at, the person's answer or its default, before a plan drawn again drops the questions.
+  let answered: string[] = sketch.questions.map((q: SketchQuestion): string => answerTo(q)).filter((a: string): boolean => a.length > 0)
   if (settled.length > 0) {
     prompt = prompt + '\n\n' + settled
     let again = Date.now()
@@ -420,6 +426,8 @@ export async function composeNeeds(prompt: string, askPlan: SketchAsk, askChoice
     let redone = sketchFrom(plan)
     if (redone !== null) { redone!.questions = sketch.questions; sketch = redone! }
   }
+  let kept = keepAnswers(sketch, answered)
+  if (kept.length > 0) { console.info('VERA-COMPOSE answers kept: ' + kept) }
   let startedOn = startOnRequested(sketch, prompt)
   markSettings(sketch, prompt)
   let seeded = seedFromRequest(sketch, prompt)

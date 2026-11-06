@@ -51,7 +51,6 @@ import { searchToolSchema, webSearch, SEARCH_TOOL_NAME, SEARCH_CHARS } from './V
 import { OperationCancellation, OperationController, isCancelled, throwIfCancelled, cancellationError } from './OperationCancellation'
 import { noteService, httpFailure, SERVICE_DEEPSEEK } from './ServiceHealth'
 import { noteTool } from './ToolLog'
-import { LIVE_QUERY_PROMPT, parseLiveQuery } from './LiveFigures'
 
 // Application generation uses this budget for both reasoning and source on every attempt.
 export const DEEPSEEK_GENERATION_MAX_TOKENS: number = 32768
@@ -1019,17 +1018,6 @@ export class DeepSeekEngine {
       this.thinking = savedThinking
       this.generating = false
     }
-  }
-
-  /**
-   * The search query for a current figure the requested app shows (LiveFigures.ets), '' when it shows none or on any
-   * failure. Thinking off and a small budget, like extractUiNeeds.
-   */
-  async extractLiveQuery(userPrompt: string, cancellation?: OperationCancellation): Promise<string> {
-    let answer = await this.extractTemplateContent(LIVE_QUERY_PROMPT, userPrompt, 60,
-      'Does it need current figures', false, cancellation)
-    throwIfCancelled(cancellation)
-    return parseLiveQuery(answer === null ? '' : answer)
   }
 
   /**

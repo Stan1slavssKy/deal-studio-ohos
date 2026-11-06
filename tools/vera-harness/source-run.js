@@ -1,9 +1,8 @@
-// Live run of a live source on the host: the finder (Exa + DeepSeek + the real API), the program written on its note by DeepSeek
-// with the generation prompt (up to three attempts, the error fed back as Generate does), then the program run as the phone runs
-// it: each handler tapped until one asks for Vera.Source.fetch, the real GET made by VeraSource.sourceFetch, the answer handed
-// to the program's handler, and the screen's texts printed. Needs ARKESTR_API_KEY (DeepSeek) and EXA_API_KEY.
-//   node tools/vera-harness/source-run.js ["prompt" ...]
-const fs = require('node:fs'), path = require('node:path')
+// Live run of the live_figure section on the host: the finder (Exa + DeepSeek + the real API) or, with no API, a search on each
+// refresh, the section's call written by the host (LiveBlock.ets), then the program run as the phone runs it: its ticker ticked
+// until it asks for Vera.Source.fetch or Vera.Live.fetch, the real call made, the answer handed to its handler, and the screen's
+// texts printed. Needs ARKESTR_API_KEY (DeepSeek) and EXA_API_KEY. Each argument is a figure, as a plan would name it.
+//   node tools/vera-harness/source-run.js ["figure" ...]
 const {loadVera} = require('./source-loader')
 // The platform http module, on node's fetch (GET and POST), for VeraSource.httpGetText and the Exa search.
 globalThis.__veraHttp = () => ({destroy() {}, on() {}, async request(url, o) {
@@ -16,10 +15,9 @@ const {settings} = loadVera('SettingsStore')
 Object.assign(settings, {hasExaKey: () => true, getExaKey: () => process.env.EXA_API_KEY, hasApiKey: () => true,
   getApiKey: () => process.env.ARKESTR_API_KEY, getBaseUrl: () => 'https://api.deepseek.com', getModel: () => 'deepseek-flash'})
 const {compileVeraSource} = loadVera('VeraCompiler'), {smokeRun} = loadVera('VeraSmoke')
+const LB = loadVera('LiveBlock'), C = loadVera('VeraCompose'), {composeProgram} = loadVera('VeraSectionCompose'), {LIVE_KIND} = loadVera('VeraTemplates')
 const {VirtualMachine, deserializeVbc2, VeraStringValue, VeraNumberValue, VeraBooleanValue} = loadVera('VeraInterpreter')
-const {UiHostEnvironment, decodeVeraUi} = loadVera('VeraUi'), {describeCatalogForPrompt} = loadVera('VeraUiCatalog')
-const skill = fs.readFileSync(path.join(__dirname, '../../entry/src/main/resources/rawfile/vera-skill.txt'), 'utf8')
-const language = skill.replace('{{UI_CATALOG}}', describeCatalogForPrompt(null)).replace('{{UI_TOOL_NOTE}}', '')
+const {UiHostEnvironment, decodeVeraUi} = loadVera('VeraUi')
 
 async function ds(messages, maxTokens) {
   const r = await fetch('https://api.deepseek.com/chat/completions', {method: 'POST',
@@ -32,7 +30,6 @@ async function exa(query) {
     body: JSON.stringify({query, numResults: 6, contents: {text: {maxCharacters: 1200}}})})
   const b = await r.json(); return (b.results || []).map((x, i) => `${i + 1}. ${x.title} (${x.url})\n${(x.text || '').slice(0, 1200)}`).join('\n\n')
 }
-const sourceOf = text => { const m = /```[a-z]*\n([\s\S]*?)```/.exec(text); return (m ? m[1] : text).trim() }
 
 function texts(nodes, out = []) { for (const n of nodes) { if (n.text) out.push(n.text); if (n.kind === 'numbertext') out.push(String(n.numberValue)); texts(n.children || [], out) } return out }
 function plain(kind) { return kind === 'string' ? new VeraStringValue('') : kind === 'boolean' ? new VeraBooleanValue(true) : new VeraNumberValue(kind === 'number' ? 1000 : 0) }
@@ -63,42 +60,22 @@ async function runApp(compiled) {
 }
 
 ;(async () => {
-  const prompts = process.argv.slice(2).length ? process.argv.slice(2) : ['Current weather in Moscow, auto-updated regularly', 'Live IMOEX value']
-  for (const prompt of prompts) {
+  const figures = process.argv.slice(2).length ? process.argv.slice(2) : ['Current temperature in Moscow', 'IMOEX index value', 'Bitcoin price in USD']
+  for (const label of figures) {
     const t0 = Date.now()
     const calls = new F.SourceCalls()
     calls.search = exa
     calls.askJson = (system, user) => ds([{role: 'system', content: system}, {role: 'user', content: user}], 1200)
     calls.get = url => S.httpGetText(url)
-    const query = (await ds([{role: 'system', content: loadVera('LiveFigures').LIVE_QUERY_PROMPT}, {role: 'user', content: prompt}], 60)).trim()
-    const found = await F.findSource(prompt + '\nThe figure to fetch: ' + query, calls)
-    console.log('\n== ' + prompt + '\n   query: ' + query + '\n   source: ' + (found.spec ? found.spec.url + ' -> ' + found.spec.labels.map((l, i) => l + '=' + found.spec.values[i]).join(', ') : 'NONE ' + found.tried.join('; ')) + '  (' + (found.ms / 1000).toFixed(1) + ' s)')
-    let spec = found.spec, extra = ''
-    if (!spec) {
-      // No API: the program reads the figure off a search on each refresh, starting from the results of one made now.
-      const results = await exa(query)
-      if (!results) { console.log('   search found nothing: the route'); continue }
-      spec = F.searchSpec(query)
-      extra = '\n\n' + loadVera('LiveFigures').liveFiguresNote('Web results for "' + query + '".\n' + results)
-      console.log('   fallback: Vera.Live.fetch "' + query + '"')
-    }
-    found.spec = spec
-    const genStart = Date.now()
-    let feedback = '', program = '', ok = false, attempt = 0
-    for (attempt = 1; attempt <= 3 && !ok; attempt++) {
-      const reply = await ds([{role: 'system', content: language}, {role: 'user', content: prompt + '\n\n' + F.sourceNote(found.spec) + extra + feedback}], 8000)
-      program = sourceOf(reply)
-      let err = ''
-      try { const c = compileVeraSource(program); err = smokeRun(c) || F.sourceUseError(program, found.spec) || F.sourceShownError(program, c.vbc2, found.spec) } catch (e) { err = e.message }
-      if (!err) { ok = true; break }
-      console.log('   attempt ' + attempt + ': ' + err.split('\n')[0].slice(0, 200))
-      feedback = '\n\nThe previous program:\n' + program + '\n\nIt failed: ' + err + '\nWrite the whole program again, fixed.'
-    }
-    console.log('   program: ' + (ok ? 'ok on attempt ' + attempt + ', ' + program.split('\n').length + ' lines' : 'FAILED') + ' (' + ((Date.now() - genStart) / 1000).toFixed(1) + ' s)')
-    if (!ok) continue
-    const name = prompt.replace(/\W+/g, '-').toLowerCase().slice(0, 40)
-    fs.writeFileSync(path.join(process.env.SOURCE_RUN_OUT || '/tmp', name + '.vera'), program)
-    const run = await runApp(compileVeraSource(program))
+    const figure = Object.assign(new C.SketchLive(), {id: 'figure', label, means: label, query: label})
+    const filled = await LB.fillLive('Show ' + label + ' as it is now', [figure], need => F.findSource(need, calls), true)
+    console.log('\n== ' + label + '\n   ' + (filled.failed || filled.note) + '  (' + (filled.ms / 1000).toFixed(1) + ' s)')
+    if (filled.failed) continue
+    const src = composeProgram([LIVE_KIND], new Map([['__TITLE__', label], ['__THEME__', 'clean']]), [filled.values])
+    const compiled = compileVeraSource(src)
+    const smoke = smokeRun(compiled)
+    if (smoke) { console.log('   smoke: ' + smoke.split('\n')[0]); continue }
+    const run = await runApp(compiled)
     console.log('   run: via ' + run.via + (run.answer ? '\n   answer: ' + run.answer + ' (' + run.fetchMs + ' ms)\n   screen: ' + run.screen : ''))
     console.log('   total ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s')
   }

@@ -204,6 +204,7 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       let said: string = comp.sketch.ready.length > 0 ? '\n\nThe plan says the sections are for: ' + comp.sketch.ready.join(' | ') : ''
       blocks.prompt = (fixed.length > 0 ? request.prompt + '\n\nThe plan fixes: ' + fixed.join('; ') : request.prompt) + said
       blocks.realData = comp.realData
+      blocks.live = comp.live
       blocks.offset = partCount(comp)
       blocks.compose = (filled: Map<string, string>[], _globals: Map<string, string>): string => assembleProgram(comp, filled)
       // What each section is to offer (a button for each item, a calendar) is read from the request, as the blocks' own route
@@ -233,9 +234,10 @@ export async function runAgent(request: AgentRequest, host: AgentHost): Promise<
       let fill = await host.fillBlocks(blocks)
       checkAgent(host)
       let fillMs = Date.now() - fillStart
-      let named = Math.max(0, fill.searchMs) + fill.contentMs + fill.holesMs
+      let named = Math.max(0, fill.searchMs) + Math.max(0, fill.liveMs) + fill.contentMs + fill.holesMs
       // The phone-function lookups a hole makes before the model writes it are the phone's wait, not the model's.
       let holeLookups = Math.min(toolSpanSince(fillTools), fill.holesMs)
+      addStage(result.stages, 'Finding a live source', WHO_SEARCH, fill.liveMs, fill.liveNote.substring(0, 300))
       addStage(result.stages, 'Looking up real data', WHO_SEARCH, fill.searchMs)
       addStage(result.stages, 'Text of the sections', WHO_MODEL, fill.contentMs)
       addStage(result.stages, 'Looking up phone functions for the sections', WHO_PHONE, holeLookups)

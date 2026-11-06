@@ -57,13 +57,8 @@ assert.match(shown.marketdata.data[3], /9 items/)
   assert.equal(found.spec.asofValue, '13:51:05')
   assert.equal(found.tried.length, 2); assert.match(found.tried[0], /HTTP 404/); assert.match(found.tried[1], /https/)
   assert.deepEqual(got, ['https://broken.example.com/q', 'https://iss.moex.com/x.json', 'https://iss.moex.com/x.json'], 'fetched twice before taken')
-  // The call as the program must write it, and the check that it does.
-  const call = F.sourceCall(found.spec, 'onSource')
-  assert.equal(call, 'sdk.call("Vera.Source.fetch", ["url", "https://iss.moex.com/x.json", "paths", "marketdata.data[0][1]", "asof", "marketdata.data[0][2]"], "onSource");')
-  assert.match(F.sourceNote(found.spec), /IMOEX = 2446\.64 \(points\)/)
-  assert.equal(F.sourceUseError('x ' + call + ' ui.Ticker("default", "live", 1000, true, "onTick")', found.spec), '')
-  assert.match(F.sourceUseError('x ' + call, found.spec), /ui\.Ticker/)
-  assert.match(F.sourceUseError('let v: number = 2446.64;', found.spec), /must get its live figures itself/)
+  // The call's parameters as the live section writes them (LiveBlock.ets).
+  assert.equal(F.sourceArgs(found.spec, 'ignored'), '["url", "https://iss.moex.com/x.json", "paths", "marketdata.data[0][1]", "asof", "marketdata.data[0][2]"]')
   // The program handed an answer of the source's shape must show what it says: a handler reading the time from the wrong line
   // is sent back with the lines and their places. The figures it started with do not count.
   const {compileVeraSource} = loadVera('VeraCompiler')
@@ -92,14 +87,9 @@ assert.match(shown.marketdata.data[3], /9 items/)
     const smallShown = small.replace('ui.Text("caption", state.asOf)', 'ui.Text("caption", state.asOf), ui.Text("caption", "iss.moex.com")')
     assert.match(F.sourceShownError(smallShown, compileVeraSource(smallShown).vbc2, two), /without the figure 3/)
   }
-  // The paths are copied as found too, and a port in the address does not hide the domain.
-  {
-    const call = F.sourceCall(spec, 'onSource')
-    assert.match(F.sourceUseError('x ' + call.replace('marketdata.data[0][1]', 'marketdata.data[0][2]') + ' ui.Ticker(', spec), /must get its live figures itself/)
-    const ported = Object.assign(new S.SourceSpec(), spec, {url: 'https://iss.moex.com:443/x.json'})
-    assert.match(F.sourceNote(ported), /checked just now, iss\.moex\.com\./)
-  }
-  console.log('PASS live source: answer read at paths, address rules, finder passes over failures and checks paths on a second fetch, the call and its check')
+  // A port in the address does not hide the domain.
+  assert.equal(S.domainOf('https://iss.moex.com:443/x.json'), 'iss.moex.com')
+  console.log('PASS live source: answer read at paths, address rules, finder passes over failures and checks paths on a second fetch, the call\'s parameters')
 })().catch(e => { console.error(e); process.exit(1) })
 
 // No API found: the program reads the figure off a search (Vera.Live.fetch) and is held to the same checks, with a made-up answer
@@ -107,23 +97,18 @@ assert.match(shown.marketdata.data[3], /9 items/)
 {
   const {compileVeraSource} = loadVera('VeraCompiler')
   const spec = F.searchSpec('Apple stock price now')
-  assert.match(F.sourceCall(spec, 'onSource'), /^sdk\.call\("Vera\.Live\.fetch", \["query", "Apple stock price now", "labels", /)
-  assert.match(F.sourceNote(spec), /No public data source[\s\S]*every five minutes at most/)
+  assert.equal(F.sourceArgs(spec, 'Price'), '["query", "Apple stock price now", "labels", "Price"]')
   const program = fs.readFileSync(path.join(__dirname, 'examples/widget-source.vera'), 'utf8')
     .split('\n').map(line => line.includes('"Vera.Source.fetch"') ? '  sdk.call("Vera.Live.fetch", ["query", "Apple stock price now", "labels", "Price"], "onSource");' : line).join('\n')
     .replace('ui.Text("caption", state.asOf)', 'ui.Text("caption", state.asOf), ui.Text("caption", state.note), ui.Ticker("default", "live", 1000, true, "refresh")')
   assert.match(program, /Vera\.Live\.fetch/)
   assert.equal(F.sourceHandlerOf(program), 'onSource')
-  assert.match(F.sourceUseError(program, spec), /^$/)
-  assert.match(F.sourceUseError(program.replace('Apple stock price now', 'apple'), spec), /must get its live figures itself with sdk\.call\("Vera\.Live\.fetch"/)
   // The example shows no source domain: the check says so.
   assert.match(F.sourceShownError(program, compileVeraSource(program).vbc2, spec), /without the source example\.org/)
   const shown = program.replace('ui.Text("caption", state.note)', 'ui.Text("caption", "from example.org")')
   assert.equal(F.sourceShownError(shown, compileVeraSource(shown).vbc2, spec), '')
-  const many = shown.replace('"labels", "Price"', '"labels", "Home|Away|Home score|Away score"')
-  assert.match(F.sourceUseError(many, spec), /at most 3 figures, but the call asks for 4 labels/)
   const raw = shown.replace('let when: string[] = strings.split(lines[5], "\\t");', 'let when: string[] = [lines[5], lines[5]];')
   assert.notEqual(raw, shown)
   assert.match(F.sourceShownError(raw, compileVeraSource(raw).vbc2, spec), /shows its "source" or "asof" line as it is/)
-  console.log('PASS live search fallback: the call, its note and the same checks, three labels at most, no raw lines')
+  console.log('PASS live search fallback: the call\'s parameters and the same checks, no raw lines')
 }

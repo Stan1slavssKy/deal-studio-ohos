@@ -14,7 +14,7 @@
 import { OperationCancellation, throwIfCancelled } from '../OperationCancellation'
 import { Composition, SketchInput, SketchValue, READY_KINDS, JevAsk, LIST_SECTIONS, hasClock, canReplaceList, replaceList,
   isScene } from '../VeraCompose'
-import { fragments, vetoes, FragmentSpec, VetoSpec } from '../VeraTemplates'
+import { fragments, vetoes, FragmentSpec, VetoSpec, LIVE_KIND } from '../VeraTemplates'
 
 /** Sections a need that nothing else does may be given: the plan's ready kinds, and the two that do phone work no effect does. */
 export const ALIGN_KINDS: string[] = READY_KINDS.concat(['reminders', 'calendar_event'])
@@ -23,8 +23,11 @@ const PHONE_KINDS: string[] = ['reminders', 'calendar_event']
 /** The sections of the wide pool whose content is the person's own or a setting, so nothing in it is looked up either. */
 const OWN_CONTENT_KINDS: string[] = PHONE_KINDS.concat(['timer', 'note', 'rating', 'record_log', 'progress_goal', 'quick_log',
   'dose_schedule', 'due_items', 'points_ledger', 'reading_status', 'interval_timer'])
-/** Sections that stand alone and still are not offered, in the wide pool as in the plain one. */
-const NOT_OFFERED: string[] = ['actions', 'metrics', 'intent_panel', 'filter_box']
+/**
+ * Sections that stand alone and still are not offered, in the wide pool as in the plain one. The live section only ever comes from
+ * the plan's live figures (VeraCompose.ets's readLive): offered for a leftover need, it would have no figures to find a source for.
+ */
+const NOT_OFFERED: string[] = ['actions', 'metrics', 'intent_panel', 'filter_box', LIVE_KIND]
 /** How sure Jev must be of a section for a need, as for a section's pick (VeraSectionCompose.ets). */
 export const ALIGN_ABOVE: number = 0.5
 /** The bar the catalogue gives its own needs_real_data question. */

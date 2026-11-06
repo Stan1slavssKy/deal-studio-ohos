@@ -395,6 +395,7 @@ export function blockDefaults(kind: string): Map<string, string> {
   if (spec === undefined) { return values }
   for (let slot of spec.slots) { values.set(slot.token, slot.values[0]) }
   for (let field of spec.contentFields) { values.set(field.token, field.fallback) }
+  for (let field of spec.hostFields) { values.set(field.token, field.fallback) }
   for (let list of spec.listFields) { values.set(list.token, expandListRows(undefined, list).text) }
   return values
 }

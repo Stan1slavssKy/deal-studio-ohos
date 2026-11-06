@@ -9,6 +9,10 @@ import { OperationCancellation, PredicateCancellation, throwIfCancelled } from '
 import { fillSectionsContent, blockDefaults, ContentAsk } from './VeraTemplateContent'
 import { fillHoles, holesOf, holeValues, HoleInstance, HoleAsk, HoleFill } from './VeraHoles'
 import { SEARCH_CHARS, SEARCH_CHARS_DATA } from './VeraWebSearch'
+import { SketchLive } from './VeraCompose'
+import { SourceFound } from './VeraSourceFind'
+import { LIVE_KIND } from './VeraTemplates'
+import { fillLive, LiveFill } from './LiveBlock'
 
 /** Blocks that show facts of the real world: filled from a search whatever the pick said. A chart of invented round numbers is never what a chart request wants. */
 const GROUNDED_KINDS: string[] = ['trend_chart']
@@ -27,6 +31,8 @@ export class BlockRequest {
   realData: boolean = false
   /** How many blocks of its own the screen puts before them: the first section's slot number, less one. */
   offset: number = 0
+  /** The figures the live_figure section among `kinds` fetches, in its order; empty when there is no such section. */
+  live: SketchLive[] = []
   /** Jev's cosmetic choice for each section's slots (token to value), in `kinds` order; empty for the catalogue's defaults. */
   slotValues: Map<string, string>[] = []
   /** Jev's choice for the whole screen's own tokens (theme, header), under what the content call writes. */
@@ -60,6 +66,9 @@ export class BlockFill {
   searchMs: number = -1
   contentMs: number = 0
   holesMs: number = 0
+  /** Finding where the live figures come from (-1 when no live section), and what was taken or tried. */
+  liveMs: number = -1
+  liveNote: string = ''
   /** The caller asked to stop while this ran; the rest is not filled. */
   cancelled: boolean = false
 }
@@ -67,6 +76,8 @@ export class BlockFill {
 export class BlockCalls {
   /** A web search for the request, with the budget of characters to keep: the results as text; null when there is no search to make. */
   search: ((query: string, chars: number) => Promise<string>) | null = null
+  /** The live source finder (VeraSourceFind.ets's findSource with these calls); null when it cannot be run. */
+  source: ((need: string) => Promise<SourceFound>) | null = null
   /** The content model. */
   content: ContentAsk = async (_system: string, _user: string, _budget: number): Promise<string | null> => null
   /** The model that writes hole bodies. */
@@ -113,9 +124,22 @@ export async function fillSections(request: BlockRequest, calls: BlockCalls): Pr
   let cancellation: OperationCancellation = new PredicateCancellation((): boolean => calls.cancelled(), calls.cancellation)
   let work = request.work.length > 0 ? request.work : request.prompt
   let searchText = ''
-  if (needsGrounding(request.kinds, request.realData)) {
-    if (calls.search === null) { fill.failed = 'sections need real data and no search is available'; return fill }
-    calls.status('Looking up real data...')
+  let grounding = needsGrounding(request.kinds, request.realData)
+  if (grounding && calls.search === null) { fill.failed = 'sections need real data and no search is available'; return fill }
+
+  // The live section's call, from a source checked now and written by the host. It needs nothing the grounding search finds, so the
+  // two run together and the slower one alone sets the wait.
+  let liveAt = request.kinds.indexOf(LIVE_KIND)
+  let liveValues: Map<string, string> = new Map<string, string>()
+  let liveWork: Promise<LiveFill> | null = null
+  if (liveAt >= 0) {
+    throwIfCancelled(cancellation)
+    liveWork = fillLive(request.prompt, request.live, calls.source, calls.search !== null)
+    // Not left unhandled when the search below throws first; awaited, it still throws as it was.
+    liveWork.catch((_e: Error): void => {})
+  }
+  if (grounding) {
+    calls.status(liveWork !== null ? 'Looking up real data and a live data source...' : 'Looking up real data...')
     let searchStart = Date.now()
     throwIfCancelled(cancellation)
     searchText = await calls.search!(request.prompt, request.kinds.indexOf('trend_chart') >= 0 ? SEARCH_CHARS_DATA : SEARCH_CHARS)
@@ -124,6 +148,15 @@ export async function fillSections(request: BlockRequest, calls: BlockCalls): Pr
     fill.grounded = true
     fill.searchText = searchText
     fill.searched = searchFound(searchText)
+  }
+  if (liveWork !== null) {
+    calls.status('Looking for a live data source...')
+    let live = await liveWork
+    throwIfCancelled(cancellation)
+    fill.liveMs = live.ms
+    fill.liveNote = live.note
+    if (live.failed.length > 0) { fill.failed = live.failed; fill.note = 'live: ' + live.note; return fill }
+    liveValues = live.values
   }
 
   let contentStart = Date.now()
@@ -144,6 +177,7 @@ export async function fillSections(request: BlockRequest, calls: BlockCalls): Pr
     if (i < request.slotValues.length) { request.slotValues[i].forEach((v: string, k: string) => { m.set(k, v) }) }
     let written = content.instanceValues[i]
     if (written !== undefined) { written.forEach((v: string, k: string) => { m.set(k, v) }) }
+    if (i === liveAt) { liveValues.forEach((v: string, k: string) => { m.set(k, v) }) }
     values.push(m)
   }
   fill.baseValues = mergedValues(values, [])
@@ -179,6 +213,7 @@ export async function fillSections(request: BlockRequest, calls: BlockCalls): Pr
   fill.values = values
 
   let notes: string[] = [fill.contentNote]
+  if (fill.liveNote.length > 0) { notes.push('live: ' + fill.liveNote) }
   if (fill.grounded) { notes.push('search=' + (fill.searched ? 'ok' : 'empty')) }
   if (fill.holesNote.length > 0) { notes.push(fill.holesNote) }
   fill.note = notes.join(' ')

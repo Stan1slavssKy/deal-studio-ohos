@@ -350,6 +350,11 @@ export class FragmentSpec {
   owns: string = ''
   /** The name of the block's tab in a widget in a chat reply (one or two words); '' for its kind in words. */
   tab: string = ''
+  /**
+   * Tokens the host fills from what it checked itself, never the content model: the live_figure section's call, found and fetched at
+   * generation (LiveBlock.ets). Each fallback compiles, so the block draws before the host has filled it.
+   */
+  hostFields: ContentFieldSpec[] = []
   constructor(kind: string, criteria: string, supportClass: string, stateFields: StateFieldSpec[],
       initStatements: string, initEntries: string, functions: string, viewBlock: string,
       slots: SlotSpec[], contentFields: ContentFieldSpec[], imports: string[] = [], listFields: ListFieldSpec[] = [],
@@ -3981,6 +3986,407 @@ const SECTION_OWNS: Map<string, string> = new Map<string, string>([
     'line chart of the readings, the readings newest first with a remove button on each, and what each range of numbers means']
 ])
 
+/** The section that fetches figures of the real world as they are now (liveFigureFragment). */
+export const LIVE_KIND: string = 'live_figure'
+
+/** The live section's figure number `k` (1 to 3) as a number, for a formula or another section: 0 until it has an answer. */
+export function liveFigureNumber(k: number): string { return 'liveNumber(state.liveFigure' + k.toString() + ')' }
+
+/**
+ * Up to three figures of the real world as they are now (a price, a rate, the weather), with where and when they were read. The
+ * call is written by the host, never the model (LiveBlock.ets): a public JSON API found and fetched at generation
+ * (Vera.Source.fetch, one GET, which the home-screen card can make too), or, with none, a web search read on each refresh
+ * (Vera.Live.fetch). Both answer the same lines, so one handler reads either:
+ *
+ *   ok / error: <reason>, <figure 1>, <figure 2>, <figure 3>, source<TAB>domain<TAB>address, asof<TAB>time
+ *
+ * It starts empty (a placeholder box) and fetches a second after the screen opens: no figure on it was written by a model. The
+ * first figure is the screen's own, a tile across the whole width, with how it moved since the last answer; the others are tiles
+ * in pairs below it. Where it is from and when is behind the info button, not on the screen. A failure keeps the figures shown and
+ * says why. One per screen, so its names are its own (not indexed): the plan's formulas read its figures through its
+ * ports by the same names wherever it is on the screen.
+ */
+function liveFigureFragment(): FragmentSpec {
+  let spec = new FragmentSpec(
+    LIVE_KIND,
+    'One to three figures of the real world as they are now (a price, an exchange rate, an index, the weather now, a live score) that ' +
+    'the screen fetches from the internet and keeps up to date, shown with where and when they were read; not a fact that does not ' +
+    'change, a figure at a stated date, a forecast or a past figure',
+    '',
+    [new StateFieldSpec('liveFigure1', 'string'), new StateFieldSpec('liveFigure2', 'string'), new StateFieldSpec('liveFigure3', 'string'),
+     new StateFieldSpec('liveSource', 'string'), new StateFieldSpec('liveAsOf', 'string'), new StateFieldSpec('liveNote', 'string'),
+     new StateFieldSpec('liveLastCall', 'number'), new StateFieldSpec('livePrevious', 'string'), new StateFieldSpec('livePreviousAt', 'string'),
+     new StateFieldSpec('liveShowSource', 'boolean'), new StateFieldSpec('liveBusy', 'boolean'), new StateFieldSpec('liveChecked', 'string'),
+     new StateFieldSpec('liveSame', 'boolean')],
+    '',
+    `liveFigure1: "", liveFigure2: "", liveFigure3: "", liveSource: "", liveAsOf: "", liveNote: "", liveLastCall: 0, livePrevious: "", livePreviousAt: "", liveShowSource: false, liveBusy: false, liveChecked: "", liveSame: false`,
+    `function liveWith(state: AppState, f1: string, f2: string, f3: string, source: string, asOf: string, note: string, lastCall: number,
+    previous: string, previousAt: string, showSource: boolean, busy: boolean, checked: string, same: boolean): AppState {
+  return {liveFigure1: f1, liveFigure2: f2, liveFigure3: f3, liveSource: source, liveAsOf: asOf, liveNote: note, liveLastCall: lastCall,
+    livePrevious: previous, livePreviousAt: previousAt, liveShowSource: showSource, liveBusy: busy, liveChecked: checked,
+    liveSame: same__PASSTHROUGH__};
+}
+
+function liveKeep(state: AppState, note: string, lastCall: number, busy: boolean): AppState {
+  return liveWith(state, state.liveFigure1, state.liveFigure2, state.liveFigure3, state.liveSource, state.liveAsOf, note, lastCall,
+    state.livePrevious, state.livePreviousAt, state.liveShowSource, busy, state.liveChecked, state.liveSame);
+}
+
+function liveTwo(n: number): string {
+  if (n < 10) { return "0" + ui.numberToString(n); }
+  return ui.numberToString(n);
+}
+
+function liveClock(): string {
+  return liveTwo(time.hourOfDay()) + ":" + liveTwo(time.minuteOfHour());
+}
+
+// The first number in the text as the page wrote it, as digits with "." for its decimal point. The separator written last is the
+// decimal one when both are there ("1,234.56", "1.234,56"); a lone comma is a decimal comma ("92,35") unless three digits follow it
+// ("1,234"); one written twice ("1.234.567") and spaces group thousands.
+function liveNumeral(text: string): string {
+  let run: string = "";
+  let started: boolean = false;
+  let done: boolean = false;
+  let negative: boolean = false;
+  let dots: number = 0;
+  let commas: number = 0;
+  let last: string = "";
+  let after: number = 0;
+  for (let c: string of text) {
+    if (!done) {
+      if (strings.contains("0123456789", c)) {
+        run = run + c;
+        started = true;
+        after = after + 1;
+      } else if (started && (c === "." || c === ",")) {
+        run = run + c;
+        last = c;
+        after = 0;
+        if (c === ".") { dots = dots + 1; } else { commas = commas + 1; }
+      } else if (c === "-" && !started) {
+        negative = true;
+      } else if (started && c !== " " && c !== "\u00a0" && c !== "\u202f") {
+        done = true;
+      }
+    }
+  }
+  let point: string = "";
+  if (dots > 0 && commas > 0) {
+    point = last;
+  } else if (dots === 1) {
+    point = ".";
+  } else if (commas === 1 && (after !== 3 || strings.startsWith(run, "0,"))) {
+    point = ",";
+  }
+  let out: string = "";
+  if (negative) { out = "-"; }
+  for (let c: string of run) {
+    if (c === point) { out = out + "."; } else if (c !== "." && c !== ",") { out = out + c; }
+  }
+  return out;
+}
+
+function liveNumber(text: string): number {
+  return strings.toNumber(liveNumeral(text), 0);
+}
+
+// How many places a figure is shown with, at most: about six digits in all, so a rate keeps its fifth place (1.11743) and a coin
+// that an API answers as 75883.35636482359 does not keep its eleventh.
+function liveCap(n: number, places: number): number {
+  let a: number = n;
+  if (a < 0) { a = 0 - a; }
+  let most: number = 6;
+  while (a >= 1 && most > 0) {
+    a = a / 10;
+    most = most - 1;
+  }
+  if (places > most) { return most; }
+  return places;
+}
+
+// Whether the text is a bare number as an API answers it, with nothing a page wrote around it ("$76,022.73", "10.7 °C" are not).
+function liveBare(text: string): boolean {
+  // A sign only before the number: "2-1" is a score, not a number.
+  let digits: boolean = false;
+  for (let c: string of text) {
+    if (strings.contains("0123456789", c)) { digits = true; }
+    else if (c === "-" || c === "+") { if (digits) { return false; } }
+    else if (!strings.contains("., \\u00a0", c)) { return false; }
+  }
+  return digits;
+}
+
+// A currency written before its number: "$", "€", "£", "₽", "¥", "₹", "₩", "₺", "₴", "₸".
+function liveSymbol(unit: string): boolean {
+  return strings.length(unit) === 1 && strings.contains("$\u20ac\u00a3\u20bd\u00a5\u20b9\u20a9\u20ba\u20b4\u20b8", unit);
+}
+
+// A bare number as people read it: rounded for its size, thousands grouped, money to the cent.
+function liveTidy(text: string, money: boolean): string {
+  let n: number = liveNumber(text);
+  let negative: boolean = n < 0;
+  let a: number = n;
+  if (negative) { a = 0 - n; }
+  // Money is to the cent: never fewer places, and past a thousand no more.
+  let places: number = liveCap(n, liveDecimals(text));
+  if (money && a >= 1 && places < 2) { places = 2; }
+  if (money && a >= 1000) { places = 2; }
+  let plain: string = ui.formatNumber(a, places);
+  let whole: string = plain;
+  let rest: string = "";
+  let parts: string[] = strings.split(plain, ".");
+  if (parts.length() > 1) { whole = parts[0]; rest = "." + parts[1]; }
+  let grouped: string = "";
+  let left: number = strings.length(whole);
+  for (let c: string of whole) {
+    grouped = grouped + c;
+    left = left - 1;
+    if (left > 0 && left % 3 === 0) { grouped = grouped + ","; }
+  }
+  if (negative) { return "-" + grouped + rest; }
+  return grouped + rest;
+}
+
+function liveShown(text: string, unit: string): string {
+  if (text === "") { return "-"; }
+  if (liveBare(text)) {
+    let money: boolean = liveSymbol(unit);
+    let tidy: string = liveTidy(text, money);
+    if (money) {
+      if (strings.startsWith(tidy, "-")) { return "-" + unit + strings.substring(tidy, 1, strings.length(tidy)); }
+      return unit + tidy;
+    }
+    if (unit === "") { return tidy; }
+    return tidy + " " + unit;
+  }
+  if (unit === "" || strings.contains(text, unit)) { return text; }
+  // "10°" with the unit "°C": the source wrote the degree sign already.
+  if (strings.startsWith(unit, "°") && strings.contains(text, "°")) { return text; }
+  return text + " " + unit;
+}
+
+function liveWeather(text: string): string {
+  if (text === "") { return "-"; }
+  let c: number = liveNumber(text);
+  if (c === 0) { return "Clear sky"; }
+  if (c === 1) { return "Mainly clear"; }
+  if (c === 2) { return "Partly cloudy"; }
+  if (c === 3) { return "Overcast"; }
+  if (c === 45 || c === 48) { return "Fog"; }
+  if (c >= 51 && c <= 55) { return "Drizzle"; }
+  if (c === 56 || c === 57) { return "Freezing drizzle"; }
+  if (c === 61) { return "Light rain"; }
+  if (c === 63) { return "Rain"; }
+  if (c === 65) { return "Heavy rain"; }
+  if (c === 66 || c === 67) { return "Freezing rain"; }
+  if (c === 71) { return "Light snow"; }
+  if (c === 73) { return "Snow"; }
+  if (c === 75) { return "Heavy snow"; }
+  if (c === 77) { return "Snow grains"; }
+  if (c >= 80 && c <= 82) { return "Rain showers"; }
+  if (c === 85 || c === 86) { return "Snow showers"; }
+  if (c === 95) { return "Thunderstorm"; }
+  if (c === 96 || c === 99) { return "Thunderstorm with hail"; }
+  return text;
+}
+
+function liveWhen(asOf: string): string {
+  if (strings.length(asOf) >= 16 && strings.substring(asOf, 10, 11) === "T") { return strings.substring(asOf, 11, 16); }
+  return asOf;
+}
+
+function liveChange(state: AppState): string {
+  if (state.livePrevious === "" || state.liveFigure1 === "") { return ""; }
+  let now: number = liveNumber(state.liveFigure1);
+  let was: number = liveNumber(state.livePrevious);
+  if (was === 0 || now === was) { return ""; }
+  let moved: number = now - was;
+  let arrow: string = "\\u25b2 +";
+  if (moved < 0) { arrow = "\\u25bc "; }
+  // As many places as the figure has: a rate that moved 0.00004 is not "+0.00".
+  let livePlaces: number = liveDecimals(state.liveFigure1);
+  let pastPlaces: number = liveDecimals(state.livePrevious);
+  if (pastPlaces > livePlaces) { livePlaces = pastPlaces; }
+  livePlaces = liveCap(now, livePlaces);
+  let percent: number = moved / was * 100;
+  let liveShare: string = ui.formatNumber(percent, 2) + "%";
+  if (percent < 0.01 && percent > 0) { liveShare = "<0.01%"; }
+  if (percent > -0.01 && percent < 0) { liveShare = "-<0.01%"; }
+  return arrow + ui.formatNumber(moved, livePlaces) + " (" + liveShare + ") since " + liveWhen(state.livePreviousAt);
+}
+
+function liveDecimals(text: string): number {
+  let places: number = 0;
+  let after: boolean = false;
+  for (let c: string of liveNumeral(text)) {
+    if (c === ".") {
+      after = true;
+    } else if (after) {
+      places = places + 1;
+    }
+  }
+  if (places > 6) { return 6; }
+  return places;
+}
+
+function liveUnder(state: AppState, moves: boolean): string {
+  let under: string = "";
+  if (moves) { under = liveChange(state); }
+  if (state.liveShowSource && state.liveSource !== "") {
+    let where: string = state.liveSource;
+    if (state.liveAsOf !== "") { where = where + " \\u00b7 " + liveWhen(state.liveAsOf); }
+    if (under !== "") { under = under + "\\n"; }
+    under = under + where;
+  }
+  return under;
+}
+
+function liveToggleSource(state: AppState, ignored: number): AppState {
+  return liveWith(state, state.liveFigure1, state.liveFigure2, state.liveFigure3, state.liveSource, state.liveAsOf, state.liveNote,
+    state.liveLastCall, state.livePrevious, state.livePreviousAt, !state.liveShowSource, state.liveBusy, state.liveChecked, state.liveSame);
+}
+
+function liveLine(lines: string[], at: number, kept: string): string {
+  if (at < lines.length()) {
+    let t: string = strings.trim(lines[at]);
+    if (t !== "") { return t; }
+  }
+  return kept;
+}
+
+function liveFetch(state: AppState, now: number): AppState {
+  sdk.call("__LIVE_TARGET__", __LIVE_ARGS__, "liveAnswer");
+  return liveKeep(state, state.liveNote, now, true);
+}
+
+function liveRefresh(state: AppState, ignored: number): AppState {
+  // One request at a time: while one is out, the button says so and is off.
+  if (state.liveBusy) { return state; }
+  return liveFetch(state, time.nowSeconds());
+}
+
+function liveTick(state: AppState, elapsedMs: number): AppState {
+  let now: number = time.nowSeconds();
+  // An answer that never came does not leave the screen "Updating..." for good.
+  if (state.liveBusy) {
+    if (now - state.liveLastCall < 20) { return state; }
+    return liveKeep(state, "The source did not answer in time.", state.liveLastCall, false);
+  }
+  if (now - state.liveLastCall < __LIVE_EVERY__) { return state; }
+  return liveFetch(state, now);
+}
+
+// Why an update failed, as a sentence for the person: the call's "error: " or "error 502: " is for the trace, not the screen.
+function liveWhy(value: string): string {
+  let why: string = strings.trim(value);
+  if (strings.startsWith(why, "error")) {
+    let parts: string[] = strings.split(why, ": ");
+    if (parts.length() > 1) {
+      why = "";
+      let i: number = 1;
+      while (i < parts.length()) {
+        if (i > 1) { why = why + ": "; }
+        why = why + parts[i];
+        i = i + 1;
+      }
+    }
+  }
+  if (strings.length(why) > 140) { why = strings.substring(why, 0, 140); }
+  if (why === "") { return "The source did not answer."; }
+  why = strings.toUpperCase(strings.substring(why, 0, 1)) + strings.substring(why, 1, strings.length(why));
+  if (!strings.endsWith(why, ".")) { why = why + "."; }
+  return why;
+}
+
+function liveAnswer(state: AppState, value: string): AppState {
+  if (!strings.startsWith(value, "ok")) {
+    let why: string = liveWhy(value);
+    return liveKeep(state, why, state.liveLastCall, false);
+  }
+  let lines: string[] = strings.split(value, "\\n");
+  let source: string = state.liveSource;
+  let asOf: string = state.liveAsOf;
+  if (lines.length() > 4) {
+    let src: string[] = strings.split(lines[4], "\\t");
+    if (src.length() > 1) { source = src[1]; }
+  }
+  if (lines.length() > 5) {
+    let when: string[] = strings.split(lines[5], "\\t");
+    if (when.length() > 1) { asOf = when[1]; }
+  }
+  // The first figure as it was before this answer, and when: what the change under it is told against.
+  let first: string = liveLine(lines, 1, state.liveFigure1);
+  let previous: string = state.livePrevious;
+  let previousAt: string = state.livePreviousAt;
+  if (state.liveFigure1 !== "" && first !== state.liveFigure1) {
+    previous = state.liveFigure1;
+    previousAt = state.liveAsOf;
+  }
+  let second: string = liveLine(lines, 2, state.liveFigure2);
+  let third: string = liveLine(lines, 3, state.liveFigure3);
+  // Whether this answer moved anything: a refresh that changes nothing still says it checked.
+  let same: boolean = state.liveFigure1 !== "" && first === state.liveFigure1 && second === state.liveFigure2 && third === state.liveFigure3;
+  return liveWith(state, first, second, third, source, asOf, "", state.liveLastCall, previous, previousAt, state.liveShowSource,
+    false, liveClock(), same);
+}`,
+    `{
+    let liveTiles: ui.View[] = [];
+__LIVE_ROWS__
+    // Only before the first answer: one that came with no first figure still shows the others, with "-" for it.
+    let liveWaiting: boolean = state.liveChecked === "" && state.liveNote === "";
+    let liveInfo: string = "Show the source";
+    if (state.liveShowSource) { liveInfo = "Hide the source"; }
+    // The tiles alone in their section, so it draws no card around their cards; the buttons and the source under them.
+    sections.push(ui.Section("content", "", "", [
+      ui.When(liveWaiting, ui.Skeleton("default", 320, 112)),
+      ui.When(!liveWaiting, ui.TileGrid("default", liveTiles))
+    ]));
+    // Where the figures are from is under the first one, shown and hidden by the info button.
+    // What a refresh did: "Updating..." while it is out, then when it answered and whether anything moved.
+    let liveActions: ui.View[] = [];
+    if (!state.liveBusy && state.liveChecked !== "") {
+      let liveCheckedText: string = "Updated " + state.liveChecked;
+      if (state.liveSame) { liveCheckedText = liveCheckedText + " \\u00b7 no change"; }
+      liveActions.push(ui.Badge("default", liveCheckedText, "check"));
+    }
+    liveActions.push(ui.IconButton("quiet", "info", liveInfo, "liveToggleSource", 0, state.liveSource !== ""));
+    let liveButton: string = "Refresh";
+    if (state.liveBusy) { liveButton = "Updating..."; }
+    liveActions.push(ui.Button("secondary", liveButton, "liveRefresh", 0, !state.liveBusy));
+    sections.push(ui.Section("supporting", "", "", [
+      ui.ActionBar("end", liveActions),
+      ui.Ticker("default", "live", 1000, true, "liveTick")
+    ]));
+    sections.push(ui.Section("supporting", "", "", [
+      ui.When(state.liveNote !== "", ui.InsetBanner("warning", "Could not update", state.liveNote, "", "", "info"))
+    ]));
+  }`,
+    [],
+    [],
+    ['import * as sdk from "std/sdk"', 'import * as strings from "std/strings"', 'import * as time from "std/time"'],
+    [],
+    [new PortSpec('writes', 'live1', 'number', liveFigureNumber(1), '', true),
+     new PortSpec('writes', 'live2', 'number', liveFigureNumber(2), '', true),
+     new PortSpec('writes', 'live3', 'number', liveFigureNumber(3), '', true),
+     new PortSpec('writes', 'live_source', 'string', 'liveSource'),
+     new PortSpec('writes', 'live_asof', 'string', 'liveAsOf')],
+    [],
+    ['needs_real_data', 'needs_integration', 'needs_live_ticking']
+  )
+  spec.indexed = false
+  spec.owns = 'the figures it fetches, how the first moved since the last answer, where and when they were read (behind an info button), and a Refresh button'
+  spec.tab = 'Live'
+  spec.hostFields = [
+    new ContentFieldSpec('__LIVE_TARGET__', 'target', 'Vera.Source.fetch', 'Vera.Source.fetch or Vera.Live.fetch', 20),
+    new ContentFieldSpec('__LIVE_ARGS__', 'args', '["url", "https://example.org/figures", "paths", "value"]', 'the call\'s parameters, written out', 600),
+    new ContentFieldSpec('__LIVE_EVERY__', 'every', '300', 'seconds between fetches', 6),
+    new ContentFieldSpec('__LIVE_ROWS__', 'rows', '    liveTiles.push(ui.Tile("accent", 2, "Value", liveShown(state.liveFigure1, ""), liveUnder(state, true), ""));',
+      'one Tile line for each figure', 900)
+  ]
+  return spec
+}
+
 export function fragments(): FragmentSpec[] {
   let all: FragmentSpec[] = [
     checklistFragment(), metricsFragment(), timerFragment(), calendarEventFragment(),
@@ -3993,7 +4399,7 @@ export function fragments(): FragmentSpec[] {
     itineraryFragment(), progressLineFragment(), intentPanelFragment(), remindersFragment(),
     quickLogFragment(), doseScheduleFragment(),
     dueItemsFragment(), pointsLedgerFragment(),
-    ideaDeckFragment(), intervalTimerFragment(), readingStatusFragment()
+    ideaDeckFragment(), intervalTimerFragment(), readingStatusFragment(), liveFigureFragment()
   ]
   for (let f of all) { if (f.owns.length === 0 && SECTION_OWNS.has(f.kind)) { f.owns = SECTION_OWNS.get(f.kind)! } }
   return all

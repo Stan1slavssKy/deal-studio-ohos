@@ -102,6 +102,7 @@ export async function askBlocking(prompt: string, questions: SketchQuestion[], a
     if (typed.length > 0) {
       entry.answer = typed + ' (typed)'
       entry.changed = true
+      q.answer = typed
       log.push(entry)
       lines.push(q.ask + ' ' + typed)
       continue
@@ -109,6 +110,7 @@ export async function askBlocking(prompt: string, questions: SketchQuestion[], a
     let chosen = typeof picked === 'number' ? picked as number : -1
     let index = chosen < 0 || chosen >= q.options.length ? q.fallback : chosen
     entry.answer = q.options[index] + (typeof picked === 'number' ? '' : ' (default)')
+    q.answer = q.options[index]
     entry.changed = index !== q.fallback
     log.push(entry)
     if (entry.changed) { lines.push(q.ask + ' ' + q.options[index]) }

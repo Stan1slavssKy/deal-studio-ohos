@@ -19,7 +19,9 @@ export const NEED_ACTION: string = 'action'
 export const NEED_OTHER: string = 'other'
 /** A picture the app draws itself every frame, moving on its own or touched anywhere: written as a ui.Surface in the section hole. */
 export const NEED_SCENE: string = 'scene'
-const NEED_TYPES: string[] = [NEED_FIGURE, NEED_COUNTDOWN, NEED_STOPWATCH, NEED_ENTRIES, NEED_CONTENT, NEED_ACTION, NEED_SCENE, NEED_OTHER]
+/** A figure of the real world as it is now (a price, a rate, the weather), fetched by the app itself: the live_figure section. */
+export const NEED_LIVE: string = 'live'
+const NEED_TYPES: string[] = [NEED_FIGURE, NEED_LIVE, NEED_COUNTDOWN, NEED_STOPWATCH, NEED_ENTRIES, NEED_CONTENT, NEED_ACTION, NEED_SCENE, NEED_OTHER]
 
 /** The moments an action can be tied to, for the choice of what does a need (NeedsChoose.ets). */
 export const ON_END: string = 'countdown_end'
@@ -77,10 +79,12 @@ export const NEEDS_PROMPT: string =
   '    "format": "money" | "percent" | "count" | "seconds" | "minutes" | "time_of_day" | "fraction" | "yes_no" (a condition, 1 for yes and 0 for no) | "plain", "unit": as for inputs,\n' +
   '    "decimals": for a plain number, how many digits after the point to show, 0 to 6, only when one digit would lose what matters,\n' +
   '    "shown": false for every figure that only feeds another figure and is not what the request names, however informative it looks; otherwise leave it out,\n' +
-  '    "formula": how it is worked out, as an expression over the ids of inputs, constants, the figures before it and the quantities below,\n' +
+  '    "formula": how it is worked out, as an expression over the ids of inputs, constants, live figures, the figures before it and the quantities below,\n' +
   '    with numbers, + - * / %, parentheses and floor, ceil, round, abs, min, max, pow, sqrt,\n' +
   '    "example": {"given": {each id or quantity the formula needs, directly or through the figures before it: a sample number},\n' +
   '    "result": the number the formula gives for them}},\n' +
+  '   {"type": "live", "id": camelCase, "label": shown label, "means": what the figure is, in plain words, "measure": "money" | "percent" | "count" | "number",\n' +
+  '    "unit": the currency or unit it is shown in, "query": 3 to 8 words a web search finds it with as it is now},\n' +
   '   {"type": "countdown", "label": what is being timed, "length": the id of the input, constant or figure that sets how long it runs},\n' +
   '   {"type": "stopwatch", "label": what is being timed},\n' +
   '   {"type": "entries", "label": what the entries are, "fields": what each entry holds, up to 4: [{"id": camelCase, "label": shown label,\n' +
@@ -103,7 +107,17 @@ export const NEEDS_PROMPT: string =
   'when the phone does something as an entry is added, that entry shows what the phone answered. ' +
   'The quantities a figure may read: entries.count and entries.total (the first number field of the entries added up) when there are entries; ' +
   'clock.remaining, clock.elapsed and clock.duration, in seconds, when there is a countdown; clock.elapsed, in seconds, when there is a stopwatch. ' +
-  'The app keeps its state between visits.\n' +
+  'The app keeps its state between visits. ' +
+  'A live figure is a number of the real world that changes by itself and that the app fetches from the internet as it is now and keeps up to date: ' +
+  'a price, an exchange rate, an index, the weather now, a live score; at most 3, and the app shows each with where and when it was read. ' +
+  'It is never also a figure or content; a figure worked out from it (what the person\'s coins are worth) is a figure whose formula reads its id, and ' +
+  'whose example gives it a sample number. Today\'s forecast (the high, the chance of rain) is live too: it is fetched the same way. ' +
+  'A fact that does not change or a figure at a past date is content, not live. ' +
+  'The app fetches a live figure from one fixed address written when it is made, so the place, the currency or the thing it is about ' +
+  'is fixed in its query ("Moscow temperature now", "Bitcoin price USD"): it is never an input the person types or changes, ' +
+  'and nothing on the screen chooses it. When the request does not say which place or thing it is, that is a question, ' +
+  'with a sensible default as its answer, and each of its options names exactly one place or thing (a city, a team, a coin), ' +
+  'never a kind or a group of them ("a Premier League match"): a search for a group finds no one figure.\n' +
   'Rules: inputs are only what the person sets once for the whole screen; what each entry holds goes in its fields. ' +
   'A quantity is in one place: one the person records again and again (a temperature, a weight, a dose taken) is a field of the entries ' +
   'and the figures read the latest or all of them, never also an input. ' +
@@ -208,6 +222,8 @@ export function parseNeedsPlan(reply: string): NeedsPlan | null {
     if (type === NEED_FIGURE) {
       need.words = text(raw, 'label') + (text(raw, 'means').length > 0 ? ' (' + text(raw, 'means') + ')' : '')
       need.reads = quantitiesIn(raw)
+    } else if (type === NEED_LIVE) {
+      need.words = text(raw, 'label') + (text(raw, 'means').length > 0 ? ' (' + text(raw, 'means') + ')' : '')
     } else if (type === NEED_COUNTDOWN || type === NEED_STOPWATCH || type === NEED_ENTRIES) {
       need.words = text(raw, 'label')
       need.length = text(raw, 'length')
@@ -241,6 +257,7 @@ export function sketchFrom(plan: NeedsPlan): Sketch | null {
   let values: Object[] = []
   let events: Object[] = []
   let ready: Object[] = []
+  let live: Object[] = []
   let other: Object[] = []
   for (let n of plan.needs) {
     let r: Record<string, Object> = {}
@@ -269,6 +286,8 @@ export function sketchFrom(plan: NeedsPlan): Sketch | null {
       else { other.push('a second ' + (n.type === NEED_COUNTDOWN ? 'countdown' : 'stopwatch') + ': ' + n.words) }
     } else if (n.type === NEED_ENTRIES) {
       if (o['list'] === undefined) { o['list'] = r } else { other.push('a second list of entries: ' + n.words) }
+    } else if (n.type === NEED_LIVE) {
+      live.push(r)
     } else if (n.type === NEED_CONTENT) {
       ready.push(n.words)
     } else if (n.type === NEED_ACTION) {
@@ -283,6 +302,7 @@ export function sketchFrom(plan: NeedsPlan): Sketch | null {
   o['values'] = values
   o['events'] = events
   o['ready'] = ready
+  o['live'] = live
   o['other'] = other
   return parseSketch(JSON.stringify(o))
 }
@@ -392,11 +412,11 @@ export function capForWidget(plan: NeedsPlan, room: number): string[] {
   }
   let has = (type: string): boolean => kept.some((n: Need): boolean => n.type === type)
   let supplied = (reads: string): boolean => reads.startsWith('entries.') ? has(NEED_ENTRIES) : has(NEED_COUNTDOWN) || has(NEED_STOPWATCH)
-  // A figure's formula names the figures before it by id: one that names a figure cut is cut with it.
+  // A figure's formula names the figures and the live figures before it by id: one that names one cut is cut with it.
   let readsCut = (n: Need): boolean => {
     let formula = text(n.raw, 'formula')
     return formula.length > 0 && cut.some((c: Need): boolean => {
-      let id = c.type === NEED_FIGURE ? text(c.raw, 'id') : ''
+      let id = c.type === NEED_FIGURE || c.type === NEED_LIVE ? text(c.raw, 'id') : ''
       return id.length > 0 && new RegExp('(^|[^A-Za-z0-9_.])' + id + '(?![A-Za-z0-9_])').test(formula)
     })
   }
