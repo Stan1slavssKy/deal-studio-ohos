@@ -27,7 +27,7 @@
 import { http } from '@kit.NetworkKit'
 import { OperationCancellation, throwIfCancelled } from './OperationCancellation'
 import { requestWithCancellation } from './VeraWebSearch'
-import { FragmentSpec, StateFieldSpec, PortSpec, VetoSpec, fragments, vetoes } from './VeraTemplates'
+import { FragmentSpec, StateFieldSpec, PortSpec, VetoSpec, fragments, vetoes, LIVE_KIND, liveFigureNumber } from './VeraTemplates'
 import { composeFragments } from './VeraSectionCompose'
 import { noteService, httpFailure, SERVICE_JEV } from './ServiceHealth'
 import { blockDefaults } from './VeraTemplateContent'
@@ -72,6 +72,51 @@ export class SketchQuestion {
   ask: string = ''
   options: string[] = []
   fallback: number = 0
+  /** What the person answered, typed or chosen (askBlocking); '' while not asked, when the default stands. */
+  answer: string = ''
+}
+
+/** The answer a question stands at: the person's, else its default. */
+export function answerTo(q: SketchQuestion): string {
+  if (q.answer.length > 0) { return q.answer }
+  return q.fallback >= 0 && q.fallback < q.options.length ? q.options[q.fallback] : ''
+}
+
+/** Words of an answer worth finding again in a query or a title: not "the", "now", "match". */
+function answerWords(answer: string): string[] {
+  const COMMON: string[] = ['the', 'and', 'for', 'now', 'today', 'live', 'current', 'match', 'game', 'price', 'rate', 'weather']
+  return answer.split(/[^A-Za-z0-9\u00C0-\u024F\u0400-\u04FF]+/).filter((w: string): boolean =>
+    w.length > 2 && COMMON.indexOf(w.toLowerCase()) < 0)
+}
+
+/**
+ * What the person answered (or the default that stood) is what the live figures are about: a plan drawn for the default often writes
+ * a query without it ("live football match score now" for "Arsenal"), and then a search finds no one match and the screen does not
+ * say whose figures it shows. The answer's words go into each live query that lacks them, and onto the screen's eyebrow when its
+ * title, eyebrow and subtitle do not name it. Returns what was added, for the trace.
+ */
+export function keepAnswers(sketch: Sketch, answers: string[]): string {
+  if (sketch.live.length === 0) { return '' }
+  let notes: string[] = []
+  for (let answer of answers) {
+    let words = answerWords(answer)
+    if (words.length === 0) { continue }
+    for (let l of sketch.live) {
+      let query = l.query.length > 0 ? l.query : l.label
+      let missing = words.filter((w: string): boolean => query.toLowerCase().indexOf(w.toLowerCase()) < 0)
+      if (missing.length > 0) {
+        l.query = query + ' ' + missing.join(' ')
+        notes.push('query "' + l.query + '"')
+      }
+    }
+    let header = (sketch.title + ' ' + sketch.eyebrow + ' ' + sketch.subtitle).toLowerCase()
+    if (words.some((w: string): boolean => header.indexOf(w.toLowerCase()) < 0)) {
+      let named = answer.replace(/\s*\b(now|today|right now)\s*$/i, '').trim()
+      sketch.eyebrow = sketch.eyebrow.length > 0 ? sketch.eyebrow + ' \u00b7 ' + named : named
+      notes.push('eyebrow "' + sketch.eyebrow + '"')
+    }
+  }
+  return notes.join('; ')
 }
 
 export class SketchOption {
@@ -177,6 +222,25 @@ export const SCENE_MARK: string = 'a scene the app draws itself: '
 
 export function isScene(need: string): boolean { return need.startsWith(SCENE_MARK) }
 
+/**
+ * A figure of the real world as it is now (a price, a rate, the weather, a score) that the screen fetches itself: the
+ * live_figure section of the catalogue (LiveBlock.ets) when Jev says so, and a number the plan's formulas may read by its id.
+ */
+export class SketchLive {
+  id: string = ''
+  label: string = ''
+  means: string = ''
+  /** The unit or currency shown beside it: "USD", "°C"; '' for none. */
+  unit: string = ''
+  /** money, percent, count or number: what it measures, for unit-checked formulas. */
+  measure: string = 'number'
+  /** A few words a web search finds it with as it is now: "Bitcoin price USD". */
+  query: string = ''
+}
+
+/** At most this many live figures on a screen: one source answers up to three (VeraSource.ets's SOURCE_MAX_FIGURES). */
+export const MAX_LIVE: number = 3
+
 export class Sketch {
   title: string = ''
   eyebrow: string = ''
@@ -192,6 +256,10 @@ export class Sketch {
   hasStopwatch: boolean = false
   list: SketchList | null = null
   events: SketchEvent[] = []
+  /** Figures of the real world the screen fetches itself, in the order the plan gave them. */
+  live: SketchLive[] = []
+  /** Live figures past the third, which one source cannot answer: left out, in words. */
+  liveCut: string[] = []
   /** Needs a ready-made section of the catalogue handles whole, in words; Jev chooses the section for each. */
   ready: string[] = []
   /** What the plan would ask the person, each drawn for its default answer. */
@@ -337,6 +405,28 @@ export function parseSketch(text: string): Sketch | null {
       if (MEASURES.indexOf(constant.measure) < 0 || constant.measure === 'clock') { constant.measure = 'number' }
       seen.push(constant.id)
       sketch.constants.push(constant)
+    }
+  }
+  let live = o['live']
+  if (Array.isArray(live)) {
+    for (let raw of live as Object[]) {
+      if (raw === null || typeof raw !== 'object') { continue }
+      let r = raw as Record<string, Object>
+      let figure = new SketchLive()
+      figure.id = usableId(str(r, 'id', ''), seen)
+      if (figure.id.length === 0) { continue }
+      // One source answers three figures: a fourth is left out, said on the Metrics tab -- not a need for the written section,
+      // which can fetch nothing either and only put a notice above the screen (Weather today: "Chance of rain").
+      if (sketch.live.length >= MAX_LIVE) { sketch.liveCut.push(str(r, 'label', figure.id)); continue }
+      figure.label = str(r, 'label', figure.id)
+      figure.means = str(r, 'means', figure.label)
+      figure.unit = str(r, 'unit', '')
+      figure.measure = str(r, 'measure', 'number')
+      if (['money', 'percent', 'count', 'number'].indexOf(figure.measure) < 0) { figure.measure = 'number' }
+      if (figure.measure === 'money') { figure.unit = currencySign(figure.unit) }
+      figure.query = str(r, 'query', figure.label)
+      seen.push(figure.id)
+      sketch.live.push(figure)
     }
   }
   let countdown = o['countdown']
@@ -1017,6 +1107,8 @@ function lengthFeeders(sketch: Sketch): string[] {
 
 function operandList(sketch: Sketch, index: number): Operand[] {
   let out: Operand[] = []
+  // Live figures first: a product is offered as money times a count (resultMeasure), and the price is the money.
+  for (let l of sketch.live) { out.push(new Operand(l.id, l.label + ' (fetched from the internet as it is now)', l.measure)) }
   for (let input of sketch.inputs) {
     if (isNumeric(input.kind)) { out.push(new Operand(input.id, input.label, input.measure)) }
   }
@@ -1436,6 +1528,7 @@ export function describeSketch(sketch: Sketch): string {
   let lines: string[] = []
   for (let input of sketch.inputs) { lines.push('- ' + describeInput(input)) }
   for (let c of sketch.constants) { lines.push('- fixed: ' + c.label + ' = ' + numberLiteral(c.value)) }
+  for (let l of sketch.live) { lines.push('- shows "' + l.label + '" as it is now, fetched from the internet: ' + l.means) }
   if (sketch.hasCountdown) {
     let length = labelOf(sketch, sketch.countdownLength)
     lines.push('- a countdown: ' + sketch.countdown + (length.length > 0 ? ', as long as "' + length + '"' : ''))
@@ -1559,6 +1652,26 @@ export function askDeadline(sketch: Sketch, questions: Record<string, Object>): 
       'has to be over (the latest time that a flight, a train or a closing time allows)?', verdict)
   }
 }
+
+/**
+ * One yes or no for each live figure of the plan: whether it is a figure of the real world that changes by itself and the screen
+ * fetches as it is now (the live_figure section), or not -- a fact that does not change, or a figure at a stated date. A yes or
+ * no is asked, not a pick among the sections: a pick among many is near chance when none of them is plainly the one.
+ */
+export function askLive(sketch: Sketch, questions: Record<string, Object>): void {
+  let verdict: Map<string, string> = new Map<string, string>()
+  verdict.set('yes', 'yes: it changes by itself from hour to hour or day to day (a price, an exchange rate, the weather now, today\'s ' +
+    'forecast, a live score), and the screen fetches it from the internet as it is now and keeps it up to date')
+  verdict.set('no', 'no: it does not change, it is for a past date, or the person types it in')
+  for (let i = 0; i < sketch.live.length; i++) {
+    let l = sketch.live[i]
+    questions['live.' + i.toString()] = choice('The app shows "' + l.label + '" (' + l.means + '). Is it a figure of the real world ' +
+      'that the screen fetches as it is right now?', verdict)
+  }
+}
+
+/** Above this, Jev's yes to a live figure is taken: a yes or no is reliable well above the cosmetic bar (INCLUDE_ABOVE). */
+export const LIVE_ABOVE: number = 0.65
 
 export function askReady(sketch: Sketch, questions: Record<string, Object>): void {
   if (sketch.ready.length === 0) { return }
@@ -1720,6 +1833,7 @@ export function buildComposeRequest(prompt: string, sketch: Sketch, widget: bool
   }
   // Which ready-made section handles each need the plan gave one, by the catalogue's own words for each.
   askReady(sketch, questions)
+  askLive(sketch, questions)
   askDeadline(sketch, questions)
   askItinerary(sketch, questions)
   if (sketch.ready.length > 0) {
@@ -1844,6 +1958,11 @@ export class Composition {
   figures: boolean = false
   /** The catalogue's sections Jev chose for the plan's ready needs, in plan order, after the composition's own parts. */
   blocks: string[] = []
+  /**
+   * The live figures Jev said the screen fetches itself, in the order of the live_figure section's figures (1 to 3): it is in
+   * `blocks` once when any is here, and the formulas read them through its ports.
+   */
+  live: SketchLive[] = []
   /** For each of the sketch's ready needs, the section Jev chose for it, '' for none. */
   readyKinds: string[] = []
   /** Whether their content has to come from a search: real places, prices or facts rather than placeholders. */
@@ -1918,6 +2037,8 @@ function withList(sketch: Sketch, list: SketchList | null): Sketch {
   out.hasStopwatch = sketch.hasStopwatch
   out.list = list
   out.events = sketch.events
+  out.live = sketch.live
+  out.liveCut = sketch.liveCut
   out.ready = sketch.ready
   out.other = sketch.other
   return out
@@ -2349,6 +2470,25 @@ function chooseSections(comp: Composition, answers: Record<string, Object>): voi
   }
 }
 
+/**
+ * The live figures Jev says the screen fetches as they are now go to one live_figure section, in plan order. One it says no to is
+ * not fetched: the written section is told of it, and a figure whose formula reads it cannot be worked out, so it is refused.
+ */
+function readLive(comp: Composition, answers: Record<string, Object>): void {
+  for (let label of comp.sketch.liveCut) { comp.dropped.push('"' + label + '": one source answers three figures at most') }
+  for (let i = 0; i < comp.sketch.live.length; i++) {
+    let l = comp.sketch.live[i]
+    let yes = answerOf(answers, 'live.' + i.toString(), ['yes'], comp.answers, LIVE_ABOVE) === 'yes'
+    console.info('VERA-COMPOSE live.' + i.toString() + ' "' + l.label + '" -> ' + (yes ? LIVE_KIND : 'none') + ' ' +
+      JSON.stringify(answers['live.' + i.toString()] ?? null).substring(0, 400))
+    if (yes) { comp.live.push(l); continue }
+    if (customEnabled) { comp.custom.push(l.label + ' (' + l.means + ')') } else { comp.unbound.push('no section fetches: ' + l.label) }
+  }
+  if (comp.live.length > 0 && comp.blocks.indexOf(LIVE_KIND) < 0) { comp.blocks.push(LIVE_KIND) }
+  // A value whose binding reads a refused figure is refused with it in dropValues, once the bindings are known: the written formula
+  // is not the only way to read it, the vocabulary's operands offer every live figure too.
+}
+
 export function readComposition(body: string, sketch: Sketch, widget: boolean = false): Composition {
   let comp = new Composition(sketch)
   // Its own list of inputs: a default adds one (defaultInput), and the sketch is read again for a widget.
@@ -2389,6 +2529,7 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
     }
   }
   if (comp.blocks.length > 0) { comp.realData = answerOf(answers, 'real_data', ['true'], comp.answers, REAL_DATA_ABOVE) === 'true' }
+  readLive(comp, answers)
 
   for (let input of sketch.inputs) {
     let allowed: string[] = []
@@ -2682,6 +2823,24 @@ export function readComposition(body: string, sketch: Sketch, widget: boolean = 
  * other value, not the countdown's length, not an item of "other" they were said to cover -- are left out,
  * as an input is; the rest refuse the screen. A value read only by others left out goes with them.
  */
+/** The live figure a binding is no more than (a copy, times or over a fixed 1, a written formula of its name alone); '' for none. */
+export function copiesLive(comp: Composition, b: Binding): string {
+  let live = (id: string): boolean => comp.live.some((l: SketchLive): boolean => l.id === id)
+  if (b.scale.length > 0) { return '' }
+  let one = (id: string): boolean => comp.sketch.constants.some((k: SketchConstant): boolean => k.id === id && k.value === 1)
+  if (b.formula === 'copy' && live(b.a)) { return b.a }
+  if (b.formula === 'multiply' && live(b.a) && one(b.b)) { return b.a }
+  if (b.formula === 'multiply' && live(b.b) && one(b.a)) { return b.b }
+  if (b.formula === 'divide' && live(b.a) && one(b.b)) { return b.a }
+  if (b.formula === 'written') {
+    let m = /^\(*\s*([A-Za-z_][A-Za-z0-9_]*)\s*(\*\s*1(\.0+)?)?\s*\)*$/.exec(b.expr.trim())
+    if (m !== null && live(m[1])) { return m[1] }
+    let n = /^\(*\s*1(\.0+)?\s*\*\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)*$/.exec(b.expr.trim())
+    if (n !== null && live(n[2])) { return n[2] }
+  }
+  return ''
+}
+
 function dropValues(comp: Composition, answers: Record<string, Object>, failed: Map<string, string>, served: string[],
                     shownBySection: string[]): void {
   let sketch = comp.sketch
@@ -2689,11 +2848,18 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   let taken: string[] = []
   failed.forEach((_why: string, id: string) => { if (!sketch.values.some((v: SketchValue): boolean => v.id === id)) { taken.push(id) } })
   for (let id of taken) { failed.delete(id) }
+  // A live figure Jev said no to is fetched by nothing (readLive) and has no local to read (inputLocals): a value whose binding
+  // reads it -- by the vocabulary's operands as much as by a written formula -- cannot be worked out.
+  let unfetched: string[] = sketch.live.filter((l: SketchLive): boolean => !comp.live.some((k: SketchLive): boolean => k.id === l.id))
+    .map((l: SketchLive): string => l.id)
   // A value worked out from one that cannot be is no better off: its example passed on a number given to it.
   for (let v of sketch.values) {
     let b = comp.bindings.get(v.id)
     if (failed.has(v.id) || b === undefined) { continue }
-    let from = [b.a, b.b].concat(b.reads).find((id: string): boolean => failed.has(id))
+    let reads = [b.a, b.b].concat(b.reads)
+    let live = reads.filter((id: string): boolean => unfetched.indexOf(id) >= 0)
+    if (live.length > 0) { failed.set(v.id, 'reads ' + live.join(', ') + ', which nothing fetches'); continue }
+    let from = reads.find((id: string): boolean => failed.has(id))
     if (from !== undefined) { failed.set(v.id, 'reads "' + labelOf(sketch, from) + '", which nothing works out') }
   }
   let leaving: string[] = []
@@ -2722,6 +2888,13 @@ function dropValues(comp: Composition, answers: Record<string, Object>, failed: 
   for (let v of order) {
     let b = comp.bindings.get(v.id)
     if (b === undefined || failed.has(v.id) || leaving.indexOf(v.id) >= 0 || v.hidden) { continue }
+    // A figure that is a live figure itself ("$1 in rubles" beside the rate) is that figure twice: the live section shows it.
+    let copied = copiesLive(comp, b)
+    if (copied.length > 0) {
+      leaving.push(v.id)
+      comp.dropped.push('value "' + v.label + '": the live section shows ' + copied)
+      continue
+    }
     let key = [b.formula, b.a, b.b, b.expr, b.scale, b.show].join('|')
     if (seen.indexOf(key) >= 0) { leaving.push(v.id) } else { seen.push(key) }
   }
@@ -3249,6 +3422,8 @@ function inputLocals(comp: Composition): string[] {
     }
   }
   for (let c of comp.sketch.constants) { lines.push('  let ' + c.id + ': number = ' + numberLiteral(c.value) + ';') }
+  // A live figure is read off the live_figure section's state, through its port: what it fetched last, 0 before the first answer.
+  for (let i = 0; i < comp.live.length; i++) { lines.push('  let ' + comp.live[i].id + ': number = ' + liveFigureNumber(i + 1) + ';') }
   return lines
 }
 
@@ -4190,6 +4365,14 @@ export function partsContract(comp: Composition): PartsContract {
       'shows none of that again and works none of it out another way -- no second list, form, time, schedule or summary of the same things; ' +
       'what it needs of them it reads from that state.')
   }
+  // The live figures are fetched by their section: a section that needs them reads them, and fetches nothing itself.
+  if (comp.live.length > 0) {
+    let read: string[] = []
+    for (let i = 0; i < comp.live.length; i++) { read.push('"' + comp.live[i].label + '" is ' + liveFigureNumber(i + 1)) }
+    out.lines.push('figures fetched from the internet as they are now, by the ' + LIVE_KIND + ' section: ' + read.join(', ') +
+      ' (0 until the first answer); state.liveSource and state.liveAsOf say where and when they were read. The section reads them ' +
+      'and makes no sdk.call, web fetch or Ticker of its own for them.')
+  }
   return out
 }
 
@@ -4336,6 +4519,14 @@ export function screenPlan(comp: Composition, blockValues: Map<string, string>[]
     let slot = new PlanSlot('ready.' + i.toString(), sketch.ready[i])
     // The section chosen may be a reader put in its place (readLogInCharts).
     slot.accepts = unique(READY_KINDS.concat([comp.readyKinds[i]]))
+    add(slot, FILL_BLOCK, block++)
+  }
+  // The live figures' section comes after the ready needs' blocks and before the sections that took a part's place (readLive runs
+  // before chooseSections), so it has a slot of its own here, or every slot after it points one section too early.
+  if (comp.blocks.indexOf(LIVE_KIND) >= 0) {
+    let slot = new PlanSlot('live', 'fetches ' + comp.live.map((l: SketchLive): string => l.label).join(', ') + ' as they are now')
+    slot.accepts = [LIVE_KIND]
+    slot.writes = comp.live.map((l: SketchLive): string => l.id)
     add(slot, FILL_BLOCK, block++)
   }
   // A section that took a part's place: a slot of its own, filled by it.

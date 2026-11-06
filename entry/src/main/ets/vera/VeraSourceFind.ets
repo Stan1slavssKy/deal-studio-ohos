@@ -144,9 +144,6 @@ export async function findSource(need: string, calls: SourceCalls): Promise<Sour
   return out
 }
 
-/** The labels a program puts in its Vera.Live.fetch call: its own, written out; this stands in for them in the note. */
-const LABELS_HERE: string = 'Figure one|Figure two'
-
 /**
  * No public API for the figure: the program reads it off a web search on each refresh (Vera.Live.fetch, VeraLive.ets). The spec
  * carries the query, and a made-up answer of that shape -- a figure, a domain and a time no real answer has -- so the program
@@ -166,103 +163,15 @@ export function searchSpec(query: string): SourceSpec {
   return spec
 }
 
-/** The call a program makes for this source, exactly as it must be written (for a search, with its own labels). */
-export function sourceCall(spec: SourceSpec, handler: string): string {
-  let q = (s: string): string => JSON.stringify(s)
-  if (spec.query.length > 0) {
-    return 'sdk.call("Vera.Live.fetch", ["query", ' + q(spec.query) + ', "labels", ' + q(LABELS_HERE) + '], "' + handler + '");'
-  }
-  return 'sdk.call("Vera.Source.fetch", ["url", ' + q(spec.url) + ', "paths", ' + q(spec.paths.join('|')) +
-    (spec.asof.length > 0 ? ', "asof", ' + q(spec.asof) : '') + '], "' + handler + '");'
-}
-
-/** How a found source is introduced: where it is, what it gave just now, and that the call is copied as it is. */
-function sourceHead(spec: SourceSpec): string {
-  if (spec.query.length > 0) {
-    return 'No public data source that answers this figure directly was found, so the program reads it off a web search each ' +
-      'time it refreshes: the phone searches, a model reads the figures off the results, and only a figure written in a result ' +
-      'is given. A search costs time and money, so the program refreshes every five minutes at most, and on its Refresh button. ' +
-      'It uses exactly this call, with the query as it is and, in place of ' + JSON.stringify(LABELS_HERE) + ', one to three ' +
-      'short names of the figures the request needs, separated by |, written out (never built from the state):\n  ' +
-      sourceCall(spec, 'onSource') + '\n' +
-      'Its answer comes to the handler as text lines: "ok", then one value per label in that order (an empty line for one not ' +
-      'found), then "source<TAB>domain<TAB>address" of the page the first figure was read from, then "asof<TAB>time" of the ' +
-      'phone\'s clock. A value is copied as the page wrote it, with its currency sign, unit, percent sign or thousands ' +
-      'separators ("$401.83", "1,234.5 RUB", "0.55%"): show it as it is, or take those out with strings.replace before ' +
-      'strings.toNumber, which gives its fallback for anything that is not a plain number. '
-  }
-  let figures: string[] = []
-  for (let i = 0; i < spec.paths.length; i++) {
-    figures.push((i + 1).toString() + '. ' + spec.labels[i] + ' = ' + spec.values[i] + (spec.units[i].length > 0 ? ' (' + spec.units[i] + ')' : ''))
-  }
-  return 'The live figures for this request come from a public data source checked just now, ' + domainOf(spec.url) +
-    '. It answered:\n' + figures.join('\n') + (spec.asofValue.length > 0 ? '\nas of ' + spec.asofValue : '') + '\n\n' +
-    'The program fetches them itself, soon after it opens and then every few minutes, with exactly this call (copy it as it is: ' +
-    'never change the address or the paths, and never build them from the state):\n  ' + sourceCall(spec, 'onSource') + '\n' +
-    'Its answer comes to the handler as text lines: "ok", then one value per path in that order (an empty line for none), then ' +
-    '"source<TAB>domain<TAB>address", then "asof<TAB>time". '
-}
-
 /**
- * What the program is told along with the request: the source (or the search it reads instead), what it gave just now, and the
- * shape of a program that keeps fetching it. The figures in it are for the first screen only; the program shows the answers.
+ * The parameters of the call a program makes for this source, as the literal it is written with (the compiler takes them no
+ * other way, E2114): the address, the paths and the time's path for an API; the query and `labels` (one to three, separated by
+ * |) for a search.
  */
-export function sourceNote(spec: SourceSpec): string {
-  return sourceHead(spec) +
-    'A failure is one line starting "error:": keep the figures shown and ' +
-    'say the source is unavailable. Values are text: use strings.toNumber for arithmetic, and turn a code (a weather code, a ' +
-    'status) into words with a table you write. Show each figure with its label and unit, the source\'s domain, and the time. ' +
-    (spec.query.length > 0 ? 'Start the state with the figures of the search results below, if they give them, so the first ' +
-      'screen is not empty. ' : 'Start the state with the figures above so the first screen is not empty. ') +
-    'A field that a request is in flight must not ' +
-    'stop the next fetch for ever: compare the time of the last call instead. Like this:\n' +
-    'function fetchNow(state: AppState, now: number): AppState {\n' +
-    '  ' + sourceCall(spec, 'onSource') + '\n' +
-    '  return withLastCall(state, now); // copies every field of the state, with lastCall set to now\n' +
-    '}\n' +
-    'function refresh(state: AppState, ignored: number): AppState {\n' +
-    '  let now: number = time.nowSeconds();\n' +
-    '  if (now - state.lastCall < 10) { return state; }\n' +
-    '  return fetchNow(state, now);\n' +
-    '}\n' +
-    'function onTick(state: AppState, elapsedMs: number): AppState {\n' +
-    '  let now: number = time.nowSeconds();\n' +
-    '  if (now - state.lastCall < 300) { return state; }\n' +
-    '  return fetchNow(state, now);\n' +
-    '}\n' +
-    'function onSource(state: AppState, answer: string): AppState {\n' +
-    '  if (!strings.startsWith(answer, "ok")) { ...keep the figures, note that the source is unavailable... }\n' +
-    '  let lines: string[] = strings.split(answer, "\\n");\n' +
-    '  // lines[1], lines[2], lines[3]: the figures, in the order asked\n' +
-    '  // strings.split(lines[4], "\\t")[1]: the source\'s domain, to show (never the whole address)\n' +
-    '  // strings.split(lines[5], "\\t")[1]: the time the figures are for\n' +
-    '}\n' +
-    'The view must hold ui.Ticker("default", "live", 1000, true, "onTick"): without it the program never fetches by itself. ' +
-    'Add a "Refresh" button for refresh.'
-}
-
-/** '' when the program fetches the source as it was found; else what the next attempt must change. */
-export function sourceUseError(program: string, spec: SourceSpec): string {
-  let target = spec.query.length > 0 ? 'Vera.Live.fetch' : 'Vera.Source.fetch'
-  // The address and the paths as found, or the query: what the note says is copied as it is.
-  let fetches = program.indexOf('"' + target + '"') >= 0 && (spec.query.length > 0 ?
-    program.indexOf(JSON.stringify(spec.query)) >= 0 :
-    program.indexOf(JSON.stringify(spec.url)) >= 0 && program.indexOf(JSON.stringify(spec.paths.join('|'))) >= 0)
-  // A search answers three figures at most: a fourth label would read the source line as a figure.
-  let labels = /"Vera\.Live\.fetch"\s*,\s*\[[^\n]*?"labels"\s*,\s*"((?:[^"\\]|\\.)*)"/.exec(program)
-  if (fetches && labels !== null && labels[1].split('|').length > SOURCE_MAX_FIGURES) {
-    return 'Vera.Live.fetch answers at most ' + SOURCE_MAX_FIGURES.toString() + ' figures, but the call asks for ' +
-      labels[1].split('|').length.toString() + ' labels ("' + labels[1] + '"): keep the ' + SOURCE_MAX_FIGURES.toString() +
-      ' that matter most and leave out the rest.'
-  }
-  if (fetches && program.indexOf('ui.Ticker(') >= 0) { return '' }
-  if (fetches) {
-    return 'The program fetches the source only when asked: put ui.Ticker("default", "live", 1000, true, "onTick") in the view, ' +
-      'with onTick fetching soon after the program opens and then every few minutes.'
-  }
-  return 'The program must get its live figures itself with sdk.call("' + target + '", ...) as given: ' +
-    sourceCall(spec, 'onSource') + ' -- from a ticker soon after it opens and every few minutes, and from a Refresh button. ' +
-    'Figures written into the program never change.'
+export function sourceArgs(spec: SourceSpec, labels: string): string {
+  let q = (s: string): string => JSON.stringify(s)
+  if (spec.query.length > 0) { return '["query", ' + q(spec.query) + ', "labels", ' + q(labels) + ']' }
+  return '["url", ' + q(spec.url) + ', "paths", ' + q(spec.paths.join('|')) + (spec.asof.length > 0 ? ', "asof", ' + q(spec.asof) : '') + ']'
 }
 
 /** The handler a program names for its source's answer; '' when it makes no such call. */

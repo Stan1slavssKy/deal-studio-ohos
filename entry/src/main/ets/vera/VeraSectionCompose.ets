@@ -36,7 +36,7 @@ import { http } from '@kit.NetworkKit'
 import { hilog } from '@kit.PerformanceAnalysisKit'
 import { BusinessError } from '@kit.BasicServicesKit'
 import { layouts, arrangeInLayout, completeRequiredSlots, swapForLayout, layoutKinds, kindsOfLayout, placeKinds, fitToSlots, LAYOUT_NONE, LAYOUT_STACK } from './VeraLayouts'
-import { FragmentSpec, StateFieldSpec, SlotSpec, VetoSpec, ContentFieldSpec, fragments, vetoes, bannerSectionView } from './VeraTemplates'
+import { FragmentSpec, StateFieldSpec, SlotSpec, VetoSpec, ContentFieldSpec, fragments, vetoes, bannerSectionView, LIVE_KIND } from './VeraTemplates'
 
 const DOMAIN = 0x0000
 const ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
@@ -199,7 +199,8 @@ export function buildSectionRequest(prompt: string): string {
   let questions: Record<string, Object> = {}
 
   let kindCriteria: Record<string, Object> = {}
-  for (let spec of specs) { kindCriteria[spec.kind] = spec.criteria }
+  // Not the live section: its figures are the plan's (readLive), and a pick from the request alone has none to fetch.
+  for (let spec of specs) { if (spec.kind !== LIVE_KIND) { kindCriteria[spec.kind] = spec.criteria } }
   kindCriteria['none'] = 'nothing is needed in this part of the screen'
 
   for (let i = 1; i <= SECTION_COUNT; i++) {
@@ -794,6 +795,10 @@ function withHoleDefaults(spec: FragmentSpec, idx: string, values: Map<string, s
   if (values !== undefined) { values.forEach((v: string, k: string) => { merged.set(k, v) }) }
   for (let hole of spec.holes) {
     if (!merged.has(hole.token)) { merged.set(hole.token, markedHole(hole.key, idx, hole.defaultBody)) }
+  }
+  // What the host has not filled yet (a picture drawn before the live source is found) takes its fallback, which compiles.
+  for (let field of spec.hostFields) {
+    if (!merged.has(field.token)) { merged.set(field.token, field.fallback) }
   }
   return merged
 }

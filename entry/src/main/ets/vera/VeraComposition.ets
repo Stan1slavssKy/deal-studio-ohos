@@ -23,7 +23,7 @@
 import { noteService, httpFailure, SERVICE_JEV } from './ServiceHealth'
 import { http } from '@kit.NetworkKit'
 import { hilog } from '@kit.PerformanceAnalysisKit'
-import { fragments, FragmentSpec, StateFieldSpec } from './VeraTemplates'
+import { fragments, FragmentSpec, StateFieldSpec, LIVE_KIND } from './VeraTemplates'
 import { markedHole, readChoiceValue } from './VeraSectionCompose'
 import { ScreenPlan, PlanComponent, FILL_BLOCK, planFromBlocks, assemblePlan } from './ScreenPlan'
 import { fillSectionsContent } from './VeraTemplateContent'
@@ -345,12 +345,12 @@ export function applyEdit(c: Composition, edit: CompositionEdit, values: Map<str
     out.blocks.push(new Block(edit.kind, values !== null ? values : defaultValues(spec), new Map<string, string>()))
   } else if (edit.op === OP_REMOVE) {
     let at = kinds.indexOf(edit.target)
-    if (at < 0 || kinds.length <= 1) { return null }
+    if (at < 0 || kinds.length <= 1 || readFromElsewhere(out, at)) { return null }
     out.blocks.splice(at, 1)
   } else if (edit.op === OP_REPLACE) {
     let at = kinds.indexOf(edit.target)
     let spec = findSpec(edit.kind)
-    if (at < 0 || spec === null || kinds.indexOf(edit.kind) >= 0) { return null }
+    if (at < 0 || spec === null || kinds.indexOf(edit.kind) >= 0 || readFromElsewhere(out, at)) { return null }
     out.blocks[at] = new Block(edit.kind, values !== null ? values : defaultValues(spec), new Map<string, string>())
   } else if (edit.op === OP_TOP || edit.op === OP_BOTTOM) {
     let at = kinds.indexOf(edit.target)
@@ -386,13 +386,41 @@ function opCriteria(): Record<string, Object> {
   return m
 }
 
+/**
+ * Whether an edit may add a section of this kind, or put one in another's place. Not the live section: its source is found
+ * while a screen is built (LiveBlock.ets), which an edit does not do, so a change that asks for one goes to the model. It can
+ * still be moved, and taken away when nothing else reads it (readFromElsewhere).
+ */
+function addable(kind: string): boolean { return kind !== LIVE_KIND }
+
+/** The live section's state, which the composer's figures read through its ports (`liveNumber(state.liveFigure1)`). */
+const LIVE_STATE: RegExp = /\bstate\.live(Figure[123]|Source|AsOf)\b/
+
+/**
+ * Whether another block reads the state of the block at `at`: the live section's figures, read by the figures part or a written
+ * section. Taking it away would leave them reading names nothing defines, so the edit is refused and goes to the model.
+ */
+function readFromElsewhere(c: Composition, at: number): boolean {
+  if (c.blocks[at].kind !== LIVE_KIND) { return false }
+  return c.blocks.some((b: Block, i: number): boolean => {
+    if (i === at) { return false }
+    let texts: string[] = []
+    b.values.forEach((v: string) => { texts.push(v) })
+    b.holes.forEach((v: string) => { texts.push(v) })
+    if (b.literal !== null) {
+      texts.push(b.literal.initStatements, b.literal.initEntries, b.literal.functions, b.literal.viewBlock)
+    }
+    return texts.some((t: string): boolean => LIVE_STATE.test(t))
+  })
+}
+
 export function buildEditRequest(request: string, c: Composition): string {
   let specs = fragments()
   let present: string[] = c.targetKinds()
   let kindCriteria: Record<string, Object> = {}
   let targetCriteria: Record<string, Object> = {}
   for (let spec of specs) {
-    kindCriteria[spec.kind] = spec.criteria
+    if (addable(spec.kind)) { kindCriteria[spec.kind] = spec.criteria }
     if (present.indexOf(spec.kind) >= 0) { targetCriteria[spec.kind] = spec.criteria }
   }
   for (let b of c.blocks) { if (b.literal !== null && present.indexOf(b.kind) >= 0) { targetCriteria[b.kind] = b.literal!.criteria } }
@@ -437,7 +465,7 @@ export function readEditAnswer(body: string, c: Composition): CompositionEdit {
   }
   let present = c.targetKinds()
   let allKinds: string[] = ['none']
-  for (let spec of fragments()) { allKinds.push(spec.kind) }
+  for (let spec of fragments()) { if (addable(spec.kind)) { allKinds.push(spec.kind) } }
   let op = readChoiceValue(answers, 'edit.op', [OP_NONE, OP_ADD, OP_REMOVE, OP_REPLACE, OP_TOP, OP_BOTTOM], EDIT_ABOVE, OP_NONE)
   let target = readChoiceValue(answers, 'edit.target', present.concat(['none']), EDIT_ABOVE, 'none')
   let kind = readChoiceValue(answers, 'edit.kind', allKinds, EDIT_ABOVE, 'none')
