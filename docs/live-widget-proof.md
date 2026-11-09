@@ -253,6 +253,18 @@ muted, "Plan" in bold serif, a panel with the accent fill and rounded corners, a
 The height estimate (`widgetHeight`) uses the real sizes, wraps a long text at two lines (0.55 em a character) and counts a row's width as shared; Make widget refuses a
 widget estimated more than 14 vp over the card's 126 ("what does not fit is cut off"). The estimate was 84 to 126 vp for every example in `tools/vera-harness/examples`.
 
+## Icons, marks and data on the card
+
+`ui.Icon`, `ui.IconButton`, `ui.Badge`, `ui.Progress`, `ui.ProgressRing`, `ui.Stat`, `ui.NumberStat`, `ui.MetricGroup` and `ui.Sparkline` are card kinds (opted in by
+name in `VeraUiCatalog`, `CARD_OPT_IN`). VeraLiveWidget turns each into card nodes: an icon into the catalogue's stroked path (`VeraIcons`; the card draws it with the
+viewPort and stroke in px, as the app does), a bar and a ring into the platform's own `Progress` (spike: it draws on a card), a Stat or NumberStat into a column of a caption, a
+figure that shrinks to fit and a supporting line, a MetricGroup into a row of them, and a Sparkline into a small picture (100 by 36 units: a line and its last point, or one
+bar for each value; a card draws it with the same painter, and it counts among the three pictures). An IconButton is one of the two buttons.
+
+On the phone (examples/widget-water.vera, widget-metrics.vera): a ring at 38 % that went to 50 % when the plus button was touched, the buttons in the theme's primary and
+secondary fills with their icons; a "On track" badge with a check, a star, two stats side by side and a trend line with its last point. A bug found there: the block that fills
+these nodes ran before the default colour and fill were assigned, so a ring came out in the plain ink and the buttons white; the order is now fixed and a test holds it.
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

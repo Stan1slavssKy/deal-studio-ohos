@@ -243,4 +243,31 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert(!JSON.stringify(f).includes('"gap"'), 'no gap in the frame when it is the default')
   assert(JSON.stringify(f).length < 2400, 'styles stay small: ' + JSON.stringify(f).length)
 }
+// Icons, badges, progress, stats and a sparkline on the card (examples/widget-water.vera, widget-metrics.vera).
+{
+  const { decodeGfxOps } = loadVera('VeraGfx')
+  const water = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-water.vera'), 'utf8')).vbc2, 'water', '')
+  const f = frame(water)
+  const ring = f.nodes[0].children[0]
+  assert.equal(ring.kind, 'ring'); assert.equal(ring.val, 3); assert.equal(ring.max, 8); assert.equal(ring.sub, '38%'); assert.equal(ring.text, 'Water')
+  assert.equal(ring.size, 52); assert.match(ring.color, /^#[0-9A-Fa-f]{6}$/); assert.notEqual(ring.color, '#172033', 'the ring takes the theme\'s accent, not the default ink')
+  const [minus, plus] = f.nodes[0].children[1].children
+  assert.equal(minus.kind, 'iconbutton'); assert(minus.commands.length > 0, 'an icon button carries its icon\'s path')
+  assert.notEqual(minus.fill, plus.fill, 'secondary and primary differ'); assert.equal(plus.color, '#FFFFFF', 'the ink on a primary button is the theme\'s onPrimary')
+  water.tap(f, f.token, 'add', 1)
+  assert.equal(frame(water).nodes[0].children[0].val, 4, 'an icon button runs its handler')
+  assert.throws(() => water.tap(frame(water), frame(water).token, 'add', 5), /not available/)
+  const metrics = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-metrics.vera'), 'utf8')).vbc2, 'metrics', '')
+  const m = frame(metrics)
+  const kinds = []; const walk = n => { kinds.push(n.kind); n.children.forEach(walk) }; m.nodes.forEach(walk)
+  assert.deepEqual(kinds.slice(0, 4), ['column', 'row', 'badge', 'icon'])
+  assert(kinds.includes('numbertext') && kinds.includes('surface'), 'a stat is a labelled figure; a sparkline is a picture')
+  const chart = []; const find = n => { if (n.kind === 'surface') chart.push(n); n.children.forEach(find) }; m.nodes.forEach(find)
+  const shapes = decodeGfxOps(chart[0].ops)
+  assert(shapes.some(o => o.kind === 'polyline') && shapes.some(o => o.kind === 'circle'), 'a line and its last point')
+  assert.equal(chart[0].pointer, '', 'a sparkline is not tappable'); assert.equal(chart[0].pic, 0)
+  assert(JSON.stringify(m).length < 4200, 'the metrics widget stays small: ' + JSON.stringify(m).length)
+  const unknownIcon = fs.readFileSync(path.join(__dirname, 'examples/widget-metrics.vera'), 'utf8').replace('"star"', '"nonesuch"')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(unknownIcon).vbc2, 'bad-icon', '')), /unknown icon/)
+}
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

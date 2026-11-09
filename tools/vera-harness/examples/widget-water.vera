@@ -1,0 +1,27 @@
+import * as ui from "std/ui"
+@jsonable class AppState { glasses: number; }
+function init(): AppState { return { glasses: 3 }; }
+function add(state: AppState, value: number): AppState { return { glasses: state.glasses + value }; }
+function remove(state: AppState, value: number): AppState {
+  if (state.glasses <= 0) { return state; }
+  return { glasses: state.glasses - value };
+}
+function view(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Column("default", [
+      ui.Text("heading", "Water"),
+      ui.NumberText("metric", state.glasses, "", " glasses", 1)
+    ])
+  ]);
+}
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Column("center", [
+      ui.ProgressRing("accent", "Water", state.glasses, 8, ""),
+      ui.Row("center", [
+        ui.IconButton("secondary", "minus", "Less", "remove", 1, true),
+        ui.IconButton("primary", "plus", "More", "add", 1, true)
+      ])
+    ])
+  ]);
+}

@@ -93,6 +93,10 @@ export struct CardView {
   private panelOf(node: CardNode): string { return node.panel !== undefined ? node.panel : '#00000000' }
   private radiusOf(node: CardNode, fallback: number): number { return node.radius !== undefined ? node.radius : fallback }
   private colAlign(node: CardNode): HorizontalAlign { return node.align === 'end' ? HorizontalAlign.End : HorizontalAlign.Center }
+  private valueNow(node: CardNode): number { return node.val !== undefined ? node.val : 0 }
+  private maxOf(node: CardNode): number { return node.max !== undefined && node.max > 0 ? node.max : 100 }
+  private inkOf(node: CardNode): string { return node.ink !== undefined ? node.ink : '#333333' }
+  private percent(node: CardNode): string { return Math.round(100 * this.valueNow(node) / this.maxOf(node)).toString() + '%' }
   private rowJustify(node: CardNode): FlexAlign {
     return node.align === 'split' ? FlexAlign.SpaceBetween : node.align === 'end' ? FlexAlign.End :
       node.align === 'joined' ? FlexAlign.Center : FlexAlign.SpaceEvenly
@@ -141,6 +145,50 @@ export struct CardView {
         Canvas(this.contextOf(node)).width(this.pictureW(node)).height(this.pictureH(node))
           .onReady(() => { this.paintPicture(node) })
       }
+    } else if (node.kind === 'icon') {
+      this.glyph(node.commands, node.size, node.color)
+    } else if (node.kind === 'iconbutton') {
+      Column() {
+        this.glyph(node.commands, Math.round(node.size * 0.5), node.color)
+      }
+      .width(node.size).height(node.size)
+      .alignItems(HorizontalAlign.Center).justifyContent(FlexAlign.Center)
+      .backgroundColor(node.fill).borderRadius(node.size / 2)
+      .opacity(node.enabled ? 1 : 0.4)
+      .onClick(() => {
+        if (node.enabled && node.action.length > 0) { this.onTap(node.action, node.value) }
+      })
+    } else if (node.kind === 'badge') {
+      Row({ space: 4 }) {
+        if (node.commands.length > 0) {
+          this.glyph(node.commands, 12, node.color)
+        }
+        Text(node.text).fontSize(12).fontWeight(500).fontColor(node.color).maxLines(1)
+      }
+      .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+      .backgroundColor(node.fill).borderRadius(this.radiusOf(node, 8))
+    } else if (node.kind === 'progress') {
+      // The platform's own bar, with the label on the left and how far along on the right, as the app draws it.
+      Column({ space: 4 }) {
+        Row() {
+          Text(node.text).fontSize(12).fontColor(this.inkOf(node)).maxLines(1).layoutWeight(1)
+          Text(this.percent(node)).fontSize(12).fontColor(node.color)
+        }.width('100%')
+        Progress({ value: this.valueNow(node), total: this.maxOf(node), type: ProgressType.Linear })
+          .width('100%').style({ strokeWidth: 8, strokeRadius: 4 }).color(node.color).backgroundColor(node.fill)
+      }.width('100%')
+    } else if (node.kind === 'ring') {
+      Column({ space: 2 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Progress({ value: this.valueNow(node), total: this.maxOf(node), type: ProgressType.Ring })
+            .width(node.size).height(node.size).style({ strokeWidth: 7 }).color(node.color).backgroundColor(node.fill)
+          Text(node.sub !== undefined ? node.sub : '').fontSize(12).fontWeight(700).fontColor(this.inkOf(node))
+            .maxLines(1).textAlign(TextAlign.Center).width(node.size - 14)
+        }
+        if (node.text.length > 0) {
+          Text(node.text).fontSize(12).fontColor(this.inkOf(node)).maxLines(1)
+        }
+      }
     } else if (node.kind === 'divider') {
       Divider().color(node.color)
     } else if (node.kind === 'spacer') {
@@ -167,6 +215,17 @@ export struct CardView {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
     }
+  }
+
+  /** A catalogue icon: strokes in a 100-unit box, the box's unit the pixel (see VeraPreview.drawIcon for why the viewPort and the stroke say 'px'). */
+  @Builder
+  glyph(commands: string, size: number, color: string) {
+    Shape() {
+      Path({ commands: commands }).fill(Color.Transparent).stroke(color).strokeWidth('8px')
+        .strokeLineCap(LineCapStyle.Round).strokeLineJoin(LineJoinStyle.Round)
+    }
+    .viewPort({ x: '0px', y: '0px', width: '100px', height: '100px' })
+    .width(size).height(size)
   }
 
   // ArkTS has no recursive builders: four levels, the depth a card is held to (the theme wrapper consumes none of them).

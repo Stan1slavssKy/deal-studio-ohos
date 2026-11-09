@@ -235,5 +235,16 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   const tall = styles.substring(0, at) + styles.substring(at).replace('ui.Column("accent", [\n        ui.Text("caption", "3 of 5 done")\n      ])', lines(3))
   assert.match(validateWidgetRefinement(styles, tall, compileVeraSource(tall).vbc2), /vp tall and the card is 126/)
 }
+// An icon button is one of the two buttons; the new kinds are on the card list and in the prompt.
+{
+  const water = fs.readFileSync(path.join(__dirname, 'examples/widget-water.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(water).vbc2), '')
+  for (const kind of ['Icon', 'IconButton', 'Badge', 'Progress', 'ProgressRing', 'Stat', 'NumberStat', 'MetricGroup', 'Sparkline']) assert(CARD_KINDS.includes(kind), kind + ' is a card kind')
+  const at = water.indexOf('function widget(')
+  const three = water.substring(0, at) + water.substring(at).replace('ui.IconButton("primary", "plus", "More", "add", 1, true)',
+    'ui.IconButton("primary", "plus", "More", "add", 1, true), ui.IconButton("danger", "trash", "Clear", "remove", 1, true)')
+  assert.match(validateWidgetRefinement(water, three, compileVeraSource(three).vbc2), /3 buttons/)
+  assert.match(widgetRefinementPrompt(), /ICONS AND DATA/)
+}
 console.log('PASS carry widget: the earlier widget and its helpers come back into a version written without them')
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## Widget card: icons, badges, progress, stats and a sparkline
+
+- `ui.Icon`, `ui.IconButton`, `ui.Badge`, `ui.Progress`, `ui.ProgressRing`, `ui.Stat`, `ui.NumberStat`, `ui.MetricGroup` and `ui.Sparkline` are card kinds: icons in the theme's colours, the platform's own bar and ring, labelled figures, and a small trend. An icon button counts as one of the two buttons. The Make widget prompt describes them.
+
 ## Widget card: the theme's styles, one layout, up to three pictures and Motions
 
 - The card draws the catalogue's styles as the app does: text roles (display, title, heading, caption, eyebrow, metric, muted, success, warning, danger) with the theme's weight, font and ink, column and row alignment and density, panels (`surface`, `accent`), all four button styles, the divider in the theme's colour (`CardStyle.ets`). Sizes a widget already had are unchanged. Make widget refuses a widget clearly taller than the card.

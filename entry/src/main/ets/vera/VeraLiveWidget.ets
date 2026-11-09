@@ -2,7 +2,8 @@ import { VirtualMachine, deserializeVbc2, encodeRuntimeValue, decodeRuntimeValue
   VeraNumberValue, VeraStringValue } from './VeraInterpreter'
 import { UiHostEnvironment, VeraUiNode, decodeVeraUi, formatVeraNumber } from './VeraUi'
 import { CATALOG } from './VeraUiCatalog'
-import { resolveTheme, pathFill } from './VeraTheme'
+import { resolveTheme, pathFill, toneInk, toneEdge, toneFill, buttonFill } from './VeraTheme'
+import { iconPath } from './VeraIcons'
 import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
@@ -44,7 +45,11 @@ const LIVE_ROW_SPACE: number = 8
  */
 function nodeHeight(node: CardNode, pictureSide: number, width: number = LIVE_INNER_WIDTH): number {
   if (node.kind === 'surface') { return Math.min(pictureSide * 1.1, pictureSide * node.h / node.w) }
-  if (node.kind === 'path') { return node.size }
+  if (node.kind === 'path' || node.kind === 'icon') { return node.size }
+  if (node.kind === 'iconbutton') { return node.size }
+  if (node.kind === 'badge') { return 22 }
+  if (node.kind === 'progress') { return 30 }
+  if (node.kind === 'ring') { return node.size + (node.text.length > 0 ? 16 : 0) }
   if (node.kind === 'button') { return 40 }
   if (node.kind === 'divider') { return 1 }
   if (node.kind === 'spacer') { return 4 }
@@ -121,6 +126,52 @@ export class SourceRequest {
   constructor(params: Map<string, string>, handler: string) { this.params = params; this.handler = handler }
 }
 
+/** The shapes of a ui.Sparkline on a card: 100 by 36 units, a line through the series (or a bar for each value), a second series in a quieter colour. */
+function sparkOps(series: number[], series2: number[], maximum: number, bars: boolean): GfxOp[] {
+  const width = 100
+  const height = 36
+  const pad = 3
+  let top = maximum > 0 ? maximum : 0
+  if (top <= 0) {
+    for (let v of series) { top = Math.max(top, v) }
+    for (let v of series2) { top = Math.max(top, v) }
+  }
+  if (!(top > 0)) { top = 1 }
+  let ops: GfxOp[] = []
+  let line = (values: number[], colour: string, widthPx: number): void => {
+    if (values.length === 0) { return }
+    let points: number[] = []
+    for (let i = 0; i < values.length; i++) {
+      points.push(values.length > 1 ? pad + i * (width - 2 * pad) / (values.length - 1) : width / 2)
+      points.push(height - pad - Math.max(0, Math.min(1, values[i] / top)) * (height - 2 * pad))
+    }
+    let o = new GfxOp()
+    o.kind = 'polyline'; o.points = points; o.lineWidth = widthPx; o.color = colour
+    ops.push(o)
+  }
+  if (bars) {
+    let slot = width / Math.max(1, series.length)
+    for (let i = 0; i < series.length; i++) {
+      let h = Math.max(1, Math.max(0, Math.min(1, series[i] / top)) * (height - 2 * pad))
+      let o = new GfxOp()
+      o.kind = 'rect'; o.x = i * slot + slot * 0.19; o.y = height - pad - h; o.w = slot * 0.62; o.h = h; o.color = 'accent'
+      ops.push(o)
+    }
+    return ops
+  }
+  line(series2, 'muted', 2)
+  line(series, 'accent', 2.6)
+  if (series.length > 0) {
+    let end = new GfxOp()
+    end.kind = 'circle'
+    end.x = series.length > 1 ? width - pad : width / 2
+    end.y = height - pad - Math.max(0, Math.min(1, series[series.length - 1] / top)) * (height - 2 * pad)
+    end.r = 3; end.color = 'accent'
+    ops.push(end)
+  }
+  return ops
+}
+
 export class WidgetSession {
   private host: UiHostEnvironment = new UiHostEnvironment()
   private vm: VirtualMachine
@@ -161,6 +212,70 @@ export class WidgetSession {
     let count = 0
     let motions = 0
     let surfaces = 0
+    // The nodes a component is expanded into (a Stat, a Sparkline) are made, counted and depth-checked like the ones the program wrote.
+    let make = (kind: string, key: string, depth: number, slot: number): CardNode => {
+      count += 1
+      if (count > LIVE_MAX_NODES) { throw new Error('widget exceeds 40 nodes') }
+      if (depth > LIVE_MAX_DEPTH) { throw new Error('widget exceeds depth 4') }
+      let made = new CardNode()
+      made.kind = kind
+      made.key = key
+      made.slot = slot
+      return made
+    }
+    let iconOf = (name: string): string => {
+      let commands = iconPath(name)
+      if (commands.length === 0) { throw new Error('unknown icon "' + name + '"') }
+      return commands
+    }
+    let statOf = (item: CardNode, node: VeraUiNode, depth: number, key: string, slot: number, figure: string): void => {
+      item.kind = 'column'
+      item.gap = 2
+      let kids: CardNode[] = []
+      if (node.icon.length > 0) {
+        // With an icon the caption sits beside it in a row (one level deeper); without, it is a text of the column's own.
+        let head = make('row', key + '.h', depth + 1, slot)
+        head.gap = 4
+        head.align = 'joined'
+        let glyph = make('icon', key + '.hi', depth + 2, slot)
+        glyph.commands = iconOf(node.icon)
+        glyph.size = 12
+        glyph.color = toneInk(theme, node.style, theme.inkMuted)
+        head.children.push(glyph)
+        if (node.label.length > 0) {
+          let label = make('text', key + '.hl', depth + 2, slot)
+          label.text = node.label
+          label.size = cardTextSize('caption')
+          label.color = theme.inkMuted
+          head.children.push(label)
+        }
+        kids.push(head)
+      } else if (node.label.length > 0) {
+        let label = make('text', key + '.hl', depth + 1, slot)
+        label.text = node.label
+        label.size = cardTextSize('caption')
+        label.color = theme.inkMuted
+        kids.push(label)
+      }
+      let big = make('numbertext', key + '.f', depth + 1, slot)
+      big.text = figure
+      // A Stat's figure is smaller than a lone metric (24, not 30): two of them side by side have to leave room between them.
+      big.size = 24
+      big.color = toneInk(theme, node.style, theme.ink)
+      let weight = cardTextWeight(theme, 'metric')
+      if (weight !== 400) { big.weight = weight }
+      let family = cardTextFamily(theme, 'metric')
+      if (family.length > 0) { big.family = family }
+      kids.push(big)
+      if (node.value.length > 0) {
+        let line = make('text', key + '.s', depth + 1, slot)
+        line.text = node.value
+        line.size = cardTextSize('caption')
+        line.color = theme.inkSoft
+        kids.push(line)
+      }
+      item.children = kids
+    }
     let project = (node: VeraUiNode, depth: number, key: string, motionSlot: number): CardNode => {
       count += 1
       if (count > LIVE_MAX_NODES) { throw new Error('widget exceeds 40 nodes') }
@@ -243,7 +358,66 @@ export class WidgetSession {
           item.radius = theme.radiusControl
         }
       }
-      item.children = node.children.map((child: VeraUiNode, index: number): CardNode => project(child, depth + 1, key + '.' + index.toString(), item.slot))
+      if (node.kind === 'progressring') { item.kind = 'ring' }
+      if (node.kind === 'metricgroup') { item.kind = node.columns > 1 ? 'row' : 'column' }
+      if (node.kind === 'icon') {
+        item.commands = iconOf(node.icon)
+        item.size = cardTextSize('heading')
+        item.color = toneInk(theme, node.style, theme.inkStrong)
+      }
+      if (node.kind === 'iconbutton') {
+        item.commands = iconOf(node.icon)
+        item.size = 36
+        item.fill = node.style === 'quiet' ? '#00000000' : node.style === 'secondary' ? theme.secondaryFill : buttonFill(theme, node.style)
+        item.color = node.style === 'quiet' || node.style === 'secondary' ? theme.secondaryInk : theme.onPrimary
+      }
+      if (node.kind === 'badge') {
+        item.commands = node.icon.length > 0 ? iconOf(node.icon) : ''
+        item.color = toneInk(theme, node.style, theme.inkSoft)
+        item.fill = toneFill(theme, node.style, theme.surface)
+        item.radius = theme.radiusSmall
+      }
+      if (node.kind === 'progress' || node.kind === 'progressring') {
+        item.text = node.label
+        item.val = node.eventValue
+        item.max = node.maximum > 0 ? node.maximum : 100
+        item.color = toneEdge(theme, node.style, theme.primary)
+        item.fill = theme.lineSoft
+        item.ink = theme.inkStrong
+        if (node.kind === 'progressring') {
+          item.sub = node.text.length > 0 ? node.text : Math.round(100 * node.eventValue / item.max).toString() + '%'
+          item.size = 52
+        }
+      }
+      if (node.kind === 'stat') { statOf(item, node, depth, key, motionSlot, node.text) }
+      if (node.kind === 'numberstat') {
+        statOf(item, node, depth, key, motionSlot, node.prefix + formatVeraNumber(node.numberValue, node.decimals, node.minimumDigits) + node.suffix)
+      }
+      if (node.kind === 'sparkline') {
+        item.kind = 'column'
+        item.gap = 2
+        let kids: CardNode[] = []
+        if (node.label.length > 0) {
+          let label = make('text', key + '.l', depth + 1, motionSlot)
+          label.text = node.label
+          label.size = cardTextSize('caption')
+          label.color = theme.inkSoft
+          kids.push(label)
+        }
+        surfaces += 1
+        if (surfaces > LIVE_MAX_SURFACES) { throw new Error('a widget has at most ' + LIVE_MAX_SURFACES.toString() + ' pictures (ui.Surface or ui.Sparkline)') }
+        if (node.series.length > 30 && node.bars) { throw new Error('a card sparkline with bars has at most 30 values') }
+        let chart = make('surface', key + '.c', depth + 1, motionSlot)
+        chart.ops = encodeGfxOps(sparkOps(node.series, node.series2, node.maximum, node.bars))
+        chart.w = 100
+        chart.h = 36
+        chart.pic = surfaces - 1
+        kids.push(chart)
+        item.children = kids
+      }
+      if (node.kind !== 'stat' && node.kind !== 'numberstat' && node.kind !== 'sparkline') {
+        item.children = node.children.map((child: VeraUiNode, index: number): CardNode => project(child, depth + 1, key + '.' + index.toString(), item.slot))
+      }
       return item
     }
     // The theme wrapper consumes no layout level but is still validated and counted.
@@ -301,7 +475,7 @@ export class WidgetSession {
   tap(frame: LiveFrame, token: string, action: string, value: number): SourceRequest[] {
     if (!frame.live || token !== frame.token) { throw new Error('Widget changed; tap again') }
     let allowed = (nodes: CardNode[]): boolean => nodes.some((node: CardNode): boolean =>
-      ((node.kind === 'button' || node.kind === 'path') && node.enabled && node.action.length > 0 && node.action === action && node.value === value) || allowed(node.children))
+      ((node.kind === 'button' || node.kind === 'path' || node.kind === 'iconbutton') && node.enabled && node.action.length > 0 && node.action === action && node.value === value) || allowed(node.children))
     if (!Number.isFinite(value) || !allowed(frame.nodes)) { throw new Error('Action is not available on this widget') }
     this.host.effectsAllowed = true
     this.host.pendingEffects = []

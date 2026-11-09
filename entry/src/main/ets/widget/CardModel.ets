@@ -39,6 +39,11 @@ export class CardNode {
   pad?: number
   panel?: string
   radius?: number
+  /** A bar's or ring's value and what it is out of, a ring's centre text, and the ink of a label beside it (icons carry their path in `commands`). */
+  val?: number
+  max?: number
+  sub?: string
+  ink?: string
   children: CardNode[] = []
 }
 

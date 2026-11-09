@@ -76,6 +76,12 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'accent (a panel with a fill, padding and rounded corners -- for the one thing to look at). A row\'s: default or center (spread ' +
     'evenly), split (first at the left, last at the right), end, joined (touching), compact or spacious, surface or accent. Buttons: ' +
     'primary, secondary, success, danger. Use the roles instead of one size for everything: a label, a figure, a caption. ' +
+    'ICONS AND DATA. ui.Icon(style, name) and ui.IconButton(style, icon, label, handler, value, enabled) (a button: one of the two) draw ' +
+    'the catalogue\'s icons; ui.Badge(style, text, icon) is a small label; ui.Progress(style, label, value, max) is a bar and ' +
+    'ui.ProgressRing(style, label, value, max, text) a ring (about 52 vp) for how far along a goal is; ui.Stat(style, label, text, supporting, icon) and ' +
+    'ui.NumberStat(...) are a labelled figure, and ui.MetricGroup(style, columns, [stats]) puts a few side by side; ui.Sparkline(series, max, ...) is ' +
+    'a small trend (a picture: it counts among the three pictures, about 80 by 29 vp). Prefer these to drawing the same thing by hand, ' +
+    'and mind the height: a ring and a row of buttons fit, a ring, a chart and a stat row do not.\n' +
     'Limits: depth ' + LIVE_MAX_DEPTH.toString() + ' excluding root AppTheme, ' + LIVE_MAX_NODES.toString() +
     ' nodes, ' + LIVE_MAX_TEXT.toString() + ' UTF-16 characters/text, ' + LIVE_MAX_JSON.toString() +
     ' UTF-16 units/frame including state token, ' + LIVE_MAX_STEPS.toString() + ' VM steps/entry.\n' +
@@ -116,7 +122,7 @@ function glanceError(vbc2: string, saved: string): string {
   let texts = 0
   let count = (nodes: CardNode[]): void => {
     for (let node of nodes) {
-      if (node.kind === 'button' || (node.kind === 'path' && node.action.length > 0) || (node.kind === 'surface' && node.pointer.length > 0)) { buttons++ } else if (node.kind === 'path' || node.kind === 'surface') { /* a drawing, not a line of text */ } else if (node.text.length > 0) { texts++ }
+      if (node.kind === 'button' || node.kind === 'iconbutton' || (node.kind === 'path' && node.action.length > 0) || (node.kind === 'surface' && node.pointer.length > 0)) { buttons++ } else if (node.kind === 'path' || node.kind === 'surface' || node.kind === 'icon' || node.kind === 'badge' || node.kind === 'progress' || node.kind === 'ring') { /* a drawing or a mark, not a line of text */ } else if (node.text.length > 0) { texts++ }
       count(node.children)
     }
   }
@@ -161,7 +167,7 @@ export function checkWidget(vbc2: string, saved: string = ''): string {
     let buttons: CardNode[] = []
     let collect = (nodes: CardNode[]): void => {
       for (let node of nodes) {
-        if ((node.kind === 'button' || node.kind === 'path') && node.enabled && node.action.length > 0) { buttons.push(node) }
+        if ((node.kind === 'button' || node.kind === 'path' || node.kind === 'iconbutton') && node.enabled && node.action.length > 0) { buttons.push(node) }
         collect(node.children)
       }
     }
@@ -198,7 +204,7 @@ export function checkWidget(vbc2: string, saved: string = ''): string {
       for (let pass = 0; pass < 2; pass++) {
         let current = branch.frame('project', 'App', '')
         let available = (nodes: CardNode[]): boolean => nodes.some((node: CardNode): boolean =>
-          ((node.kind === 'button' || node.kind === 'path') && node.enabled && node.action === button.action && node.value === button.value) || available(node.children))
+          ((node.kind === 'button' || node.kind === 'path' || node.kind === 'iconbutton') && node.enabled && node.action === button.action && node.value === button.value) || available(node.children))
         if (!available(current.nodes)) { break }
         // A Refresh button's live source is not fetched here: its handler is given a failure, which it must take and still draw.
         let requests: SourceRequest[] = []
