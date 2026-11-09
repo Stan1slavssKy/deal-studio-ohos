@@ -1,0 +1,16 @@
+import * as ui from "std/ui"
+@jsonable class AppState { hits: number; }
+function init(): AppState { return { hits: 0 }; }
+function hit(state: AppState, value: number): AppState { return state; }
+function view(state: AppState): ui.View { return ui.AppTheme("clean", "", [ui.Column("default", [ui.Text("heading", "Presets")])]); }
+function widget(state: AppState, size: number): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Row("spacious", [
+        ui.Column("compact", [ui.Motion("jump", 0, [ui.Path("accent", "M50 8 L88 44 L74 44 L74 90 L26 90 L26 44 L12 44 Z", 0, "hit", 1)]), ui.Text("caption", "jump")]),
+        ui.Column("compact", [ui.Motion("spin", 0, [ui.Path("accent", "M50 8 L88 44 L74 44 L74 90 L26 90 L26 44 L12 44 Z", 0, "hit", 1)]), ui.Text("caption", "spin")]),
+        ui.Column("compact", [ui.Motion("swing", 0, [ui.Path("accent", "M50 8 L88 44 L74 44 L74 90 L26 90 L26 44 L12 44 Z", 0, "hit", 1)]), ui.Text("caption", "swing")]),
+        ui.Column("compact", [ui.Motion("jelly", 0, [ui.Path("accent", "M50 8 L88 44 L74 44 L74 90 L26 90 L26 44 L12 44 Z", 0, "hit", 1)]), ui.Text("caption", "jelly")]),
+        ui.Column("compact", [ui.Motion("fall", 0, [ui.Path("accent", "M50 8 L88 44 L74 44 L74 90 L26 90 L26 44 L12 44 Z", 0, "hit", 1)]), ui.Text("caption", "fall")])
+    ])
+  ]);
+}

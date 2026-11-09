@@ -14,23 +14,139 @@ export class MotionPose {
   axisZ: number = 1
   angle: number = 0
   scale: number = 1
+  /** A squash or stretch on top of `scale`, along each axis. */
+  scaleX: number = 1
+  scaleY: number = 1
   dx: number = 0
   dy: number = 0
   opacity: number = 1
 }
 
-export const MOTION_PRESETS: string[] = ['tumble', 'flip', 'shake', 'bounce', 'pop', 'fade']
+/**
+ * Every preset, by what the movement means (not by what it is drawn on): the catalogue lists these and a card plays all of them.
+ * emphasis: pop pulse jelly press flash breathe; reaction: shake nod wobble swing recoil; gravity: bounce hop jump fall;
+ * turning: spin turn tumble flip; arrival: fade rise zoom slide; ambient: float drift.
+ */
+export const MOTION_PRESETS: string[] = ['pop', 'pulse', 'jelly', 'press', 'flash', 'breathe', 'shake', 'nod', 'wobble', 'swing', 'recoil',
+  'bounce', 'hop', 'jump', 'fall', 'spin', 'turn', 'tumble', 'flip', 'fade', 'rise', 'zoom', 'slide', 'float', 'drift']
+
+/**
+ * A preset as stages. The first row is the pose the child starts in: [0, dx, dy, scaleX, scaleY, rotation, opacity, 0]; every
+ * later row is a stage that glides to its pose over `ms` with a curve (1 ease out, 2 ease in, 3 ease in-out, 0 linear):
+ * [ms, dx, dy, scaleX, scaleY, rotation, opacity, curve]. A card plays the stages one after the other (a platform animation
+ * each, the next started when the one before finishes: it cannot loop and stops about two seconds after a redraw, so a preset
+ * lasts under MOTION_BUDGET_MS); the app samples the same table. dx and dy are points, rotation degrees, the rest unitless.
+ * A preset ends on the pose it should rest in, a whole number of turns round.
+ */
+export const MOTION_BUDGET_MS: number = 1500
+
+function row(ms: number, dx: number, dy: number, sx: number, sy: number, rot: number, a: number, curve: number): number[] {
+  return [ms, dx, dy, sx, sy, rot, a, curve]
+}
+
+const REST: number[] = [0, 0, 0, 1, 1, 0, 1, 0]
+
+/** The stages of a preset (a fresh copy), or [] for a name that is not one. */
+export function motionStages(preset: string): number[][] {
+  let rest = (ms: number, curve: number): number[] => row(ms, 0, 0, 1, 1, 0, 1, curve)
+  if (preset === 'pop') { return [REST, row(140, 0, 0, 1.3, 1.3, 0, 1, 1), rest(210, 3)] }
+  if (preset === 'pulse') { return [REST, row(110, 0, 0, 1.2, 1.2, 0, 1, 1), rest(110, 2), row(110, 0, 0, 1.12, 1.12, 0, 1, 1), rest(160, 3)] }
+  if (preset === 'jelly') {
+    return [REST, row(90, 0, 0, 1.28, 0.78, 0, 1, 1), row(110, 0, 0, 0.84, 1.18, 0, 1, 3), row(110, 0, 0, 1.1, 0.92, 0, 1, 3),
+      row(110, 0, 0, 0.97, 1.03, 0, 1, 3), rest(130, 3)]
+  }
+  if (preset === 'press') { return [REST, row(90, 0, 2, 0.86, 0.86, 0, 1, 2), row(150, 0, 0, 1.06, 1.06, 0, 1, 1), rest(110, 3)] }
+  if (preset === 'flash') { return [REST, row(80, 0, 0, 1, 1, 0, 0.2, 1), rest(80, 2), row(80, 0, 0, 1, 1, 0, 0.35, 1), rest(120, 2)] }
+  if (preset === 'breathe') { return [REST, row(480, 0, 0, 1.07, 1.07, 0, 1, 3), rest(520, 3)] }
+  if (preset === 'shake') {
+    return [REST, row(60, 12, 0, 1, 1, 0, 1, 3), row(80, -10, 0, 1, 1, 0, 1, 3), row(70, 7, 0, 1, 1, 0, 1, 3), row(70, -4, 0, 1, 1, 0, 1, 3), rest(60, 3)]
+  }
+  if (preset === 'nod') {
+    return [REST, row(70, 0, 7, 1, 1, 0, 1, 3), row(90, 0, -5, 1, 1, 0, 1, 3), row(80, 0, 4, 1, 1, 0, 1, 3), row(70, 0, -2, 1, 1, 0, 1, 3), rest(60, 3)]
+  }
+  if (preset === 'wobble') {
+    return [REST, row(70, 0, 0, 1, 1, 12, 1, 3), row(100, 0, 0, 1, 1, -9, 1, 3), row(90, 0, 0, 1, 1, 6, 1, 3), row(80, 0, 0, 1, 1, -3, 1, 3), rest(70, 3)]
+  }
+  if (preset === 'swing') {
+    return [REST, row(160, 0, 0, 1, 1, -32, 1, 1), row(260, 0, 0, 1, 1, 26, 1, 3), row(240, 0, 0, 1, 1, -15, 1, 3), row(200, 0, 0, 1, 1, 8, 1, 3), rest(160, 3)]
+  }
+  if (preset === 'recoil') { return [REST, row(80, 0, 5, 0.94, 0.94, -3, 1, 2), row(70, 0, -6, 1.16, 1.16, 2, 1, 1), rest(240, 1)] }
+  if (preset === 'bounce') {
+    return [row(0, 0, -44, 1, 1, 0, 1, 0), rest(250, 2), row(130, 0, -14, 1, 1, 0, 1, 1), rest(120, 2), row(70, 0, -4, 1, 1, 0, 1, 1), rest(70, 2)]
+  }
+  if (preset === 'hop') { return [REST, row(190, 0, -28, 0.96, 1.06, 0, 1, 1), rest(190, 2), row(70, 0, 0, 1.12, 0.9, 0, 1, 1), rest(110, 3)] }
+  if (preset === 'jump') {
+    return [REST, row(130, 0, 3, 1.14, 0.82, 0, 1, 3), row(210, 0, -46, 0.94, 1.1, 0, 1, 1), rest(200, 2), row(70, 0, 0, 1.18, 0.8, 0, 1, 1), rest(150, 3)]
+  }
+  if (preset === 'fall') { return [row(0, 0, -70, 1, 1, 0, 0, 0), rest(300, 2), row(70, 0, 0, 1.14, 0.86, 0, 1, 1), rest(130, 3)] }
+  if (preset === 'spin') { return [REST, row(1100, 0, 0, 1, 1, 720, 1, 1)] }
+  if (preset === 'turn') { return [REST, row(500, 0, 0, 1, 1, 360, 1, 3)] }
+  if (preset === 'tumble') {
+    return [REST, row(330, 0, -26, 1.14, 1.14, 360, 1, 1), row(330, 0, 0, 1, 1, 720, 1, 2), row(70, 0, 0, 1.14, 0.86, 720, 1, 1), row(110, 0, 0, 1, 1, 720, 1, 3)]
+  }
+  if (preset === 'flip') { return [row(0, 0, 0, 0.02, 1, 0, 1, 0), rest(320, 1)] }
+  if (preset === 'fade') { return [row(0, 0, 0, 1, 1, 0, 0, 0), rest(400, 3)] }
+  if (preset === 'rise') { return [row(0, 0, 28, 0.96, 0.96, 0, 0, 0), rest(420, 1)] }
+  if (preset === 'zoom') { return [row(0, 0, 0, 0.2, 0.2, 0, 0, 0), row(260, 0, 0, 1.14, 1.14, 0, 1, 1), rest(160, 3)] }
+  if (preset === 'slide') { return [row(0, 64, 0, 1, 1, 0, 0, 0), rest(380, 1)] }
+  if (preset === 'float') { return [REST, row(450, 0, -9, 1, 1, 0, 1, 3), row(450, 0, 3, 1, 1, 0, 1, 3), rest(300, 3)] }
+  if (preset === 'drift') { return [REST, row(450, 10, 0, 1, 1, 0, 1, 3), row(500, -8, 0, 1, 1, 0, 1, 3), rest(400, 3)] }
+  return []
+}
+
+/** Where a preset turns: 0 is the top edge, 0.5 the middle, 1 the bottom (a swing hangs from the top, a wobble rocks on its base). */
+export function motionPivot(preset: string): number {
+  if (preset === 'swing') { return 0 }
+  if (preset === 'wobble') { return 1 }
+  return 0.5
+}
+
+/** Whether a preset is one of the table's (every one but the six the app first had is; those the app also draws by formula). */
+export function stagedDuration(preset: string): number {
+  let total = 0
+  let stages = motionStages(preset)
+  for (let i = 1; i < stages.length; i++) { total += stages[i][0] }
+  return total
+}
+
+function curved(curve: number, p: number): number {
+  if (curve === 1) { return 1 - (1 - p) * (1 - p) * (1 - p) }
+  if (curve === 2) { return p * p * p }
+  if (curve === 3) { return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2 }
+  return p
+}
+
+/** The pose of a staged preset at progress 0..1 of its whole length. */
+function stagedPose(stages: number[][], total: number, p: number): MotionPose {
+  let pose = new MotionPose()
+  let at = p * total
+  let from = stages[0]
+  let used = 0
+  for (let i = 1; i < stages.length; i++) {
+    let to = stages[i]
+    if (at <= used + to[0] || i === stages.length - 1) {
+      let u = to[0] > 0 ? Math.min(1, Math.max(0, (at - used) / to[0])) : 1
+      let e = curved(to[7], u)
+      let mix = (k: number): number => from[k] + (to[k] - from[k]) * e
+      pose.dx = mix(1)
+      pose.dy = mix(2)
+      pose.scaleX = mix(3)
+      pose.scaleY = mix(4)
+      pose.angle = mix(5)
+      pose.opacity = mix(6)
+      return pose
+    }
+    used += to[0]
+    from = to
+  }
+  return pose
+}
 
 /** How long a preset plays, in milliseconds. Fixed per preset: the program has no knob that could make it janky. */
-export function motionDuration(preset: string): number {
-  if (preset === 'tumble') { return 900 }
-  if (preset === 'flip') { return 450 }
-  if (preset === 'shake') { return 450 }
-  if (preset === 'bounce') { return 650 }
-  if (preset === 'pop') { return 350 }
-  if (preset === 'fade') { return 400 }
-  return 0
-}
+export function motionDuration(preset: string): number { return stagedDuration(preset) }
+
+/** The six the app drew first, by formula (3D turns included); the rest come from the table. */
+const FORMULA_PRESETS: string[] = ['tumble', 'flip', 'shake', 'bounce', 'pop', 'fade']
 
 function easeOut(p: number): number {
   let q = 1 - p
@@ -49,6 +165,13 @@ export function motionPose(preset: string, progress: number): MotionPose {
   let p = clamp01(progress)
   if (p >= 1) { return pose }
   let e = easeOut(p)
+  if (FORMULA_PRESETS.indexOf(preset) < 0) {
+    let stages = motionStages(preset)
+    if (stages.length === 0) { return pose }
+    let sampled = stagedPose(stages, stagedDuration(preset), p)
+    // A turn is about the viewer's axis (z); stagedPose leaves the axis as the default.
+    return sampled
+  }
   if (preset === 'tumble') {
     // A turn about a diagonal axis with a hop, slowing as it lands.
     pose.axisX = 1

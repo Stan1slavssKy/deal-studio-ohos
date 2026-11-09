@@ -4,6 +4,7 @@ import { UiHostEnvironment, VeraUiNode, decodeVeraUi, formatVeraNumber } from '.
 import { CATALOG } from './VeraUiCatalog'
 import { resolveTheme, pathFill, toneInk, toneEdge, toneFill, buttonFill } from './VeraTheme'
 import { iconPath } from './VeraIcons'
+import { MOTION_PRESETS } from './VeraMotion'
 import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
@@ -17,8 +18,8 @@ export const LIVE_MAX_TEXT: number = 256
 // A shape's path data (a drum with its jingles is about 300); the whole frame is still held to LIVE_MAX_JSON.
 export const LIVE_MAX_COMMANDS: number = 600
 /** The Motion presets a card plays: each is one short settle from a hit pose (tumble and flip need 3D, which a card does not have). */
-export const CARD_MOTIONS: string[] = ['pop', 'shake', 'bounce', 'fade']
-export const LIVE_MAX_MOTIONS: number = 3
+export const CARD_MOTIONS: string[] = MOTION_PRESETS
+export const LIVE_MAX_MOTIONS: number = 5
 /** A picture on a card (ui.Surface drawn once for the frame): up to three, of a few dozen shapes each; the frame's own size budget counts the rest. */
 export const LIVE_MAX_SURFACES: number = 3
 export const LIVE_MAX_SHAPES: number = 60

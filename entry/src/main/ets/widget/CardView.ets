@@ -7,11 +7,12 @@
 import { CardNode } from './CardModel'
 import { paintGfx, decodeGfxOps, gfxFit, gfxToSurface } from '../vera/GfxPaint'
 import { resolveTheme } from '../vera/VeraTheme'
+import { motionStages, motionPivot } from '../vera/VeraMotion'
 
 /** A picture on a card is as wide as its node says (the frame sizes it to the room left, VeraLiveWidget.pictureRoom); this when it says nothing (vp). */
 const PICTURE_WIDTH: number = 80
 /** Pictures and Motions a card carries, each with a place of its own below. */
-const SLOTS: number = 3
+const SLOTS: number = 5
 
 @Component
 export struct CardView {
@@ -65,34 +66,78 @@ export struct CardView {
    * onAppear. The first frame only records its trigger, so a card never plays when it opens. A card plays for about two
    * seconds after a redraw, which is all a hit needs; there is no repeat or loop.
    */
-  @State settled0: number = -1e18
-  @State settled1: number = -1e18
-  @State settled2: number = -1e18
-  private settledOf(node: CardNode): number { return node.slot === 1 ? this.settled1 : node.slot === 2 ? this.settled2 : this.settled0 }
+  @State settled: number[] = [-1e18, -1e18, -1e18, -1e18, -1e18]
+  /** How far each Motion's chain of stages has got: 0 is its starting pose, k the pose after stage k. */
+  @State phase: number[] = [0, 0, 0, 0, 0]
+  private settledOf(node: CardNode): number { return node.slot >= 0 && node.slot < SLOTS ? this.settled[node.slot] : -1e18 }
   private settle(node: CardNode): void {
-    let now = this.effective(node)
-    if (node.slot === 1) { this.settled1 = now } else if (node.slot === 2) { this.settled2 = now } else { this.settled0 = now }
+    if (node.slot < 0 || node.slot >= SLOTS) { return }
+    let next = this.settled.slice()
+    next[node.slot] = this.effective(node)
+    this.settled = next
+  }
+  private setPhase(slot: number, value: number): void {
+    if (slot < 0 || slot >= SLOTS) { return }
+    let next = this.phase.slice()
+    next[slot] = value
+    this.phase = next
   }
 
   /**
    * Touches on the pictures and shapes under each Motion, counted here and added to its trigger: a touch makes the picture react
    * whether or not the program's handler changed anything (a plain field, not state: it must not redraw before the answer comes).
    */
-  private touches: number[] = [0, 0, 0]
+  private touches: number[] = [0, 0, 0, 0, 0]
   private touched(node: CardNode): void {
-    if (node.slot >= 0 && node.slot < SLOTS) { this.touches[node.slot] = this.touches[node.slot] + 1 }
+    if (node.slot >= 0 && node.slot < SLOTS) {
+      this.touches[node.slot] = this.touches[node.slot] + 1
+      // A touch while the last movement is still playing starts the next one from its first pose.
+      this.setPhase(node.slot, 0)
+    }
   }
   private effective(node: CardNode): number { return node.trigger + (node.slot >= 0 && node.slot < SLOTS ? this.touches[node.slot] : 0) }
   private playing(node: CardNode): boolean { return this.settledOf(node) > -1e17 && this.effective(node) !== this.settledOf(node) }
-  private motionScale(node: CardNode): number { return this.playing(node) && node.style === 'pop' ? 1.25 : 1 }
-  private motionAngle(node: CardNode): number {
-    if (!this.playing(node) || node.style !== 'shake') { return 0 }
-    return Math.floor(node.trigger) % 2 === 0 ? 12 : -12
+
+  /** The stages of the node's preset (MOTION_STAGES in VeraMotion): row 0 is where it starts, each later row a stage. */
+  private stagesOf(node: CardNode): number[][] { return motionStages(node.style) }
+  /**
+   * One number of the pose the Motion is in: its starting pose when a movement is about to play, the pose of the stage it has
+   * reached while it plays, its resting pose (the last row) otherwise. 1 dx, 2 dy, 3 scale x, 4 scale y, 5 rotation, 6 opacity.
+   */
+  private poseOf(node: CardNode, index: number): number {
+    let stages = this.stagesOf(node)
+    if (stages.length === 0) { return index >= 3 && index !== 5 ? 1 : 0 }
+    let at = this.playing(node) ? Math.min(this.phase[node.slot], stages.length - 1) : stages.length - 1
+    return stages[at][index]
   }
-  private motionDrop(node: CardNode): number { return this.playing(node) && node.style === 'bounce' ? -16 : 0 }
-  private motionOpacity(node: CardNode): number { return this.playing(node) && node.style === 'fade' ? 0 : 1 }
-  private motionMs(node: CardNode): number {
-    return node.style === 'bounce' ? 600 : node.style === 'shake' ? 450 : node.style === 'pop' ? 350 : 400
+  private pivotOf(node: CardNode): string { return Math.round(100 * motionPivot(node.style)).toString() + '%' }
+  /** The platform animation to the stage the Motion is at: its time and curve, and what to do when it ends (go on to the next stage). */
+  private motionAnimation(node: CardNode): AnimateParam {
+    let stages = this.stagesOf(node)
+    let at = node.slot >= 0 && node.slot < SLOTS ? this.phase[node.slot] : 0
+    let seen = at
+    let slot = node.slot
+    let curve = at >= 1 && at < stages.length ? stages[at][7] : 1
+    return {
+      duration: at >= 1 && at < stages.length ? stages[at][0] : 0,
+      curve: curve === 0 ? Curve.Linear : curve === 2 ? Curve.EaseIn : curve === 3 ? Curve.EaseInOut : Curve.EaseOut,
+      onFinish: () => { this.advance(node, slot, seen) }
+    }
+  }
+  /** The card shows a movement when the frame is new: the first frame only records its trigger, a later one starts the chain. */
+  private begin(node: CardNode): void {
+    if (this.settledOf(node) < -1e17) { this.settle(node); return }
+    if (this.playing(node)) { this.setPhase(node.slot, 1) }
+  }
+  /** A stage ended: start the next, or, after the last, record the trigger so a redraw does not play it again. */
+  private advance(node: CardNode, slot: number, seen: number): void {
+    if (slot < 0 || slot >= SLOTS || this.phase[slot] !== seen || seen < 1) { return }
+    if (seen + 1 < this.stagesOf(node).length) {
+      this.setPhase(slot, seen + 1)
+    } else {
+      this.settle(node)
+      this.setPhase(slot, 0)
+    }
   }
 
   /** How the theme dressed a node (CardStyle, set by the extension): an unset field is the card's default. */
@@ -292,12 +337,12 @@ export struct CardView {
         ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
       }
       .layoutWeight(inRow ? 1 : 0)
-      .scale({ x: this.motionScale(node), y: this.motionScale(node) })
-      .rotate({ angle: this.motionAngle(node) })
-      .translate({ y: this.motionDrop(node) })
-      .opacity(this.motionOpacity(node))
-      .animation({ duration: this.motionMs(node), curve: Curve.EaseOut })
-      .onAppear(() => { this.settle(node) })
+      .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
+      .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
+      .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
+      .opacity(this.poseOf(node, 6))
+      .animation(this.motionAnimation(node))
+      .onAppear(() => { this.begin(node) })
     } else {
       this.leaf(node)
     }
@@ -320,12 +365,12 @@ export struct CardView {
         ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
       }
       .layoutWeight(inRow ? 1 : 0)
-      .scale({ x: this.motionScale(node), y: this.motionScale(node) })
-      .rotate({ angle: this.motionAngle(node) })
-      .translate({ y: this.motionDrop(node) })
-      .opacity(this.motionOpacity(node))
-      .animation({ duration: this.motionMs(node), curve: Curve.EaseOut })
-      .onAppear(() => { this.settle(node) })
+      .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
+      .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
+      .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
+      .opacity(this.poseOf(node, 6))
+      .animation(this.motionAnimation(node))
+      .onAppear(() => { this.begin(node) })
     } else {
       this.leaf(node)
     }
@@ -348,12 +393,12 @@ export struct CardView {
         ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
       }
       .layoutWeight(inRow ? 1 : 0)
-      .scale({ x: this.motionScale(node), y: this.motionScale(node) })
-      .rotate({ angle: this.motionAngle(node) })
-      .translate({ y: this.motionDrop(node) })
-      .opacity(this.motionOpacity(node))
-      .animation({ duration: this.motionMs(node), curve: Curve.EaseOut })
-      .onAppear(() => { this.settle(node) })
+      .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
+      .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
+      .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
+      .opacity(this.poseOf(node, 6))
+      .animation(this.motionAnimation(node))
+      .onAppear(() => { this.begin(node) })
     } else {
       this.leaf(node)
     }

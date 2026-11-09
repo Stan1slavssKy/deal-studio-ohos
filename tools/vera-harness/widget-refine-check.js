@@ -192,11 +192,12 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   assert.equal(checkWidget(compileVeraSource(motion).vbc2), '')
   assert.match(widgetRefinementPrompt(), /ui\.Motion\(style, 0, \[the picture\]\)/)
   assert.match(widgetRefinementPrompt(), /NEVER a ui\.Path/, 'a drawing of several colours is a Surface, not a Path')
-  assert.match(widgetRefinementPrompt(), /reacts to a touch BY ITSELF/)
+  assert.match(widgetRefinementPrompt(), /should DO what that thing does/)
+  assert.match(widgetRefinementPrompt(), /every touch on the picture inside plays the movement by itself/)
   assert.match(widgetRefinementPrompt(), /Do NOT add a counter to the state/)
-  assert.match(widgetRefinementPrompt(), /"pop", "shake", "bounce", "fade"/)
-  assert.match(widgetRefinementPrompt(), /no spinning/)
-  assert.match(checkWidget(compileVeraSource(motion.replace('"pop"', '"tumble"')).vbc2), /does not play on a card/)
+  for (const preset of require('./source-loader').loadVera('VeraMotion').MOTION_PRESETS) assert.ok(widgetRefinementPrompt().includes(preset), 'the prompt names ' + preset)
+  assert.match(widgetRefinementPrompt(), /cannot loop/)
+  assert.equal(checkWidget(compileVeraSource(motion.replace('"pop"', '"spin"')).vbc2), '', 'a turning preset plays on a card')
 }
 // A picture on the card (ui.Surface): described to the model, its tap held to the same rules as a button's.
 {

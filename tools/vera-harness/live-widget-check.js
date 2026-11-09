@@ -128,11 +128,7 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.equal(g.nodes[0].children[0].trigger, 1, 'the trigger follows the count')
   assert.notEqual(g.token, f.token)
   assert(JSON.stringify(g).length < 2000, 'a Motion drum is small: ' + JSON.stringify(g).length)
-  for (const style of ['tumble', 'flip']) {
-    const bad = motionSource.replace('"pop"', '"' + style + '"')
-    assert.throws(() => frame(new WidgetSession(compileVeraSource(bad).vbc2, 'bad', '')), /does not play on a card/)
-  }
-  for (const style of ['shake', 'bounce', 'fade']) {
+  for (const style of loadVera('VeraMotion').MOTION_PRESETS) {
     const ok = motionSource.replace('"pop"', '"' + style + '"')
     assert.equal(frame(new WidgetSession(compileVeraSource(ok).vbc2, 'ok', '')).nodes[0].children[0].style, style)
   }
@@ -145,10 +141,11 @@ assert.match(view, /node.key \+ this.frameKey/)
   const walk = (nodes) => nodes.forEach(n => { if (n.kind === 'motion') slots.push(n.slot); walk(n.children) })
   walk(three.nodes)
   assert.deepEqual(slots, [0, 1, 2], 'the drum and two more: slots in order')
+  assert.equal(loadVera('VeraLiveWidget').LIVE_MAX_MOTIONS, 5, 'five Motions at most')
   const drumPath = three.nodes[0].children[0].children[0]
   assert.equal(drumPath.kind, 'path'); assert.equal(drumPath.slot, 0, 'the drum sits under Motion 0')
   assert.equal(three.nodes[0].children[1].children[0].slot, 1, 'a text under the second Motion carries its slot')
-  assert.throws(() => frame(new WidgetSession(compileVeraSource(withMotions(3)).vbc2, 'four', '')), /at most 3 ui\.Motion/)
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(withMotions(5)).vbc2, 'four', '')), /at most 5 ui\.Motion/)
   const nested = motionSource.replace('ui.Path(', 'ui.Motion("fade", 0, [ui.Path(').replace(', 0, "hit", 1)', ', 0, "hit", 1)])')
   assert.throws(() => compileVeraSource(nested), /E2107/, 'the compiler refuses a Motion inside a Motion')
 }

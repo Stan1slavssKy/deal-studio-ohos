@@ -3109,7 +3109,7 @@ export struct VeraPreview {
       .alignItems(HorizontalAlign.Center)
       .rotate({ x: this.motionPoseOf(node).axisX, y: this.motionPoseOf(node).axisY, z: this.motionPoseOf(node).axisZ,
                 angle: this.motionPoseOf(node).angle, centerX: '50%', centerY: '50%', perspective: 2400 })
-      .scale({ x: this.motionPoseOf(node).scale, y: this.motionPoseOf(node).scale, centerX: '50%', centerY: '50%' })
+      .scale({ x: this.motionPoseOf(node).scale * this.motionPoseOf(node).scaleX, y: this.motionPoseOf(node).scale * this.motionPoseOf(node).scaleY, centerX: '50%', centerY: '50%' })
       .translate({ x: this.motionPoseOf(node).dx, y: this.motionPoseOf(node).dy })
       .opacity(this.motionPoseOf(node).opacity)
     } else if (node.kind === 'text') {

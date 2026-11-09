@@ -63,12 +63,21 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     ' ui.Surface. A picture or shape that takes a touch counts as one of the two buttons. A handler the card runs must not make phone calls ' +
     '(no sdk.call): when the app\'s own handler vibrates, plays a sound or the like, write a new handler that only changes the ' +
     'state -- or returns it as it is. ' +
-    'MOVEMENT. A picture reacts to a touch BY ITSELF: wrap it in ui.Motion(style, 0, [the picture]) with style "' +
-    CARD_MOTIONS.join('", "') + '" (no other style plays on a card) and every touch on the picture plays the movement once, ' +
-    'in under a second -- a panda that jumps (bounce), a drum that is hit (pop), a refusal (shake) -- whether or not the handler ' +
-    'changed the state. Do NOT add a counter to the state (the state cannot grow). The second argument is 0, or a number the state ' +
-    'really changes with, which then also plays it. A card has no continuous motion: no spinning (leave spinPeriodMs at 0), ' +
-    'pulsing or repeating, no sound, and at most ' + LIVE_MAX_MOTIONS.toString() + ' ui.Motion. ' +
+    'MOVEMENT. A thing that is drawn should DO what that thing does, once, when it is touched (or when the state changes): wrap it in ' +
+    'ui.Motion(style, 0, [the picture]) and every touch on the picture inside plays the movement by itself, whether or not the handler ' +
+    'changed the state. The style is chosen by the movement the thing makes, never by its looks: ' + CARD_MOTIONS.join(', ') + '. By meaning -- ' +
+    'emphasis (stays in place): pop swells, pulse beats twice, jelly squashes and wobbles, press dips like a pushed button, flash blinks, breathe ' +
+    'swells slowly; reaction: shake sideways, nod up and down, wobble rocks on its base, swing hangs from its top edge like a pendulum, ' +
+    'recoil is a sharp kick; gravity: bounce drops in and settles, hop jumps once, jump crouches then leaps and lands, fall drops in from above; ' +
+    'turning: spin turns twice and slows (a wheel, a dial, a fan), turn one quick whole turn, tumble spins and hops, flip turns into view; ' +
+    'arrival: fade, rise, zoom, slide; ambient: float, drift (slow, gentle). Ask what the thing does when touched and take the movement ' +
+    'for that: something hit shakes or recoils, something turned spins, something alive hops or jumps, something hanging swings, ' +
+    'something pushed presses. A touch that does nothing visible is a defect: every picture the person can touch moves. Several things ' +
+    'move at once when each has its own ui.Motion around its own picture (at most ' + LIVE_MAX_MOTIONS.toString() + ' ui.Motion in all; ' +
+    'put the pictures side by side or one above the other, there is no overlap). Do NOT add a counter to the state just for the movement ' +
+    '(the state cannot grow). The second argument is 0, or a number the state really changes with, which then also plays it. A movement ' +
+    'lasts about a second and plays once: a card cannot loop, spin forever or repeat, there is no sound or vibration, and a drawing is a ' +
+    'picture of one moment, so draw the subject at its most recognisable, not a scene that needs motion to be understood. ' +
     'Draw exactly the subject the person asked for; do not reuse a shape from these instructions. '+
     'STYLES. A text style is drawn as the app draws it, with the theme\'s weight, font and colour: display, title, heading, body, caption ' +
     '(small), eyebrow (a small spaced label above something), metric (a big figure), muted (quiet), success, warning, danger (toned). ' +

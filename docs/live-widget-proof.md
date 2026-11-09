@@ -301,6 +301,33 @@ Both draw on the card (a pill with a knob; a rounded box with the check mark fro
 both drawn on, about 9 ms each. Make widget counts them as buttons, runs each handler on and off and re-checks the view; the prompt has a SWITCHES paragraph.
 Not done: multi-step motion presets and button press feedback (unmeasured on the card), and images (stage 7: `Image('memory://')` blanked the card).
 
+## Motion: 25 presets by meaning, played as stages
+
+`ui.Motion` has 25 presets, chosen by what the movement means so a prompt never needs a preset made for it: emphasis (pop, pulse, jelly, press,
+flash, breathe), reaction (shake, nod, wobble, swing, recoil), gravity (bounce, hop, jump, fall), turning (spin, turn, tumble, flip), arrival
+(fade, rise, zoom, slide), ambient (float, drift). Each is a table in `VeraMotion.motionStages`: a starting pose and stages
+`[ms, dx, dy, scaleX, scaleY, rotation, opacity, curve]`. The card plays a preset as a **chain of platform animations**, each stage started from the
+`onFinish` of the one before (`CardView.motionAnimation/advance`); the app samples the same table for the new presets (the six it had first keep their formulas).
+Every preset lasts under `MOTION_BUDGET_MS` (1500; the chain stops about 2 s after a redraw) and ends where it should rest (`motion-check.js`).
+Swing hangs from its top edge and wobble rocks on its base (`motionPivot`); up to 5 Motions play at once, each by its own touch (`LIVE_MAX_MOTIONS`).
+
+Measured on the phone (a gallery widget with five Motions in the Widget tab at 4x4, frames about 290 ms apart): jump rises about 46 vp and lands in
+three frames; spin turns the arrow through down, right, left and up; swing hangs and swings from the top. On the **home-screen card** (a project saved
+from Make widget, card bound to it): a touch on the panda made it jump clear of the top of the card and settle in under a second.
+
+Make widget with four short requests (a panda that jumps; a casino roulette wheel that spins; a tambourine and a drumstick; live weather in Moscow),
+before and after the new presets and prompt paragraph (one attempt each, 2.5-3.6 s):
+
+| request | before | after |
+|---|---|---|
+| panda | pop (a few pixels) | jump: leaps clear of the card |
+| roulette | a dartboard, touch did nothing | a wheel of segments, spin |
+| tambourine and stick | static, touch did nothing | two Motions: recoil (drum) and wobble (stick) |
+| weather | static picture | float; **still not live**: no source was written for it |
+
+Not solved: a card cannot loop, so rain "falling" or a sun that keeps shining is one movement per touch or refresh; a symmetric drawing (a wheel with
+twelve equal segments) hides a spin (give it a mark or a ball); the model does not yet reach for `Vera.Source` for "live" on its own.
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

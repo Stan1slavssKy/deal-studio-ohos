@@ -1,5 +1,11 @@
 # Changelog
 
+## ui.Motion: 25 presets by meaning, played in stages on the card
+
+- New presets: pulse, jelly, press, flash, breathe, nod, wobble, swing, recoil, hop, jump, fall, spin, turn, rise, zoom, slide, float, drift (with pop, shake, bounce, tumble, flip, fade: 25). Each is a table of stages (`VeraMotion.motionStages`); the app and the card play the same table, the card as a chain of platform animations. All 25 play on a card; up to five Motions at once.
+- Make widget's prompt names every preset by what the movement means and asks that a touchable picture move.
+- Host check: `motion-check.js` verifies every table.
+
 ## Widget card: sizes 2x2, 2x4, 4x4 and switches
 
 - The live card is offered at 2x2, 2x4 and 4x4; `onAddForm` records the size (`form-sizes.json`), the frame is fitted to it and the limits grow with it (`cardSize`). A widget may declare `widget(state, size: number)` to draw differently; Make widget checks it at every size. The Widget tab has size chips.

@@ -13,6 +13,7 @@
 
 import { iconNames } from './VeraIcons'
 import { describeGfxForPrompt } from './VeraGfx'
+import { MOTION_PRESETS } from './VeraMotion'
 
 export class PropSpec {
   name: string
@@ -143,7 +144,7 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['timer', ['body', 'caption', 'heading', 'title', 'display', 'metric', 'muted', 'success', 'warning', 'danger']],
   ['spinner', ['default', 'accent']],
   // The preset is the style, so the compiler validates it and the prompt lists it. See VeraMotion.ets.
-  ['motion', ['tumble', 'flip', 'shake', 'bounce', 'pop', 'fade']],
+  ['motion', MOTION_PRESETS],
   // transform: solid hides a layer while its back is to the viewer (the far faces of a cube); stage has no variants.
   ['transform', ['default', 'solid']],
   ['stage', ['default', 'floor']],
@@ -230,9 +231,9 @@ export const CATALOG: ComponentSpec[] = [
     'For anything laid out in equal columns -- a board, a calendar, a keypad -- rather than building rows by hand.'),
   new ComponentSpec('Motion', 'motion',
     [style('motion'), new PropSpec('trigger', 'number'), new PropSpec('children', 'view[]')],
-    'plays an animation on its children each time the trigger number changes: tumble, flip, shake, bounce, pop or fade; a wrong-answer shake, a counter that pops, a new row that bounces',
+    'plays a movement on its children each time the trigger number changes (25 presets, picked by what the movement means: pop, pulse, jelly, press, shake, hop, jump, spin, swing, fall, fade, ...); a wrong-answer shake, a counter that pops, a new row that bounces, a wheel that spins',
     '',
-    'Wrap the one thing that should animate: a rolled die, a flashcard, a result, a new row. Never wrap a board, grid, list, form or whole screen, and do not bump the trigger on every tap or move: a game board that pops on each move makes every square jump under the player\'s finger. Animate only what the person should notice -- a win message, a wrong answer, the die that was just thrown -- and keep the Motion around that one item, not around the controls they are pressing. The style is the animation. tumble spins and hops and lands (a die or coin being thrown), flip turns the new content into view (a card turned over, a question replaced by its answer), shake wobbles sideways (a wrong answer, a refusal), bounce drops and settles (something added), pop swells and returns (a counter that just changed), fade brings the content in. The children are drawn normally; when the trigger changes they arrive with the animation, so change the content and the trigger in the same handler: keep a number in state, add 1 to it each time, and pass it as trigger. The first time the screen is drawn nothing animates, and a change of content without a new trigger does not animate either. A die is not a Motion: build the solid with ui.Stage and ui.Transform. Do not nest one Motion in another. On a home-screen card only pop, shake, bounce and fade play, one Motion at most, around a drawing or a figure that should react to a tap (a drum that jumps when it is hit): keep a count in state, add 1 in the tap handler, pass it as trigger.', true),
+    'Wrap the one thing that should animate: a rolled die, a flashcard, a result, a new row. Never wrap a board, grid, list, form or whole screen, and do not bump the trigger on every tap or move: a game board that pops on each move makes every square jump under the player\'s finger. Animate only what the person should notice -- a win message, a wrong answer, the die that was just thrown -- and keep the Motion around that one item, not around the controls they are pressing. The style is the movement; choose it by what the thing does, not by what it looks like. Emphasis (it stays where it is): pop swells once, pulse beats twice, jelly squashes and wobbles, press dips like a pushed button, flash blinks, breathe swells slowly. Reaction (a hit, a refusal, a wag): shake goes sideways, nod goes up and down, wobble rocks on its base, swing hangs from its top edge like a pendulum and slows, recoil is a sharp kick. Gravity (it leaves the ground): bounce drops in and settles, hop jumps once, jump crouches, leaps and lands squashed, fall drops in from above. Turning: spin turns two whole times and slows (a wheel, a dial), turn is one quick whole turn, tumble spins and hops and lands (a thrown die or coin), flip turns new content into view. Arrival (the content comes in): fade, rise from below, zoom from small, slide from the side. Ambient (a slow drift): float rises and sinks, drift sways sideways. The children are drawn normally; when the trigger changes they arrive with the animation, so change the content and the trigger in the same handler: keep a number in state, add 1 to it each time, and pass it as trigger. The first time the screen is drawn nothing animates, and a change of content without a new trigger does not animate either. A die is not a Motion: build the solid with ui.Stage and ui.Transform. Do not nest one Motion in another. On a home-screen card every preset plays once per change, in about a second, never in a loop, and several Motions can play at once, each around its own drawing or figure: a touch on a picture inside a Motion plays it by itself; otherwise keep a count in state, add 1 in the tap handler and pass it as trigger.', true),
   new ComponentSpec('Transform', 'transform',
     [style('transform'), new PropSpec('pose', 'number[]'), new PropSpec('durationMs', 'number'), new PropSpec('size', 'number'),
       new PropSpec('children', 'view[]')],
