@@ -44,6 +44,8 @@ export class CardNode {
   max?: number
   sub?: string
   ink?: string
+  /** The Motion slots a touch on this node plays: every Motion of the ui.Layers it is in (a touch moves the whole scene). */
+  links?: number[]
   children: CardNode[] = []
 }
 
@@ -105,6 +107,7 @@ export function compactNode(node: CardNode): Object {
   if (node.max !== undefined) { out['max'] = node.max }
   if (node.sub !== undefined) { out['sub'] = node.sub }
   if (node.ink !== undefined) { out['ink'] = node.ink }
+  if (node.links !== undefined) { out['links'] = node.links }
   if (node.children.length > 0) { out['children'] = node.children.map((child: CardNode): Object => compactNode(child)) }
   return out
 }
@@ -163,6 +166,7 @@ export function normalizeNodes(nodes: CardNode[]): CardNode[] {
     node.max = raw.max
     node.sub = raw.sub
     node.ink = raw.ink
+    node.links = raw.links
     if (raw.children !== undefined) { node.children = normalizeNodes(raw.children) }
     out.push(node)
   }

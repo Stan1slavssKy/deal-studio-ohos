@@ -159,7 +159,7 @@ export struct WidgetPreview {
       if (this.frame.live) {
         CardView({
           nodes: this.frame.nodes,
-          frameKey: this.frame.token + this.seq.toString(),
+          frameKey: this.frame.token + this.dimension.toString() + this.seq.toString(),
           preset: this.frame.preset,
           primary: this.frame.primary,
           onTap: (action: string, value: number): void => { this.tap(action, value) },

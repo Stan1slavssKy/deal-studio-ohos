@@ -145,11 +145,12 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['spinner', ['default', 'accent']],
   // The preset is the style, so the compiler validates it and the prompt lists it. See VeraMotion.ets.
   ['motion', MOTION_PRESETS],
+  ['layers', ['default']],
   // transform: solid hides a layer while its back is to the viewer (the far faces of a cube); stage has no variants.
   ['transform', ['default', 'solid']],
   ['stage', ['default', 'floor']],
   // surface: default is as wide as its column and as tall as its proportions; fill also runs to the bottom of the screen.
-  ['surface', ['default', 'fill']],
+  ['surface', ['default', 'fill', 'clear']],
   ['snackbar', ['default', 'success', 'warning', 'danger']],
   ['sparkline', ['default', 'accent', 'success', 'warning', 'danger']],
 ])
@@ -234,6 +235,11 @@ export const CATALOG: ComponentSpec[] = [
     'plays a movement on its children each time the trigger number changes (25 presets, picked by what the movement means: pop, pulse, jelly, press, shake, hop, jump, spin, swing, fall, fade, ...); a wrong-answer shake, a counter that pops, a new row that bounces, a wheel that spins',
     '',
     'Wrap the one thing that should animate: a rolled die, a flashcard, a result, a new row. Never wrap a board, grid, list, form or whole screen, and do not bump the trigger on every tap or move: a game board that pops on each move makes every square jump under the player\'s finger. Animate only what the person should notice -- a win message, a wrong answer, the die that was just thrown -- and keep the Motion around that one item, not around the controls they are pressing. The style is the movement; choose it by what the thing does, not by what it looks like. Emphasis (it stays where it is): pop swells once, pulse beats twice, jelly squashes and wobbles, press dips like a pushed button, flash blinks, breathe swells slowly. Reaction (a hit, a refusal, a wag): shake goes sideways, nod goes up and down, wobble rocks on its base, swing hangs from its top edge like a pendulum and slows, recoil is a sharp kick. Gravity (it leaves the ground): bounce drops in and settles, hop jumps once, jump crouches, leaps and lands squashed, fall drops in from above. Turning: spin turns two whole times and slows (a wheel, a dial), turn is one quick whole turn, tumble spins and hops and lands (a thrown die or coin), flip turns new content into view. Arrival (the content comes in): fade, rise from below, zoom from small, slide from the side. Ambient (a slow drift): float rises and sinks, drift sways sideways. The children are drawn normally; when the trigger changes they arrive with the animation, so change the content and the trigger in the same handler: keep a number in state, add 1 to it each time, and pass it as trigger. The first time the screen is drawn nothing animates, and a change of content without a new trigger does not animate either. A die is not a Motion: build the solid with ui.Stage and ui.Transform. Do not nest one Motion in another. On a home-screen card every preset plays once per change, in about a second, never in a loop, and several Motions can play at once, each around its own drawing or figure: a touch on a picture inside a Motion plays it by itself; otherwise keep a count in state, add 1 in the tap handler and pass it as trigger.', true),
+  new ComponentSpec('Layers', 'layers',
+    [style('layers'), new PropSpec('width', 'number'), new PropSpec('height', 'number'), new PropSpec('children', 'view[]')],
+    'stacks its children one over another, each in the middle, the last on top: a scene made of parts that move on their own (a sky, a sun and clouds; a drum and its stick; a body and its shadow)',
+    '',
+    'Each child is a Surface, a Path, a Text or an Icon, and a Motion around any of them, so that every part moves by itself: a stick that swings over a drum, rain that falls in front of a cloud. width and height are the size of the box in points (give both; a Surface in it is scaled to fit the box and the Surfaces of one Layers should have the same width and height so their drawings line up). The first child is the bottom one; every Surface above it takes the style "clear" (no background of its own), or it hides what is under it. Do not nest one Layers in another.'),
   new ComponentSpec('Transform', 'transform',
     [style('transform'), new PropSpec('pose', 'number[]'), new PropSpec('durationMs', 'number'), new PropSpec('size', 'number'),
       new PropSpec('children', 'view[]')],
@@ -550,7 +556,7 @@ export const CATALOG: ComponentSpec[] = [
  * The components a home-screen card draws besides the ones that opt in above (`card`): each is turned into card nodes by VeraLiveWidget (an icon into a stroked
  * path, a Stat into a column of texts, a Sparkline into a picture, Progress and ProgressRing into the platform's own). Listed here, never inferred.
  */
-const CARD_OPT_IN: string[] = ['Icon', 'IconButton', 'Badge', 'Progress', 'ProgressRing', 'Stat', 'NumberStat', 'MetricGroup', 'Sparkline', 'Toggle', 'Checkbox']
+const CARD_OPT_IN: string[] = ['Icon', 'IconButton', 'Badge', 'Progress', 'ProgressRing', 'Stat', 'NumberStat', 'MetricGroup', 'Sparkline', 'Toggle', 'Checkbox', 'Layers']
 function optInCard(): boolean {
   for (let spec of CATALOG) {
     if (CARD_OPT_IN.indexOf(spec.name) >= 0) { spec.card = true }
@@ -607,6 +613,7 @@ export const CHILD_RULES: ChildRule[] = [
   // frames, two paddings, and no more meaning than one.
   new ChildRule('Card', [], ['Card']),
   new ChildRule('Motion', [], ['Motion']),
+  new ChildRule('Layers', [], ['Layers']),
   new ChildRule('Tabs', [], ['Tabs']),
   new ChildRule('Stage', ['Transform'], ['Stage']),
   new ChildRule('Transform', [], ['Stage']),

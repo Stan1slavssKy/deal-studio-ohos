@@ -561,7 +561,7 @@ export struct VeraPreview {
     'numbertext', 'numberstat', 'numberfield', 'timefield', 'datefield', 'numberlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
     'timeline', 'timelineitem', 'skeleton', 'timer', 'spinner', 'snackbar', 'sparkline', 'backhandler',
-    'table', 'tablerow', 'motion', 'transform', 'stage', 'surface']
+    'table', 'tablerow', 'motion', 'layers', 'transform', 'stage', 'surface']
 
   aboutToAppear(): void {
     this.disposed = false
@@ -1366,7 +1366,7 @@ export struct VeraPreview {
       let drawAt = Date.now()
       let ops = decodeGfx(this.vm!.execute(node.label, [this.currentState!]))
       let paintAt = Date.now()
-      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum, this.getUIContext().vp2px(1))
+      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum, this.getUIContext().vp2px(1), node.style === 'clear')
       this.frameSplit[1] += paintAt - drawAt
       this.frameSplit[2] += Date.now() - paintAt
     } catch (e) {
@@ -3099,6 +3099,13 @@ export struct VeraPreview {
       .borderRadius(node.kind === 'stage' && node.style === 'floor' ? this.t().radiusCard : 0)
     } else if (node.kind === 'transform') {
       // Inside a Stage or another Transform: drawn by the scene that owns it, not here.
+    } else if (node.kind === 'layers') {
+      // One over another, each in the middle; the box is the size the program gave.
+      Stack({ alignContent: Alignment.Center }) {
+        this.renderChildren(node)
+      }
+      .width(node.minimum > 0 ? node.minimum : undefined)
+      .height(node.maximum > 0 ? node.maximum : undefined)
     } else if (node.kind === 'motion') {
       // The children are drawn as they are; only the pose around them moves. Drawn inline, no component of its own.
       Column() {

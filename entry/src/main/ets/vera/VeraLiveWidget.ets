@@ -88,6 +88,11 @@ function nodeHeight(node: CardNode, pictureSide: number, width: number = LIVE_IN
     for (let child of node.children) { tallest = Math.max(tallest, nodeHeight(child, pictureSide, share)) }
     return tallest + 2 * padOf(node)
   }
+  if (node.kind === 'layers') {
+    let tallest = 0
+    for (let child of node.children) { tallest = Math.max(tallest, nodeHeight(child, pictureSide, width)) }
+    return tallest
+  }
   if (node.kind === 'column' || node.kind === 'motion') {
     return stackHeight(node.children, pictureSide, gapOf(node, LIVE_ROW_GAP), width - 2 * padOf(node)) + 2 * padOf(node)
   }
@@ -358,6 +363,7 @@ export class WidgetSession {
         item.h = node.maximum
         item.pointer = node.value
         item.pic = surfaces - 1
+        item.style = node.style
       }
       item.action = node.action
       item.value = node.eventValue
@@ -470,6 +476,24 @@ export class WidgetSession {
       }
       if (node.kind !== 'stat' && node.kind !== 'numberstat' && node.kind !== 'sparkline') {
         item.children = node.children.map((child: VeraUiNode, index: number): CardNode => project(child, depth + 1, key + '.' + index.toString(), item.slot))
+      }
+      if (node.kind === 'layers') {
+        // A touch on any part of the scene plays all its movements: the stick swings and the drum answers.
+        let slots: number[] = []
+        let gather = (nodes: CardNode[]): void => {
+          for (let child of nodes) {
+            if (child.kind === 'motion' && child.slot >= 0) { slots.push(child.slot) }
+            gather(child.children)
+          }
+        }
+        gather(item.children)
+        let link = (nodes: CardNode[]): void => {
+          for (let child of nodes) {
+            child.links = slots
+            link(child.children)
+          }
+        }
+        if (slots.length > 1) { link(item.children) }
       }
       return item
     }

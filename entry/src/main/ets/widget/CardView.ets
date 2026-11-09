@@ -53,7 +53,7 @@ export struct CardView {
   private paintPicture(node: CardNode): void {
     let start = Date.now()
     paintGfx(this.contextOf(node), decodeGfxOps(node.ops), resolveTheme(this.preset, this.primary, false),
-      this.pictureW(node), this.pictureH(node), node.w, node.h, vp2px(1))
+      this.pictureW(node), this.pictureH(node), node.w, node.h, vp2px(1), node.style === 'clear')
     console.info('VERA-CARD picture painted ms=' + (Date.now() - start).toString() + ' at=' + Date.now().toString())
   }
   private pictureAt(node: CardNode, event: ClickEvent): number[] {
@@ -89,10 +89,13 @@ export struct CardView {
    */
   private touches: number[] = [0, 0, 0, 0, 0]
   private touched(node: CardNode): void {
-    if (node.slot >= 0 && node.slot < SLOTS) {
-      this.touches[node.slot] = this.touches[node.slot] + 1
+    // A node in a ui.Layers plays every Motion of the scene; any other plays the one it is under.
+    let slots: number[] = node.links !== undefined ? node.links : (node.slot >= 0 ? [node.slot] : [])
+    for (let slot of slots) {
+      if (slot < 0 || slot >= SLOTS) { continue }
+      this.touches[slot] = this.touches[slot] + 1
       // A touch while the last movement is still playing starts the next one from its first pose.
-      this.setPhase(node.slot, 0)
+      this.setPhase(slot, 0)
     }
   }
   private effective(node: CardNode): number { return node.trigger + (node.slot >= 0 && node.slot < SLOTS ? this.touches[node.slot] : 0) }
@@ -332,6 +335,11 @@ export struct CardView {
         ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
       }.width('100%').layoutWeight(inRow ? 1 : 0).alignItems(this.colAlign(node))
       .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
+    } else if (node.kind === 'layers') {
+      // The children one over another, each in the middle: a picture with another moving over it.
+      Stack() {
+        ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
+      }.layoutWeight(inRow ? 1 : 0)
     } else if (node.kind === 'motion') {
       Column({ space: 6 }) {
         ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
@@ -360,6 +368,11 @@ export struct CardView {
         ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
       }.width('100%').layoutWeight(inRow ? 1 : 0).alignItems(this.colAlign(node))
       .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
+    } else if (node.kind === 'layers') {
+      // The children one over another, each in the middle: a picture with another moving over it.
+      Stack() {
+        ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
+      }.layoutWeight(inRow ? 1 : 0)
     } else if (node.kind === 'motion') {
       Column({ space: 6 }) {
         ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
@@ -388,6 +401,11 @@ export struct CardView {
         ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
       }.width('100%').layoutWeight(inRow ? 1 : 0).alignItems(this.colAlign(node))
       .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
+    } else if (node.kind === 'layers') {
+      // The children one over another, each in the middle: a picture with another moving over it.
+      Stack() {
+        ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
+      }.layoutWeight(inRow ? 1 : 0)
     } else if (node.kind === 'motion') {
       Column({ space: 6 }) {
         ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)

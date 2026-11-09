@@ -266,5 +266,10 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   const badParam = sized.replace('function widget(state: AppState, size: number)', 'function widget(state: AppState, size: string)')
   assert.throws(() => compileVeraSource(badParam), /E2115/)
 }
+// ui.Layers: in the prompt, and a widget that uses it passes the glance checks.
+{
+  assert.match(widgetRefinementPrompt(), /LAYERS\. A subject made of parts that move differently/)
+  assert.equal(checkWidget(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')).vbc2), '')
+}
 console.log('PASS carry widget: the earlier widget and its helpers come back into a version written without them')
 }

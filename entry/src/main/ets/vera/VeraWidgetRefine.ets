@@ -78,6 +78,11 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     '(the state cannot grow). The second argument is 0, or a number the state really changes with, which then also plays it. A movement ' +
     'lasts about a second and plays once: a card cannot loop, spin forever or repeat, there is no sound or vibration, and a drawing is a ' +
     'picture of one moment, so draw the subject at its most recognisable, not a scene that needs motion to be understood. ' +
+    'LAYERS. A subject made of parts that move differently -- something that hits and something that is hit, a sky with weather in front ' +
+    'of it, a body with a part that swings -- is drawn as ui.Layers(style, width, height, [back, ..., front]): the children lie one over another, ' +
+    'the first at the bottom, each in the middle, and each can be its own ui.Motion(style, 0, [ui.Surface(...)]) so the parts move ' +
+    'separately. Give every ui.Surface in one ui.Layers the same width and height as the ui.Layers and draw each part where it belongs ' +
+    'in that box (its own function, only its part), so they line up; every ui.Surface above the first has the style "clear" (no background of its own: without it it hides the layers under it). A touch on any layer plays that layer\'s own movement. ' +
     'Draw exactly the subject the person asked for; do not reuse a shape from these instructions. '+
     'STYLES. A text style is drawn as the app draws it, with the theme\'s weight, font and colour: display, title, heading, body, caption ' +
     '(small), eyebrow (a small spaced label above something), metric (a big figure), muted (quiet), success, warning, danger (toned). ' +

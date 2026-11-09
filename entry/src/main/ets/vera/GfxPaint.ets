@@ -220,13 +220,16 @@ const RAD: number = Math.PI / 180
  * otherwise leave the canvas in a state the rest of the frame inherits.
  */
 export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: ResolvedTheme,
-    boxW: number, boxH: number, w: number, h: number, pathScale: number = 1): void {
+    boxW: number, boxH: number, w: number, h: number, pathScale: number = 1, bare: boolean = false): void {
   let fit = gfxFit(boxW, boxH, w, h)
   ctx.save()
   ctx.clearRect(0, 0, boxW, boxH)
   ctx.globalAlpha = 1
-  ctx.fillStyle = themeColor(t.background)
-  ctx.fillRect(0, 0, boxW, boxH)
+  // A picture laid over another (ui.Surface style "clear") has no background of its own.
+  if (!bare) {
+    ctx.fillStyle = themeColor(t.background)
+    ctx.fillRect(0, 0, boxW, boxH)
+  }
   ctx.translate(fit.offsetX, fit.offsetY)
   ctx.scale(fit.scale, fit.scale)
   ctx.beginPath()

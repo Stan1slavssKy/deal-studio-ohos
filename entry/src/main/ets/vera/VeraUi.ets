@@ -500,6 +500,13 @@ export class UiHostEnvironment extends HostEnvironment {
           ['minimum', new VeraNumberValue(argNum(args, 2))],
           ['children', argArray(args, 3)],
         ])
+      case 'Layers':
+        return viewNode('layers', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['minimum', new VeraNumberValue(argNum(args, 1))],
+          ['maximum', new VeraNumberValue(argNum(args, 2))],
+          ['children', argArray(args, 3)],
+        ])
       case 'Motion':
         // The preset is the style; the trigger rides numberValue, as other components reuse an existing field.
         return viewNode('motion', [

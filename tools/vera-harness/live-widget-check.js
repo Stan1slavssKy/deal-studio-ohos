@@ -320,4 +320,16 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.throws(() => sw.tapSwitch(f1, 'stale', 'setFocus', false), /Widget changed/)
   assert.throws(() => sw.tapSwitch(f1, f1.token, 'nope', false), /not available/)
 }
+// Layers: parts one over another, each its own Motion and picture, all at one size.
+{
+  const lay = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')).vbc2, 'lay', '')
+  const f = lay.frame('p', 'A', ''); const box = f.nodes[0].children[0]
+  assert.equal(box.kind, 'layers'); assert.deepEqual(box.children.map(c => [c.kind, c.style, c.slot]), [['motion', 'recoil', 0], ['motion', 'swing', 1]])
+  const [a, b] = box.children.map(c => c.children[0]); assert.equal(a.size, b.size, 'the layers of a picture are drawn at one size')
+  assert.notEqual(a.ops, b.ops, 'each layer draws its own part')
+  assert.deepEqual(a.links, [0, 1]); assert.deepEqual(b.links, [0, 1], 'a touch on any layer plays every Motion of the scene')
+  assert.equal(f.nodes[0].children[1].links, undefined, 'a node outside the layers has no links')
+  const nested = fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8').replace('ui.Layers("default", 100, 100, [', 'ui.Layers("default", 100, 100, [ui.Layers("default", 100, 100, []),')
+  assert.throws(() => compileVeraSource(nested), /Layers/, 'a Layers inside a Layers is refused')
+}
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
