@@ -6,6 +6,8 @@ import { resolveTheme, pathFill } from './VeraTheme'
 import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
+import { CardNode, LiveFrame } from '../widget/CardModel'
+export { CardNode, LiveFrame } from '../widget/CardModel'
 
 export const LIVE_MAX_DEPTH: number = 4
 export const LIVE_MAX_NODES: number = 40
@@ -14,9 +16,9 @@ export const LIVE_MAX_TEXT: number = 256
 export const LIVE_MAX_COMMANDS: number = 600
 /** The Motion presets a card plays: each is one short settle from a hit pose (tumble and flip need 3D, which a card does not have). */
 export const CARD_MOTIONS: string[] = ['pop', 'shake', 'bounce', 'fade']
-export const LIVE_MAX_MOTIONS: number = 1
-/** A picture on a card (ui.Surface drawn once for the frame): one, of a few dozen shapes; the frame's own size budget counts the rest. */
-export const LIVE_MAX_SURFACES: number = 1
+export const LIVE_MAX_MOTIONS: number = 3
+/** A picture on a card (ui.Surface drawn once for the frame): up to three, of a few dozen shapes each; the frame's own size budget counts the rest. */
+export const LIVE_MAX_SURFACES: number = 3
 export const LIVE_MAX_SHAPES: number = 60
 /** The room a picture is sized to: a card is about 150 vp square (524 px at 3.5 px per vp) with 12 of padding, and 6 between its rows. */
 export const LIVE_INNER_HEIGHT: number = 126
@@ -26,29 +28,6 @@ export const PICTURE_SIDE_MAX: number = 80
 export const LIVE_MAX_STEPS: number = 100000
 // UTF-16 length capped conservatively: even non-ASCII JSON remains small on the wire.
 export const LIVE_MAX_JSON: number = 8000
-
-/** A plain binding DTO. All appearance is resolved outside the launcher. */
-export class CardNode {
-  key: string = ''
-  kind: string = ''
-  text: string = ''
-  commands: string = ''
-  /** ui.Motion on a card: the preset (CARD_MOTIONS) and the number whose change plays it. */
-  style: string = ''
-  trigger: number = 0
-  /** ui.Surface: its shapes (encodeGfxOps), its own width and height, and the handler a tap on it runs. */
-  ops: string = ''
-  w: number = 0
-  h: number = 0
-  pointer: string = ''
-  action: string = ''
-  value: number = 0
-  enabled: boolean = true
-  color: string = '#172033'
-  fill: string = '#FFFFFF'
-  size: number = 14
-  children: CardNode[] = []
-}
 
 /** About how tall a node draws, in vp: what is left of the card for a picture is what these leave. */
 function nodeHeight(node: CardNode, pictureSide: number): number {
@@ -72,41 +51,44 @@ function stackHeight(nodes: CardNode[], pictureSide: number): number {
   return total + Math.max(0, nodes.length - 1) * LIVE_ROW_GAP
 }
 
-function findPicture(nodes: CardNode[]): CardNode | null {
+function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
   for (let node of nodes) {
-    if (node.kind === 'surface') { return node }
-    let inside = findPicture(node.children)
-    if (inside !== null) { return inside }
+    if (node.kind === 'surface') { out.push(node) }
+    allPictures(node.children, out)
   }
-  return null
+  return out
+}
+
+/** The widest a picture may be so the pictures of a row (directly, or in a Motion) share the card's width: its inner width less the gaps. */
+const LIVE_INNER_WIDTH: number = 126
+const LIVE_ROW_SPACE: number = 8
+
+function widthLimit(nodes: CardNode[]): number {
+  let limit = PICTURE_SIDE_MAX
+  for (let node of nodes) {
+    if (node.kind === 'row') {
+      let count = 0
+      for (let child of node.children) {
+        if (child.kind === 'surface') { count += 1 }
+        if (child.kind === 'motion') { count += allPictures(child.children, []).length }
+      }
+      if (count > 1) { limit = Math.min(limit, Math.floor((LIVE_INNER_WIDTH - LIVE_ROW_SPACE * (count - 1)) / count)) }
+    }
+    limit = Math.min(limit, widthLimit(node.children))
+  }
+  return limit
 }
 
 /**
- * The side a picture is drawn at, in vp: what is left of the card when everything else is counted (its own row included),
- * at most PICTURE_SIDE_MAX. Below PICTURE_SIDE_MIN there is no room: the widget has too much else on it. 0 for none.
+ * The side the pictures are drawn at, in vp: the largest, up to PICTURE_SIDE_MAX and what their rows' width allows, with which everything
+ * else still fits the card's height. Below PICTURE_SIDE_MIN there is no room: the widget has too much else on it. 0 when it has no picture.
  */
 export function pictureRoom(frame: LiveFrame): number {
-  let picture = findPicture(frame.nodes)
-  if (picture === null) { return 0 }
-  return Math.floor(LIVE_INNER_HEIGHT - stackHeight(frame.nodes, 0))
-}
-
-export class LiveFrame {
-  formId: string = ''
-  projectId: string = ''
-  title: string = 'Choose app'
-  icon: string = '📱'
-  versionId: string = ''
-  token: string = ''
-  /** Set by a tap's answer: another frame even when the state came out the same, so the card draws it again (a touch that changes nothing still plays). */
-  seq: string = ''
-  status: string = ''
-  live: boolean = false
-  background: string = '#F8FAFC'
-  /** The theme the widget named, for a picture whose shapes are coloured by role (ink, accent...). */
-  preset: string = 'clean'
-  primary: string = ''
-  nodes: CardNode[] = []
+  if (allPictures(frame.nodes, []).length === 0) { return 0 }
+  for (let side = widthLimit(frame.nodes); side > 0; side--) {
+    if (stackHeight(frame.nodes, side) <= LIVE_INNER_HEIGHT) { return side }
+  }
+  return 1
 }
 
 /** A live source call widgetRefresh made, for the card to make: its parameters and the handler its answer goes to. */
@@ -156,7 +138,7 @@ export class WidgetSession {
     let count = 0
     let motions = 0
     let surfaces = 0
-    let project = (node: VeraUiNode, depth: number, key: string): CardNode => {
+    let project = (node: VeraUiNode, depth: number, key: string, motionSlot: number): CardNode => {
       count += 1
       if (count > LIVE_MAX_NODES) { throw new Error('widget exceeds 40 nodes') }
       if (depth > LIVE_MAX_DEPTH) { throw new Error('widget exceeds depth 4') }
@@ -182,6 +164,7 @@ export class WidgetSession {
         item.style = node.style
         item.trigger = node.numberValue
       }
+      item.slot = node.kind === 'motion' ? motions - 1 : motionSlot
       if (node.kind === 'surface') {
         surfaces += 1
         if (surfaces > LIVE_MAX_SURFACES) { throw new Error('a widget has at most ' + LIVE_MAX_SURFACES.toString() + ' ui.Surface') }
@@ -200,6 +183,7 @@ export class WidgetSession {
         item.w = node.minimum
         item.h = node.maximum
         item.pointer = node.value
+        item.pic = surfaces - 1
       }
       item.action = node.action
       item.value = node.eventValue
@@ -212,14 +196,14 @@ export class WidgetSession {
         item.fill = node.style === 'primary' ? theme.primary : theme.secondaryFill
         item.color = node.style === 'primary' ? theme.onPrimary : theme.secondaryInk
       }
-      item.children = node.children.map((child: VeraUiNode, index: number): CardNode => project(child, depth + 1, key + '.' + index.toString()))
+      item.children = node.children.map((child: VeraUiNode, index: number): CardNode => project(child, depth + 1, key + '.' + index.toString(), item.slot))
       return item
     }
     // The theme wrapper consumes no layout level but is still validated and counted.
-    let tree = project(root, root.kind === 'apptheme' ? 0 : 1, '0')
+    let tree = project(root, root.kind === 'apptheme' ? 0 : 1, '0', -1)
     frame.nodes = root.kind === 'apptheme' ? tree.children : [tree]
-    let picture = findPicture(frame.nodes)
-    if (picture !== null) { picture.size = Math.max(PICTURE_SIDE_MIN, Math.min(PICTURE_SIDE_MAX, pictureRoom(frame))) }
+    let side = pictureRoom(frame)
+    for (let picture of allPictures(frame.nodes, [])) { picture.size = Math.max(PICTURE_SIDE_MIN, Math.min(PICTURE_SIDE_MAX, side)) }
     // Rejects taps from an older frame or state. A digest, not the state itself: the token is in the card's data, which has
     // a size budget, and in every key of its layout, so it must not grow with the app's data.
     frame.token = this.versionId + ':' + veraStateStamp(this.bytecode) + ':' + stateDigest(this.encodedState())

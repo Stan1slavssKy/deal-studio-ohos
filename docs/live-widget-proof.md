@@ -209,6 +209,12 @@ read from the log: `VERA-WIDGET attempt N answer ...` in `AgentWidget`). The fir
 After these, the same request gave a panda of several colours (a green disc, a platform, orange ears, cheeks) on the first attempt, the widget passed
 every check, and on the phone a touch on it makes it jump, in the Widget tab and on the card on the home screen, with the score unchanged.
 
+The layout is one component, `widget/CardView.ets`, which `LiveCard` and the Widget tab (`WidgetPreview`) both use, over the plain frame classes in
+`widget/CardModel.ets`; the painter and colours moved to `vera/GfxPaint.ets` (no interpreter import; `VeraGfx` re-exports them). A widget may have up to three
+pictures and three Motions: a Motion has a `slot`, a node under it carries that slot, and a touch is counted for that slot only. On the phone, two pictures side by
+side (`examples/widget-two-pictures.vera`): a touch on the left one moved only it (it rose from y 150 to 100 px and settled), the right square stayed where it was,
+and the other way round for the right one.
+
 Not covered: a picture changing under a finger (a card has no moves), pictures of more than 60 shapes, dark theme, 2x4 and 4x4 cards.
 
 ## Deferred / known limits

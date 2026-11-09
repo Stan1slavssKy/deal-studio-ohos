@@ -69,8 +69,11 @@ assert.throws(()=>list.tap(listAfter,listAfter.token,'remove',22),/not available
 list.tap(listAfter,listAfter.token,'remove',33)
 assert.deepEqual(frame(list).nodes[0].children.map(row=>row.children[1].value),[11])
 const card = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets/widget/pages/LiveCard.ets'), 'utf8')
-assert.match(card, /handler: node.action/)
-assert.match(card, /node.key \+ this.token/)
+const view = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets/widget/CardView.ets'), 'utf8')
+assert.match(card, /handler: action/, 'the card posts the handler a button or shape reports')
+assert.match(card, /handler: handler, x: x, y: y/, 'and the point a picture reports')
+assert.match(card, /frameKey: this.token \+ this.seq/, 'the nodes are made again for every frame: the token and seq are in their key')
+assert.match(view, /node.key \+ this.frameKey/)
 // The token does not grow with the app's data: a log of 400 entries still fits the card, and a different log is a different token.
 {
   const log = 'import * as ui from "std/ui"\n@jsonable class Entry { note: string; amount: number; }\n' +
@@ -133,9 +136,19 @@ assert.match(card, /node.key \+ this.token/)
     const ok = motionSource.replace('"pop"', '"' + style + '"')
     assert.equal(frame(new WidgetSession(compileVeraSource(ok).vbc2, 'ok', '')).nodes[0].children[0].style, style)
   }
-  const twice = motionSource.replace('ui.NumberText("metric", state.hits, "", " hits", 1)',
-    'ui.Motion("fade", state.hits, [ui.NumberText("metric", state.hits, "", " hits", 1)])')
-  assert.throws(() => frame(new WidgetSession(compileVeraSource(twice).vbc2, 'twice', '')), /at most 1 ui\.Motion/)
+  // Three Motions at most; each touch plays the Motion its node sits under (slot), not all of them.
+  const widgetAt = motionSource.indexOf('function widget(')
+  const withMotions = n => motionSource.substring(0, widgetAt) + motionSource.substring(widgetAt).replace('ui.NumberText("metric", state.hits, "", " hits", 1)',
+    Array.from({length: n}, (_, i) => 'ui.Motion("fade", state.hits, [ui.Text("caption", "m' + i + '")])').join(', '))
+  const three = frame(new WidgetSession(compileVeraSource(withMotions(2)).vbc2, 'three', ''))
+  const slots = []
+  const walk = (nodes) => nodes.forEach(n => { if (n.kind === 'motion') slots.push(n.slot); walk(n.children) })
+  walk(three.nodes)
+  assert.deepEqual(slots, [0, 1, 2], 'the drum and two more: slots in order')
+  const drumPath = three.nodes[0].children[0].children[0]
+  assert.equal(drumPath.kind, 'path'); assert.equal(drumPath.slot, 0, 'the drum sits under Motion 0')
+  assert.equal(three.nodes[0].children[1].children[0].slot, 1, 'a text under the second Motion carries its slot')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(withMotions(3)).vbc2, 'four', '')), /at most 3 ui\.Motion/)
   const nested = motionSource.replace('ui.Path(', 'ui.Motion("fade", 0, [ui.Path(').replace(', 0, "hit", 1)', ', 0, "hit", 1)])')
   assert.throws(() => compileVeraSource(nested), /E2107/, 'the compiler refuses a Motion inside a Motion')
 }
@@ -173,10 +186,24 @@ assert.match(card, /node.key \+ this.token/)
   const looping = (pandaSource + 'function pandaTick(state: AppState, elapsedMs: number): AppState { return state; }')
     .replace('"panda", "", "pandaTouch"', '"panda", "pandaTick", "pandaTouch"')
   assert.throws(() => frame(new WidgetSession(compileVeraSource(looping).vbc2, 'loop', '')), /no frames/)
+  // Three pictures at most; they are numbered, and pictures side by side share the card's width.
   const cut = pandaSource.indexOf('function widget(')
-  const two = pandaSource.substring(0, cut) + pandaSource.substring(cut).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
-    'ui.Surface("default", 100, 100, "panda", "", "")')
-  assert.throws(() => frame(new WidgetSession(compileVeraSource(two).vbc2, 'two', '')), /at most 1 ui\.Surface/)
+  const withPictures = (n, inRow) => {
+    const extra = Array.from({length: n}, () => 'ui.Surface("default", 100, 100, "panda", "", "")').join(', ')
+    return pandaSource.substring(0, cut) + pandaSource.substring(cut).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
+      inRow ? 'ui.Row("default", [' + extra + '])' : extra)
+  }
+  const column = frame(new WidgetSession(compileVeraSource(withPictures(2, false)).vbc2, 'two', ''))
+  const pics = []
+  const gather = (nodes) => nodes.forEach(n => { if (n.kind === 'surface') pics.push(n); gather(n.children) })
+  gather(column.nodes)
+  assert.deepEqual(pics.map(n => n.pic), [0, 1, 2], 'the first is the panda, the others follow')
+  const row = frame(new WidgetSession(compileVeraSource(withPictures(2, true)).vbc2, 'row', ''))
+  const inRow = []
+  const gatherRow = (nodes) => nodes.forEach(n => { if (n.kind === 'surface') inRow.push(n); gatherRow(n.children) })
+  gatherRow(row.nodes)
+  assert(inRow.every(n => n.size <= 59), 'two pictures in a row, and the one above, fit the width: ' + inRow.map(n => n.size))
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(withPictures(3, false)).vbc2, 'four', '')), /at most 3 ui\.Surface/)
   const many = pandaSource.replace('  return shapes;', '  shapes.push(gfx.circle(1, 50, 2, "#1F1F1F"));\n'.repeat(60) + '  return shapes;')
   assert.throws(() => frame(new WidgetSession(compileVeraSource(many).vbc2, 'many', '')), /at most 60 shapes/)
   // The picture takes the room the rest leaves: more text under it, a smaller picture (never under 40).
@@ -189,5 +216,17 @@ assert.match(card, /node.key \+ this.token/)
   const looked = new WidgetSession(still, 'still', '')
   assert.equal(frame(looked).nodes[0].children[0].children[0].pointer, '')
   assert.throws(() => looked.tapSurface(frame(looked), frame(looked).token, '', 5, 5), /not available/)
+}
+// Two pictures side by side, each under its own Motion (examples/widget-two-pictures.vera): each touch is counted for its own Motion's slot.
+{
+  const two = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-two-pictures.vera'), 'utf8')).vbc2, 'two-pictures', '')
+  const f = frame(two)
+  const [left, right] = f.nodes[0].children[0].children
+  assert.deepEqual([left.slot, right.slot], [0, 1])
+  assert.deepEqual([left.children[0].pic, right.children[0].pic], [0, 1])
+  assert.deepEqual([left.children[0].pointer, right.children[0].pointer], ['touchLeft', 'touchRight'])
+  assert(left.children[0].size <= 59 && right.children[0].size <= 59, 'side by side, each takes half the width')
+  two.tapSurface(f, f.token, 'touchRight', 50, 50)
+  assert(texts(frame(two).nodes).includes('1'), 'one touch counted')
 }
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
