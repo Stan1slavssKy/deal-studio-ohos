@@ -1,5 +1,9 @@
 # Changelog
 
+## ui.Timer: a time that moves, in the app and on the card
+
+- New component `ui.Timer(style, millis, down)`: counts up from a moment or down to one with the platform's own `TextTimer`, which keeps going on a home-screen card where our code does not (no refresh, no ticker). The theme's text styles apply; the Make widget prompt says to use it for "since" and "left until".
+
 ## Widget card: icons, badges, progress, stats and a sparkline
 
 - `ui.Icon`, `ui.IconButton`, `ui.Badge`, `ui.Progress`, `ui.ProgressRing`, `ui.Stat`, `ui.NumberStat`, `ui.MetricGroup` and `ui.Sparkline` are card kinds: icons in the theme's colours, the platform's own bar and ring, labelled figures, and a small trend. An icon button counts as one of the two buttons. The Make widget prompt describes them.

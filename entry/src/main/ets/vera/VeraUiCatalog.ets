@@ -140,6 +140,7 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   // one-entry list here means describeCatalogForPrompt leaves the "styles:"
   // line out, the same way ui.Divider and ui.Scroll already do.
   ['skeleton', ['default']],
+  ['timer', ['body', 'caption', 'heading', 'title', 'display', 'metric', 'muted', 'success', 'warning', 'danger']],
   ['spinner', ['default', 'accent']],
   // The preset is the style, so the compiler validates it and the prompt lists it. See VeraMotion.ets.
   ['motion', ['tumble', 'flip', 'shake', 'bounce', 'pop', 'fade']],
@@ -510,6 +511,11 @@ export const CATALOG: ComponentSpec[] = [
     'a placeholder box the size of the content that has not arrived yet',
     '',
     'Put one where real content will appear once it is ready, instead of leaving that space blank or showing a zero. width and height are the box in points; rounded softens the corners for anything that will end up looking like a chip or an avatar.'),
+  new ComponentSpec('Timer', 'timer',
+    [style('timer'), new PropSpec('millis', 'number'), new PropSpec('down', 'boolean')],
+    'a clock that runs by itself: counts up from a moment or down to one, as minutes and seconds (hours when it is long)',
+    '',
+    'For the time since something began (a workout, a stopwatch that is running) or the time left until it ends. millis is that moment in milliseconds since 1970 (time.nowMillis() plus or minus a length); down true counts down to it, false counts up from it. It ticks without the program: no ticker, no refresh, nothing to save every second. On a home-screen card it is the only way to show a time that moves.', true),
   new ComponentSpec('Spinner', 'spinner',
     [style('spinner'), new PropSpec('label', 'string', '', true)],
     'a small spinning indicator that something is in progress',

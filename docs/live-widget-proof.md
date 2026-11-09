@@ -265,6 +265,18 @@ On the phone (examples/widget-water.vera, widget-metrics.vera): a ring at 38 % t
 secondary fills with their icons; a "On track" badge with a check, a star, two stats side by side and a trend line with its last point. A bug found there: the block that fills
 these nodes ran before the default colour and fill were assigned, so a ring came out in the plain ink and the buttons white; the order is now fixed and a test holds it.
 
+## Time that moves: ui.Timer
+
+`ui.Timer(style, millis, down)` is a new catalogue component, in the app and on the card: the platform's own `TextTimer`, which keeps counting without our code (the card is
+frozen for our animations, not for platform components: stage-0 spike). `millis` is a moment in ms since 1970; `down` false counts up from it, true counts down to it. The
+program keeps the moment in its state as a number (`time.nowMillis()` plus or minus a length), the frame carries it (`CardNode.val`, direction in `max`), and at draw time the
+card works out where the timer starts (`timerCount`: the time since the moment, or the time left), so a card the launcher redraws later still shows the right time. The format is
+`mm:ss`, or `HH:mm:ss` once more than 50 minutes are involved. Up to three timers per widget; the theme's size, weight, family and ink apply as for a text.
+
+On the phone (examples/widget-timer.vera, technical theme): a monospace stopwatch read 00:03, 00:07, 00:16 and a countdown 01:29:53, 01:29:49, 01:29:40 over a quarter of a minute with no
+update from the app, and Restart (a handler that sets both moments to now) started both over. The Make widget prompt says to prefer it to a figure computed from the clock, which stands
+still between redraws. Not done: what a countdown does at zero (it stops at 00:00; the program's `widgetRefresh`, about every 30 minutes, is what can change the state then).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

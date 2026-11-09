@@ -518,6 +518,19 @@ export struct VeraPreview {
    * brought up to date every SURFACE_VIEW_MS, which is plenty for a score and nothing like sixty times a second.
    */
   private surfaces: Map<LiveNode, SurfaceBox> = new Map<LiveNode, SurfaceBox>()
+  /** Each ui.Timer's controller: the platform's TextTimer ticks by itself once started. */
+  private textTimers: Map<LiveNode, TextTimerController> = new Map<LiveNode, TextTimerController>()
+  private textTimerOf(node: LiveNode): TextTimerController {
+    let known = this.textTimers.get(node)
+    if (known !== undefined) { return known }
+    let made = new TextTimerController()
+    this.textTimers.set(node, made)
+    return made
+  }
+  /** Where the timer starts, in ms: the time since the moment (counting up), or the time left until it (counting down). */
+  private textTimerCount(node: LiveNode): number {
+    return Math.max(0, node.checked ? node.numberValue - Date.now() : Date.now() - node.numberValue)
+  }
   private liveSurfaces: LiveNode[] = []
   private surfaceSync: displaySync.DisplaySync | null = null
   private surfaceTimer: number = -1
@@ -547,7 +560,7 @@ export struct VeraPreview {
     'emptystate', 'stat', 'metricgroup', 'tilegrid', 'tile',
     'numbertext', 'numberstat', 'numberfield', 'timefield', 'datefield', 'numberlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
-    'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler',
+    'timeline', 'timelineitem', 'skeleton', 'timer', 'spinner', 'snackbar', 'sparkline', 'backhandler',
     'table', 'tablerow', 'motion', 'transform', 'stage', 'surface']
 
   aboutToAppear(): void {
@@ -4110,6 +4123,13 @@ export struct VeraPreview {
                  top: this.t().gapTight - 1, bottom: this.t().gapTight - 1 })
       .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
       .borderRadius(this.t().radiusSmall)
+    } else if (node.kind === 'timer') {
+      TextTimer({ isCountDown: node.checked, count: this.textTimerCount(node), controller: this.textTimerOf(node) })
+        .format(this.textTimerCount(node) >= 3000000 ? 'HH:mm:ss' : 'mm:ss')
+        .fontSize(textSize(this.t(), node.style))
+        .fontWeight(textWeight(this.t(), node.style))
+        .fontColor(textInk(this.t(), node.style))
+        .onAppear(() => { this.textTimerOf(node).start() })
     } else if (node.kind === 'skeleton') {
       // width/height/rounded ride minimum/maximum/checked -- the same field
       // reuse Ticker already does for intervalMs/running, so decode needed

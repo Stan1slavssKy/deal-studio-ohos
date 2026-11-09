@@ -82,6 +82,9 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'ui.NumberStat(...) are a labelled figure, and ui.MetricGroup(style, columns, [stats]) puts a few side by side; ui.Sparkline(series, max, ...) is ' +
     'a small trend (a picture: it counts among the three pictures, about 80 by 29 vp). Prefer these to drawing the same thing by hand, ' +
     'and mind the height: a ring and a row of buttons fit, a ring, a chart and a stat row do not.\n' +
+    'TIME THAT MOVES. ui.Timer(style, millis, down) runs by itself on the card, with no refresh: counting up from the moment millis (a stopwatch, ' +
+    '"since" something began) or, with down true, down to it ("left until"); millis is milliseconds since 1970 (time.nowMillis() plus or minus a ' +
+    'length, kept in the state as a number). Prefer it to a figure computed from the clock, which stands still between redraws.\n' +
     'Limits: depth ' + LIVE_MAX_DEPTH.toString() + ' excluding root AppTheme, ' + LIVE_MAX_NODES.toString() +
     ' nodes, ' + LIVE_MAX_TEXT.toString() + ' UTF-16 characters/text, ' + LIVE_MAX_JSON.toString() +
     ' UTF-16 units/frame including state token, ' + LIVE_MAX_STEPS.toString() + ' VM steps/entry.\n' +

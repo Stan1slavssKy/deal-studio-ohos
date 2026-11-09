@@ -30,6 +30,15 @@ export struct CardView {
    * ui.Surface: a still picture. The app's own painter (paintGfx) draws, on a Canvas, the shapes the frame carries; each picture has
    * its own context, by its number in the frame.
    */
+  private timer0: TextTimerController = new TextTimerController()
+  private timer1: TextTimerController = new TextTimerController()
+  private timer2: TextTimerController = new TextTimerController()
+  private timerOf(node: CardNode): TextTimerController { return node.pic === 1 ? this.timer1 : node.pic === 2 ? this.timer2 : this.timer0 }
+  /** Where a timer starts, in ms: the time since its moment (counting up) or the time left until it (counting down), as of when the card draws it. */
+  private timerCount(node: CardNode): number {
+    let moment = node.val !== undefined ? node.val : 0
+    return Math.max(0, node.max === 1 ? moment - Date.now() : Date.now() - moment)
+  }
   private ctx0: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
   private ctx1: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
   private ctx2: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
@@ -144,6 +153,19 @@ export struct CardView {
       } else {
         Canvas(this.contextOf(node)).width(this.pictureW(node)).height(this.pictureH(node))
           .onReady(() => { this.paintPicture(node) })
+      }
+    } else if (node.kind === 'timer') {
+      // The platform's own timer: it ticks by itself (a card is not frozen for it, unlike for our animations), from where the frame says.
+      if (this.familyOf(node).length > 0) {
+        TextTimer({ isCountDown: node.max === 1, count: this.timerCount(node), controller: this.timerOf(node) })
+          .format(this.timerCount(node) >= 3000000 ? 'HH:mm:ss' : 'mm:ss')
+          .fontSize(node.size).fontColor(node.color).fontWeight(this.weightOf(node)).fontFamily(this.familyOf(node))
+          .onAppear(() => { this.timerOf(node).start() })
+      } else {
+        TextTimer({ isCountDown: node.max === 1, count: this.timerCount(node), controller: this.timerOf(node) })
+          .format(this.timerCount(node) >= 3000000 ? 'HH:mm:ss' : 'mm:ss')
+          .fontSize(node.size).fontColor(node.color).fontWeight(this.weightOf(node))
+          .onAppear(() => { this.timerOf(node).start() })
       }
     } else if (node.kind === 'icon') {
       this.glyph(node.commands, node.size, node.color)

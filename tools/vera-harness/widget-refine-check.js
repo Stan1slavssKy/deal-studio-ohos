@@ -246,5 +246,11 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   assert.match(validateWidgetRefinement(water, three, compileVeraSource(three).vbc2), /3 buttons/)
   assert.match(widgetRefinementPrompt(), /ICONS AND DATA/)
 }
+// A timer is a card kind and the prompt says when to use it.
+{
+  assert(CARD_KINDS.includes('Timer'), 'Timer is a card kind')
+  assert.match(widgetRefinementPrompt(), /TIME THAT MOVES\. ui\.Timer\(style, millis, down\) runs by itself/)
+  assert.equal(checkWidget(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-timer.vera'), 'utf8')).vbc2), '')
+}
 console.log('PASS carry widget: the earlier widget and its helpers come back into a version written without them')
 }

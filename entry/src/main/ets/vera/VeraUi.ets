@@ -897,6 +897,13 @@ export class UiHostEnvironment extends HostEnvironment {
       // Ticker already does for intervalMs/running, and Snackbar reuses
       // text/value/action exactly as InsetBanner does for message/
       // actionText/action.
+      case 'Timer':
+        // The moment rides numberValue and the direction checked, as other components reuse an existing field.
+        return viewNode('timer', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['numberValue', new VeraNumberValue(argNum(args, 1))],
+          ['checked', new VeraBooleanValue(argBool(args, 2, false))],
+        ])
       case 'Skeleton':
         return viewNode('skeleton', [
           ['style', new VeraStringValue(argString(args, 0))],

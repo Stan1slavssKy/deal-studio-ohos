@@ -22,6 +22,8 @@ export const LIVE_MAX_MOTIONS: number = 3
 /** A picture on a card (ui.Surface drawn once for the frame): up to three, of a few dozen shapes each; the frame's own size budget counts the rest. */
 export const LIVE_MAX_SURFACES: number = 3
 export const LIVE_MAX_SHAPES: number = 60
+/** Timers a card runs (ui.Timer, the platform's own TextTimer). */
+export const LIVE_MAX_TIMERS: number = 3
 /** The room a picture is sized to: a card is about 150 vp square (524 px at 3.5 px per vp) with 12 of padding, and 6 between its rows. */
 export const LIVE_INNER_HEIGHT: number = 126
 export const LIVE_ROW_GAP: number = 6
@@ -212,6 +214,7 @@ export class WidgetSession {
     let count = 0
     let motions = 0
     let surfaces = 0
+    let timers = 0
     // The nodes a component is expanded into (a Stat, a Sparkline) are made, counted and depth-checked like the ones the program wrote.
     let make = (kind: string, key: string, depth: number, slot: number): CardNode => {
       count += 1
@@ -329,7 +332,15 @@ export class WidgetSession {
       item.color = node.kind === 'path' ? pathFill(theme, node.style) : theme.inkStrong
       item.fill = theme.surface
       if (node.kind === 'path') { item.size = 64 }
-      if (node.kind === 'text' || node.kind === 'numbertext') {
+      if (node.kind === 'timer') {
+        timers += 1
+        if (timers > LIVE_MAX_TIMERS) { throw new Error('a widget has at most ' + LIVE_MAX_TIMERS.toString() + ' ui.Timer') }
+        if (!Number.isFinite(node.numberValue)) { throw new Error('ui.Timer millis must be a number') }
+        item.val = node.numberValue
+        item.max = node.checked ? 1 : 0
+        item.pic = timers - 1
+      }
+      if (node.kind === 'text' || node.kind === 'numbertext' || node.kind === 'timer') {
         // The theme's roles, with the card's sizes (CardStyle): the app's text styles reach the card instead of being flattened to three sizes.
         item.size = cardTextSize(node.style)
         item.color = cardTextInk(theme, node.style)

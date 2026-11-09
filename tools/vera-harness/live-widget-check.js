@@ -270,4 +270,19 @@ assert.match(view, /node.key \+ this.frameKey/)
   const unknownIcon = fs.readFileSync(path.join(__dirname, 'examples/widget-metrics.vera'), 'utf8').replace('"star"', '"nonesuch"')
   assert.throws(() => frame(new WidgetSession(compileVeraSource(unknownIcon).vbc2, 'bad-icon', '')), /unknown icon/)
 }
+// A timer that runs by itself (ui.Timer): the frame carries the moment and the direction, the platform's TextTimer does the ticking.
+{
+  const timerSource = fs.readFileSync(path.join(__dirname, 'examples/widget-timer.vera'), 'utf8')
+  const timer = new WidgetSession(compileVeraSource(timerSource).vbc2, 'timer', '')
+  const f = frame(timer)
+  const [up, down] = f.nodes[0].children
+  assert.equal(up.kind, 'timer'); assert.equal(up.max, 0, 'counts up'); assert.equal(up.pic, 0)
+  assert.equal(down.kind, 'timer'); assert.equal(down.max, 1, 'counts down'); assert.equal(down.pic, 1)
+  assert(Math.abs(up.val - Date.now()) < 60000, 'the moment is milliseconds since 1970: ' + up.val)
+  assert(down.val - up.val > 5000000, 'the second one ends an hour and a half later')
+  assert.equal(up.size, 30); assert.equal(down.size, 18); assert.equal(up.family, 'monospace', 'the technical theme\'s metric font')
+  assert(!up.text, 'a timer carries no text: the platform draws it')
+  const four = timerSource.replace('ui.Timer("heading", state.endsAt, true),', 'ui.Timer("heading", state.endsAt, true), ui.Timer("caption", state.endsAt, true), ui.Timer("caption", state.endsAt, true),')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(four).vbc2, 'many-timers', '')), /at most 3 ui\.Timer/)
+}
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
