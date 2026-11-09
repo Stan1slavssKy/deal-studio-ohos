@@ -8,55 +8,28 @@ import { MOTION_PRESETS } from './VeraMotion'
 import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
-import { CardNode, LiveFrame, compactFrame } from '../widget/CardModel'
+import { CardNode, LiveFrame, compactFrame, CardSize, cardSize, CARD_DIMENSIONS, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_SHAPES,
+  CARD_MAX_TIMERS } from '../widget/CardModel'
 import { cardTextSize, cardTextWeight, cardTextInk, cardTextFamily, cardLetterSpacing, cardGap, cardPanelPad, cardPanelFill, cardButtonFill, cardButtonInk } from './CardStyle'
-export { CardNode, LiveFrame, compactFrame, compactNode, normalizeNodes } from '../widget/CardModel'
+export { CardNode, LiveFrame, compactFrame, compactNode, normalizeNodes, CardSize, cardSize, CARD_DIMENSIONS } from '../widget/CardModel'
 
 export const LIVE_MAX_DEPTH: number = 4
-export const LIVE_MAX_NODES: number = 40
 export const LIVE_MAX_TEXT: number = 256
 // A shape's path data (a drum with its jingles is about 300); the whole frame is still held to LIVE_MAX_JSON.
 export const LIVE_MAX_COMMANDS: number = 600
-/** The Motion presets a card plays: each is one short settle from a hit pose (tumble and flip need 3D, which a card does not have). */
+/** The Motion presets a card plays: every one, as stages (VeraMotion.motionStages). */
 export const CARD_MOTIONS: string[] = MOTION_PRESETS
-export const LIVE_MAX_MOTIONS: number = 5
+export const LIVE_MAX_MOTIONS: number = CARD_MAX_MOTIONS
 /** What the card posts for a touch on a ui.Motion that has no handler: the host answers with a new frame and runs nothing. */
 export const TOUCH_ACTION: string = '#touch'
-/** A picture on a card (ui.Surface drawn once for the frame): up to three, of a few dozen shapes each; the frame's own size budget counts the rest. */
-export const LIVE_MAX_SURFACES: number = 5
-export const LIVE_MAX_SHAPES: number = 60
+/** Pictures on a card (ui.Surface or ui.Sparkline, drawn once for the frame), of a few dozen shapes each; the frame's own size budget counts the rest. */
+export const LIVE_MAX_SURFACES: number = CARD_MAX_PICTURES
+export const LIVE_MAX_SHAPES: number = CARD_MAX_SHAPES
 /** Timers a card runs (ui.Timer, the platform's own TextTimer). */
-export const LIVE_MAX_TIMERS: number = 3
-/** The room a picture is sized to: a card is about 150 vp square (524 px at 3.5 px per vp) with 12 of padding, and 6 between its rows. */
-export const LIVE_INNER_HEIGHT: number = 126
+export const LIVE_MAX_TIMERS: number = CARD_MAX_TIMERS
 
-/**
- * A card's size and what a widget may put on it. The system numbers them 2 (2x2, about 150 vp square), 3 (2x4: wide, about 324 x 148) and 4 (4x4, about
- * 324 x 340); measured on the phone at 3.5 px per vp. The inner size is the card less its 12 vp padding.
- */
-export class CardSize {
-  dimension: number = 2
-  label: string = '2x2'
-  width: number = 126
-  height: number = 126
-  maxNodes: number = 40
-  maxButtons: number = 2
-  maxTexts: number = 8
-  pictureMax: number = 80
-}
-
-export function cardSize(dimension: number): CardSize {
-  let size = new CardSize()
-  if (dimension === 3) {
-    size.dimension = 3; size.label = '2x4'; size.width = 300; size.height = 124; size.maxNodes = 60; size.maxButtons = 4; size.maxTexts = 12; size.pictureMax = 100
-  } else if (dimension === 4) {
-    size.dimension = 4; size.label = '4x4'; size.width = 300; size.height = 316; size.maxNodes = 80; size.maxButtons = 6; size.maxTexts = 24; size.pictureMax = 200
-  }
-  return size
-}
 export const LIVE_ROW_GAP: number = 6
 export const PICTURE_SIDE_MIN: number = 40
-export const PICTURE_SIDE_MAX: number = 80
 export const LIVE_MAX_STEPS: number = 100000
 // UTF-16 length capped conservatively: even non-ASCII JSON remains small on the wire.
 export const LIVE_MAX_JSON: number = 8000
@@ -65,8 +38,8 @@ export const LIVE_MAX_JSON: number = 8000
 function gapOf(node: CardNode, fallback: number): number { return node.gap !== undefined ? node.gap : fallback }
 function padOf(node: CardNode): number { return node.pad !== undefined ? node.pad : 0 }
 
-/** The inner width of a card, in vp: what a text wraps in. */
-export const LIVE_INNER_WIDTH: number = 126
+/** The inner width of a 2x2 card, in vp: what a text wraps in when nothing says the card is wider. */
+const LIVE_INNER_WIDTH: number = cardSize(2).width
 const LIVE_ROW_SPACE: number = 8
 
 /**
@@ -144,7 +117,7 @@ function widthLimit(nodes: CardNode[], size: CardSize): number {
 }
 
 /**
- * The side the pictures are drawn at, in vp: the largest, up to PICTURE_SIDE_MAX and what their rows' width allows, with which everything
+ * The side the pictures are drawn at, in vp: the largest, up to the size's pictureMax and what their rows' width allows, with which everything
  * else still fits the card's height. Below PICTURE_SIDE_MIN there is no room: the widget has too much else on it. 0 when it has no picture.
  */
 export function pictureRoom(frame: LiveFrame): number {
@@ -516,6 +489,9 @@ export class WidgetSession {
   /** widget(state, size: number): the program draws differently for the card's size. */
   takesSize(): boolean { return this.hasSize }
 
+  /** The sizes the widget is drawn at differently: every card size when it takes the size, else only 2x2 (the others draw the same, centred). */
+  dimensions(): number[] { return this.hasSize ? CARD_DIMENSIONS.slice() : [2] }
+
   /** The program has widgetRefresh: the card's periodic update brings its state up to date with the clock. */
   refreshes(): boolean { return this.hasRefresh }
 
@@ -629,21 +605,4 @@ export class WidgetSession {
     }
     return requests
   }
-}
-
-/**
- * Whether two programs' widgets draw the same card over the same data: what is on it, its colours and sizes, not the
- * frame's token. A widget that cannot be drawn is not the same as one that can.
- */
-export function sameCard(before: string, after: string, seed: string): boolean {
-  let draw = (vbc2: string): string => {
-    try {
-      let frame = new WidgetSession(vbc2, 'compare', seed).frame('', '', '')
-      return frame.live ? JSON.stringify(frame.nodes) + frame.background : ''
-    } catch (_e) {
-      return ''
-    }
-  }
-  let a = draw(before)
-  return a.length > 0 && a === draw(after)
 }

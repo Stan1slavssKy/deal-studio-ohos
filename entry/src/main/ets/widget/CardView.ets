@@ -4,15 +4,31 @@
  * the painter, never the VM. What happens on a touch is the host's: this reports it through onTap and onPoint.
  */
 
-import { CardNode } from './CardModel'
+import { CardNode, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_TIMERS, cardSize, TimerFace, timerFace } from './CardModel'
 import { paintGfx, decodeGfxOps, gfxFit, gfxToSurface } from '../vera/GfxPaint'
 import { resolveTheme } from '../vera/VeraTheme'
-import { motionStages, motionPivot } from '../vera/VeraMotion'
+import { motionStages, motionPivot, pivotPercent } from '../vera/VeraMotion'
 
-/** A picture on a card is as wide as its node says (the frame sizes it to the room left, VeraLiveWidget.pictureRoom); this when it says nothing (vp). */
-const PICTURE_WIDTH: number = 80
-/** Pictures and Motions a card carries, each with a place of its own below. */
-const SLOTS: number = 5
+/** A picture on a card is as wide as its node says (the frame sizes it to the room left, VeraLiveWidget.pictureRoom); a 2x2 card's largest when it says nothing (vp). */
+const PICTURE_WIDTH: number = cardSize(2).pictureMax
+/** Motions a card carries, each with a slot of its own below. */
+const SLOTS: number = CARD_MAX_MOTIONS
+
+function filled(count: number, value: number): number[] {
+  let out: number[] = []
+  for (let i = 0; i < count; i++) { out.push(value) }
+  return out
+}
+function contexts(count: number): CanvasRenderingContext2D[] {
+  let out: CanvasRenderingContext2D[] = []
+  for (let i = 0; i < count; i++) { out.push(new CanvasRenderingContext2D(new RenderingContextSettings(true))) }
+  return out
+}
+function timerControllers(count: number): TextTimerController[] {
+  let out: TextTimerController[] = []
+  for (let i = 0; i < count; i++) { out.push(new TextTimerController()) }
+  return out
+}
 
 @Component
 export struct CardView {
@@ -29,26 +45,18 @@ export struct CardView {
   /** A picture was tapped: its pointer handler's name and where, in the picture's own units. */
   onPoint: (handler: string, x: number, y: number) => void = (handler: string, x: number, y: number): void => {}
 
+  /** ui.Timer: the platform's TextTimer, one controller for each timer by its number in the frame. */
+  private timers: TextTimerController[] = timerControllers(CARD_MAX_TIMERS)
+  private timerOf(node: CardNode): TextTimerController { return this.timers[node.pic >= 0 && node.pic < this.timers.length ? node.pic : 0] }
+  /** How the timer is set as of when the card draws it: from its moment (val), down to it when max is 1. */
+  private faceOf(node: CardNode): TimerFace { return timerFace(node.val !== undefined ? node.val : 0, node.max === 1, Date.now()) }
   /**
    * ui.Surface: a still picture. The app's own painter (paintGfx) draws, on a Canvas, the shapes the frame carries; each picture has
    * its own context, by its number in the frame.
    */
-  private timer0: TextTimerController = new TextTimerController()
-  private timer1: TextTimerController = new TextTimerController()
-  private timer2: TextTimerController = new TextTimerController()
-  private timerOf(node: CardNode): TextTimerController { return node.pic === 1 ? this.timer1 : node.pic === 2 ? this.timer2 : this.timer0 }
-  /** Where a timer starts, in ms: the time since its moment (counting up) or the time left until it (counting down), as of when the card draws it. */
-  private timerCount(node: CardNode): number {
-    let moment = node.val !== undefined ? node.val : 0
-    return Math.max(0, node.max === 1 ? moment - Date.now() : Date.now() - moment)
-  }
-  private ctx0: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
-  private ctx1: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
-  private ctx2: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
-  private ctx3: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
-  private ctx4: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
+  private contexts: CanvasRenderingContext2D[] = contexts(CARD_MAX_PICTURES)
   private contextOf(node: CardNode): CanvasRenderingContext2D {
-    return node.pic === 1 ? this.ctx1 : node.pic === 2 ? this.ctx2 : node.pic === 3 ? this.ctx3 : node.pic === 4 ? this.ctx4 : this.ctx0
+    return this.contexts[node.pic >= 0 && node.pic < this.contexts.length ? node.pic : 0]
   }
   private pictureW(node: CardNode): number { return node.size > 0 ? node.size : PICTURE_WIDTH }
   private pictureH(node: CardNode): number { return Math.min(this.pictureW(node) * 1.1, this.pictureW(node) * node.h / node.w) }
@@ -68,9 +76,14 @@ export struct CardView {
    * onAppear. The first frame only records its trigger, so a card never plays when it opens. A card plays for about two
    * seconds after a redraw, which is all a hit needs; there is no repeat or loop.
    */
-  @State settled: number[] = [-1e18, -1e18, -1e18, -1e18, -1e18]
-  /** How far each Motion's chain of stages has got: 0 is its starting pose, k the pose after stage k. */
-  @State phase: number[] = [0, 0, 0, 0, 0]
+  @State settled: number[] = filled(SLOTS, -1e18)
+  /** How far each Motion's chain of stages has got: 0 before it plays, k the pose after stage k. */
+  @State phase: number[] = filled(SLOTS, 0)
+  /**
+   * The frame each Motion last began on (its onAppear). A frame not yet begun is one just drawn: a Motion about to play shows its starting
+   * pose there, so it plays from it. One already begun that is not playing rests, whatever a touch did: a touch only counts.
+   */
+  private begun: string[] = filled(SLOTS, 0).map((): string => '')
   private settledOf(node: CardNode): number { return node.slot >= 0 && node.slot < SLOTS ? this.settled[node.slot] : -1e18 }
   private settle(node: CardNode): void {
     if (node.slot < 0 || node.slot >= SLOTS) { return }
@@ -87,17 +100,15 @@ export struct CardView {
 
   /**
    * Touches on the pictures and shapes under each Motion, counted here and added to its trigger: a touch makes the picture react
-   * whether or not the program's handler changed anything (a plain field, not state: it must not redraw before the answer comes).
+   * whether or not the program's handler changed anything. Plain fields, not state: nothing is redrawn before the answer comes, and
+   * a touch whose answer never comes (a refused tap, a busy preview) leaves the card as it was; the next frame plays it.
    */
-  private touches: number[] = [0, 0, 0, 0, 0]
+  private touches: number[] = filled(SLOTS, 0)
   private touched(node: CardNode): void {
     // A node in a ui.Layers plays every Motion of the scene; any other plays the one it is under.
     let slots: number[] = node.links !== undefined ? node.links : (node.slot >= 0 ? [node.slot] : [])
     for (let slot of slots) {
-      if (slot < 0 || slot >= SLOTS) { continue }
-      this.touches[slot] = this.touches[slot] + 1
-      // A touch while the last movement is still playing starts the next one from its first pose.
-      this.setPhase(slot, 0)
+      if (slot >= 0 && slot < SLOTS) { this.touches[slot] = this.touches[slot] + 1 }
     }
   }
   private effective(node: CardNode): number { return node.trigger + (node.slot >= 0 && node.slot < SLOTS ? this.touches[node.slot] : 0) }
@@ -112,31 +123,39 @@ export struct CardView {
   private poseOf(node: CardNode, index: number): number {
     let stages = this.stagesOf(node)
     if (stages.length === 0) { return index >= 3 && index !== 5 ? 1 : 0 }
-    let at = this.playing(node) ? Math.min(this.phase[node.slot], stages.length - 1) : stages.length - 1
-    return stages[at][index]
+    let last = stages.length - 1
+    if (!this.playing(node)) { return stages[last][index] }
+    // A new frame, about to begin: the starting pose, even when the last movement was still under way.
+    if (this.begun[node.slot] !== this.frameKey) { return stages[0][index] }
+    let at = this.phase[node.slot]
+    return stages[at >= 1 ? Math.min(at, last) : last][index]
   }
-  private pivotOf(node: CardNode): string { return Math.round(100 * motionPivot(node.style)).toString() + '%' }
+  private pivotOf(node: CardNode): string { return pivotPercent(motionPivot(node.style)) }
   /** The platform animation to the stage the Motion is at: its time and curve, and what to do when it ends (go on to the next stage). */
   private motionAnimation(node: CardNode): AnimateParam {
     let stages = this.stagesOf(node)
     let at = node.slot >= 0 && node.slot < SLOTS ? this.phase[node.slot] : 0
     let seen = at
     let slot = node.slot
+    let key = this.frameKey
     let curve = at >= 1 && at < stages.length ? stages[at][7] : 1
     return {
       duration: at >= 1 && at < stages.length ? stages[at][0] : 0,
       curve: curve === 0 ? Curve.Linear : curve === 2 ? Curve.EaseIn : curve === 3 ? Curve.EaseInOut : Curve.EaseOut,
-      onFinish: () => { this.advance(node, slot, seen) }
+      onFinish: () => { this.advance(node, slot, seen, key) }
     }
   }
   /** The card shows a movement when the frame is new: the first frame only records its trigger, a later one starts the chain. */
   private begin(node: CardNode): void {
+    if (node.slot < 0 || node.slot >= SLOTS) { return }
+    this.begun[node.slot] = this.frameKey
     if (this.settledOf(node) < -1e17) { this.settle(node); return }
+    // From the starting pose this frame was drawn in (poseOf), even when an older frame's chain was still under way.
     if (this.playing(node)) { this.setPhase(node.slot, 1) }
   }
-  /** A stage ended: start the next, or, after the last, record the trigger so a redraw does not play it again. */
-  private advance(node: CardNode, slot: number, seen: number): void {
-    if (slot < 0 || slot >= SLOTS || this.phase[slot] !== seen || seen < 1) { return }
+  /** A stage ended: start the next, or, after the last, record the trigger so a redraw does not play it again. A stage of an older frame is over. */
+  private advance(node: CardNode, slot: number, seen: number, key: string): void {
+    if (slot < 0 || slot >= SLOTS || key !== this.frameKey || this.phase[slot] !== seen || seen < 1) { return }
     if (seen + 1 < this.stagesOf(node).length) {
       this.setPhase(slot, seen + 1)
     } else {
@@ -209,13 +228,15 @@ export struct CardView {
     } else if (node.kind === 'timer') {
       // The platform's own timer: it ticks by itself (a card is not frozen for it, unlike for our animations), from where the frame says.
       if (this.familyOf(node).length > 0) {
-        TextTimer({ isCountDown: node.max === 1, count: this.timerCount(node), controller: this.timerOf(node) })
-          .format(this.timerCount(node) >= 3000000 ? 'HH:mm:ss' : 'mm:ss')
+        TextTimer({ isCountDown: this.faceOf(node).countDown, count: this.faceOf(node).count, startTime: this.faceOf(node).startTime,
+                    controller: this.timerOf(node) })
+          .format(this.faceOf(node).format)
           .fontSize(node.size).fontColor(node.color).fontWeight(this.weightOf(node)).fontFamily(this.familyOf(node))
           .onAppear(() => { this.timerOf(node).start() })
       } else {
-        TextTimer({ isCountDown: node.max === 1, count: this.timerCount(node), controller: this.timerOf(node) })
-          .format(this.timerCount(node) >= 3000000 ? 'HH:mm:ss' : 'mm:ss')
+        TextTimer({ isCountDown: this.faceOf(node).countDown, count: this.faceOf(node).count, startTime: this.faceOf(node).startTime,
+                    controller: this.timerOf(node) })
+          .format(this.faceOf(node).format)
           .fontSize(node.size).fontColor(node.color).fontWeight(this.weightOf(node))
           .onAppear(() => { this.timerOf(node).start() })
       }

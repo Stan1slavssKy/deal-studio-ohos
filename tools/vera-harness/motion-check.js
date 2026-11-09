@@ -25,6 +25,12 @@ for (const preset of MOTION_PRESETS) {
   assert.ok(moved, preset + ' really moves')
 }
 assert.equal(JSON.stringify(motionPose('nonsense', 0.3)), identity, 'an unknown preset is the identity')
+// The six the app draws by formula keep the lengths their curves were tuned for; every other preset plays as long as its stages.
+assert.deepEqual(['tumble', 'flip', 'shake', 'bounce', 'pop', 'fade'].map(motionDuration), [900, 450, 450, 650, 350, 400])
+assert.equal(motionDuration('jelly'), motionStages('jelly').slice(1).reduce((total, r) => total + r[0], 0))
+// The app turns a preset about the pivot the card does: a swing hangs from its top edge, a wobble rocks on its base.
+const {pivotPercent} = loadVera('VeraMotion')
+assert.deepEqual(['swing', 'wobble', 'spin', 'shake'].map(p => pivotPercent(motionPose(p, 0.2).pivotY)), ['0%', '100%', '50%', '50%'])
 // The table every preset is played from (a card plays it stage by stage): well formed, ends where it should rest, and different from the others.
 const seen = new Set()
 for (const preset of MOTION_PRESETS) {

@@ -2,7 +2,15 @@ import { CATALOG, describeComponents } from './VeraUiCatalog'
 import { widgetRefinementError } from './VeraCompiler'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
 import { decodeVeraUi, UiHostEnvironment } from './VeraUi'
-import { WidgetSession, CardNode, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_NODES, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
+import { WidgetSession, CardNode, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, CARD_DIMENSIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
+
+/** The card a widget is written for first: a widget with one parameter is drawn at this size on every card. */
+const SMALL = cardSize(2)
+/** How many of something, in words a sentence can take ("two buttons"). */
+function counted(n: number): string {
+  let words = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
+  return n >= 0 && n < words.length ? words[n] : n.toString()
+}
 
 /** The components a card draws: only these are shown to the widget writer, and only these may a widget use. */
 export const CARD_KINDS: string[] = CATALOG.filter((component): boolean => component.card).map((component): string => component.name)
@@ -19,7 +27,7 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'The widget is a second view of the same app: function widget(state) draws the very state view(state) draws, on a small ' +
     'card on the phone\'s home screen. The person\'s request says what it should show; follow it. ' +
     'A widget is read at a glance, in a second: show only the few things that matter most -- one to three figures or short ' +
-    'lines, each with a label of a word or two -- and at most two buttons, for the actions worth doing without opening the app. ' +
+    'lines, each with a label of a word or two -- and at most ' + counted(SMALL.maxButtons) + ' buttons, for the actions worth doing without opening the app. ' +
     'Leave out everything else: lists and history, settings, inputs, explanations, and the app\'s name or any title or ' +
     'heading -- the space is too small for them. When the request asks for more than fits, keep what matters most and drop ' +
     'the rest. If the program already has a widget, replace it with the one asked for.\n' +
@@ -46,7 +54,7 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'button already does. ' +
     'widget must be synchronous and side-effect free, with no ticker, scrolling, inputs, images, or networking. ' +
     'Use ONLY the card-safe constructors below in widget and its helpers; the fullscreen view keeps its full catalogue. ' +
-    'AppTheme is optional and root-only; light theme only. The whole 2x2 card is the widget\'s; nothing is drawn above it. ' +
+    'AppTheme is optional and root-only; light theme only. The whole ' + SMALL.label + ' card is the widget\'s; nothing is drawn above it. ' +
     'Prefer one Column with a summary and one Row of buttons; avoid long lists. ' +
     'WHAT TO DRAW WITH. A drawing of the subject the person asks for -- an animal, a face, a character, a scene, a gauge, ' +
     'anything of more than one colour -- is a ui.Surface (below), NEVER a ui.Path: a Path is ONE shape in ONE colour, and a ' +
@@ -60,7 +68,7 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     '"down", then "up"), or "" for a picture that is only looked at. The third argument must be "": a card has no frames, the picture ' +
     'is drawn once for each state. The card is about 150 vp tall: the picture takes what the rest leaves (it is shrunk to fit), so ' +
     'put at most one figure or one short line beside it, with no buttons. At most ' + LIVE_MAX_SHAPES.toString() + ' shapes and ' + LIVE_MAX_SURFACES.toString() +
-    ' ui.Surface. A picture or shape that takes a touch counts as one of the two buttons. A handler the card runs must not make phone calls ' +
+    ' pictures (ui.Surface or ui.Sparkline) in all. A picture or shape that takes a touch counts as one of the ' + counted(SMALL.maxButtons) + ' buttons. A handler the card runs must not make phone calls ' +
     '(no sdk.call): when the app\'s own handler vibrates, plays a sound or the like, write a new handler that only changes the ' +
     'state -- or returns it as it is. ' +
     'MOVEMENT. A thing that is drawn should DO what that thing does, once, when it is touched (or when the state changes): wrap it in ' +
@@ -74,7 +82,7 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'for that: something hit shakes or recoils, something turned spins, something alive hops or jumps, something hanging swings, ' +
     'something pushed presses. A touch that does nothing visible is a defect: every picture the person can touch moves. Several things ' +
     'move at once when each has its own ui.Motion around its own picture (at most ' + LIVE_MAX_MOTIONS.toString() + ' ui.Motion in all; ' +
-    'put the pictures side by side or one above the other, there is no overlap). Do NOT add a counter to the state just for the movement ' +
+    'put the pictures side by side, one above the other, or one over another in a ui.Layers, below). Do NOT add a counter to the state just for the movement ' +
     '(the state cannot grow). The second argument is 0, or a number the state really changes with, which then also plays it. A movement ' +
     'lasts about a second and plays once: a card cannot loop, spin forever or repeat, there is no sound or vibration, and a drawing is a ' +
     'picture of one moment, so draw the subject at its most recognisable, not a scene that needs motion to be understood. ' +
@@ -90,22 +98,24 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'accent (a panel with a fill, padding and rounded corners -- for the one thing to look at). A row\'s: default or center (spread ' +
     'evenly), split (first at the left, last at the right), end, joined (touching), compact or spacious, surface or accent. Buttons: ' +
     'primary, secondary, success, danger. Use the roles instead of one size for everything: a label, a figure, a caption. ' +
-    'ICONS AND DATA. ui.Icon(style, name) and ui.IconButton(style, icon, label, handler, value, enabled) (a button: one of the two) draw ' +
+    'ICONS AND DATA. ui.Icon(style, name) and ui.IconButton(style, icon, label, handler, value, enabled) (a button: one of the ' + counted(SMALL.maxButtons) + ') draw ' +
     'the catalogue\'s icons; ui.Badge(style, text, icon) is a small label; ui.Progress(style, label, value, max) is a bar and ' +
     'ui.ProgressRing(style, label, value, max, text) a ring (about 52 vp) for how far along a goal is; ui.Stat(style, label, text, supporting, icon) and ' +
     'ui.NumberStat(...) are a labelled figure, and ui.MetricGroup(style, columns, [stats]) puts a few side by side; ui.Sparkline(series, max, ...) is ' +
-    'a small trend (a picture: it counts among the three pictures, about 80 by 29 vp). Prefer these to drawing the same thing by hand, ' +
+    'a small trend (a picture: it counts among the ' + counted(LIVE_MAX_SURFACES) + ' pictures, about 80 by 29 vp). Prefer these to drawing the same thing by hand, ' +
     'and mind the height: a ring and a row of buttons fit, a ring, a chart and a stat row do not.\n' +
     'TIME THAT MOVES. ui.Timer(style, millis, down) runs by itself on the card, with no refresh: counting up from the moment millis (a stopwatch, ' +
     '"since" something began) or, with down true, down to it ("left until"); millis is milliseconds since 1970 (time.nowMillis() plus or minus a ' +
     'length, kept in the state as a number). Prefer it to a figure computed from the clock, which stands still between redraws.\n' +
-    'CARD SIZES. The card is 2x2 by default (about 150 vp square). Declare function widget(state, size: number): ui.View to draw differently on a ' +
+    'CARD SIZES. The card is ' + SMALL.label + ' by default (about 150 vp square). Declare function widget(state, size: number): ui.View to draw differently on a ' +
     'wider card: size is 2 for 2x2, 3 for 2x4 (wide: about 324 x 148 vp, four columns, two rows) and 4 for 4x4 (about 324 x 340 vp). On a bigger card show ' +
-    'more -- a 2x4 has room for up to 4 buttons and 12 texts, a 4x4 for 6 buttons and 24 texts, and bigger pictures -- but only what the person asked for; ' +
-    'a widget with one parameter is drawn the same on every size, centred. The limits below are the 2x2 card\'s.\n' +
+    'more -- ' + CARD_DIMENSIONS.filter((d: number): boolean => d !== SMALL.dimension).map((d: number): string => 'a ' + cardSize(d).label +
+    ' has room for up to ' + cardSize(d).maxButtons.toString() + ' buttons and ' + cardSize(d).maxTexts.toString() + ' texts').join(', ') +
+    ', and bigger pictures -- but only what the person asked for; ' +
+    'a widget with one parameter is drawn the same on every size, centred. The limits below are the ' + SMALL.label + ' card\'s.\n' +
     'SWITCHES. ui.Toggle(style, label, checked, handler) and ui.Checkbox(style, label, checked, handler) are a tap that says on or off: the handler takes ' +
     '(state, value: boolean). Each counts as a button, and a handler is told only on or off, never which box it was: use one for a single setting, not one per item.\n' +
-    'Limits: depth ' + LIVE_MAX_DEPTH.toString() + ' excluding root AppTheme, ' + LIVE_MAX_NODES.toString() +
+    'Limits: depth ' + LIVE_MAX_DEPTH.toString() + ' excluding root AppTheme, ' + SMALL.maxNodes.toString() +
     ' nodes, ' + LIVE_MAX_TEXT.toString() + ' UTF-16 characters/text, ' + LIVE_MAX_JSON.toString() +
     ' UTF-16 units/frame including state token, ' + LIVE_MAX_STEPS.toString() + ' VM steps/entry.\n' +
     (whole ? describeComponents(CARD_KINDS) : '')
@@ -120,10 +130,6 @@ const WIDGET_ONLY: string = 'Answer with only what the widget adds, in one fence
   'only when it is new. Do not write anything else of the program again: its classes, init, view and handlers stay exactly ' +
   'as they are and cannot be changed from here. '
 
-/** A widget is read at a glance: what widgetRefinementPrompt asks for, held to. */
-export const WIDGET_MAX_BUTTONS: number = 2
-export const WIDGET_MAX_TEXTS: number = 8
-
 /** Structural preservation is checked separately from runtime validation so repair gets precise feedback. */
 export function validateWidgetRefinement(base: string, source: string, vbc2: string, saved: string = ''): string {
   try {
@@ -132,8 +138,7 @@ export function validateWidgetRefinement(base: string, source: string, vbc2: str
     let runtime = checkWidget(vbc2, saved)
     if (runtime.length > 0) { return runtime }
     // A widget that asks for the card's size is held to the limits of each size it will be drawn on.
-    let sizes: number[] = new WidgetSession(vbc2, 'validation', saved).takesSize() ? [2, 3, 4] : [2]
-    for (let dimension of sizes) {
+    for (let dimension of new WidgetSession(vbc2, 'validation', saved).dimensions()) {
       let problem = glanceError(vbc2, saved, dimension)
       if (problem.length > 0) { return problem }
     }
@@ -190,98 +195,84 @@ function phoneCallMessage(handler: string): string {
 export function checkWidget(vbc2: string, saved: string = ''): string {
   try {
     let session = new WidgetSession(vbc2, 'validation', saved)
-    let frame = session.frame('project', 'App', '')
-    if (!frame.live) { return 'Missing function widget(state): ui.View' }
-    if (session.takesSize()) { session.frame('project', 'App', '', 3); session.frame('project', 'App', '', 4) }
+    if (!session.frame('project', 'App', '').live) { return 'Missing function widget(state): ui.View' }
     let state = session.encodedState()
-    // Each actual visible button, twice: includes distinct repeated-row payloads and redraw validation.
-    let buttons: CardNode[] = []
-    let collect = (nodes: CardNode[]): void => {
-      for (let node of nodes) {
-        if ((node.kind === 'button' || node.kind === 'path' || node.kind === 'iconbutton') && node.enabled && node.action.length > 0) { buttons.push(node) }
-        collect(node.children)
-      }
-    }
-    collect(frame.nodes)
-    // Each picture that takes a tap, twice, in the middle: its pointer handler must run and the state must still draw.
-    let pictures: CardNode[] = []
-    let collectPictures = (nodes: CardNode[]): void => {
-      for (let node of nodes) {
-        if (node.kind === 'surface' && node.pointer.length > 0) { pictures.push(node) }
-        collectPictures(node.children)
-      }
-    }
-    collectPictures(frame.nodes)
-    // Each switch, turned on and off: its handler must run and the state must still draw.
-    let switches: CardNode[] = []
-    let collectSwitches = (nodes: CardNode[]): void => {
-      for (let node of nodes) {
-        if ((node.kind === 'toggle' || node.kind === 'checkbox') && node.enabled && node.action.length > 0) { switches.push(node) }
-        collectSwitches(node.children)
-      }
-    }
-    collectSwitches(frame.nodes)
-    for (let item of switches) {
-      let branch = new WidgetSession(vbc2, 'validation', state)
-      for (let pass = 0; pass < 2; pass++) {
-        let current = branch.frame('project', 'App', '')
-        try {
-          branch.tapSwitch(current, current.token, item.action, pass === 0)
-        } catch (e) {
-          if (/phone action required/.test((e as Error).message)) { return phoneCallMessage(item.action) }
-          throw (e as Error)
-        }
-        branch.frame('project', 'App', '')
-        let host = new UiHostEnvironment()
-        let vm = new VirtualMachine(deserializeVbc2(vbc2), host, LIVE_MAX_STEPS)
-        decodeVeraUi(vm.execute('view', [decodeRuntimeValue(JSON.parse(branch.encodedState()) as Object)]))
-      }
-    }
     let refreshError = checkRefresh(vbc2, state)
     if (refreshError.length > 0) { return refreshError }
-    for (let picture of pictures) {
-      let branch = new WidgetSession(vbc2, 'validation', state)
-      for (let pass = 0; pass < 2; pass++) {
-        let current = branch.frame('project', 'App', '')
-        try {
-          branch.tapSurface(current, current.token, picture.pointer, picture.w / 2, picture.h / 2)
-        } catch (e) {
-          if (/phone action required/.test((e as Error).message)) { return phoneCallMessage(picture.pointer) }
-          throw (e as Error)
-        }
-        branch.frame('project', 'App', '')
-        let host = new UiHostEnvironment()
-        let vm = new VirtualMachine(deserializeVbc2(vbc2), host, LIVE_MAX_STEPS)
-        decodeVeraUi(vm.execute('view', [decodeRuntimeValue(JSON.parse(branch.encodedState()) as Object)]))
-      }
-    }
-    for (let button of buttons) {
-      let branch = new WidgetSession(vbc2, 'validation', state)
-      for (let pass = 0; pass < 2; pass++) {
-        let current = branch.frame('project', 'App', '')
-        let available = (nodes: CardNode[]): boolean => nodes.some((node: CardNode): boolean =>
-          ((node.kind === 'button' || node.kind === 'path' || node.kind === 'iconbutton') && node.enabled && node.action === button.action && node.value === button.value) || available(node.children))
-        if (!available(current.nodes)) { break }
-        // A Refresh button's live source is not fetched here: its handler is given a failure, which it must take and still draw.
-        let requests: SourceRequest[] = []
-        try {
-          requests = branch.tap(current, current.token, button.action, button.value)
-        } catch (e) {
-          if (/phone action required/.test((e as Error).message)) { return phoneCallMessage(button.action) }
-          throw (e as Error)
-        }
-        for (let request of requests) {
-          branch.answer(request.handler, 'error: the source is not reached while checking')
-        }
-        branch.frame('project', 'App', '')
-        let host = new UiHostEnvironment()
-        let vm = new VirtualMachine(deserializeVbc2(vbc2), host, LIVE_MAX_STEPS)
-        // The same state must still draw in the app, not only on the card.
-        decodeVeraUi(vm.execute('view', [decodeRuntimeValue(JSON.parse(branch.encodedState()) as Object)]))
-      }
+    // Every size the widget draws differently is a card of its own: what can be tapped on it is tapped there.
+    for (let dimension of session.dimensions()) {
+      let problem = checkTaps(vbc2, state, session.frame('project', 'App', '', dimension).nodes, dimension)
+      if (problem.length > 0) { return problem }
     }
     return ''
   } catch (e) { return 'Widget validation: ' + (e as Error).message }
+}
+
+/** The nodes, at any depth, that `pick` takes. */
+function collectNodes(nodes: CardNode[], pick: (node: CardNode) => boolean, found: CardNode[] = []): CardNode[] {
+  for (let node of nodes) {
+    if (pick(node)) { found.push(node) }
+    collectNodes(node.children, pick, found)
+  }
+  return found
+}
+
+function isButton(node: CardNode): boolean {
+  return (node.kind === 'button' || node.kind === 'path' || node.kind === 'iconbutton') && node.enabled && node.action.length > 0
+}
+
+/**
+ * Everything on a card of this size a finger can work, each twice from the saved state: a switch turned on and off, a picture touched in
+ * the middle, a button pressed. Its handler must run without a phone call, and the state it leaves must still draw on that card and in the app.
+ */
+function checkTaps(vbc2: string, state: string, nodes: CardNode[], dimension: number): string {
+  let drawsInApp = (branch: WidgetSession): void => {
+    branch.frame('project', 'App', '', dimension)
+    let vm = new VirtualMachine(deserializeVbc2(vbc2), new UiHostEnvironment(), LIVE_MAX_STEPS)
+    decodeVeraUi(vm.execute('view', [decodeRuntimeValue(JSON.parse(branch.encodedState()) as Object)]))
+  }
+  // A tap the card refuses for a phone call is said as such; any other failure is the handler's own.
+  let tapped = (handler: string, run: () => SourceRequest[], branch: WidgetSession): string => {
+    let requests: SourceRequest[] = []
+    try {
+      requests = run()
+    } catch (e) {
+      if (/phone action required/.test((e as Error).message)) { return phoneCallMessage(handler) }
+      throw (e as Error)
+    }
+    // A Refresh button's live source is not fetched here: its handler is given a failure, which it must take and still draw.
+    for (let request of requests) { branch.answer(request.handler, 'error: the source is not reached while checking') }
+    drawsInApp(branch)
+    return ''
+  }
+  for (let item of collectNodes(nodes, (node: CardNode): boolean => (node.kind === 'toggle' || node.kind === 'checkbox') && node.enabled && node.action.length > 0)) {
+    let branch = new WidgetSession(vbc2, 'validation', state)
+    for (let pass = 0; pass < 2; pass++) {
+      let current = branch.frame('project', 'App', '', dimension)
+      let problem = tapped(item.action, (): SourceRequest[] => branch.tapSwitch(current, current.token, item.action, pass === 0), branch)
+      if (problem.length > 0) { return problem }
+    }
+  }
+  for (let picture of collectNodes(nodes, (node: CardNode): boolean => node.kind === 'surface' && node.pointer.length > 0)) {
+    let branch = new WidgetSession(vbc2, 'validation', state)
+    for (let pass = 0; pass < 2; pass++) {
+      let current = branch.frame('project', 'App', '', dimension)
+      let problem = tapped(picture.pointer, (): SourceRequest[] => branch.tapSurface(current, current.token, picture.pointer, picture.w / 2, picture.h / 2), branch)
+      if (problem.length > 0) { return problem }
+    }
+  }
+  for (let button of collectNodes(nodes, isButton)) {
+    let branch = new WidgetSession(vbc2, 'validation', state)
+    for (let pass = 0; pass < 2; pass++) {
+      let current = branch.frame('project', 'App', '', dimension)
+      // The first press may take the button away (a Start that becomes Stop): then there is no second.
+      let same = collectNodes(current.nodes, (node: CardNode): boolean => isButton(node) && node.action === button.action && node.value === button.value)
+      if (same.length === 0) { break }
+      let problem = tapped(button.action, (): SourceRequest[] => branch.tap(current, current.token, button.action, button.value), branch)
+      if (problem.length > 0) { return problem }
+    }
+  }
+  return ''
 }
 
 /**

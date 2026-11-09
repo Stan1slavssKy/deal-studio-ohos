@@ -3,6 +3,72 @@
  * extension all load the same classes. VeraLiveWidget builds them and re-exports them.
  */
 
+/**
+ * What one card carries: the widget is refused beyond these (VeraLiveWidget), and the card keeps one canvas, one timer controller and one
+ * Motion slot for each (CardView). The prompts say them from here too.
+ */
+export const CARD_MAX_MOTIONS: number = 5
+/** Pictures: ui.Surface and ui.Sparkline, each drawn once for the frame, of at most CARD_MAX_SHAPES shapes. */
+export const CARD_MAX_PICTURES: number = 5
+export const CARD_MAX_SHAPES: number = 60
+/** ui.Timer, the platform's own TextTimer. */
+export const CARD_MAX_TIMERS: number = 3
+
+/**
+ * A card's size and what a widget may put on it. The system numbers them 2 (2x2, about 150 vp square), 3 (2x4: wide, about 324 x 148) and 4 (4x4, about
+ * 324 x 340); measured on the phone at 3.5 px per vp. The inner size is the card less its 12 vp padding; pictureMax is the largest side a picture is drawn at.
+ */
+export class CardSize {
+  dimension: number = 2
+  label: string = '2x2'
+  width: number = 126
+  height: number = 126
+  maxNodes: number = 40
+  maxButtons: number = 2
+  maxTexts: number = 8
+  pictureMax: number = 80
+}
+
+/** The sizes a card can be, in the system's numbering. */
+export const CARD_DIMENSIONS: number[] = [2, 3, 4]
+
+/** The size `dimension` stands for; anything that is not one of CARD_DIMENSIONS is 2x2. */
+export function cardSize(dimension: number): CardSize {
+  let size = new CardSize()
+  if (dimension === 3) {
+    size.dimension = 3; size.label = '2x4'; size.width = 300; size.height = 124; size.maxNodes = 60; size.maxButtons = 4; size.maxTexts = 12; size.pictureMax = 100
+  } else if (dimension === 4) {
+    size.dimension = 4; size.label = '4x4'; size.width = 300; size.height = 316; size.maxNodes = 80; size.maxButtons = 6; size.maxTexts = 24; size.pictureMax = 200
+  }
+  return size
+}
+
+/** The longest countdown the platform's TextTimer takes (its `count`); a longer one would start from its default of a minute. */
+export const TEXT_TIMER_MAX_MS: number = 86400000
+const HOUR_MS: number = 3600000
+
+/**
+ * How a ui.Timer is set on the platform's TextTimer, the same in the app (VeraPreview) and on the card (CardView). A countdown starts from the
+ * time left (`count`); a timer counting up starts from the time already gone (`startTime`: TextTimer ignores `count` when it counts up and would
+ * start from zero) and has no end (`count` -1). Hours are shown once the time is an hour or more.
+ */
+export class TimerFace {
+  countDown: boolean = false
+  count: number = -1
+  startTime: number = 0
+  format: string = 'mm:ss'
+}
+
+/** The face of a timer that counts down to, or up from, `moment` (ms since 1970), as of `now`. */
+export function timerFace(moment: number, countDown: boolean, now: number): TimerFace {
+  let face = new TimerFace()
+  let span = Math.max(0, countDown ? moment - now : now - moment)
+  face.countDown = countDown
+  if (countDown) { face.count = Math.min(span, TEXT_TIMER_MAX_MS) } else { face.startTime = span }
+  face.format = span >= HOUR_MS ? 'HH:mm:ss' : 'mm:ss'
+  return face
+}
+
 /** A plain binding DTO. All appearance is resolved outside the launcher. */
 export class CardNode {
   key: string = ''
@@ -23,9 +89,9 @@ export class CardNode {
   color: string = '#172033'
   fill: string = '#FFFFFF'
   size: number = 14
-  /** The Motion this node is, or sits under, among the widget's (0, 1, 2); -1 for none. A touch on it plays that Motion. */
+  /** The Motion this node is, or sits under, among the widget's (0 up to CARD_MAX_MOTIONS - 1); -1 for none. A touch on it plays that Motion. */
   slot: number = -1
-  /** Which picture (ui.Surface) this is among the widget's (0, 1, 2); -1 for a node that is not one. */
+  /** Which picture (0 up to CARD_MAX_PICTURES - 1) or which timer (0 up to CARD_MAX_TIMERS - 1) this is among the widget's; -1 for any other node. */
   pic: number = -1
   /**
    * How the theme dresses the node, set only where it differs from the card's default (an unset field is not in the JSON, so a frame stays small):

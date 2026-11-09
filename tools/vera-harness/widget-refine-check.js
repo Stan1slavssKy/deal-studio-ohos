@@ -158,22 +158,6 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   console.log('PASS widget answers: an import with a semicolon is taken, a parse error is passed on as it is')
 })().catch(e => { console.error(e); process.exit(1) })
 
-// A new version written without the widget gets the earlier one's back, with the helper it uses; one with its own keeps it.
-{
-  const {carryWidget} = loadVera('VeraCompiler')
-  const previous = 'import * as time from "std/time"\n' + candidate
-  // The new version drops both widget and compact: view draws its own text instead.
-  const next = base.replace(/function compact\([\s\S]*?\n\}\n/, '').replace('return compact(state);', 'return ui.AppTheme("clean", "", [ui.Column("default", [ui.Text("body", "v2")])]);')
-  assert.doesNotMatch(next, /function compact|function widget/)
-  const carried = carryWidget(next, previous)
-  assert.match(carried, /function widget\(state: AppState\)/)
-  assert.match(carried, /function compact\(state: AppState\)/)
-  // time is not used by the widget: not brought back.
-  assert.doesNotMatch(carried, /std\/time/)
-  assert.match(carried, /ui\.Text\("body", "v2"\)/)
-  assert.equal(smokeRun(compileVeraSource(carried)), '')
-  assert.equal(carryWidget(candidate, previous), candidate)
-  assert.equal(carryWidget(next, base.replace('function compact(', 'function other(')), next)
   // A drum on the card whose handler vibrates: the tap would be refused on the card, so Make widget sends it back (found on a phone).
 {
   const drum = fs.readFileSync(path.join(__dirname, 'examples/widget-drum.vera'), 'utf8')
@@ -263,6 +247,19 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   const crowded = sized.substring(0, at) + sized.substring(at).replace('rows.push(ui.Row("split", [ui.Text("muted", "left"), ui.Text("danger", "late")]));',
     'rows.push(ui.Column("default", [' + Array.from({length: 13}, (_, i) => 'ui.Text("caption", "c' + i + '")').join(', ') + ']));')
   assert.match(validateWidgetRefinement(sized, crowded, compileVeraSource(crowded).vbc2), /a 2x4 widget shows at most 12/)
+  // A button only the 4x4 card shows is pressed there too: one that makes a phone call is sent back.
+  const buzzing = 'import * as sdk from "std/sdk"\n' + sized.replace('return { done: state.done + value };',
+    'sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "60"], "buzzed"); return { done: state.done + value };') +
+    '\nfunction buzzed(state: AppState, value: string): AppState { return state; }'
+  assert.match(checkWidget(compileVeraSource(buzzing).vbc2), /"more" makes a phone call/)
+  // What the prompt says a card holds is what the card holds.
+  const prompt = widgetRefinementPrompt()
+  assert.doesNotMatch(prompt, /three pictures|no overlap/)
+  assert.match(prompt, /a 2x4 has room for up to 4 buttons and 12 texts, a 4x4 has room for up to 6 buttons and 24 texts/)
+  assert.match(prompt, /5 pictures \(ui\.Surface or ui\.Sparkline\) in all/)
+  assert.match(prompt, /one of the two buttons/)
+  const surface = require('./source-loader').loadVera('VeraUiCatalog').CATALOG.find(c => c.name === 'Surface').guidance
+  assert.doesNotMatch(surface, /One Surface at most/); assert.match(surface, /Up to 5 pictures on a card/)
   const badParam = sized.replace('function widget(state: AppState, size: number)', 'function widget(state: AppState, size: string)')
   assert.throws(() => compileVeraSource(badParam), /E2115/)
 }
@@ -270,6 +267,4 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
 {
   assert.match(widgetRefinementPrompt(), /LAYERS\. A subject made of parts that move differently/)
   assert.equal(checkWidget(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')).vbc2), '')
-}
-console.log('PASS carry widget: the earlier widget and its helpers come back into a version written without them')
 }

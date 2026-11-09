@@ -79,8 +79,8 @@ the box empty -- "What should the widget show?" -- and the **Widget** tab open. 
   draws -- read at a glance: one to three figures or short lines with labels of a word or two, at most two buttons for the
   actions worth doing without opening the app, nothing else (no lists, history, settings, inputs, explanations, no heading
   with the app's name: the card has no title strip). When the request asks for more, keep what matters most. No button that opens the app.
-- **Held to it:** Make widget's validation refuses more than 2 buttons or 8 texts (`WIDGET_MAX_BUTTONS`,
-  `WIDGET_MAX_TEXTS`), with a reason the repair loop passes to the next attempt. The card's own budgets are unchanged.
+- **Held to it:** Make widget's validation refuses more than 2 buttons or 8 texts on a 2x2 card (`cardSize`'s `maxButtons`,
+  `maxTexts`; more on the bigger sizes), with a reason the repair loop passes to the next attempt. The card's own budgets are unchanged.
 - **Only the widget is written** (DeepSeek mode, `agent/AgentWidget.ets`): the model is shown the program, the request and
   the card's components only (`languageWith`, the full-screen composition advice left out), and answers with the widget's
   declarations alone (`widgetRefinementPrompt(false)`); a failing answer goes back with its reason, three answers at most,
@@ -270,8 +270,9 @@ these nodes ran before the default colour and fill were assigned, so a ring came
 `ui.Timer(style, millis, down)` is a new catalogue component, in the app and on the card: the platform's own `TextTimer`, which keeps counting without our code (the card is
 frozen for our animations, not for platform components: stage-0 spike). `millis` is a moment in ms since 1970; `down` false counts up from it, true counts down to it. The
 program keeps the moment in its state as a number (`time.nowMillis()` plus or minus a length), the frame carries it (`CardNode.val`, direction in `max`), and at draw time the
-card works out where the timer starts (`timerCount`: the time since the moment, or the time left), so a card the launcher redraws later still shows the right time. The format is
-`mm:ss`, or `HH:mm:ss` once more than 50 minutes are involved. Up to three timers per widget; the theme's size, weight, family and ink apply as for a text.
+card works out where the timer starts (`timerFace` in `widget/CardModel.ets`, which the app uses too: a countdown starts from the time left, `count`; a timer counting up from the
+time already gone, `startTime`, since TextTimer ignores `count` when it counts up), so a card the launcher redraws later still shows the right time. The format is
+`mm:ss`, or `HH:mm:ss` once an hour or more is involved. Up to three timers per widget; the theme's size, weight, family and ink apply as for a text.
 
 On the phone (examples/widget-timer.vera, technical theme): a monospace stopwatch read 00:03, 00:07, 00:16 and a countdown 01:29:53, 01:29:49, 01:29:40 over a quarter of a minute with no
 update from the app, and Restart (a handler that sets both moments to now) started both over. The Make widget prompt says to prefer it to a figure computed from the clock, which stands

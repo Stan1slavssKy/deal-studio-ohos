@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { loadVera } = require('./source-loader')
+const { loadVera, loadSource, sourceRoot } = require('./source-loader')
 const { compileVeraSource } = loadVera('VeraCompiler')
 const { WidgetSession } = loadVera('VeraLiveWidget')
 const { veraStateStamp } = loadVera('VeraStateStamp')
@@ -333,5 +333,36 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.throws(() => lay.tap(f, 'stale', '#touch', 0), /Widget changed/)
   const nested = fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8').replace('ui.Layers("default", 100, 100, [', 'ui.Layers("default", 100, 100, [ui.Layers("default", 100, 100, []),')
   assert.throws(() => compileVeraSource(nested), /Layers/, 'a Layers inside a Layers is refused')
+}
+// ui.Timer is set on TextTimer the one way, in the app and on the card (CardModel.timerFace): TextTimer reads `count` only when it
+// counts down, so a timer counting up starts from `startTime`, or it would start from 00:00 at every redraw.
+{
+  const M = loadSource(path.join(sourceRoot, 'widget/CardModel.ets'))
+  const now = 1e12, minute = 60000
+  const up = M.timerFace(now - 20 * minute, false, now)
+  assert.deepEqual([up.countDown, up.startTime, up.count, up.format], [false, 20 * minute, -1, 'mm:ss'], 'counting up starts from the time already gone')
+  const down = M.timerFace(now + 55 * minute, true, now)
+  assert.deepEqual([down.countDown, down.count, down.format], [true, 55 * minute, 'mm:ss'], 'under an hour, no hours')
+  assert.equal(M.timerFace(now + 60 * minute, true, now).format, 'HH:mm:ss', 'an hour shows hours')
+  assert.equal(M.timerFace(now - 60 * minute, false, now).format, 'HH:mm:ss')
+  assert.equal(M.timerFace(now + 3 * 1440 * minute, true, now).count, M.TEXT_TIMER_MAX_MS, 'a longer countdown starts from the longest TextTimer takes')
+  assert.equal(M.timerFace(now - 5, true, now).count, 0, 'a countdown that is over is at zero')
+  const renderer = fs.readFileSync(path.join(sourceRoot, 'components/VeraPreview.ets'), 'utf8')
+  for (const [name, text] of [['card', view], ['app', renderer]]) {
+    assert.doesNotMatch(text, /3000000|3600000/, 'the ' + name + ' has no hour threshold of its own')
+    assert.match(text, /startTime: this\.\w+\(node\)\.startTime/, 'the ' + name + ' sets where a timer counting up starts')
+  }
+  // The app keeps a timer's controller only while its node is drawn.
+  assert.match(renderer, /this\.textTimers\.delete\(node\)/)
+  // One limit for each thing a card carries: the widget is refused beyond it and the card keeps that many canvases, timers and Motion slots.
+  const live = loadVera('VeraLiveWidget')
+  assert.deepEqual([live.LIVE_MAX_SURFACES, live.LIVE_MAX_MOTIONS, live.LIVE_MAX_TIMERS, live.LIVE_MAX_SHAPES],
+    [M.CARD_MAX_PICTURES, M.CARD_MAX_MOTIONS, M.CARD_MAX_TIMERS, M.CARD_MAX_SHAPES])
+  assert.match(view, /contexts\(CARD_MAX_PICTURES\)/); assert.match(view, /timerControllers\(CARD_MAX_TIMERS\)/); assert.match(view, /SLOTS: number = CARD_MAX_MOTIONS/)
+  assert.doesNotMatch(view, /ctx[0-9]|timer[0-9]\b|\[0, 0, 0, 0, 0\]/, 'no hand-written list of five or three')
+  // A touch only counts: nothing is redrawn before the answer, so a touch whose answer never comes leaves no Motion in its starting pose.
+  const touched = view.substring(view.indexOf('private touched('), view.indexOf('private effective('))
+  assert.doesNotMatch(touched, /setPhase|this\.phase\b|this\.settled\b/, 'a touch changes no state')
+  assert.match(view, /if \(this\.begun\[node\.slot\] !== this\.frameKey\) \{ return stages\[0\]\[index\] \}/, 'only a frame not yet begun shows the starting pose')
 }
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

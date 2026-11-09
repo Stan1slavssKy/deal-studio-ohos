@@ -28,10 +28,11 @@ import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { LiveNode, toLive, reconcile, armReveal, markIconRoom } from './VeraLiveTree'
 import { carryState } from '../vera/VeraStateCarry'
-import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
+import { MotionPose, motionPose, motionDuration, pivotPercent, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
   columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
 import { displaySync } from '@kit.ArkGraphics2D'
 import { decodeGfx, paintGfx, pointerValue, gfxFit, gfxToSurface, gfxNaturalHeight } from '../vera/VeraGfx'
+import { TimerFace, timerFace } from '../widget/CardModel'
 
 /**
  * The rotation of every spinning shape on screen.
@@ -527,10 +528,8 @@ export struct VeraPreview {
     this.textTimers.set(node, made)
     return made
   }
-  /** Where the timer starts, in ms: the time since the moment (counting up), or the time left until it (counting down). */
-  private textTimerCount(node: LiveNode): number {
-    return Math.max(0, node.checked ? node.numberValue - Date.now() : Date.now() - node.numberValue)
-  }
+  /** How the timer is set, as of now: counting up from the moment, or (checked) down to it. */
+  private textTimerFace(node: LiveNode): TimerFace { return timerFace(node.numberValue, node.checked, Date.now()) }
   private liveSurfaces: LiveNode[] = []
   private surfaceSync: displaySync.DisplaySync | null = null
   private surfaceTimer: number = -1
@@ -1162,14 +1161,22 @@ export struct VeraPreview {
 
   /**
    * Bring the surfaces in line with the frame just reconciled: forget the canvases of nodes that are no longer
-   * surfaces, run the frame loop exactly while one of them has a frame handler, and paint them all now unless the
+   * surfaces (and the controllers of timers that are gone), run the frame loop exactly while one of them has a frame handler, and paint them all now unless the
    * frame loop is the one asking (it paints straight after).
    */
   private reconcileSurfaces(paint: boolean): void {
     let found: LiveNode[] = []
-    if (this.liveRoot !== null) { this.collectSurfaces(this.liveRoot!, found) }
+    let timers: LiveNode[] = []
+    if (this.liveRoot !== null) {
+      this.collectKind(this.liveRoot!, 'surface', found)
+      this.collectKind(this.liveRoot!, 'timer', timers)
+    }
     for (let node of Array.from(this.surfaces.keys())) {
       if (found.indexOf(node) < 0) { this.surfaces.delete(node) }
+    }
+    // A timer's controller lives as long as its node is in the tree.
+    for (let node of Array.from(this.textTimers.keys())) {
+      if (timers.indexOf(node) < 0) { this.textTimers.delete(node) }
     }
     this.liveSurfaces = found
     let animated = false
@@ -1228,9 +1235,9 @@ export struct VeraPreview {
     return false
   }
 
-  private collectSurfaces(node: LiveNode, found: LiveNode[]): void {
-    if (node.kind === 'surface') { found.push(node) }
-    for (let child of node.children) { this.collectSurfaces(child, found) }
+  private collectKind(node: LiveNode, kind: string, found: LiveNode[]): void {
+    if (node.kind === kind) { found.push(node) }
+    for (let child of node.children) { this.collectKind(child, kind, found) }
   }
 
   /**
@@ -3115,7 +3122,7 @@ export struct VeraPreview {
       .layoutWeight(parentKind === 'row' ? 1 : 0)
       .alignItems(HorizontalAlign.Center)
       .rotate({ x: this.motionPoseOf(node).axisX, y: this.motionPoseOf(node).axisY, z: this.motionPoseOf(node).axisZ,
-                angle: this.motionPoseOf(node).angle, centerX: '50%', centerY: '50%', perspective: 2400 })
+                angle: this.motionPoseOf(node).angle, centerX: '50%', centerY: pivotPercent(this.motionPoseOf(node).pivotY), perspective: 2400 })
       .scale({ x: this.motionPoseOf(node).scale * this.motionPoseOf(node).scaleX, y: this.motionPoseOf(node).scale * this.motionPoseOf(node).scaleY, centerX: '50%', centerY: '50%' })
       .translate({ x: this.motionPoseOf(node).dx, y: this.motionPoseOf(node).dy })
       .opacity(this.motionPoseOf(node).opacity)
@@ -4131,8 +4138,9 @@ export struct VeraPreview {
       .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
       .borderRadius(this.t().radiusSmall)
     } else if (node.kind === 'timer') {
-      TextTimer({ isCountDown: node.checked, count: this.textTimerCount(node), controller: this.textTimerOf(node) })
-        .format(this.textTimerCount(node) >= 3000000 ? 'HH:mm:ss' : 'mm:ss')
+      TextTimer({ isCountDown: this.textTimerFace(node).countDown, count: this.textTimerFace(node).count,
+                  startTime: this.textTimerFace(node).startTime, controller: this.textTimerOf(node) })
+        .format(this.textTimerFace(node).format)
         .fontSize(textSize(this.t(), node.style))
         .fontWeight(textWeight(this.t(), node.style))
         .fontColor(textInk(this.t(), node.style))

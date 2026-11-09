@@ -20,6 +20,8 @@ export class MotionPose {
   dx: number = 0
   dy: number = 0
   opacity: number = 1
+  /** Where it turns, from the top edge (0) to the bottom (1): motionPivot. */
+  pivotY: number = 0.5
 }
 
 /**
@@ -101,7 +103,10 @@ export function motionPivot(preset: string): number {
   return 0.5
 }
 
-/** Whether a preset is one of the table's (every one but the six the app first had is; those the app also draws by formula). */
+/** A pivot as ArkUI's rotate takes it: a share of the height, '0%' to '100%'. The app and the card both turn about this. */
+export function pivotPercent(pivot: number): string { return Math.round(100 * pivot).toString() + '%' }
+
+/** How long a preset's stages take together, in ms: what a card plays. 0 for a name that is not a preset. */
 export function stagedDuration(preset: string): number {
   let total = 0
   let stages = motionStages(preset)
@@ -142,11 +147,19 @@ function stagedPose(stages: number[][], total: number, p: number): MotionPose {
   return pose
 }
 
-/** How long a preset plays, in milliseconds. Fixed per preset: the program has no knob that could make it janky. */
-export function motionDuration(preset: string): number { return stagedDuration(preset) }
+/**
+ * The six the app drew first, by formula (3D turns included), and how long each formula plays: its curve was tuned for that length.
+ * A card cannot draw a formula and plays their stages instead. The rest come from the table in the app too.
+ */
+const FORMULA_MS: Map<string, number> = new Map<string, number>([
+  ['tumble', 900], ['flip', 450], ['shake', 450], ['bounce', 650], ['pop', 350], ['fade', 400]
+])
 
-/** The six the app drew first, by formula (3D turns included); the rest come from the table. */
-const FORMULA_PRESETS: string[] = ['tumble', 'flip', 'shake', 'bounce', 'pop', 'fade']
+/** How long a preset plays in the app, in milliseconds. Fixed per preset: the program has no knob that could make it janky. */
+export function motionDuration(preset: string): number {
+  let formula = FORMULA_MS.get(preset)
+  return formula !== undefined ? formula : stagedDuration(preset)
+}
 
 function easeOut(p: number): number {
   let q = 1 - p
@@ -165,13 +178,15 @@ export function motionPose(preset: string, progress: number): MotionPose {
   let p = clamp01(progress)
   if (p >= 1) { return pose }
   let e = easeOut(p)
-  if (FORMULA_PRESETS.indexOf(preset) < 0) {
+  if (!FORMULA_MS.has(preset)) {
     let stages = motionStages(preset)
     if (stages.length === 0) { return pose }
+    // A turn is about the viewer's axis (z), the default, and about the preset's own pivot.
     let sampled = stagedPose(stages, stagedDuration(preset), p)
-    // A turn is about the viewer's axis (z); stagedPose leaves the axis as the default.
+    sampled.pivotY = motionPivot(preset)
     return sampled
   }
+  pose.pivotY = motionPivot(preset)
   if (preset === 'tumble') {
     // A turn about a diagonal axis with a hop, slowing as it lands.
     pose.axisX = 1
