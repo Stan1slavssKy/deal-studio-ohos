@@ -328,6 +328,20 @@ before and after the new presets and prompt paragraph (one attempt each, 2.5-3.6
 Not solved: a card cannot loop, so rain "falling" or a sun that keeps shining is one movement per touch or refresh; a symmetric drawing (a wheel with
 twelve equal segments) hides a spin (give it a mark or a ball); the model does not yet reach for `Vera.Source` for "live" on its own.
 
+## Layers: a scene of parts that move on their own
+
+`ui.Layers(style, width, height, children)` lays its children one over another, each in the middle, the first at the bottom (the app: a `Stack`; the card: a `Stack` in
+each of the three builder levels). Each child can be its own `ui.Motion` around its own `ui.Surface`, so a stick swings while the drum recoils and clouds drift over a sky.
+A `ui.Surface` above the first takes the style **`clear`** (no background of its own: `paintGfx(..., bare)`; without it the top layer hides the ones under it, found on the
+phone). Up to 5 pictures and 5 Motions (`LIVE_MAX_SURFACES`, `LIVE_MAX_MOTIONS`, five canvas contexts). A touch on any part of a Layers plays **every** Motion in it
+(`CardNode.links`: the slots a touch plays), and a touch on a Motion with no handler of its own plays it too: the card posts `#touch` (`TOUCH_ACTION`), the host runs
+nothing and answers with a new frame, in which the movement plays. Measured: stick over drum, one touch, both moved (frames ~290 ms apart).
+
+Make widget on the user's Moscow Weather app (live figures already in the program): "weather as a living scene that matches the current condition" gave, on the first
+attempt, a sky, sun, clouds and rain/snow as separate layers chosen from the live weather code, each with its own Motion (sky breathes, clouds drift or float, rain falls); a touch
+moved them all. With the earlier limit of 3 pictures the model had to drop a layer (found when the clouds vanished), hence 5.
+A widget can only be live when the program already has the source (Vera.Source); Make widget does not add one.
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

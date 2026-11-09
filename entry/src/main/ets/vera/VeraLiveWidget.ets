@@ -20,8 +20,10 @@ export const LIVE_MAX_COMMANDS: number = 600
 /** The Motion presets a card plays: each is one short settle from a hit pose (tumble and flip need 3D, which a card does not have). */
 export const CARD_MOTIONS: string[] = MOTION_PRESETS
 export const LIVE_MAX_MOTIONS: number = 5
+/** What the card posts for a touch on a ui.Motion that has no handler: the host answers with a new frame and runs nothing. */
+export const TOUCH_ACTION: string = '#touch'
 /** A picture on a card (ui.Surface drawn once for the frame): up to three, of a few dozen shapes each; the frame's own size budget counts the rest. */
-export const LIVE_MAX_SURFACES: number = 3
+export const LIVE_MAX_SURFACES: number = 5
 export const LIVE_MAX_SHAPES: number = 60
 /** Timers a card runs (ui.Timer, the platform's own TextTimer). */
 export const LIVE_MAX_TIMERS: number = 3
@@ -555,6 +557,8 @@ export class WidgetSession {
   /** A button's handler; its live source call (Vera.Source.fetch), if it makes one, is returned for the card to make. */
   tap(frame: LiveFrame, token: string, action: string, value: number): SourceRequest[] {
     if (!frame.live || token !== frame.token) { throw new Error('Widget changed; tap again') }
+    // A touch on a ui.Motion that has nothing of its own to run: no handler, only a new frame, in which the movement plays.
+    if (action === TOUCH_ACTION) { return [] }
     let allowed = (nodes: CardNode[]): boolean => nodes.some((node: CardNode): boolean =>
       ((node.kind === 'button' || node.kind === 'path' || node.kind === 'iconbutton') && node.enabled && node.action.length > 0 && node.action === action && node.value === value) || allowed(node.children))
     if (!Number.isFinite(value) || !allowed(frame.nodes)) { throw new Error('Action is not available on this widget') }

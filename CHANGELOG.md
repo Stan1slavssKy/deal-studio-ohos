@@ -1,5 +1,10 @@
 # Changelog
 
+## ui.Layers: scenes of parts that move on their own
+
+- New `ui.Layers(style, width, height, children)`: children one over another, each in the middle. Surface style `clear` has no background so layers show through. A touch on any part plays every Motion in the Layers; a touch on a Motion with no handler plays it (`#touch`). Up to 5 pictures and 5 Motions on a card. Make widget's prompt says how to build a scene from layers.
+- The Widget tab redraws at once when the card size chip changes (the picture size was stale).
+
 ## ui.Motion: 25 presets by meaning, played in stages on the card
 
 - New presets: pulse, jelly, press, flash, breathe, nod, wobble, swing, recoil, hop, jump, fall, spin, turn, rise, zoom, slide, float, drift (with pop, shake, bounce, tumble, flip, fade: 25). Each is a table of stages (`VeraMotion.motionStages`); the app and the card play the same table, the card as a chain of platform animations. All 25 play on a card; up to five Motions at once.

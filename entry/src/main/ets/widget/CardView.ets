@@ -45,8 +45,10 @@ export struct CardView {
   private ctx0: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
   private ctx1: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
   private ctx2: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
+  private ctx3: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
+  private ctx4: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
   private contextOf(node: CardNode): CanvasRenderingContext2D {
-    return node.pic === 1 ? this.ctx1 : node.pic === 2 ? this.ctx2 : this.ctx0
+    return node.pic === 1 ? this.ctx1 : node.pic === 2 ? this.ctx2 : node.pic === 3 ? this.ctx3 : node.pic === 4 ? this.ctx4 : this.ctx0
   }
   private pictureW(node: CardNode): number { return node.size > 0 ? node.size : PICTURE_WIDTH }
   private pictureH(node: CardNode): number { return Math.min(this.pictureW(node) * 1.1, this.pictureW(node) * node.h / node.w) }
@@ -351,6 +353,8 @@ export struct CardView {
       .opacity(this.poseOf(node, 6))
       .animation(this.motionAnimation(node))
       .onAppear(() => { this.begin(node) })
+      // A touch anywhere on it plays it, as a touch on a picture with a handler of its own does: the host only draws the next frame.
+      .onClick(() => { this.touched(node); this.onTap('#touch', 0) })
     } else {
       this.leaf(node)
     }
@@ -384,6 +388,8 @@ export struct CardView {
       .opacity(this.poseOf(node, 6))
       .animation(this.motionAnimation(node))
       .onAppear(() => { this.begin(node) })
+      // A touch anywhere on it plays it, as a touch on a picture with a handler of its own does: the host only draws the next frame.
+      .onClick(() => { this.touched(node); this.onTap('#touch', 0) })
     } else {
       this.leaf(node)
     }
@@ -417,6 +423,8 @@ export struct CardView {
       .opacity(this.poseOf(node, 6))
       .animation(this.motionAnimation(node))
       .onAppear(() => { this.begin(node) })
+      // A touch anywhere on it plays it, as a touch on a picture with a handler of its own does: the host only draws the next frame.
+      .onClick(() => { this.touched(node); this.onTap('#touch', 0) })
     } else {
       this.leaf(node)
     }
