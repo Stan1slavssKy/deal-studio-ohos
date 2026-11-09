@@ -2,7 +2,7 @@ import { CATALOG, describeComponents } from './VeraUiCatalog'
 import { widgetRefinementError } from './VeraCompiler'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
 import { decodeVeraUi, UiHostEnvironment } from './VeraUi'
-import { WidgetSession, CardNode, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_NODES, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, LIVE_INNER_HEIGHT, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
+import { WidgetSession, CardNode, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_NODES, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
 
 /** The components a card draws: only these are shown to the widget writer, and only these may a widget use. */
 export const CARD_KINDS: string[] = CATALOG.filter((component): boolean => component.card).map((component): string => component.name)
@@ -85,6 +85,12 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'TIME THAT MOVES. ui.Timer(style, millis, down) runs by itself on the card, with no refresh: counting up from the moment millis (a stopwatch, ' +
     '"since" something began) or, with down true, down to it ("left until"); millis is milliseconds since 1970 (time.nowMillis() plus or minus a ' +
     'length, kept in the state as a number). Prefer it to a figure computed from the clock, which stands still between redraws.\n' +
+    'CARD SIZES. The card is 2x2 by default (about 150 vp square). Declare function widget(state, size: number): ui.View to draw differently on a ' +
+    'wider card: size is 2 for 2x2, 3 for 2x4 (wide: about 324 x 148 vp, four columns, two rows) and 4 for 4x4 (about 324 x 340 vp). On a bigger card show ' +
+    'more -- a 2x4 has room for up to 4 buttons and 12 texts, a 4x4 for 6 buttons and 24 texts, and bigger pictures -- but only what the person asked for; ' +
+    'a widget with one parameter is drawn the same on every size, centred. The limits below are the 2x2 card\'s.\n' +
+    'SWITCHES. ui.Toggle(style, label, checked, handler) and ui.Checkbox(style, label, checked, handler) are a tap that says on or off: the handler takes ' +
+    '(state, value: boolean). Each counts as a button, and a handler is told only on or off, never which box it was: use one for a single setting, not one per item.\n' +
     'Limits: depth ' + LIVE_MAX_DEPTH.toString() + ' excluding root AppTheme, ' + LIVE_MAX_NODES.toString() +
     ' nodes, ' + LIVE_MAX_TEXT.toString() + ' UTF-16 characters/text, ' + LIVE_MAX_JSON.toString() +
     ' UTF-16 units/frame including state token, ' + LIVE_MAX_STEPS.toString() + ' VM steps/entry.\n' +
@@ -111,7 +117,13 @@ export function validateWidgetRefinement(base: string, source: string, vbc2: str
     if (preservation.length > 0) { return preservation }
     let runtime = checkWidget(vbc2, saved)
     if (runtime.length > 0) { return runtime }
-    return glanceError(vbc2, saved)
+    // A widget that asks for the card's size is held to the limits of each size it will be drawn on.
+    let sizes: number[] = new WidgetSession(vbc2, 'validation', saved).takesSize() ? [2, 3, 4] : [2]
+    for (let dimension of sizes) {
+      let problem = glanceError(vbc2, saved, dimension)
+      if (problem.length > 0) { return problem }
+    }
+    return ''
   } catch (e) { return 'Widget validation: ' + (e as Error).message }
 }
 
@@ -119,23 +131,24 @@ export function validateWidgetRefinement(base: string, source: string, vbc2: str
  * More than a glance: too many buttons or lines for the few things a widget shows. Only Make widget is held to it; the card
  * itself draws any frame within its budget. Said so the model can cut the widget down on the next attempt.
  */
-function glanceError(vbc2: string, saved: string): string {
-  let frame = new WidgetSession(vbc2, 'validation', saved).frame('project', 'App', '')
+function glanceError(vbc2: string, saved: string, dimension: number = 2): string {
+  let frame = new WidgetSession(vbc2, 'validation', saved).frame('project', 'App', '', dimension)
   let buttons = 0
   let texts = 0
   let count = (nodes: CardNode[]): void => {
     for (let node of nodes) {
-      if (node.kind === 'button' || node.kind === 'iconbutton' || (node.kind === 'path' && node.action.length > 0) || (node.kind === 'surface' && node.pointer.length > 0)) { buttons++ } else if (node.kind === 'path' || node.kind === 'surface' || node.kind === 'icon' || node.kind === 'badge' || node.kind === 'progress' || node.kind === 'ring') { /* a drawing or a mark, not a line of text */ } else if (node.text.length > 0) { texts++ }
+      if (node.kind === 'button' || node.kind === 'iconbutton' || node.kind === 'toggle' || node.kind === 'checkbox' || (node.kind === 'path' && node.action.length > 0) || (node.kind === 'surface' && node.pointer.length > 0)) { buttons++ } else if (node.kind === 'path' || node.kind === 'surface' || node.kind === 'icon' || node.kind === 'badge' || node.kind === 'progress' || node.kind === 'ring') { /* a drawing or a mark, not a line of text */ } else if (node.text.length > 0) { texts++ }
       count(node.children)
     }
   }
   count(frame.nodes)
-  if (buttons > WIDGET_MAX_BUTTONS) {
-    return 'The widget has ' + buttons.toString() + ' buttons; a widget has at most ' + WIDGET_MAX_BUTTONS.toString() +
+  let size = cardSize(frame.dimension)
+  if (buttons > size.maxButtons) {
+    return 'The widget has ' + buttons.toString() + ' buttons; a ' + size.label + ' widget has at most ' + size.maxButtons.toString() +
       ', for the actions that matter most. Not one per item: drop the rest, they stay in the app.'
   }
-  if (texts > WIDGET_MAX_TEXTS) {
-    return 'The widget shows ' + texts.toString() + ' texts; a widget shows at most ' + WIDGET_MAX_TEXTS.toString() +
+  if (texts > size.maxTexts) {
+    return 'The widget shows ' + texts.toString() + ' texts; a ' + size.label + ' widget shows at most ' + size.maxTexts.toString() +
       ' (one to three figures with short labels). No lists or history: keep what matters most, the rest stays in the app.'
   }
   // A picture needs room: everything else on the card, counted by its height, must leave it a few dozen vp.
@@ -145,8 +158,8 @@ function glanceError(vbc2: string, saved: string): string {
       '. Keep one short line of text (one figure with a label of a word) or none, and no buttons beside the picture.'
   }
   // Taller than the card: what does not fit is cut off at the card's edge. The estimate is rough, so only what is clearly too tall is refused.
-  if (widgetHeight(frame) > LIVE_INNER_HEIGHT + 14) {
-    return 'The widget is about ' + Math.round(widgetHeight(frame)).toString() + ' vp tall and the card is ' + LIVE_INNER_HEIGHT.toString() +
+  if (widgetHeight(frame) > size.height + 14) {
+    return 'The widget is about ' + Math.round(widgetHeight(frame)).toString() + ' vp tall and the ' + size.label + ' card is ' + size.height.toString() +
       ' inside its padding: what does not fit is cut off. Drop a line, a button or a figure, or shorten the texts (a text over two lines is cut).'
   }
   return ''
@@ -165,6 +178,7 @@ export function checkWidget(vbc2: string, saved: string = ''): string {
     let session = new WidgetSession(vbc2, 'validation', saved)
     let frame = session.frame('project', 'App', '')
     if (!frame.live) { return 'Missing function widget(state): ui.View' }
+    if (session.takesSize()) { session.frame('project', 'App', '', 3); session.frame('project', 'App', '', 4) }
     let state = session.encodedState()
     // Each actual visible button, twice: includes distinct repeated-row payloads and redraw validation.
     let buttons: CardNode[] = []
@@ -184,6 +198,31 @@ export function checkWidget(vbc2: string, saved: string = ''): string {
       }
     }
     collectPictures(frame.nodes)
+    // Each switch, turned on and off: its handler must run and the state must still draw.
+    let switches: CardNode[] = []
+    let collectSwitches = (nodes: CardNode[]): void => {
+      for (let node of nodes) {
+        if ((node.kind === 'toggle' || node.kind === 'checkbox') && node.enabled && node.action.length > 0) { switches.push(node) }
+        collectSwitches(node.children)
+      }
+    }
+    collectSwitches(frame.nodes)
+    for (let item of switches) {
+      let branch = new WidgetSession(vbc2, 'validation', state)
+      for (let pass = 0; pass < 2; pass++) {
+        let current = branch.frame('project', 'App', '')
+        try {
+          branch.tapSwitch(current, current.token, item.action, pass === 0)
+        } catch (e) {
+          if (/phone action required/.test((e as Error).message)) { return phoneCallMessage(item.action) }
+          throw (e as Error)
+        }
+        branch.frame('project', 'App', '')
+        let host = new UiHostEnvironment()
+        let vm = new VirtualMachine(deserializeVbc2(vbc2), host, LIVE_MAX_STEPS)
+        decodeVeraUi(vm.execute('view', [decodeRuntimeValue(JSON.parse(branch.encodedState()) as Object)]))
+      }
+    }
     let refreshError = checkRefresh(vbc2, state)
     if (refreshError.length > 0) { return refreshError }
     for (let picture of pictures) {

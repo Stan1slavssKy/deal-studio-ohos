@@ -277,6 +277,30 @@ On the phone (examples/widget-timer.vera, technical theme): a monospace stopwatc
 update from the app, and Restart (a handler that sets both moments to now) started both over. The Make widget prompt says to prefer it to a figure computed from the clock, which stands
 still between redraws. Not done: what a countdown does at zero (it stops at 00:00; the program's `widgetRefresh`, about every 30 minutes, is what can change the state then).
 
+## Card sizes: 2x2, 2x4, 4x4
+
+`form_config.json` offers the live card in all three. The system numbers them 2 (2x2), 3 (2x4) and 4 (4x4) (`FormDimension`); `onAddForm` receives the number in
+`ohos.extra.param.key.form_dimension` and `FormBindings` keeps it per form (`form-sizes.json`, beside the bindings; a removed card forgets it). Measured from screenshots at
+3.5 px per vp: 2x2 is about 150 x 150, **2x4 is wide, about 324 x 148** (four columns, two rows), 4x4 about 324 x 340; inside the 12 vp padding 126 x 126, 300 x 124 and 300 x 316.
+`cardSize(dimension)` holds those and the limits that grow with them (nodes 40, 60, 80; buttons 2, 4, 6; texts 8, 12, 24; the largest picture 80, 100, 200 vp). The frame is
+fitted to its card: the picture's side and the height gate use that card's inner size, and the frame says its `dimension`.
+
+A widget may declare `function widget(state, size: number): ui.View` (the compiler accepts the second parameter, E2115 otherwise) and draw differently: `size` is 2, 3 or 4.
+One with a single parameter is drawn the same everywhere. Make widget checks a size-aware widget at all three sizes, with each size's limits; `examples/widget-sizes.vera` shows a
+plan with one figure on 2x2, a row more on 2x4 and a bar and a button more on 4x4. The Widget tab shows the card at the chosen size (chips under it).
+
+The 8000-character budget bound before the node limit on the bigger cards, so the frame now goes into the binding **compact**: `CardModel.compactFrame` keeps on a node only what
+differs from a new `CardNode`, `normalizeNodes` puts the defaults back in the card. Every example frame is under 70 % of its full size (the metrics widget: half).
+Not measured on the phone: the cards placed at 2x4 and 4x4 with real content (see the next section for what was checked).
+
+## Switches: ui.Toggle and ui.Checkbox
+
+Both draw on the card (a pill with a knob; a rounded box with the check mark from `VeraIcons`) and are taps like a button: the card posts `{handler, on}`,
+`LiveFormService.liveFormTap` runs `WidgetSession.tapSwitch` (token-checked, handler must be a switch on the shown frame) and the answer is the next frame. The handler takes
+`(state, value: boolean)` as in the app. Measured on the phone (4x4 card, `examples/widget-switch.vera`): tap Focus then Done -> `VERA-FORM event action=setFocus on=true`,
+both drawn on, about 9 ms each. Make widget counts them as buttons, runs each handler on and off and re-checks the view; the prompt has a SWITCHES paragraph.
+Not done: multi-step motion presets and button press feedback (unmeasured on the card), and images (stage 7: `Image('memory://')` blanked the card).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

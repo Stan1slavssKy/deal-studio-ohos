@@ -285,4 +285,42 @@ assert.match(view, /node.key \+ this.frameKey/)
   const four = timerSource.replace('ui.Timer("heading", state.endsAt, true),', 'ui.Timer("heading", state.endsAt, true), ui.Timer("caption", state.endsAt, true), ui.Timer("caption", state.endsAt, true),')
   assert.throws(() => frame(new WidgetSession(compileVeraSource(four).vbc2, 'many-timers', '')), /at most 3 ui\.Timer/)
 }
+// The card's size: the frame is fitted to it, a widget that takes the size draws differently, and the limits grow with it.
+{
+  const { cardSize } = loadVera('VeraLiveWidget')
+  assert.deepEqual([2, 3, 4].map(d => cardSize(d).label), ['2x2', '2x4', '4x4'])
+  assert.deepEqual([2, 3, 4].map(d => cardSize(d).maxButtons), [2, 4, 6]); assert.deepEqual([cardSize(7).dimension, cardSize(0).label], [2, '2x2'], 'an unknown size is 2x2')
+  const sized = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-sizes.vera'), 'utf8')).vbc2, 'sizes', '')
+  assert.equal(sized.takesSize(), true)
+  const counts = [2, 3, 4].map(d => { const f = sized.frame('p', 'A', '', d); assert.equal(f.dimension, d); let n = 0; const walk = x => { n++; x.children.forEach(walk) }; f.nodes.forEach(walk); return n })
+  assert(counts[0] < counts[1] && counts[1] < counts[2], 'a bigger card, more on it: ' + counts)
+  assert.equal(new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-counter.vera'), 'utf8')).vbc2, 'one', '').takesSize(), false)
+  // The 41st node is refused on a 2x2 card and taken on a 4x4 one.
+  const tens = n => Array.from({length: n}, (_, i) => 'ui.Text("body", "t' + i + '")').join(', ')
+  const manyAt = (d) => { const src = fs.readFileSync(path.join(__dirname, 'examples/widget-sizes.vera'), 'utf8').replace('rows.push(ui.Text("title", "Plan"));', 'rows.push(ui.Column("default", [' + tens(5) + ']));'.repeat(1) + '\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));'); return new WidgetSession(compileVeraSource(src).vbc2, 'many', '').frame('p', 'A', '', d) }
+  assert.throws(() => manyAt(2), /widget exceeds 40 nodes/)
+  assert.equal(manyAt(4).live, true)
+}
+// The frame goes into the binding compact (only what differs from a default node) and the card gives the defaults back: the same nodes, in about half the characters.
+{
+  const { compactFrame, normalizeNodes } = loadVera('VeraLiveWidget')
+  for (const name of ['widget-metrics', 'widget-styles', 'widget-panda', 'widget-water', 'widget-two-pictures']) {
+    const f = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/' + name + '.vera'), 'utf8')).vbc2, name, '').frame('p', 'A', '')
+    const compact = JSON.parse(JSON.stringify(compactFrame(f)))
+    assert.deepEqual(JSON.parse(JSON.stringify(normalizeNodes(compact.nodes))), JSON.parse(JSON.stringify(f.nodes)), name + ': what the card restores is what was sent')
+    assert(JSON.stringify(compact).length < JSON.stringify(f).length * 0.7, name + ' is smaller compact: ' + JSON.stringify(compact).length + ' of ' + JSON.stringify(f).length)
+    assert.equal(compact.dimension, 2); assert.equal(compact.live, true)
+  }
+}
+// Switches: a toggle and a checkbox are taps that say on or off; a stale token or an unknown handler is refused.
+{
+  const sw = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-switch.vera'), 'utf8')).vbc2, 'sw', '')
+  const f0 = sw.frame('p', 'A', ''); const col = f0.nodes[0].children
+  assert.deepEqual(col.slice(1).map(n => [n.kind, n.val, n.action]), [['toggle', 0, 'setFocus'], ['checkbox', 0, 'setDone']])
+  assert(col[2].commands.length > 0, 'a checkbox carries its check mark')
+  sw.tapSwitch(f0, f0.token, 'setFocus', true); sw.tapSwitch(f0, f0.token, 'setDone', true)
+  const f1 = sw.frame('p', 'A', ''); assert.deepEqual(f1.nodes[0].children.slice(1).map(n => n.val), [1, 1])
+  assert.throws(() => sw.tapSwitch(f1, 'stale', 'setFocus', false), /Widget changed/)
+  assert.throws(() => sw.tapSwitch(f1, f1.token, 'nope', false), /not available/)
+}
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

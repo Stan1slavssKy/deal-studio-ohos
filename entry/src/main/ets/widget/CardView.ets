@@ -23,6 +23,8 @@ export struct CardView {
   @Prop primary: string = ''
   /** A button, or a shape with an action, was tapped: the handler's name and its number. */
   onTap: (action: string, value: number) => void = (action: string, value: number): void => {}
+  /** A toggle or a checkbox was tapped: its handler's name and whether it is now on. */
+  onSwitch: (handler: string, on: boolean) => void = (handler: string, on: boolean): void => {}
   /** A picture was tapped: its pointer handler's name and where, in the picture's own units. */
   onPoint: (handler: string, x: number, y: number) => void = (handler: string, x: number, y: number): void => {}
 
@@ -167,6 +169,28 @@ export struct CardView {
           .fontSize(node.size).fontColor(node.color).fontWeight(this.weightOf(node))
           .onAppear(() => { this.timerOf(node).start() })
       }
+    } else if (node.kind === 'checkbox') {
+      Row({ space: 8 }) {
+        Column() {
+          if (this.valueNow(node) === 1) { this.glyph(node.commands, 14, '#FFFFFF') }
+        }
+        .width(20).height(20).alignItems(HorizontalAlign.Center).justifyContent(FlexAlign.Center).borderRadius(6)
+        .backgroundColor(this.valueNow(node) === 1 ? node.color : '#00000000')
+        .border({ width: 2, color: this.valueNow(node) === 1 ? node.color : node.fill })
+        Text(node.text).fontSize(14).fontColor(this.inkOf(node)).maxLines(1).layoutWeight(1)
+      }
+      .width('100%').opacity(node.enabled ? 1 : 0.4)
+      .onClick(() => { if (node.enabled) { this.onSwitch(node.action, this.valueNow(node) !== 1) } })
+    } else if (node.kind === 'toggle') {
+      Row({ space: 8 }) {
+        Stack({ alignContent: this.valueNow(node) === 1 ? Alignment.End : Alignment.Start }) {
+          Column().width(36).height(20).borderRadius(10).backgroundColor(this.valueNow(node) === 1 ? node.color : node.fill)
+          Circle().width(14).height(14).fill('#FFFFFF').margin(3)
+        }.width(36).height(20)
+        Text(node.text).fontSize(14).fontColor(this.inkOf(node)).maxLines(1).layoutWeight(1)
+      }
+      .width('100%').opacity(node.enabled ? 1 : 0.4)
+      .onClick(() => { if (node.enabled) { this.onSwitch(node.action, this.valueNow(node) !== 1) } })
     } else if (node.kind === 'icon') {
       this.glyph(node.commands, node.size, node.color)
     } else if (node.kind === 'iconbutton') {

@@ -549,7 +549,7 @@ export const CATALOG: ComponentSpec[] = [
  * The components a home-screen card draws besides the ones that opt in above (`card`): each is turned into card nodes by VeraLiveWidget (an icon into a stroked
  * path, a Stat into a column of texts, a Sparkline into a picture, Progress and ProgressRing into the platform's own). Listed here, never inferred.
  */
-const CARD_OPT_IN: string[] = ['Icon', 'IconButton', 'Badge', 'Progress', 'ProgressRing', 'Stat', 'NumberStat', 'MetricGroup', 'Sparkline']
+const CARD_OPT_IN: string[] = ['Icon', 'IconButton', 'Badge', 'Progress', 'ProgressRing', 'Stat', 'NumberStat', 'MetricGroup', 'Sparkline', 'Toggle', 'Checkbox']
 function optInCard(): boolean {
   for (let spec of CATALOG) {
     if (CARD_OPT_IN.indexOf(spec.name) >= 0) { spec.card = true }

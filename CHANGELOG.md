@@ -1,5 +1,11 @@
 # Changelog
 
+## Widget card: sizes 2x2, 2x4, 4x4 and switches
+
+- The live card is offered at 2x2, 2x4 and 4x4; `onAddForm` records the size (`form-sizes.json`), the frame is fitted to it and the limits grow with it (`cardSize`). A widget may declare `widget(state, size: number)` to draw differently; Make widget checks it at every size. The Widget tab has size chips.
+- The frame goes into the binding compact (only non-default fields), so the 8000-character budget goes about twice as far.
+- `ui.Toggle` and `ui.Checkbox` are card kinds: a tap that says on or off, handler `(state, value: boolean)`.
+
 ## ui.Timer: a time that moves, in the app and on the card
 
 - New component `ui.Timer(style, millis, down)`: counts up from a moment or down to one with the platform's own `TextTimer`, which keeps going on a home-screen card where our code does not (no refresh, no ticker). The theme's text styles apply; the Make widget prompt says to use it for "since" and "left until".

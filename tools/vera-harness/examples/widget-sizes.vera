@@ -1,0 +1,25 @@
+import * as ui from "std/ui"
+@jsonable class AppState { done: number; }
+function init(): AppState { return { done: 3 }; }
+function more(state: AppState, value: number): AppState { return { done: state.done + value }; }
+function view(state: AppState): ui.View {
+  return ui.AppTheme("editorial", "", [
+    ui.Column("default", [
+      ui.Text("heading", "Plan"),
+      ui.NumberText("metric", state.done, "", " of 5", 1)
+    ])
+  ]);
+}
+function widget(state: AppState, size: number): ui.View {
+  let rows: ui.View[] = [];
+  rows.push(ui.Text("title", "Plan"));
+  rows.push(ui.NumberText("metric", state.done, "", " of 5", 1));
+  if (size >= 3) {
+    rows.push(ui.Row("split", [ui.Text("muted", "left"), ui.Text("danger", "late")]));
+  }
+  if (size >= 4) {
+    rows.push(ui.Progress("accent", "Today", state.done, 5));
+    rows.push(ui.Button("primary", "One more", "more", 1, true));
+  }
+  return ui.AppTheme("editorial", "", [ui.Column("center", rows)]);
+}

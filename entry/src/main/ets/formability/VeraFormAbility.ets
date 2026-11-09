@@ -17,6 +17,9 @@ export default class VeraFormAbility extends FormExtensionAbility {
     let params = want.parameters as Record<string, Object>
     if (params !== null && params !== undefined && params['ohos.extra.param.key.form_name'] === 'live') {
       let id = params['ohos.extra.param.key.form_identity']
+      // The size the card is added at (FormDimension: 2 is 2x2, 3 is 2x4, 4 is 4x4): the widget is fitted to it.
+      let dimension = params['ohos.extra.param.key.form_dimension']
+      if (typeof id === 'string' && typeof dimension === 'number') { formBindings.setDimension(id, dimension) }
       // requestPublishForm passes the project; a card placed in the system widget manager takes the one Add widget offered.
       let passed = params['projectId']
       let projectId = typeof passed === 'string' && passed.length > 0 ? passed : formBindings.takeOffer()

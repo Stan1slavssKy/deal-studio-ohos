@@ -1,6 +1,6 @@
 // The launcher's live card. It draws what the form extension sends (the frame, widget/CardModel.ets) with the layout the app's Widget tab also uses
 // (widget/CardView.ets); it loads the theme and the painter, never the VM.
-import { CardNode } from '../CardModel'
+import { CardNode, normalizeNodes } from '../CardModel'
 import { CardView } from '../CardView'
 
 let liveStorage = new LocalStorage()
@@ -27,12 +27,15 @@ struct LiveCard {
     Column({ space: 6 }) {
       if (this.live) {
         CardView({
-          nodes: this.nodes,
+          nodes: normalizeNodes(this.nodes),
           frameKey: this.token + this.seq,
           preset: this.preset,
           primary: this.primary,
           onTap: (action: string, value: number): void => {
             postCardAction(this, { action: 'message', params: { token: this.token, handler: action, value: value } })
+          },
+          onSwitch: (handler: string, on: boolean): void => {
+            postCardAction(this, { action: 'message', params: { token: this.token, handler: handler, on: on } })
           },
           onPoint: (handler: string, x: number, y: number): void => {
             postCardAction(this, { action: 'message', params: { token: this.token, handler: handler, x: x, y: y } })

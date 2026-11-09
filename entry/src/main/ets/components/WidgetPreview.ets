@@ -5,6 +5,10 @@ import { CardView } from '../widget/CardView'
 
 /** A 2x2 home-screen card on this phone, in vp: the size the widget is written for (measured: 524 px wide at 3.5 px per vp). */
 const CARD_SIDE: number = 150
+/** The other sizes the card is offered in (measured the same way): 2x4 is wide, 4x4 is nearly square. */
+const CARD_WIDE_WIDTH: number = 324
+const CARD_WIDE_HEIGHT: number = 148
+const CARD_BIG_HEIGHT: number = 340
 /** The thumbnail's side, in vp. */
 const THUMB_SIDE: number = 72
 
@@ -20,6 +24,8 @@ export struct WidgetPreview {
   @Prop title: string = 'App'
   /** A small, still picture of the card (the project page): no note under it and no taps. */
   @Prop thumbnail: boolean = false
+  /** Which card size to show, as the system numbers it: 2 is 2x2, 3 is 2x4, 4 is 4x4. */
+  @State dimension: number = 2
   @State frame: LiveFrame = new LiveFrame()
   @State error: string = ''
   private session: WidgetSession | null = null
@@ -40,7 +46,7 @@ export struct WidgetPreview {
     for (let seed of seeds) {
       try {
         let session = new WidgetSession(this.vbc2, 'preview', seed)
-        this.frame = session.frame('', this.title, '')
+        this.frame = session.frame('', this.title, '', this.dimension)
         this.session = session
         return
       } catch (e) {
@@ -63,7 +69,26 @@ export struct WidgetPreview {
       let requests = session.tap(this.frame, this.frame.token, action, value)
       if (requests.length > 0) { session.answer(requests[0].handler, await sourceFetch(requests[0].params)) }
       if (session !== this.session) { return }
-      this.frame = session.frame('', this.title, '')
+      this.frame = session.frame('', this.title, '', this.dimension)
+      this.seq += 1
+      this.error = ''
+    } catch (e) {
+      if (session === this.session) { this.session = new WidgetSession(this.vbc2, 'preview', before) }
+      this.error = (e as Error).message
+    } finally {
+      this.busy = false
+    }
+  }
+
+  /** A tap on a toggle or a checkbox: its handler runs here only, as a button's does; nothing is saved. */
+  private tapSwitch(handler: string, on: boolean): void {
+    if (this.session === null || this.busy) { return }
+    let session = this.session!
+    let before = session.encodedState()
+    this.busy = true
+    try {
+      session.tapSwitch(this.frame, this.frame.token, handler, on)
+      this.frame = session.frame('', this.title, '', this.dimension)
       this.seq += 1
       this.error = ''
     } catch (e) {
@@ -82,7 +107,7 @@ export struct WidgetPreview {
     this.busy = true
     try {
       session.tapSurface(this.frame, this.frame.token, handler, x, y)
-      this.frame = session.frame('', this.title, '')
+      this.frame = session.frame('', this.title, '', this.dimension)
       this.seq += 1
       this.error = ''
     } catch (e) {
@@ -109,6 +134,16 @@ export struct WidgetPreview {
         Text(this.note())
           .fontSize(12).fontColor(this.error.length > 0 ? app.warningInk : app.inkMuted)
           .textAlign(TextAlign.Center).constraintSize({ maxWidth: 300 })
+        // The size the card will be placed at: the widget is fitted to it (a widget that asks for the size draws differently).
+        Row({ space: 8 }) {
+          ForEach([2, 3, 4], (d: number) => {
+            Text(d === 2 ? '2×2' : d === 3 ? '2×4' : '4×4')
+              .fontSize(12).padding({ left: 12, right: 12, top: 6, bottom: 6 }).borderRadius(14)
+              .fontColor(this.dimension === d ? app.onPrimary : app.inkStrong)
+              .backgroundColor(this.dimension === d ? app.primary : app.surface)
+              .onClick(() => { this.dimension = d; this.restart() })
+          }, (d: number) => d.toString())
+        }
       }
       .width('100%')
       .height('100%')
@@ -128,12 +163,13 @@ export struct WidgetPreview {
           preset: this.frame.preset,
           primary: this.frame.primary,
           onTap: (action: string, value: number): void => { this.tap(action, value) },
+          onSwitch: (handler: string, on: boolean): void => { this.tapSwitch(handler, on) },
           onPoint: (handler: string, x: number, y: number): void => { this.tapPicture(handler, x, y) }
         })
       }
     }
-    .width(CARD_SIDE)
-    .height(CARD_SIDE)
+    .width(this.dimension === 2 ? CARD_SIDE : CARD_WIDE_WIDTH)
+    .height(this.dimension === 2 ? CARD_SIDE : this.dimension === 3 ? CARD_WIDE_HEIGHT : CARD_BIG_HEIGHT)
     .padding(12)
     .justifyContent(FlexAlign.Center)
     .backgroundColor(this.frame.background)

@@ -1,5 +1,5 @@
 import { VirtualMachine, deserializeVbc2, encodeRuntimeValue, decodeRuntimeValue, RuntimeValue,
-  VeraNumberValue, VeraStringValue } from './VeraInterpreter'
+  VeraNumberValue, VeraStringValue, VeraBooleanValue } from './VeraInterpreter'
 import { UiHostEnvironment, VeraUiNode, decodeVeraUi, formatVeraNumber } from './VeraUi'
 import { CATALOG } from './VeraUiCatalog'
 import { resolveTheme, pathFill, toneInk, toneEdge, toneFill, buttonFill } from './VeraTheme'
@@ -7,9 +7,9 @@ import { iconPath } from './VeraIcons'
 import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
-import { CardNode, LiveFrame } from '../widget/CardModel'
+import { CardNode, LiveFrame, compactFrame } from '../widget/CardModel'
 import { cardTextSize, cardTextWeight, cardTextInk, cardTextFamily, cardLetterSpacing, cardGap, cardPanelPad, cardPanelFill, cardButtonFill, cardButtonInk } from './CardStyle'
-export { CardNode, LiveFrame } from '../widget/CardModel'
+export { CardNode, LiveFrame, compactFrame, compactNode, normalizeNodes } from '../widget/CardModel'
 
 export const LIVE_MAX_DEPTH: number = 4
 export const LIVE_MAX_NODES: number = 40
@@ -26,6 +26,31 @@ export const LIVE_MAX_SHAPES: number = 60
 export const LIVE_MAX_TIMERS: number = 3
 /** The room a picture is sized to: a card is about 150 vp square (524 px at 3.5 px per vp) with 12 of padding, and 6 between its rows. */
 export const LIVE_INNER_HEIGHT: number = 126
+
+/**
+ * A card's size and what a widget may put on it. The system numbers them 2 (2x2, about 150 vp square), 3 (2x4: wide, about 324 x 148) and 4 (4x4, about
+ * 324 x 340); measured on the phone at 3.5 px per vp. The inner size is the card less its 12 vp padding.
+ */
+export class CardSize {
+  dimension: number = 2
+  label: string = '2x2'
+  width: number = 126
+  height: number = 126
+  maxNodes: number = 40
+  maxButtons: number = 2
+  maxTexts: number = 8
+  pictureMax: number = 80
+}
+
+export function cardSize(dimension: number): CardSize {
+  let size = new CardSize()
+  if (dimension === 3) {
+    size.dimension = 3; size.label = '2x4'; size.width = 300; size.height = 124; size.maxNodes = 60; size.maxButtons = 4; size.maxTexts = 12; size.pictureMax = 100
+  } else if (dimension === 4) {
+    size.dimension = 4; size.label = '4x4'; size.width = 300; size.height = 316; size.maxNodes = 80; size.maxButtons = 6; size.maxTexts = 24; size.pictureMax = 200
+  }
+  return size
+}
 export const LIVE_ROW_GAP: number = 6
 export const PICTURE_SIDE_MIN: number = 40
 export const PICTURE_SIDE_MAX: number = 80
@@ -50,6 +75,7 @@ function nodeHeight(node: CardNode, pictureSide: number, width: number = LIVE_IN
   if (node.kind === 'path' || node.kind === 'icon') { return node.size }
   if (node.kind === 'iconbutton') { return node.size }
   if (node.kind === 'badge') { return 22 }
+  if (node.kind === 'toggle' || node.kind === 'checkbox') { return 24 }
   if (node.kind === 'progress') { return 30 }
   if (node.kind === 'ring') { return node.size + (node.text.length > 0 ? 16 : 0) }
   if (node.kind === 'button') { return 40 }
@@ -80,7 +106,7 @@ export function widgetHeight(frame: LiveFrame): number {
   let side = 0
   let pictures = allPictures(frame.nodes, [])
   if (pictures.length > 0) { side = pictures[0].size }
-  return stackHeight(frame.nodes, side)
+  return stackHeight(frame.nodes, side, LIVE_ROW_GAP, cardSize(frame.dimension).width)
 }
 
 function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
@@ -93,8 +119,8 @@ function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
 
 /** The widest a picture may be so the pictures of a row (directly, or in a Motion) share the card's width: its inner width less the gaps. */
 
-function widthLimit(nodes: CardNode[]): number {
-  let limit = PICTURE_SIDE_MAX
+function widthLimit(nodes: CardNode[], size: CardSize): number {
+  let limit = size.pictureMax
   for (let node of nodes) {
     if (node.kind === 'row') {
       let count = 0
@@ -102,9 +128,9 @@ function widthLimit(nodes: CardNode[]): number {
         if (child.kind === 'surface') { count += 1 }
         if (child.kind === 'motion') { count += allPictures(child.children, []).length }
       }
-      if (count > 1) { limit = Math.min(limit, Math.floor((LIVE_INNER_WIDTH - LIVE_ROW_SPACE * (count - 1)) / count)) }
+      if (count > 1) { limit = Math.min(limit, Math.floor((size.width - LIVE_ROW_SPACE * (count - 1)) / count)) }
     }
-    limit = Math.min(limit, widthLimit(node.children))
+    limit = Math.min(limit, widthLimit(node.children, size))
   }
   return limit
 }
@@ -115,8 +141,9 @@ function widthLimit(nodes: CardNode[]): number {
  */
 export function pictureRoom(frame: LiveFrame): number {
   if (allPictures(frame.nodes, []).length === 0) { return 0 }
-  for (let side = widthLimit(frame.nodes); side > 0; side--) {
-    if (stackHeight(frame.nodes, side) <= LIVE_INNER_HEIGHT) { return side }
+  let size = cardSize(frame.dimension)
+  for (let side = widthLimit(frame.nodes, size); side > 0; side--) {
+    if (stackHeight(frame.nodes, side, LIVE_ROW_GAP, size.width) <= size.height) { return side }
   }
   return 1
 }
@@ -182,6 +209,8 @@ export class WidgetSession {
   private versionId: string
   private hasWidget: boolean = false
   private hasRefresh: boolean = false
+  /** widget(state, size: number): the program asked for the card's size too. */
+  private hasSize: boolean = false
 
   constructor(vbc2: string, versionId: string, saved: string) {
     this.bytecode = vbc2
@@ -189,21 +218,24 @@ export class WidgetSession {
     let module = deserializeVbc2(vbc2)
     this.hasWidget = module.functions.some((fn): boolean => fn.name === 'widget')
     this.hasRefresh = module.functions.some((fn): boolean => fn.name === 'widgetRefresh')
+    this.hasSize = module.functions.some((fn): boolean => fn.name === 'widget' && fn.parameterCount === 2)
     this.vm = new VirtualMachine(module, this.host, LIVE_MAX_STEPS)
     this.state = saved.length > 0 ? decodeRuntimeValue(JSON.parse(saved) as Object) : this.vm.execute('init')
   }
 
   encodedState(): string { return JSON.stringify(encodeRuntimeValue(this.state)) }
 
-  frame(projectId: string, title: string, icon: string): LiveFrame {
+  frame(projectId: string, title: string, icon: string, dimension: number = 2): LiveFrame {
+    let size = cardSize(dimension)
     let frame = new LiveFrame()
     frame.projectId = projectId
     frame.title = title
     frame.icon = icon
     frame.versionId = this.versionId
+    frame.dimension = size.dimension
     if (!this.hasWidget) { frame.status = 'Open app'; return frame }
     this.host.effectsAllowed = false
-    let roots = decodeVeraUi(this.vm.execute('widget', [this.state]))
+    let roots = decodeVeraUi(this.vm.execute('widget', this.hasSize ? [this.state, new VeraNumberValue(size.dimension)] : [this.state]))
     if (roots.length !== 1) { throw new Error('widget must return one root') }
     let root = roots[0]
     let theme = resolveTheme(root.kind === 'apptheme' ? root.style : 'clean',
@@ -218,7 +250,7 @@ export class WidgetSession {
     // The nodes a component is expanded into (a Stat, a Sparkline) are made, counted and depth-checked like the ones the program wrote.
     let make = (kind: string, key: string, depth: number, slot: number): CardNode => {
       count += 1
-      if (count > LIVE_MAX_NODES) { throw new Error('widget exceeds 40 nodes') }
+      if (count > size.maxNodes) { throw new Error('widget exceeds ' + size.maxNodes.toString() + ' nodes') }
       if (depth > LIVE_MAX_DEPTH) { throw new Error('widget exceeds depth 4') }
       let made = new CardNode()
       made.kind = kind
@@ -281,7 +313,7 @@ export class WidgetSession {
     }
     let project = (node: VeraUiNode, depth: number, key: string, motionSlot: number): CardNode => {
       count += 1
-      if (count > LIVE_MAX_NODES) { throw new Error('widget exceeds 40 nodes') }
+      if (count > size.maxNodes) { throw new Error('widget exceeds ' + size.maxNodes.toString() + ' nodes') }
       if (depth > LIVE_MAX_DEPTH) { throw new Error('widget exceeds depth 4') }
       let spec = CATALOG.find((entry): boolean => entry.nodeKind === node.kind)
       if (spec === undefined || !spec.card) { throw new Error('Not card-safe: ' + node.kind) }
@@ -388,6 +420,15 @@ export class WidgetSession {
         item.fill = toneFill(theme, node.style, theme.surface)
         item.radius = theme.radiusSmall
       }
+      if (node.kind === 'toggle' || node.kind === 'checkbox') {
+        // A switch: its label, on or off (val 1 or 0), the colour it is on in and the colour it is off in, and the check mark's path for a box.
+        item.text = node.label
+        item.val = node.checked ? 1 : 0
+        item.color = theme.primary
+        item.fill = theme.lineStrong
+        item.ink = theme.ink
+        if (node.kind === 'checkbox') { item.commands = iconOf('check') }
+      }
       if (node.kind === 'progress' || node.kind === 'progressring') {
         item.text = node.label
         item.val = node.eventValue
@@ -435,14 +476,18 @@ export class WidgetSession {
     let tree = project(root, root.kind === 'apptheme' ? 0 : 1, '0', -1)
     frame.nodes = root.kind === 'apptheme' ? tree.children : [tree]
     let side = pictureRoom(frame)
-    for (let picture of allPictures(frame.nodes, [])) { picture.size = Math.max(PICTURE_SIDE_MIN, Math.min(PICTURE_SIDE_MAX, side)) }
+    for (let picture of allPictures(frame.nodes, [])) { picture.size = Math.max(PICTURE_SIDE_MIN, Math.min(size.pictureMax, side)) }
     // Rejects taps from an older frame or state. A digest, not the state itself: the token is in the card's data, which has
     // a size budget, and in every key of its layout, so it must not grow with the app's data.
     frame.token = this.versionId + ':' + veraStateStamp(this.bytecode) + ':' + stateDigest(this.encodedState())
     frame.live = true
-    if (JSON.stringify(frame).length > LIVE_MAX_JSON) { throw new Error('widget binding exceeds size budget') }
+    // The budget is the size of what goes into the binding: the compact frame (CardModel.compactFrame), not every default field.
+    if (JSON.stringify(compactFrame(frame)).length > LIVE_MAX_JSON) { throw new Error('widget binding exceeds size budget') }
     return frame
   }
+
+  /** widget(state, size: number): the program draws differently for the card's size. */
+  takesSize(): boolean { return this.hasSize }
 
   /** The program has widgetRefresh: the card's periodic update brings its state up to date with the clock. */
   refreshes(): boolean { return this.hasRefresh }
@@ -492,6 +537,28 @@ export class WidgetSession {
     this.host.pendingEffects = []
     try {
       let next = this.vm.execute(action, [this.state, new VeraNumberValue(value)])
+      let requests = this.sourceRequests('Open app to continue: phone action required')
+      this.state = next
+      return requests
+    } finally {
+      this.host.effectsAllowed = false
+      this.host.pendingEffects = []
+    }
+  }
+
+  /**
+   * A tap on a toggle or a checkbox: the program's handler, told whether it is now on (as the app's switch tells it). Like a button, one
+   * state change; the answer is the next frame.
+   */
+  tapSwitch(frame: LiveFrame, token: string, handler: string, on: boolean): SourceRequest[] {
+    if (!frame.live || token !== frame.token) { throw new Error('Widget changed; tap again') }
+    let found = (nodes: CardNode[]): boolean => nodes.some((node: CardNode): boolean =>
+      ((node.kind === 'toggle' || node.kind === 'checkbox') && node.enabled && node.action.length > 0 && node.action === handler) || found(node.children))
+    if (!found(frame.nodes)) { throw new Error('Action is not available on this widget') }
+    this.host.effectsAllowed = true
+    this.host.pendingEffects = []
+    try {
+      let next = this.vm.execute(handler, [this.state, new VeraBooleanValue(on)])
       let requests = this.sourceRequests('Open app to continue: phone action required')
       this.state = next
       return requests

@@ -1520,9 +1520,10 @@ class Analyzer {
       let init = this.model.functions.get('init')
       let view = this.model.functions.get('view')
       let uiView = this.stdModules.get('std/ui')!.classes.find((c: ExternalClass): boolean => c.name === 'View')
-      if (init === undefined || view === undefined || uiView === undefined || widget.isAsync || widget.parameters.length !== 1 ||
+      let sizeOk = widget.parameters.length === 1 || (widget.parameters.length === 2 && identical(widget.parameters[1], NUMBER))
+      if (init === undefined || view === undefined || uiView === undefined || widget.isAsync || !sizeOk ||
           !identical(widget.parameters[0], init.result) || !identical(widget.result, uiView.type)) {
-        this.addError('E2115', 'widget must be synchronous: function widget(state: init return type): ui.View', placeOf('widget'))
+        this.addError('E2115', 'widget must be synchronous: function widget(state: init return type[, size: number]): ui.View', placeOf('widget'))
       }
     }
     // The card's periodic update (LiveFormService.liveFormRefresh): the state brought up to date with the clock.

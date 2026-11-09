@@ -76,7 +76,7 @@ assert.match(prompt, /widgetRefresh/)
 // A widget is a glance: a button per item is refused with the reason, for the next attempt.
 const crowded = base + '\nfunction widget(state: AppState): ui.View { return ui.Column("default", [ui.Button("default", "+1", "change", 1, true), ' +
   'ui.Button("default", "+2", "change", 2, true), ui.Button("default", "+3", "change", 3, true)]); }'
-assert.match(validateWidgetRefinement(base, crowded, compileVeraSource(crowded).vbc2), /3 buttons; a widget has at most 2/)
+assert.match(validateWidgetRefinement(base, crowded, compileVeraSource(crowded).vbc2), /3 buttons; a 2x2 widget has at most 2/)
 // An app whose own screen is drawn by widget(state) would change with a new widget: Make widget is refused for it, before and
 // after the model answers.
 {
@@ -115,7 +115,7 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   assert(!asked[0].system.includes('full screens'), 'the advice on full screens is left out')
   assert(asked[0].budget <= W.WIDGET_TOKENS && !asked[0].think)
   assert.match(asked[0].user, /The home-screen widget should show: the count and a plus button/)
-  assert.match(asked[1].user, /3 buttons; a widget has at most 2/)
+  assert.match(asked[1].user, /3 buttons; a 2x2 widget has at most 2/)
   const none = new AgentHost(); none.language = host.language
   none.askCode = async () => 'function helper(): number { return 1; }'
   const refused = await W.writeWidget(base, 'x', 'a counter', '', none)
@@ -233,7 +233,7 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   const at = styles.indexOf('function widget(')
   const lines = n => Array.from({length: n}, (_, i) => 'ui.Text("display", "big ' + i + '")').join(', ')
   const tall = styles.substring(0, at) + styles.substring(at).replace('ui.Column("accent", [\n        ui.Text("caption", "3 of 5 done")\n      ])', lines(3))
-  assert.match(validateWidgetRefinement(styles, tall, compileVeraSource(tall).vbc2), /vp tall and the card is 126/)
+  assert.match(validateWidgetRefinement(styles, tall, compileVeraSource(tall).vbc2), /vp tall and the 2x2 card is 126/)
 }
 // An icon button is one of the two buttons; the new kinds are on the card list and in the prompt.
 {
@@ -251,6 +251,19 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   assert(CARD_KINDS.includes('Timer'), 'Timer is a card kind')
   assert.match(widgetRefinementPrompt(), /TIME THAT MOVES\. ui\.Timer\(style, millis, down\) runs by itself/)
   assert.equal(checkWidget(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-timer.vera'), 'utf8')).vbc2), '')
+}
+// A widget that takes the card's size is held to the limits of every size; the prompt says how to ask for it.
+{
+  const sized = fs.readFileSync(path.join(__dirname, 'examples/widget-sizes.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(sized).vbc2), '')
+  assert.match(widgetRefinementPrompt(), /CARD SIZES\. The card is 2x2 by default/)
+  assert.match(widgetRefinementPrompt(), /function widget\(state, size: number\): ui\.View/)
+  const at = sized.indexOf('function widget(')
+  const crowded = sized.substring(0, at) + sized.substring(at).replace('rows.push(ui.Row("split", [ui.Text("muted", "left"), ui.Text("danger", "late")]));',
+    'rows.push(ui.Column("default", [' + Array.from({length: 13}, (_, i) => 'ui.Text("caption", "c' + i + '")').join(', ') + ']));')
+  assert.match(validateWidgetRefinement(sized, crowded, compileVeraSource(crowded).vbc2), /a 2x4 widget shows at most 12/)
+  const badParam = sized.replace('function widget(state: AppState, size: number)', 'function widget(state: AppState, size: string)')
+  assert.throws(() => compileVeraSource(badParam), /E2115/)
 }
 console.log('PASS carry widget: the earlier widget and its helpers come back into a version written without them')
 }

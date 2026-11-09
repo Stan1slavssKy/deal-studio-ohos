@@ -1,0 +1,23 @@
+import * as ui from "std/ui"
+@jsonable class AppState { focus: boolean; done: boolean; }
+function init(): AppState { return { focus: false, done: false }; }
+function setFocus(state: AppState, value: boolean): AppState { return { focus: value, done: state.done }; }
+function setDone(state: AppState, value: boolean): AppState { return { focus: state.focus, done: value }; }
+function view(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Column("default", [
+      ui.Text("heading", "Today"),
+      ui.Toggle("default", "Focus", state.focus, "setFocus"),
+      ui.Checkbox("default", "Done", state.done, "setDone")
+    ])
+  ]);
+}
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Column("default", [
+      ui.Text("eyebrow", "TODAY"),
+      ui.Toggle("default", "Focus", state.focus, "setFocus"),
+      ui.Checkbox("default", "Done", state.done, "setDone")
+    ])
+  ]);
+}
