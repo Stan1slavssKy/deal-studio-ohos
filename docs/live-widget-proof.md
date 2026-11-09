@@ -217,6 +217,42 @@ and the other way round for the right one.
 
 Not covered: a picture changing under a finger (a card has no moves), pictures of more than 60 shapes, dark theme, 2x4 and 4x4 cards.
 
+## What else a card can draw: spikes on the phone (stage 0 of the full-UI plan)
+
+Throwaway blocks in `LiveCard.ets` (restored afterwards), each rendered on a card on the home screen of this phone (API 26). **The ArkTS compiler itself
+refuses what a card may not use** (`11706006 'onAreaChange' can't support form application`), so a build that passes is a first check of `@form`;
+the picture on the phone is the second.
+
+Drawn and working:
+- `TextTimer` ticks by itself on the card, up and down (a 90 s countdown read 01:19, 01:18, 01:16, and 00:10 seventy seconds later); `TextClock`
+  moves on (2:59 to 3:00), but its `format` was not honoured (it showed H:mm). So the card is not frozen for the platform's own components: only our code and animations are.
+- `Progress` (linear and ring), `Gauge`, `Rating`, `SymbolGlyph($r('sys.symbol.ohos_wifi'))`, `Stack` (a badge over a square), `linearGradient`, `shadow`,
+  `fontWeight`, `fontFamily` (`'Noto Serif'` and `'monospace'`, the ones the themes use).
+- A `@Component` imported from its own module (`widget/CardParts.ets`), and two `Canvas` with their own contexts in one card.
+
+Not working or not possible:
+- `DataPanel` (circle, three values) drew nothing.
+- A local `onClick` that changes `@State` does not run on a card (only `postCardAction`), so a transition cannot be tried by touching the card; it needs a frame from the extension.
+- `Image('memory://...')` made the **whole card blank**, text included, in both variants tried (with `formImages` in the binding, and without): not resolved. The documented
+  pattern (the image's key carried in the data and read with `@LocalStorageProp`, plus a loaded flag) was not tried. Images stay unverified.
+
+Sizes: `onAddForm` receives the dimension in `ohos.extra.param.key.form_dimension` (2 = 2*2, 3 = 2*4, 4 = 4*4; the widget manager calls it once per
+variant it previews). With `supportDimensions` ["2*2", "2*4", "4*4"]: 2*2 is about 150 x 150 vp, **2*4 is wide (about 324 x 148 vp: four columns, two rows)**, 4*4 about 324 x 340 vp
+(measured from screenshots at 3.5 px per vp).
+
+## Styles: the theme's roles on the card
+
+The card used to flatten the catalogue's styles into three text sizes and one ink. `vera/CardStyle.ets` (pure; the extension calls it while it builds the
+frame) now carries the theme's roles to the card: a text's size by style (display 28, title 22, heading 18, metric 30, caption 12, eyebrow 10, the rest 14: the three
+sizes a widget already had are unchanged), its weight, family and letter spacing from the theme (an editorial heading is bold Noto Serif, an eyebrow is spaced and
+quiet), tone inks (muted, success, warning, danger), buttons in all four styles with the theme's radius, the divider in the theme's line colour; a column's `end`,
+`compact`, `spacious`, a row's `split`, `end`, `joined`, and panels (`surface`, `accent`: the theme's fill, padding and radius). A field that equals the card's default
+is not in the frame (the new node fields are optional), so the frame stays small: `examples/widget-styles.vera` is 2.2 KB. On the phone the card drew "TODAY" spaced and
+muted, "Plan" in bold serif, a panel with the accent fill and rounded corners, and a split row (a muted word at the left, a red one at the right).
+
+The height estimate (`widgetHeight`) uses the real sizes, wraps a long text at two lines (0.55 em a character) and counts a row's width as shared; Make widget refuses a
+widget estimated more than 14 vp over the card's 126 ("what does not fit is cut off"). The estimate was 84 to 126 vp for every example in `tools/vera-harness/examples`.
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

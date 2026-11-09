@@ -2,7 +2,7 @@ import { CATALOG, describeComponents } from './VeraUiCatalog'
 import { widgetRefinementError } from './VeraCompiler'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
 import { decodeVeraUi, UiHostEnvironment } from './VeraUi'
-import { WidgetSession, CardNode, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_NODES, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
+import { WidgetSession, CardNode, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_NODES, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, LIVE_INNER_HEIGHT, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
 
 /** The components a card draws: only these are shown to the widget writer, and only these may a widget use. */
 export const CARD_KINDS: string[] = CATALOG.filter((component): boolean => component.card).map((component): string => component.name)
@@ -70,6 +70,12 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'really changes with, which then also plays it. A card has no continuous motion: no spinning (leave spinPeriodMs at 0), ' +
     'pulsing or repeating, no sound, and at most ' + LIVE_MAX_MOTIONS.toString() + ' ui.Motion. ' +
     'Draw exactly the subject the person asked for; do not reuse a shape from these instructions. '+
+    'STYLES. A text style is drawn as the app draws it, with the theme\'s weight, font and colour: display, title, heading, body, caption ' +
+    '(small), eyebrow (a small spaced label above something), metric (a big figure), muted (quiet), success, warning, danger (toned). ' +
+    'A column\'s style: default or center (centred), end (to the right), compact or spacious (the gap between its children), surface or ' +
+    'accent (a panel with a fill, padding and rounded corners -- for the one thing to look at). A row\'s: default or center (spread ' +
+    'evenly), split (first at the left, last at the right), end, joined (touching), compact or spacious, surface or accent. Buttons: ' +
+    'primary, secondary, success, danger. Use the roles instead of one size for everything: a label, a figure, a caption. ' +
     'Limits: depth ' + LIVE_MAX_DEPTH.toString() + ' excluding root AppTheme, ' + LIVE_MAX_NODES.toString() +
     ' nodes, ' + LIVE_MAX_TEXT.toString() + ' UTF-16 characters/text, ' + LIVE_MAX_JSON.toString() +
     ' UTF-16 units/frame including state token, ' + LIVE_MAX_STEPS.toString() + ' VM steps/entry.\n' +
@@ -128,6 +134,11 @@ function glanceError(vbc2: string, saved: string): string {
     return 'The widget has too much around its picture: the card is about 150 vp tall and the picture needs at least ' +
       PICTURE_SIDE_MIN.toString() + ' of it, but the figures, texts and buttons leave ' + Math.max(0, pictureRoom(frame)).toString() +
       '. Keep one short line of text (one figure with a label of a word) or none, and no buttons beside the picture.'
+  }
+  // Taller than the card: what does not fit is cut off at the card's edge. The estimate is rough, so only what is clearly too tall is refused.
+  if (widgetHeight(frame) > LIVE_INNER_HEIGHT + 14) {
+    return 'The widget is about ' + Math.round(widgetHeight(frame)).toString() + ' vp tall and the card is ' + LIVE_INNER_HEIGHT.toString() +
+      ' inside its padding: what does not fit is cut off. Drop a line, a button or a figure, or shorten the texts (a text over two lines is cut).'
   }
   return ''
 }

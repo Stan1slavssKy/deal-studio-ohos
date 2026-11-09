@@ -84,6 +84,20 @@ export struct CardView {
     return node.style === 'bounce' ? 600 : node.style === 'shake' ? 450 : node.style === 'pop' ? 350 : 400
   }
 
+  /** How the theme dressed a node (CardStyle, set by the extension): an unset field is the card's default. */
+  private weightOf(node: CardNode): number { return node.weight !== undefined ? node.weight : 400 }
+  private familyOf(node: CardNode): string { return node.family !== undefined ? node.family : '' }
+  private spacingOf(node: CardNode): number { return node.spacing !== undefined ? node.spacing : 0 }
+  private gapOf(node: CardNode, fallback: number): number { return node.gap !== undefined ? node.gap : fallback }
+  private padOf(node: CardNode): number { return node.pad !== undefined ? node.pad : 0 }
+  private panelOf(node: CardNode): string { return node.panel !== undefined ? node.panel : '#00000000' }
+  private radiusOf(node: CardNode, fallback: number): number { return node.radius !== undefined ? node.radius : fallback }
+  private colAlign(node: CardNode): HorizontalAlign { return node.align === 'end' ? HorizontalAlign.End : HorizontalAlign.Center }
+  private rowJustify(node: CardNode): FlexAlign {
+    return node.align === 'split' ? FlexAlign.SpaceBetween : node.align === 'end' ? FlexAlign.End :
+      node.align === 'joined' ? FlexAlign.Center : FlexAlign.SpaceEvenly
+  }
+
   build() {
     Column({ space: 6 }) {
       ForEach(this.nodes, (node: CardNode) => { this.level1(node, false) }, (node: CardNode) => node.key + this.frameKey)
@@ -93,7 +107,7 @@ export struct CardView {
   @Builder
   leaf(node: CardNode) {
     if (node.kind === 'button') {
-      Button(node.text).type(ButtonType.Normal).borderRadius(10).height(40)
+      Button(node.text).type(ButtonType.Normal).borderRadius(this.radiusOf(node, 10)).height(40)
         .backgroundColor(node.fill).fontColor(node.color).fontSize(14)
         .enabled(node.enabled).onClick(() => {
           this.onTap(node.action, node.value)
@@ -128,16 +142,30 @@ export struct CardView {
           .onReady(() => { this.paintPicture(node) })
       }
     } else if (node.kind === 'divider') {
-      Divider().color('#CBD5E1')
+      Divider().color(node.color)
     } else if (node.kind === 'spacer') {
       Blank().height(4)
     } else if (node.kind === 'numbertext') {
       // A figure is never broken over two lines: beside another, it shrinks to fit its half of the card.
-      Text(node.text).maxFontSize(node.size).minFontSize(Math.min(node.size, 12)).fontColor(node.color).maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (this.familyOf(node).length > 0) {
+        Text(node.text).maxFontSize(node.size).minFontSize(Math.min(node.size, 12)).fontColor(node.color).maxLines(1)
+          .fontWeight(this.weightOf(node)).fontFamily(this.familyOf(node)).letterSpacing(this.spacingOf(node))
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      } else {
+        Text(node.text).maxFontSize(node.size).minFontSize(Math.min(node.size, 12)).fontColor(node.color).maxLines(1)
+          .fontWeight(this.weightOf(node)).letterSpacing(this.spacingOf(node))
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
     } else {
-      Text(node.text).fontSize(node.size).fontColor(node.color).maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (this.familyOf(node).length > 0) {
+        Text(node.text).fontSize(node.size).fontColor(node.color).maxLines(2)
+          .fontWeight(this.weightOf(node)).fontFamily(this.familyOf(node)).letterSpacing(this.spacingOf(node))
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      } else {
+        Text(node.text).fontSize(node.size).fontColor(node.color).maxLines(2)
+          .fontWeight(this.weightOf(node)).letterSpacing(this.spacingOf(node))
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
     }
   }
 
@@ -145,13 +173,15 @@ export struct CardView {
   @Builder
   level1(node: CardNode, inRow: boolean) {
     if (node.kind === 'row') {
-      Row({ space: 8 }) {
+      Row({ space: this.gapOf(node, 8) }) {
         ForEach(node.children, (child: CardNode) => { this.level2(child, true) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(FlexAlign.SpaceEvenly)
+      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(this.rowJustify(node))
+      .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
     } else if (node.kind === 'column') {
-      Column({ space: 6 }) {
+      Column({ space: this.gapOf(node, 6) }) {
         ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0)
+      }.width('100%').layoutWeight(inRow ? 1 : 0).alignItems(this.colAlign(node))
+      .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
     } else if (node.kind === 'motion') {
       Column({ space: 6 }) {
         ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
@@ -171,13 +201,15 @@ export struct CardView {
   @Builder
   level2(node: CardNode, inRow: boolean) {
     if (node.kind === 'row') {
-      Row({ space: 8 }) {
+      Row({ space: this.gapOf(node, 8) }) {
         ForEach(node.children, (child: CardNode) => { this.level3(child, true) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(FlexAlign.SpaceEvenly)
+      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(this.rowJustify(node))
+      .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
     } else if (node.kind === 'column') {
-      Column({ space: 6 }) {
+      Column({ space: this.gapOf(node, 6) }) {
         ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0)
+      }.width('100%').layoutWeight(inRow ? 1 : 0).alignItems(this.colAlign(node))
+      .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
     } else if (node.kind === 'motion') {
       Column({ space: 6 }) {
         ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
@@ -197,13 +229,15 @@ export struct CardView {
   @Builder
   level3(node: CardNode, inRow: boolean) {
     if (node.kind === 'row') {
-      Row({ space: 8 }) {
+      Row({ space: this.gapOf(node, 8) }) {
         ForEach(node.children, (child: CardNode) => { this.level4(child, true) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(FlexAlign.SpaceEvenly)
+      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(this.rowJustify(node))
+      .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
     } else if (node.kind === 'column') {
-      Column({ space: 6 }) {
+      Column({ space: this.gapOf(node, 6) }) {
         ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0)
+      }.width('100%').layoutWeight(inRow ? 1 : 0).alignItems(this.colAlign(node))
+      .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
     } else if (node.kind === 'motion') {
       Column({ space: 6 }) {
         ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)

@@ -27,6 +27,18 @@ export class CardNode {
   slot: number = -1
   /** Which picture (ui.Surface) this is among the widget's (0, 1, 2); -1 for a node that is not one. */
   pic: number = -1
+  /**
+   * How the theme dresses the node, set only where it differs from the card's default (an unset field is not in the JSON, so a frame stays small):
+   * a text's weight, family and letter spacing; a column's or row's alignment ('end', 'split', 'joined'), gap and padding; a panel's fill; a corner radius.
+   */
+  weight?: number
+  family?: string
+  spacing?: number
+  align?: string
+  gap?: number
+  pad?: number
+  panel?: string
+  radius?: number
   children: CardNode[] = []
 }
 

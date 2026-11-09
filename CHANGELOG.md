@@ -1,5 +1,11 @@
 # Changelog
 
+## Widget card: the theme's styles, one layout, up to three pictures and Motions
+
+- The card draws the catalogue's styles as the app does: text roles (display, title, heading, caption, eyebrow, metric, muted, success, warning, danger) with the theme's weight, font and ink, column and row alignment and density, panels (`surface`, `accent`), all four button styles, the divider in the theme's colour (`CardStyle.ets`). Sizes a widget already had are unchanged. Make widget refuses a widget clearly taller than the card.
+- `CardView.ets` is the one layout the launcher's card and the Widget tab share (it was two copies kept in step by hand); `GfxPaint.ets` holds the painter without the interpreter. A widget may have three pictures and three Motions, each touch playing the Motion its node sits under.
+- Spike results on what else a card can draw (live `TextTimer`, `Progress`, `Gauge`, `SymbolGlyph`, gradients, shadows; not `DataPanel`; `Image('memory://')` blanked the card) and the card sizes are in `docs/live-widget-proof.md`.
+
 ## Make widget: a drawing of several colours that reacts to a touch, found by a real generation
 
 - A generated panda used to come out as a one-colour blob that never moved. The prompt now says a drawing of more than one colour is a `ui.Surface`, never a `ui.Path` (the catalogue's Path text said "use it whenever the user asks to draw something"); a card's `ui.Motion` plays on every touch on its picture by itself, with no counter in the state (`touches`, and `seq` in the tap's frame, so a touch that changes nothing still plays); the picture is sized to the room the rest of the card leaves, and a widget that leaves it under 40 vp is refused with a reason.

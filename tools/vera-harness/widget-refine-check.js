@@ -225,5 +225,15 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
       'ui.Button("primary", "A", "pandaCount", 1, true), ui.Button("primary", "B", "pandaCount", 2, true)')
   assert.match(validateWidgetRefinement(panda, three, compileVeraSource(three).vbc2), /3 buttons/)
 }
+// Styles reach the model, and a widget clearly taller than the card is refused with the reason.
+{
+  assert.match(widgetRefinementPrompt(), /STYLES\. A text style is drawn as the app draws it/)
+  assert.match(widgetRefinementPrompt(), /eyebrow \(a small spaced label/)
+  const styles = fs.readFileSync(path.join(__dirname, 'examples/widget-styles.vera'), 'utf8')
+  const at = styles.indexOf('function widget(')
+  const lines = n => Array.from({length: n}, (_, i) => 'ui.Text("display", "big ' + i + '")').join(', ')
+  const tall = styles.substring(0, at) + styles.substring(at).replace('ui.Column("accent", [\n        ui.Text("caption", "3 of 5 done")\n      ])', lines(3))
+  assert.match(validateWidgetRefinement(styles, tall, compileVeraSource(tall).vbc2), /vp tall and the card is 126/)
+}
 console.log('PASS carry widget: the earlier widget and its helpers come back into a version written without them')
 }

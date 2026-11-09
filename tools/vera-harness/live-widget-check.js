@@ -229,4 +229,18 @@ assert.match(view, /node.key \+ this.frameKey/)
   two.tapSurface(f, f.token, 'touchRight', 50, 50)
   assert(texts(frame(two).nodes).includes('1'), 'one touch counted')
 }
+// The theme's roles reach the card (CardStyle): sizes, weights, families, tones, panels, alignment, and only what differs from the default is in the frame.
+{
+  const styled = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-styles.vera'), 'utf8')).vbc2, 'styles', '')
+  const f = frame(styled)
+  const [eyebrow, title, panel, row] = f.nodes[0].children
+  assert.equal(eyebrow.size, 10); assert.equal(eyebrow.spacing, 2); assert(eyebrow.weight >= 500, 'an eyebrow is not light')
+  assert.equal(title.size, 22); assert.equal(title.weight, 700); assert.equal(title.family, 'Noto Serif', 'editorial headings are serif')
+  assert.equal(panel.panel !== undefined, true); assert(panel.pad > 0 && panel.radius > 0, 'a panel has a fill, padding and a radius')
+  assert.equal(row.align, 'split'); assert.equal(row.children[1].color, '#9B2226', 'danger is the theme\'s danger ink')
+  assert.equal(row.children[0].weight, undefined, 'a body text at the default weight carries no weight')
+  assert.equal(f.nodes[0].align, undefined, 'a centred column carries no alignment')
+  assert(!JSON.stringify(f).includes('"gap"'), 'no gap in the frame when it is the default')
+  assert(JSON.stringify(f).length < 2400, 'styles stay small: ' + JSON.stringify(f).length)
+}
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

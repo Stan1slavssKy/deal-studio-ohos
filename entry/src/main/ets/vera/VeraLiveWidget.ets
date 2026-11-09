@@ -7,6 +7,7 @@ import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
 import { CardNode, LiveFrame } from '../widget/CardModel'
+import { cardTextSize, cardTextWeight, cardTextInk, cardTextFamily, cardLetterSpacing, cardGap, cardPanelPad, cardPanelFill, cardButtonFill, cardButtonInk } from './CardStyle'
 export { CardNode, LiveFrame } from '../widget/CardModel'
 
 export const LIVE_MAX_DEPTH: number = 4
@@ -29,8 +30,19 @@ export const LIVE_MAX_STEPS: number = 100000
 // UTF-16 length capped conservatively: even non-ASCII JSON remains small on the wire.
 export const LIVE_MAX_JSON: number = 8000
 
-/** About how tall a node draws, in vp: what is left of the card for a picture is what these leave. */
-function nodeHeight(node: CardNode, pictureSide: number): number {
+/** The gap a column or row puts between its children (the card's own, 6 or 8, unless the node set one). */
+function gapOf(node: CardNode, fallback: number): number { return node.gap !== undefined ? node.gap : fallback }
+function padOf(node: CardNode): number { return node.pad !== undefined ? node.pad : 0 }
+
+/** The inner width of a card, in vp: what a text wraps in. */
+export const LIVE_INNER_WIDTH: number = 126
+const LIVE_ROW_SPACE: number = 8
+
+/**
+ * About how tall a node draws, in vp, in `width` vp of room: a text of a few words is a line, a longer one wraps (at most two lines, as the card
+ * draws it; about 0.55 em a character), a row shares its width among its children. What is left of the card for a picture is what these leave.
+ */
+function nodeHeight(node: CardNode, pictureSide: number, width: number = LIVE_INNER_WIDTH): number {
   if (node.kind === 'surface') { return Math.min(pictureSide * 1.1, pictureSide * node.h / node.w) }
   if (node.kind === 'path') { return node.size }
   if (node.kind === 'button') { return 40 }
@@ -38,17 +50,30 @@ function nodeHeight(node: CardNode, pictureSide: number): number {
   if (node.kind === 'spacer') { return 4 }
   if (node.kind === 'row') {
     let tallest = 0
-    for (let child of node.children) { tallest = Math.max(tallest, nodeHeight(child, pictureSide)) }
-    return tallest
+    let share = (width - 2 * padOf(node) - LIVE_ROW_SPACE * Math.max(0, node.children.length - 1)) / Math.max(1, node.children.length)
+    for (let child of node.children) { tallest = Math.max(tallest, nodeHeight(child, pictureSide, share)) }
+    return tallest + 2 * padOf(node)
   }
-  if (node.kind === 'column' || node.kind === 'motion') { return stackHeight(node.children, pictureSide) }
-  return node.size * 1.25
+  if (node.kind === 'column' || node.kind === 'motion') {
+    return stackHeight(node.children, pictureSide, gapOf(node, LIVE_ROW_GAP), width - 2 * padOf(node)) + 2 * padOf(node)
+  }
+  // A figure is one line (it shrinks to fit); a text wraps to at most two.
+  let lines = node.kind === 'numbertext' ? 1 : Math.max(1, Math.min(2, Math.ceil(node.text.length * 0.55 * node.size / Math.max(20, width))))
+  return lines * node.size * 1.25
 }
 
-function stackHeight(nodes: CardNode[], pictureSide: number): number {
+function stackHeight(nodes: CardNode[], pictureSide: number, gap: number = LIVE_ROW_GAP, width: number = LIVE_INNER_WIDTH): number {
   let total = 0
-  for (let node of nodes) { total += nodeHeight(node, pictureSide) }
-  return total + Math.max(0, nodes.length - 1) * LIVE_ROW_GAP
+  for (let node of nodes) { total += nodeHeight(node, pictureSide, width) }
+  return total + Math.max(0, nodes.length - 1) * gap
+}
+
+/** About how tall the widget draws on the card, in vp (its picture, if it has one, at the side it was given). */
+export function widgetHeight(frame: LiveFrame): number {
+  let side = 0
+  let pictures = allPictures(frame.nodes, [])
+  if (pictures.length > 0) { side = pictures[0].size }
+  return stackHeight(frame.nodes, side)
 }
 
 function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
@@ -60,8 +85,6 @@ function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
 }
 
 /** The widest a picture may be so the pictures of a row (directly, or in a Motion) share the card's width: its inner width less the gaps. */
-const LIVE_INNER_WIDTH: number = 126
-const LIVE_ROW_SPACE: number = 8
 
 function widthLimit(nodes: CardNode[]): number {
   let limit = PICTURE_SIDE_MAX
@@ -190,11 +213,35 @@ export class WidgetSession {
       item.enabled = node.enabled
       item.color = node.kind === 'path' ? pathFill(theme, node.style) : theme.inkStrong
       item.fill = theme.surface
-      item.size = node.style === 'metric' ? 30 : node.style === 'heading' ? 18 : 14
       if (node.kind === 'path') { item.size = 64 }
+      if (node.kind === 'text' || node.kind === 'numbertext') {
+        // The theme's roles, with the card's sizes (CardStyle): the app's text styles reach the card instead of being flattened to three sizes.
+        item.size = cardTextSize(node.style)
+        item.color = cardTextInk(theme, node.style)
+        let weight = cardTextWeight(theme, node.style)
+        if (weight !== 400) { item.weight = weight }
+        let family = cardTextFamily(theme, node.style)
+        if (family.length > 0) { item.family = family }
+        let spacing = cardLetterSpacing(theme, node.style)
+        if (spacing !== 0) { item.spacing = spacing }
+      }
       if (node.kind === 'button') {
-        item.fill = node.style === 'primary' ? theme.primary : theme.secondaryFill
-        item.color = node.style === 'primary' ? theme.onPrimary : theme.secondaryInk
+        item.fill = cardButtonFill(theme, node.style)
+        item.color = cardButtonInk(theme, node.style)
+        if (theme.radiusControl !== 10) { item.radius = theme.radiusControl }
+      }
+      if (node.kind === 'divider') { item.color = theme.line }
+      if (node.kind === 'column' || node.kind === 'row') {
+        let gap = cardGap(node.kind, node.style)
+        if (gap !== (node.kind === 'row' ? 8 : 6)) { item.gap = gap }
+        // A column is centred on a card unless it says 'end'; a row is spread evenly unless it says 'split', 'end' or 'joined'.
+        if (node.style === 'end' || (node.kind === 'row' && (node.style === 'split' || node.style === 'joined'))) { item.align = node.style }
+        let panel = cardPanelFill(theme, node.style)
+        if (panel.length > 0) {
+          item.panel = panel
+          item.pad = cardPanelPad(node.style)
+          item.radius = theme.radiusControl
+        }
       }
       item.children = node.children.map((child: VeraUiNode, index: number): CardNode => project(child, depth + 1, key + '.' + index.toString(), item.slot))
       return item
