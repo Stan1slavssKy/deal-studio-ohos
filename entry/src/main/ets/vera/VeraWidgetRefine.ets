@@ -2,7 +2,7 @@ import { CATALOG, describeComponents } from './VeraUiCatalog'
 import { widgetRefinementError } from './VeraCompiler'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
 import { decodeVeraUi, UiHostEnvironment } from './VeraUi'
-import { WidgetSession, CardNode, LIVE_MAX_DEPTH, LIVE_MAX_NODES, LIVE_MAX_TEXT, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
+import { WidgetSession, CardNode, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_NODES, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
 
 /** The components a card draws: only these are shown to the widget writer, and only these may a widget use. */
 export const CARD_KINDS: string[] = CATALOG.filter((component): boolean => component.card).map((component): string => component.name)
@@ -48,6 +48,28 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'Use ONLY the card-safe constructors below in widget and its helpers; the fullscreen view keeps its full catalogue. ' +
     'AppTheme is optional and root-only; light theme only. The whole 2x2 card is the widget\'s; nothing is drawn above it. ' +
     'Prefer one Column with a summary and one Row of buttons; avoid long lists. ' +
+    'WHAT TO DRAW WITH. A drawing of the subject the person asks for -- an animal, a face, a character, a scene, a gauge, ' +
+    'anything of more than one colour -- is a ui.Surface (below), NEVER a ui.Path: a Path is ONE shape in ONE colour, and a ' +
+    'Path of several shapes comes out as one flat blob with its eyes and ears lost. Use ui.Path only for a single-colour icon or ' +
+    'symbol (up to ' + LIVE_MAX_COMMANDS.toString() + ' characters of path data, M L C Q A Z in a 100x100 box). ' +
+    'ui.Surface(style, width, height, "draw", "", "touch") draws a picture of several shapes of several colours. width and height ' +
+    'are the picture\'s own units (100 by 100 is usual); draw is a function you write, (state: the init return type): ' +
+    'gfx.Shape[], that returns its shapes back to front (gfx.circle, gfx.rect, gfx.roundRect, gfx.arc, gfx.polygon, gfx.path ...: ' +
+    'the faces of an animal are circles; give each part its own colour, "#rrggbb" or a role like "accent"); touch is a function ' +
+    '(state: the init return type, p: gfx.Pointer): the init return type that runs when the picture is touched (p.phase is ' +
+    '"down", then "up"), or "" for a picture that is only looked at. The third argument must be "": a card has no frames, the picture ' +
+    'is drawn once for each state. The card is about 150 vp tall: the picture takes what the rest leaves (it is shrunk to fit), so ' +
+    'put at most one figure or one short line beside it, with no buttons. At most ' + LIVE_MAX_SHAPES.toString() + ' shapes and ' + LIVE_MAX_SURFACES.toString() +
+    ' ui.Surface. A picture or shape that takes a touch counts as one of the two buttons. A handler the card runs must not make phone calls ' +
+    '(no sdk.call): when the app\'s own handler vibrates, plays a sound or the like, write a new handler that only changes the ' +
+    'state -- or returns it as it is. ' +
+    'MOVEMENT. A picture reacts to a touch BY ITSELF: wrap it in ui.Motion(style, 0, [the picture]) with style "' +
+    CARD_MOTIONS.join('", "') + '" (no other style plays on a card) and every touch on the picture plays the movement once, ' +
+    'in under a second -- a panda that jumps (bounce), a drum that is hit (pop), a refusal (shake) -- whether or not the handler ' +
+    'changed the state. Do NOT add a counter to the state (the state cannot grow). The second argument is 0, or a number the state ' +
+    'really changes with, which then also plays it. A card has no continuous motion: no spinning (leave spinPeriodMs at 0), ' +
+    'pulsing or repeating, no sound, and at most ' + LIVE_MAX_MOTIONS.toString() + ' ui.Motion. ' +
+    'Draw exactly the subject the person asked for; do not reuse a shape from these instructions. '+
     'Limits: depth ' + LIVE_MAX_DEPTH.toString() + ' excluding root AppTheme, ' + LIVE_MAX_NODES.toString() +
     ' nodes, ' + LIVE_MAX_TEXT.toString() + ' UTF-16 characters/text, ' + LIVE_MAX_JSON.toString() +
     ' UTF-16 units/frame including state token, ' + LIVE_MAX_STEPS.toString() + ' VM steps/entry.\n' +
@@ -88,7 +110,7 @@ function glanceError(vbc2: string, saved: string): string {
   let texts = 0
   let count = (nodes: CardNode[]): void => {
     for (let node of nodes) {
-      if (node.kind === 'button') { buttons++ } else if (node.text.length > 0) { texts++ }
+      if (node.kind === 'button' || (node.kind === 'path' && node.action.length > 0) || (node.kind === 'surface' && node.pointer.length > 0)) { buttons++ } else if (node.kind === 'path' || node.kind === 'surface') { /* a drawing, not a line of text */ } else if (node.text.length > 0) { texts++ }
       count(node.children)
     }
   }
@@ -101,7 +123,20 @@ function glanceError(vbc2: string, saved: string): string {
     return 'The widget shows ' + texts.toString() + ' texts; a widget shows at most ' + WIDGET_MAX_TEXTS.toString() +
       ' (one to three figures with short labels). No lists or history: keep what matters most, the rest stays in the app.'
   }
+  // A picture needs room: everything else on the card, counted by its height, must leave it a few dozen vp.
+  if (pictureRoom(frame) !== 0 && pictureRoom(frame) < PICTURE_SIDE_MIN) {
+    return 'The widget has too much around its picture: the card is about 150 vp tall and the picture needs at least ' +
+      PICTURE_SIDE_MIN.toString() + ' of it, but the figures, texts and buttons leave ' + Math.max(0, pictureRoom(frame)).toString() +
+      '. Keep one short line of text (one figure with a label of a word) or none, and no buttons beside the picture.'
+  }
   return ''
+}
+
+function phoneCallMessage(handler: string): string {
+  return 'The handler "' + handler + '" makes a phone call (sdk.call: a vibration, a sound, a notification...), and ' +
+    'the home-screen card is not allowed to: the tap is refused and nothing changes. Write a NEW handler with its own ' +
+    'name (not one the app has) that does only the state change -- for a hit counter, add one to the count and leave ' +
+    'out the vibration -- and give the widget that handler.'
 }
 
 /** Also used by smokeRun for any program that declares widget. Never executes phone effects. */
@@ -115,22 +150,54 @@ export function checkWidget(vbc2: string, saved: string = ''): string {
     let buttons: CardNode[] = []
     let collect = (nodes: CardNode[]): void => {
       for (let node of nodes) {
-        if (node.kind === 'button' && node.enabled && node.action.length > 0) { buttons.push(node) }
+        if ((node.kind === 'button' || node.kind === 'path') && node.enabled && node.action.length > 0) { buttons.push(node) }
         collect(node.children)
       }
     }
     collect(frame.nodes)
+    // Each picture that takes a tap, twice, in the middle: its pointer handler must run and the state must still draw.
+    let pictures: CardNode[] = []
+    let collectPictures = (nodes: CardNode[]): void => {
+      for (let node of nodes) {
+        if (node.kind === 'surface' && node.pointer.length > 0) { pictures.push(node) }
+        collectPictures(node.children)
+      }
+    }
+    collectPictures(frame.nodes)
     let refreshError = checkRefresh(vbc2, state)
     if (refreshError.length > 0) { return refreshError }
+    for (let picture of pictures) {
+      let branch = new WidgetSession(vbc2, 'validation', state)
+      for (let pass = 0; pass < 2; pass++) {
+        let current = branch.frame('project', 'App', '')
+        try {
+          branch.tapSurface(current, current.token, picture.pointer, picture.w / 2, picture.h / 2)
+        } catch (e) {
+          if (/phone action required/.test((e as Error).message)) { return phoneCallMessage(picture.pointer) }
+          throw (e as Error)
+        }
+        branch.frame('project', 'App', '')
+        let host = new UiHostEnvironment()
+        let vm = new VirtualMachine(deserializeVbc2(vbc2), host, LIVE_MAX_STEPS)
+        decodeVeraUi(vm.execute('view', [decodeRuntimeValue(JSON.parse(branch.encodedState()) as Object)]))
+      }
+    }
     for (let button of buttons) {
       let branch = new WidgetSession(vbc2, 'validation', state)
       for (let pass = 0; pass < 2; pass++) {
         let current = branch.frame('project', 'App', '')
         let available = (nodes: CardNode[]): boolean => nodes.some((node: CardNode): boolean =>
-          (node.kind === 'button' && node.enabled && node.action === button.action && node.value === button.value) || available(node.children))
+          ((node.kind === 'button' || node.kind === 'path') && node.enabled && node.action === button.action && node.value === button.value) || available(node.children))
         if (!available(current.nodes)) { break }
         // A Refresh button's live source is not fetched here: its handler is given a failure, which it must take and still draw.
-        for (let request of branch.tap(current, current.token, button.action, button.value)) {
+        let requests: SourceRequest[] = []
+        try {
+          requests = branch.tap(current, current.token, button.action, button.value)
+        } catch (e) {
+          if (/phone action required/.test((e as Error).message)) { return phoneCallMessage(button.action) }
+          throw (e as Error)
+        }
+        for (let request of requests) {
           branch.answer(request.handler, 'error: the source is not reached while checking')
         }
         branch.frame('project', 'App', '')

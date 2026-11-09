@@ -1,5 +1,25 @@
 # Changelog
 
+## Make widget: a drawing of several colours that reacts to a touch, found by a real generation
+
+- A generated panda used to come out as a one-colour blob that never moved. The prompt now says a drawing of more than one colour is a `ui.Surface`, never a `ui.Path` (the catalogue's Path text said "use it whenever the user asks to draw something"); a card's `ui.Motion` plays on every touch on its picture by itself, with no counter in the state (`touches`, and `seq` in the tap's frame, so a touch that changes nothing still plays); the picture is sized to the room the rest of the card leaves, and a widget that leaves it under 40 vp is refused with a reason.
+- Make widget now logs each attempt and what the model wrote (`VERA-WIDGET attempt N answer ...`, `served`/`failed: ...`).
+- The Widget tab draws the card at 150 vp, as measured (it was 172, which hid clipping).
+
+## A picture of several colours on the home-screen card: ui.Surface
+
+- A card can show a still picture made of `std/gfx` shapes (a panda, an animal, a gauge), which one `ui.Path` (one colour) could not. `ui.Surface` is a card kind in a static form: its draw function runs once for the state in the form extension, the shapes ride in the frame (`encodeGfxOps`), and `LiveCard` / `WidgetPreview` draw them with the app's own `paintGfx` on a `Canvas`, in the widget's theme. At most one picture of 60 shapes, no frame handler.
+- A tap on the picture goes to the program's pointer handler as a finger down and up at that point (`WidgetSession.tapSurface`, `liveFormTap`); with `ui.Motion` around it the picture jumps when touched.
+- Make widget's prompt describes it; a picture that takes a tap counts as one of the two buttons and is checked like one.
+- Host checks in `live-widget-check.js` and `widget-refine-check.js`; example `tools/vera-harness/examples/widget-panda.vera`.
+
+## A drum that moves when it is hit: ui.Motion on the home-screen card
+
+- `ui.Motion` is a card kind with the presets a card can play (pop, shake, bounce, fade), one per widget. The card frame carries `style` and `trigger`; `LiveCard` and `WidgetPreview` start the Motion in its hit pose when the trigger changes and settle it in `onAppear` (a card cannot loop: `iterations` is not allowed there and a card is frozen about two seconds after a redraw; measured on a phone, see `docs/live-widget-proof.md`).
+- The Make widget prompt describes it (a count in the state as the trigger) and says what a card cannot do; `ui.Motion` styles a card cannot play, and a second Motion, are refused with a reason for the repair loop.
+- A shape on the card (and in the Widget tab) is no longer outlined in black: `Path` is given a transparent stroke in `LiveCard` and `WidgetPreview`.
+- Host checks added to `live-widget-check.js` and `widget-refine-check.js`; example `tools/vera-harness/examples/widget-drum-motion.vera`.
+
 ## TextField input buffering and commit lifecycle
 
 This change moves `ui.TextField` from per-keystroke VM execution to field-local buffering with deferred commits. Its purpose is to keep ordinary text editing responsive while avoiding repeated VM execution, state persistence, and view reconciliation for every character.

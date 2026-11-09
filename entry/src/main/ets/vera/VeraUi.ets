@@ -527,6 +527,8 @@ export class UiHostEnvironment extends HostEnvironment {
           ['style', new VeraStringValue(argString(args, 0))],
           ['commands', new VeraStringValue(argString(args, 1))],
           ['spinPeriodMs', new VeraNumberValue(argNum(args, 2))],
+          ['action', new VeraStringValue(argString(args, 3))],
+          ['value', new VeraNumberValue(argNum(args, 4))],
         ])
       case 'TextField':
         return viewNode('field', [

@@ -71,17 +71,22 @@ export async function liveFormTap(formId: string, message: string,
   let saved = store.loadState(projectId, version.id, veraStateStamp(version.vbc2))
   try {
     let params = JSON.parse(message) as Record<string, Object>
-    if (typeof params['token'] !== 'string' || typeof params['handler'] !== 'string' || typeof params['value'] !== 'number') {
+    // A tap on a picture carries where it fell (x, y, in the picture's own units); a button's carries a number.
+    let atPoint = typeof params['x'] === 'number' && typeof params['y'] === 'number'
+    if (typeof params['token'] !== 'string' || typeof params['handler'] !== 'string' || (!atPoint && typeof params['value'] !== 'number')) {
       throw new Error('Invalid widget event')
     }
-    console.info('VERA-FORM event action=' + String(params['handler']) + ' value=' + String(params['value']))
+    console.info('VERA-FORM event action=' + String(params['handler']) + (atPoint ? ' at=' + String(params['x']) + ',' + String(params['y']) : ' value=' + String(params['value'])))
     let session = new WidgetSession(version.vbc2, version.id, saved)
-    let requests = session.tap(session.frame(projectId, project.name, project.icon), params['token'] as string,
-      params['handler'] as string, params['value'] as number)
+    let shown = session.frame(projectId, project.name, project.icon)
+    let requests = atPoint ?
+      session.tapSurface(shown, params['token'] as string, params['handler'] as string, params['x'] as number, params['y'] as number) :
+      session.tap(shown, params['token'] as string, params['handler'] as string, params['value'] as number)
     // A Refresh button: its live source is fetched and the answer handled before the card is drawn and saved.
     session = await answerSource(session, requests, saved, projectId, version.id, version.vbc2, fetchSource)
     let frame = session.frame(projectId, project.name, project.icon)
     frame.formId = formId
+    frame.seq = Date.now().toString()
     store.saveState(projectId, version.id, veraStateStamp(version.vbc2), session.encodedState())
     console.info('VERA-FORM tap ms=' + (Date.now() - start).toString() + ' bytes=' + JSON.stringify(frame).length.toString())
     return formBindingData.createFormBindingData(frame)

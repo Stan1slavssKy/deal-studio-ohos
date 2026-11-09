@@ -129,6 +129,88 @@ Native build: `./build-hap.sh --unsigned` passes with zero diagnostics on this b
 
 Independent QC and device/visual verification remain blocked: tool discovery exposes no independent task/subagent review tool. No merge-ready or full Part 2 claim is made.
 
+## Animation on the card: a drum that moves when it is hit
+
+A card can play **one short movement per redraw**; it cannot loop. Measured on this phone (API 26, the card is drawn by
+`com.ohos.formrenderservice`), with a throwaway block in `LiveCard.ets` that was removed afterwards:
+
+- A property that changes after `updateForm` (`rotate`, `scale`, `opacity`, `translate`) animates with `.animation({duration, curve: Curve.*})`, on a
+  plain node and on a `Shape/Path`; `onFinish` arrives after the duration. The platform's card rules (a duration of at most 1 s;
+  `iterations`, `delay` and `tempo` not allowed) match the `@form` marks in the SDK's `common.d.ts`: `iterations: -1` played once.
+- A node **made again** for the frame (the ForEach key carries the frame token) has nothing to animate from. The way that works:
+  create it in the hit pose when the frame carries a new trigger, and set it to rest in `onAppear`; it settles with the
+  animation. Three hits out of three: `watch`, `appear` within 5 ms, `finish` about 410 ms later.
+- Not available: `spinPeriodMs` (the app's ticker has no counterpart on a card), `LoadingProgress` (turns for about 1 s after a
+  redraw), curves from `@ohos.curves` (not `@form`), `playMode: Reverse/AlternateReverse` (settle upright whatever the state says).
+  A chain of animations driven from `onFinish` stops about two seconds after the redraw (2.35 s with 600 ms steps, 2.0 s with
+  300 ms), a time and not a count; the reason is not known.
+- Six taps 330 ms apart (the fastest `uitest` clicks) all reached the handler (8-17 ms each) and the shape was at rest at the end.
+  Faster hits, and rhythm, are not measured.
+
+How it is built: `ui.Motion(style, trigger, children)` is a card kind (`CARD_MOTIONS`: pop, shake, bounce, fade; no tumble or flip),
+**one per widget** (`LIVE_MAX_MOTIONS`; the compiler already refuses one Motion inside another, E2107). The frame carries the
+preset and the trigger (`CardNode.style`, `.trigger`). `LiveCard` and `WidgetPreview` keep `settled`, the trigger last drawn: a
+frame with another trigger starts the Motion in its pose (pop 1.25x, shake +-12 degrees alternating with the trigger, bounce 16 up,
+fade transparent) and `onAppear` sets `settled`, which animates it back (350-600 ms). The first frame only records the trigger,
+so a card never plays on opening or after the launcher restarts it. The program keeps the count in its state and passes it as the
+trigger (`examples/widget-drum-motion.vera`); the Make widget prompt says so, and says there is no continuous motion, sound or vibration.
+
+On the phone (a saved project with `examples/widget-drum-motion-app.vera`, a card bound to it): one tap on the drum, and the next
+frame shows it 1.18x its size (210 px against 178 at rest, on the way down from 1.25x) with the counter already at "1 hits"; from the
+second frame on it is at rest. Six taps about 330 ms apart all counted (1 -> 7 hits); while they ran the drum stayed enlarged (193-211 px,
+each hit starting the settle again) and 1.5 s after the last one it was at 178 px. The other three presets were played on the card too
+(shake: tilted on the first frame after the tap; bounce: displaced upwards, settling; fade: about half transparent on the first
+frame), and the Widget tab (`WidgetPreview`) plays them the same way. A `Path` on a card needs `.stroke(Color.Transparent)`: left
+with ArkUI's default stroke the drum came out outlined in thick black (found on the phone, fixed in both `LiveCard` and `WidgetPreview`).
+
+Host checks: `live-widget-check.js` (the frame, the trigger following the count, the presets, a second Motion refused),
+`widget-refine-check.js` (the prompt, `tumble` refused). Not covered by a check: the picture on a phone.
+
+## A picture on the card: ui.Surface, drawn once for the state
+
+The card is drawn by the launcher's render service from data the extension sends, so the VM cannot run there (no frame loop, no
+timers). But the card **can import the app's pure modules and use a `Canvas`**: `paintGfx` (VeraGfx), `resolveTheme` (VeraTheme) ran in
+`formrenderservice` on this phone, and a black-and-white panda drawn by the app's own painter showed in the widget picker. So the app's
+drawing path is shared; only the program's execution stays in the extension.
+
+How: `ui.Surface` is a card kind in a static form. `WidgetSession.frame` runs the program's draw function once for the state
+(`decodeGfx`), checks it (one Surface per widget, `LIVE_MAX_SHAPES` = 60 shapes, an empty frame handler: "a card has no frames"), and
+carries the shapes in the frame as a compact text (`encodeGfxOps`: only what each shape sets; the nine-shape panda is 464
+characters, the whole frame 1.8 KB of the 8 KB budget). The frame also carries the widget's theme (`preset`, `primary`). `LiveCard` and
+`WidgetPreview` draw it with `paintGfx` on a `Canvas` 80 vp wide (a card is about 150 vp square -- 524 px at 3.5 px per vp -- with 12 of padding; at 100 vp the figure
+under the picture was cut off on the phone. The Widget tab used to draw the card at 172 vp, which hid such overflow; it now draws 150). A tap on the picture sends the point (`x`, `y`, in the picture's own units) to
+`liveFormTap`, which calls the program's pointer handler with a finger "down" and then "up" there (`WidgetSession.tapSurface`); a
+picture without a pointer handler lets the tap fall through to the card, which opens the app. The picture counts as one of the two
+buttons in Make widget when it takes a tap, and the tap is checked like a button's (twice, no phone calls). `ui.Motion` around it makes it
+jump (`examples/widget-panda.vera`).
+
+Measured on the phone (a saved project with the panda, a card bound to it): a tap on the panda reached the handler at 50.3, 54 (the
+middle of 100 by 100 units), the handler and save took 6-13 ms, the picture was painted about 30 ms after the extension finished, the
+paint itself 2 ms; the panda jumped (bounce) and the counter rose by one per tap, on the card and in the Widget tab. Cost of loading: the
+card now pulls in about 87 KB of source (`VeraGfx` 27, `VeraInterpreter` 26, `VeraTheme` 24, `LiveCard` 11). `VeraGfx` brings the
+interpreter with it; a split that leaves the painter and `GfxOp` in a module of their own would drop that. Memory of the render service
+was 129 MB PSS in total (all cards, all apps): the share of this card was not isolated and a build without the imports was not measured.
+
+What a real generation showed (Make widget on a copy of the "Little panda that jump" game, request "a little panda that jumps when I touch it",
+read from the log: `VERA-WIDGET attempt N answer ...` in `AgentWidget`). The first build drew a one-colour blob and did not move:
+
+- The model drew the panda with `ui.Path`: the catalogue's own text for Path says "use it whenever the user asks to draw something", which
+  outweighed the paragraph about `ui.Surface`. A Path is one colour, so ears and eyes were lost. The prompt now says, first and in capitals, that a
+  drawing of more than one colour is a Surface and never a Path (`WHAT TO DRAW WITH`), and the catalogue's Path text says the same for a card.
+- The program had no counter of touches and a widget may not add state fields (`E2022 unknown field taps`); the next answer used `state.score` as
+  the Motion's trigger with a handler that returned the state unchanged, so nothing could ever move. A touch now plays a Motion **by itself**:
+  `LiveCard` and `WidgetPreview` count the touches on their pictures and shapes (`touches`, a plain field) and add them to the Motion's trigger, and a
+  tap's answer carries `seq` (`LiveFrame.seq`, set in `liveFormTap`) so the card draws another frame even when the state came out the same. The widget
+  writes `ui.Motion("bounce", 0, [picture])` and a touch handler that may return the state as it is.
+- The picture was 80 vp whatever else was on the card, and "Best 0" fell off the bottom. The frame now sizes it to the room the rest leaves
+  (`pictureRoom`, `nodeHeight`: a card is 126 vp inside its padding, rows 6 apart, 40 for a button, 1.25 x the size for text; 40 to 80 vp), and Make
+  widget refuses a widget that leaves under 40 ("too much around its picture"), with the reason fed back.
+
+After these, the same request gave a panda of several colours (a green disc, a platform, orange ears, cheeks) on the first attempt, the widget passed
+every check, and on the phone a touch on it makes it jump, in the Widget tab and on the card on the home screen, with the score unchanged.
+
+Not covered: a picture changing under a finger (a card has no moves), pictures of more than 60 shapes, dark theme, 2x4 and 4x4 cards.
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

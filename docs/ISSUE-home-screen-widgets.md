@@ -77,7 +77,7 @@ Card UI is rendered by the launcher, not in our process. Only `@form` components
    - `VeraFormAbility` loads the project's latest version (`vbc2`) and its state (`store.loadState(projectId, versionId, stamp)`). Move `VeraPreview.stamp()` into a shared helper so both sides compute the same stamp.
    - Construct `VirtualMachine(deserializeVbc2(vbc2), new UiHostEnvironment())` with `effectsAllowed = false`, run `widget(state)`, then `decodeVeraUi`.
    - Serialise the tree to plain JSON for `formBindingData`: kind, style, text, value, action, eventValue, children. Cap the depth (e.g. 4) and node count (e.g. 40), and refuse trees beyond them with a clear log line.
-   - Resolve theme colours in the extension (`VeraTheme.ets`) and send them in the binding. Don't rely on the card importing app modules.
+   - Resolve theme colours in the extension (`VeraTheme.ets`) and send them in the binding. (The card can in fact import the app's pure modules -- `VeraGfx`, `VeraTheme` -- and draw with them on a `Canvas`; see `docs/live-widget-proof.md`, "A picture on the card". The VM still cannot run there.)
 4. **Generic card page** `widget/pages/LiveCard.ets`: draw the serialised tree with nested `ForEach`, one level per depth up to the cap (cards may not support recursive `@Builder`; check, and use recursion if they do).
 5. **Taps.**
    - Buttons send `postCardAction(this, { action: 'message', params: { action, value } })`.
@@ -109,4 +109,4 @@ Card UI is rendered by the launcher, not in our process. Only `@form` components
 - No `hdc uninstall`; in-place update verified.
 
 ### Out of scope
-Animation and tickers in the card, text input in the card, running phone actions from the card, network images, more than one project per widget.
+Tickers and continuous animation in the card (a one-shot `ui.Motion` played by a tap is supported: see `docs/live-widget-proof.md`), text input in the card, running phone actions from the card, network images, more than one project per widget.

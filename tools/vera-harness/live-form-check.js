@@ -117,6 +117,7 @@ assert(button, 'the widget has its Refresh button')
 const tapped = await service.liveFormTap('form-s1', JSON.stringify({handler: 'refresh', token: shown.token, value: 0}),
   async () => 'ok\n2470.1\n\n\nsource\tiss.moex.com\thttps://iss.moex.com/x\nasof\t15:00:00')
 assert(JSON.stringify(tapped.nodes).includes('2470.1'), 'a tap on Refresh draws the figure fetched')
+assert(tapped.seq.length > 0 && shown.seq === '', 'a tap\'s answer is another frame (seq) even when the state came out the same')
 assert(store.loadState(live.id,liveVersion.id,veraStateStamp(liveVersion.vbc2)).includes('2470.1'))
 // The app saves while the card's fetch is out: the app's state is kept and the answer handed to it, not overwritten by the
 // card's copy loaded before the fetch.

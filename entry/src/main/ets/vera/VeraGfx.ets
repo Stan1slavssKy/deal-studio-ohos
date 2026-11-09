@@ -394,6 +394,66 @@ export function decodeGfx(value: RuntimeValue): GfxOp[] {
   return ops
 }
 
+function packGfxOp(o: GfxOp): Object {
+  let r: Record<string, Object> = {}
+  r['k'] = o.kind
+  if (o.x !== 0) { r['x'] = o.x }
+  if (o.y !== 0) { r['y'] = o.y }
+  if (o.w !== 0) { r['w'] = o.w }
+  if (o.h !== 0) { r['h'] = o.h }
+  if (o.r !== 0) { r['r'] = o.r }
+  if (o.start !== 0) { r['a'] = o.start }
+  if (o.sweep !== 0) { r['s'] = o.sweep }
+  if (o.lineWidth !== 0) { r['l'] = o.lineWidth }
+  if (o.size !== 0) { r['z'] = o.size }
+  if (o.color.length > 0) { r['c'] = o.color }
+  if (o.text.length > 0) { r['t'] = o.text }
+  if (o.align !== 'left') { r['n'] = o.align }
+  if (o.bold) { r['b'] = true }
+  if (o.points.length > 0) { r['p'] = o.points }
+  if (o.children.length > 0) { r['o'] = o.children.map((c: GfxOp): Object => packGfxOp(c)) }
+  return r
+}
+
+function unpackGfxOp(item: Object): GfxOp {
+  let r = item as Record<string, Object>
+  let o = new GfxOp()
+  o.kind = typeof r['k'] === 'string' ? r['k'] as string : ''
+  o.x = packedNumber(r, 'x'); o.y = packedNumber(r, 'y'); o.w = packedNumber(r, 'w'); o.h = packedNumber(r, 'h')
+  o.r = packedNumber(r, 'r'); o.start = packedNumber(r, 'a'); o.sweep = packedNumber(r, 's')
+  o.lineWidth = packedNumber(r, 'l'); o.size = packedNumber(r, 'z')
+  o.color = typeof r['c'] === 'string' ? r['c'] as string : ''
+  o.text = typeof r['t'] === 'string' ? r['t'] as string : ''
+  o.align = typeof r['n'] === 'string' ? r['n'] as string : 'left'
+  o.bold = r['b'] === true
+  if (Array.isArray(r['p'])) {
+    o.points = (r['p'] as Object[]).map((v: Object): number => typeof v === 'number' ? v as number : 0)
+  }
+  if (Array.isArray(r['o'])) {
+    o.children = (r['o'] as Object[]).map((c: Object): GfxOp => unpackGfxOp(c))
+  }
+  return o
+}
+
+function packedNumber(r: Record<string, Object>, key: string): number {
+  return typeof r[key] === 'number' ? r[key] as number : 0
+}
+
+/** The shapes a card carries, in the binding: only what each one sets, so a picture of a dozen shapes stays a few hundred characters. */
+export function encodeGfxOps(ops: GfxOp[]): string {
+  return JSON.stringify(ops.map((o: GfxOp): Object => packGfxOp(o)))
+}
+
+/** What encodeGfxOps wrote, back to shapes paintGfx can draw. A text that is not that gives no shapes. */
+export function decodeGfxOps(text: string): GfxOp[] {
+  try {
+    let items = JSON.parse(text) as Object[]
+    return Array.isArray(items) ? items.map((item: Object): GfxOp => unpackGfxOp(item)) : []
+  } catch (_e) {
+    return []
+  }
+}
+
 /**
  * How a surface of w x h units sits in a box of boxW x boxH vp: as large as fits whole, centred. The program's
  * units never change with the phone, so a ball at 50, 50 is at the same place on every screen.

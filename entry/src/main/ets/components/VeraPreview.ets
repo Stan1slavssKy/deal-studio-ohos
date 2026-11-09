@@ -4741,6 +4741,10 @@ export struct VeraPreview {
       .height(PATH_BAND_HEIGHT)
       .alignItems(HorizontalAlign.Center)
       .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        // A shape given an action is tappable like a button (the home-screen widget's drum).
+        if (node.action.length > 0 && node.enabled) { this.handleAction(node.action, node.eventValue) }
+      })
     } else if (node.kind === 'image') {
       // std/ui has declared Image since the first version, but there was no
       // branch here, so every generated program that used one painted nothing

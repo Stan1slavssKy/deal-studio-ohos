@@ -2,13 +2,27 @@ import { VirtualMachine, deserializeVbc2, encodeRuntimeValue, decodeRuntimeValue
   VeraNumberValue, VeraStringValue } from './VeraInterpreter'
 import { UiHostEnvironment, VeraUiNode, decodeVeraUi, formatVeraNumber } from './VeraUi'
 import { CATALOG } from './VeraUiCatalog'
-import { resolveTheme } from './VeraTheme'
+import { resolveTheme, pathFill } from './VeraTheme'
 import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
+import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
 
 export const LIVE_MAX_DEPTH: number = 4
 export const LIVE_MAX_NODES: number = 40
 export const LIVE_MAX_TEXT: number = 256
+// A shape's path data (a drum with its jingles is about 300); the whole frame is still held to LIVE_MAX_JSON.
+export const LIVE_MAX_COMMANDS: number = 600
+/** The Motion presets a card plays: each is one short settle from a hit pose (tumble and flip need 3D, which a card does not have). */
+export const CARD_MOTIONS: string[] = ['pop', 'shake', 'bounce', 'fade']
+export const LIVE_MAX_MOTIONS: number = 1
+/** A picture on a card (ui.Surface drawn once for the frame): one, of a few dozen shapes; the frame's own size budget counts the rest. */
+export const LIVE_MAX_SURFACES: number = 1
+export const LIVE_MAX_SHAPES: number = 60
+/** The room a picture is sized to: a card is about 150 vp square (524 px at 3.5 px per vp) with 12 of padding, and 6 between its rows. */
+export const LIVE_INNER_HEIGHT: number = 126
+export const LIVE_ROW_GAP: number = 6
+export const PICTURE_SIDE_MIN: number = 40
+export const PICTURE_SIDE_MAX: number = 80
 export const LIVE_MAX_STEPS: number = 100000
 // UTF-16 length capped conservatively: even non-ASCII JSON remains small on the wire.
 export const LIVE_MAX_JSON: number = 8000
@@ -18,6 +32,15 @@ export class CardNode {
   key: string = ''
   kind: string = ''
   text: string = ''
+  commands: string = ''
+  /** ui.Motion on a card: the preset (CARD_MOTIONS) and the number whose change plays it. */
+  style: string = ''
+  trigger: number = 0
+  /** ui.Surface: its shapes (encodeGfxOps), its own width and height, and the handler a tap on it runs. */
+  ops: string = ''
+  w: number = 0
+  h: number = 0
+  pointer: string = ''
   action: string = ''
   value: number = 0
   enabled: boolean = true
@@ -27,6 +50,47 @@ export class CardNode {
   children: CardNode[] = []
 }
 
+/** About how tall a node draws, in vp: what is left of the card for a picture is what these leave. */
+function nodeHeight(node: CardNode, pictureSide: number): number {
+  if (node.kind === 'surface') { return Math.min(pictureSide * 1.1, pictureSide * node.h / node.w) }
+  if (node.kind === 'path') { return node.size }
+  if (node.kind === 'button') { return 40 }
+  if (node.kind === 'divider') { return 1 }
+  if (node.kind === 'spacer') { return 4 }
+  if (node.kind === 'row') {
+    let tallest = 0
+    for (let child of node.children) { tallest = Math.max(tallest, nodeHeight(child, pictureSide)) }
+    return tallest
+  }
+  if (node.kind === 'column' || node.kind === 'motion') { return stackHeight(node.children, pictureSide) }
+  return node.size * 1.25
+}
+
+function stackHeight(nodes: CardNode[], pictureSide: number): number {
+  let total = 0
+  for (let node of nodes) { total += nodeHeight(node, pictureSide) }
+  return total + Math.max(0, nodes.length - 1) * LIVE_ROW_GAP
+}
+
+function findPicture(nodes: CardNode[]): CardNode | null {
+  for (let node of nodes) {
+    if (node.kind === 'surface') { return node }
+    let inside = findPicture(node.children)
+    if (inside !== null) { return inside }
+  }
+  return null
+}
+
+/**
+ * The side a picture is drawn at, in vp: what is left of the card when everything else is counted (its own row included),
+ * at most PICTURE_SIDE_MAX. Below PICTURE_SIDE_MIN there is no room: the widget has too much else on it. 0 for none.
+ */
+export function pictureRoom(frame: LiveFrame): number {
+  let picture = findPicture(frame.nodes)
+  if (picture === null) { return 0 }
+  return Math.floor(LIVE_INNER_HEIGHT - stackHeight(frame.nodes, 0))
+}
+
 export class LiveFrame {
   formId: string = ''
   projectId: string = ''
@@ -34,9 +98,14 @@ export class LiveFrame {
   icon: string = '📱'
   versionId: string = ''
   token: string = ''
+  /** Set by a tap's answer: another frame even when the state came out the same, so the card draws it again (a touch that changes nothing still plays). */
+  seq: string = ''
   status: string = ''
   live: boolean = false
   background: string = '#F8FAFC'
+  /** The theme the widget named, for a picture whose shapes are coloured by role (ink, accent...). */
+  preset: string = 'clean'
+  primary: string = ''
   nodes: CardNode[] = []
 }
 
@@ -82,7 +151,11 @@ export class WidgetSession {
     let theme = resolveTheme(root.kind === 'apptheme' ? root.style : 'clean',
       root.kind === 'apptheme' ? root.value : '', false)
     frame.background = theme.background
+    frame.preset = root.kind === 'apptheme' ? root.style : 'clean'
+    frame.primary = root.kind === 'apptheme' ? root.value : ''
     let count = 0
+    let motions = 0
+    let surfaces = 0
     let project = (node: VeraUiNode, depth: number, key: string): CardNode => {
       count += 1
       if (count > LIVE_MAX_NODES) { throw new Error('widget exceeds 40 nodes') }
@@ -95,12 +168,46 @@ export class WidgetSession {
       item.kind = node.kind
       item.text = node.kind === 'numbertext' ? node.prefix + formatVeraNumber(node.numberValue, node.decimals, node.minimumDigits) + node.suffix : node.text
       if (item.text.length > LIVE_MAX_TEXT) { throw new Error('widget text exceeds 256 characters') }
+      if (node.kind === 'path') {
+        if (node.commands.length > LIVE_MAX_COMMANDS) { throw new Error('widget shape exceeds ' + LIVE_MAX_COMMANDS.toString() + ' characters') }
+        item.commands = node.commands
+      }
+      if (node.kind === 'motion') {
+        motions += 1
+        if (motions > LIVE_MAX_MOTIONS) { throw new Error('a widget has at most ' + LIVE_MAX_MOTIONS.toString() + ' ui.Motion') }
+        if (CARD_MOTIONS.indexOf(node.style) < 0) {
+          throw new Error('ui.Motion style "' + node.style + '" does not play on a card: use ' + CARD_MOTIONS.join(', '))
+        }
+        if (!Number.isFinite(node.numberValue)) { throw new Error('ui.Motion trigger must be a number') }
+        item.style = node.style
+        item.trigger = node.numberValue
+      }
+      if (node.kind === 'surface') {
+        surfaces += 1
+        if (surfaces > LIVE_MAX_SURFACES) { throw new Error('a widget has at most ' + LIVE_MAX_SURFACES.toString() + ' ui.Surface') }
+        if (node.action.length > 0) {
+          throw new Error('a card has no frames: leave the frame handler of ui.Surface empty (""), the picture is drawn once for each state')
+        }
+        if (node.label.length === 0) { throw new Error('ui.Surface needs the name of its draw function') }
+        if (!(node.minimum > 0) || !(node.maximum > 0)) { throw new Error('ui.Surface width and height must be above 0') }
+        let ops = decodeGfx(this.vm.execute(node.label, [this.state]))
+        let shapes = 0
+        for (let o of ops) { shapes += o.count }
+        if (shapes > LIVE_MAX_SHAPES) {
+          throw new Error('a card picture has at most ' + LIVE_MAX_SHAPES.toString() + ' shapes; this one has ' + shapes.toString())
+        }
+        item.ops = encodeGfxOps(ops)
+        item.w = node.minimum
+        item.h = node.maximum
+        item.pointer = node.value
+      }
       item.action = node.action
       item.value = node.eventValue
       item.enabled = node.enabled
-      item.color = theme.inkStrong
+      item.color = node.kind === 'path' ? pathFill(theme, node.style) : theme.inkStrong
       item.fill = theme.surface
       item.size = node.style === 'metric' ? 30 : node.style === 'heading' ? 18 : 14
+      if (node.kind === 'path') { item.size = 64 }
       if (node.kind === 'button') {
         item.fill = node.style === 'primary' ? theme.primary : theme.secondaryFill
         item.color = node.style === 'primary' ? theme.onPrimary : theme.secondaryInk
@@ -111,6 +218,8 @@ export class WidgetSession {
     // The theme wrapper consumes no layout level but is still validated and counted.
     let tree = project(root, root.kind === 'apptheme' ? 0 : 1, '0')
     frame.nodes = root.kind === 'apptheme' ? tree.children : [tree]
+    let picture = findPicture(frame.nodes)
+    if (picture !== null) { picture.size = Math.max(PICTURE_SIDE_MIN, Math.min(PICTURE_SIDE_MAX, pictureRoom(frame))) }
     // Rejects taps from an older frame or state. A digest, not the state itself: the token is in the card's data, which has
     // a size budget, and in every key of its layout, so it must not grow with the app's data.
     frame.token = this.versionId + ':' + veraStateStamp(this.bytecode) + ':' + stateDigest(this.encodedState())
@@ -161,7 +270,7 @@ export class WidgetSession {
   tap(frame: LiveFrame, token: string, action: string, value: number): SourceRequest[] {
     if (!frame.live || token !== frame.token) { throw new Error('Widget changed; tap again') }
     let allowed = (nodes: CardNode[]): boolean => nodes.some((node: CardNode): boolean =>
-      (node.kind === 'button' && node.enabled && node.action.length > 0 && node.action === action && node.value === value) || allowed(node.children))
+      ((node.kind === 'button' || node.kind === 'path') && node.enabled && node.action.length > 0 && node.action === action && node.value === value) || allowed(node.children))
     if (!Number.isFinite(value) || !allowed(frame.nodes)) { throw new Error('Action is not available on this widget') }
     this.host.effectsAllowed = true
     this.host.pendingEffects = []
@@ -169,6 +278,29 @@ export class WidgetSession {
       let next = this.vm.execute(action, [this.state, new VeraNumberValue(value)])
       let requests = this.sourceRequests('Open app to continue: phone action required')
       this.state = next
+      return requests
+    } finally {
+      this.host.effectsAllowed = false
+      this.host.pendingEffects = []
+    }
+  }
+
+  /**
+   * A tap on the picture: the handler the program named for pointers, told the finger went down and came up at x, y (in the
+   * picture's own units), as the app's surface tells it. One state change, made together; a card has no moves.
+   */
+  tapSurface(frame: LiveFrame, token: string, handler: string, x: number, y: number): SourceRequest[] {
+    if (!frame.live || token !== frame.token) { throw new Error('Widget changed; tap again') }
+    let found = (nodes: CardNode[]): boolean => nodes.some((node: CardNode): boolean =>
+      (node.kind === 'surface' && node.pointer.length > 0 && node.pointer === handler) || found(node.children))
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !found(frame.nodes)) { throw new Error('Action is not available on this widget') }
+    this.host.effectsAllowed = true
+    this.host.pendingEffects = []
+    try {
+      let down = this.vm.execute(handler, [this.state, pointerValue('down', 0, x, y)])
+      let up = this.vm.execute(handler, [down, pointerValue('up', 0, x, y)])
+      let requests = this.sourceRequests('Open app to continue: phone action required')
+      this.state = up
       return requests
     } finally {
       this.host.effectsAllowed = false
@@ -185,4 +317,21 @@ export class WidgetSession {
     }
     return requests
   }
+}
+
+/**
+ * Whether two programs' widgets draw the same card over the same data: what is on it, its colours and sizes, not the
+ * frame's token. A widget that cannot be drawn is not the same as one that can.
+ */
+export function sameCard(before: string, after: string, seed: string): boolean {
+  let draw = (vbc2: string): string => {
+    try {
+      let frame = new WidgetSession(vbc2, 'compare', seed).frame('', '', '')
+      return frame.live ? JSON.stringify(frame.nodes) + frame.background : ''
+    } catch (_e) {
+      return ''
+    }
+  }
+  let a = draw(before)
+  return a.length > 0 && a === draw(after)
 }

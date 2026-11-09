@@ -88,4 +88,106 @@ assert.match(card, /node.key \+ this.token/)
   assert.notEqual(after.token, before.token)
   assert.throws(() => big.tap(after, before.token, 'add', 1), /changed/)
 }
+// A tappable shape: a drum on the card. Its path is carried to the card, a tap on it runs the handler, a plain one is refused.
+{
+  const drumSource = fs.readFileSync(path.join(__dirname, 'examples/widget-drum.vera'), 'utf8')
+  const drum = new WidgetSession(compileVeraSource(drumSource).vbc2, 'drum', '')
+  const f = frame(drum)
+  const shape = f.nodes[0].children[0]
+  assert.equal(shape.kind, 'path')
+  assert(shape.commands.startsWith('M50 12'), 'path data reaches the card')
+  assert.equal(shape.action, 'hit')
+  assert(JSON.stringify(f).length < 2000, 'a drum is small: ' + JSON.stringify(f).length)
+  drum.tap(f, f.token, 'hit', 1)
+  assert(texts(frame(drum).nodes).includes('1 hits'))
+  assert.throws(() => drum.tap(frame(drum), frame(drum).token, 'hit', 5), /not available/)
+  const still = compileVeraSource(drumSource.replace('0, "hit", 1)', '0)')).vbc2
+  const plain = new WidgetSession(still, 'plain', '')
+  assert.equal(frame(plain).nodes[0].children[0].action, '')
+  assert.throws(() => plain.tap(frame(plain), frame(plain).token, 'hit', 1), /not available/)
+  const long = drumSource.replace('M50 12', 'M50 12 ' + 'L1 1 '.repeat(130))
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(long).vbc2, 'long', '')), /shape exceeds/)
+}
+// A Motion on the card: a drum that jumps when it is hit. The frame carries the preset and the trigger, the trigger moves with
+// the count, a style a card cannot play, a second Motion and a Motion that is not a number are refused.
+{
+  const motionSource = fs.readFileSync(path.join(__dirname, 'examples/widget-drum-motion.vera'), 'utf8')
+  const drum = new WidgetSession(compileVeraSource(motionSource).vbc2, 'drum-motion', '')
+  const f = frame(drum)
+  const motion = f.nodes[0].children[0]
+  assert.equal(motion.kind, 'motion')
+  assert.equal(motion.style, 'pop')
+  assert.equal(motion.trigger, 0)
+  assert.equal(motion.children[0].kind, 'path')
+  assert.equal(motion.children[0].action, 'hit')
+  drum.tap(f, f.token, 'hit', 1)
+  const g = frame(drum)
+  assert.equal(g.nodes[0].children[0].trigger, 1, 'the trigger follows the count')
+  assert.notEqual(g.token, f.token)
+  assert(JSON.stringify(g).length < 2000, 'a Motion drum is small: ' + JSON.stringify(g).length)
+  for (const style of ['tumble', 'flip']) {
+    const bad = motionSource.replace('"pop"', '"' + style + '"')
+    assert.throws(() => frame(new WidgetSession(compileVeraSource(bad).vbc2, 'bad', '')), /does not play on a card/)
+  }
+  for (const style of ['shake', 'bounce', 'fade']) {
+    const ok = motionSource.replace('"pop"', '"' + style + '"')
+    assert.equal(frame(new WidgetSession(compileVeraSource(ok).vbc2, 'ok', '')).nodes[0].children[0].style, style)
+  }
+  const twice = motionSource.replace('ui.NumberText("metric", state.hits, "", " hits", 1)',
+    'ui.Motion("fade", state.hits, [ui.NumberText("metric", state.hits, "", " hits", 1)])')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(twice).vbc2, 'twice', '')), /at most 1 ui\.Motion/)
+  const nested = motionSource.replace('ui.Path(', 'ui.Motion("fade", 0, [ui.Path(').replace(', 0, "hit", 1)', ', 0, "hit", 1)])')
+  assert.throws(() => compileVeraSource(nested), /E2107/, 'the compiler refuses a Motion inside a Motion')
+}
+// A picture on the card: ui.Surface drawn once for the state, its shapes carried in the frame (a few hundred characters), a tap on it
+// calling the pointer handler with the finger down and up at that point. No frame loop, one picture, a few dozen shapes.
+{
+  const { encodeGfxOps, decodeGfxOps, decodeGfx } = loadVera('VeraGfx')
+  const pandaSource = fs.readFileSync(path.join(__dirname, 'examples/widget-panda.vera'), 'utf8')
+  const panda = new WidgetSession(compileVeraSource(pandaSource).vbc2, 'panda', '')
+  const f = frame(panda)
+  const motion = f.nodes[0].children[0]
+  const picture = motion.children[0]
+  assert.equal(picture.kind, 'surface')
+  assert.equal(picture.w, 100)
+  assert.equal(picture.h, 100)
+  assert.equal(picture.pointer, 'pandaTouch')
+  assert.equal(picture.size, 80, 'one figure under it leaves room for the full picture')
+  assert.equal(f.preset, 'playful')
+  const shapes = decodeGfxOps(picture.ops)
+  assert.equal(shapes.length, 9, 'the nine shapes the program drew')
+  assert.equal(shapes[2].kind, 'circle'); assert.equal(shapes[2].r, 36); assert.equal(shapes[2].color, '#FFFFFF')
+  assert.equal(shapes[8].kind, 'arc'); assert.equal(shapes[8].start, 110); assert.equal(shapes[8].sweep, 140)
+  assert.equal(encodeGfxOps(shapes), picture.ops, 'what is carried is what was drawn')
+  assert(JSON.stringify(f).length < 2500, 'a panda is small: ' + JSON.stringify(f).length)
+  assert.deepEqual(decodeGfxOps('not json'), [])
+  panda.tapSurface(f, f.token, 'pandaTouch', 50, 50)
+  const g = frame(panda)
+  assert.equal(g.nodes[0].children[0].trigger, 1, 'one tap is one hop: down counts, up does not')
+  assert(texts(g.nodes).includes('1 hops'))
+  assert.throws(() => panda.tapSurface(frame(panda), f.token, 'pandaTouch', 50, 50), /changed/, 'a tap from an older frame')
+  assert.throws(() => panda.tapSurface(g, g.token, 'init', 50, 50), /not available/, 'only the picture\'s own handler')
+  assert.throws(() => panda.tapSurface(g, g.token, 'pandaTouch', NaN, 5), /not available/)
+  assert.throws(() => panda.tap(g, g.token, 'pandaTouch', 0), /not available/, 'a number tap is not a picture tap')
+  // No frame loop on a card, one picture, a few dozen shapes.
+  const looping = (pandaSource + 'function pandaTick(state: AppState, elapsedMs: number): AppState { return state; }')
+    .replace('"panda", "", "pandaTouch"', '"panda", "pandaTick", "pandaTouch"')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(looping).vbc2, 'loop', '')), /no frames/)
+  const cut = pandaSource.indexOf('function widget(')
+  const two = pandaSource.substring(0, cut) + pandaSource.substring(cut).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
+    'ui.Surface("default", 100, 100, "panda", "", "")')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(two).vbc2, 'two', '')), /at most 1 ui\.Surface/)
+  const many = pandaSource.replace('  return shapes;', '  shapes.push(gfx.circle(1, 50, 2, "#1F1F1F"));\n'.repeat(60) + '  return shapes;')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(many).vbc2, 'many', '')), /at most 60 shapes/)
+  // The picture takes the room the rest leaves: more text under it, a smaller picture (never under 40).
+  const cutAt = pandaSource.indexOf('function widget(')
+  const crowded = pandaSource.substring(0, cutAt) + pandaSource.substring(cutAt).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
+    'ui.NumberText("metric", state.hops, "", " hops", 1), ui.Text("caption", "best"), ui.Text("caption", "more")')
+  const smaller = frame(new WidgetSession(compileVeraSource(crowded).vbc2, 'crowded', '')).nodes[0].children[0].children[0]
+  assert(smaller.size < 80 && smaller.size >= 40, 'a crowded card shrinks the picture: ' + smaller.size)
+  const still = compileVeraSource(pandaSource.replace('"panda", "", "pandaTouch"', '"panda", "", ""')).vbc2
+  const looked = new WidgetSession(still, 'still', '')
+  assert.equal(frame(looked).nodes[0].children[0].children[0].pointer, '')
+  assert.throws(() => looked.tapSurface(frame(looked), frame(looked).token, '', 5, 5), /not available/)
+}
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

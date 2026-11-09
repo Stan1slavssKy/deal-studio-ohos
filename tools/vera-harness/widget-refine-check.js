@@ -3,7 +3,7 @@ const fs = require('node:fs'), path = require('node:path')
 const {loadVera} = require('./source-loader')
 const {compileVeraSource, widgetRefinementError, spliceWidget} = loadVera('VeraCompiler')
 const {smokeRun} = loadVera('VeraSmoke')
-const {widgetRefinementPrompt, validateWidgetRefinement, widgetRepairNote, checkWidget} = loadVera('VeraWidgetRefine')
+const {widgetRefinementPrompt, validateWidgetRefinement, widgetRepairNote, checkWidget, CARD_KINDS} = loadVera('VeraWidgetRefine')
 const {WidgetSession} = loadVera('VeraLiveWidget')
 const source = fs.readFileSync(path.join(__dirname,'examples/widget-counter.vera'),'utf8')
 // Standalone fullscreen base, not a view delegating to widget.
@@ -157,3 +157,73 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   assert.match(made.source, /^import \* as time from "std\/time"$/m)
   console.log('PASS widget answers: an import with a semicolon is taken, a parse error is passed on as it is')
 })().catch(e => { console.error(e); process.exit(1) })
+
+// A new version written without the widget gets the earlier one's back, with the helper it uses; one with its own keeps it.
+{
+  const {carryWidget} = loadVera('VeraCompiler')
+  const previous = 'import * as time from "std/time"\n' + candidate
+  // The new version drops both widget and compact: view draws its own text instead.
+  const next = base.replace(/function compact\([\s\S]*?\n\}\n/, '').replace('return compact(state);', 'return ui.AppTheme("clean", "", [ui.Column("default", [ui.Text("body", "v2")])]);')
+  assert.doesNotMatch(next, /function compact|function widget/)
+  const carried = carryWidget(next, previous)
+  assert.match(carried, /function widget\(state: AppState\)/)
+  assert.match(carried, /function compact\(state: AppState\)/)
+  // time is not used by the widget: not brought back.
+  assert.doesNotMatch(carried, /std\/time/)
+  assert.match(carried, /ui\.Text\("body", "v2"\)/)
+  assert.equal(smokeRun(compileVeraSource(carried)), '')
+  assert.equal(carryWidget(candidate, previous), candidate)
+  assert.equal(carryWidget(next, base.replace('function compact(', 'function other(')), next)
+  // A drum on the card whose handler vibrates: the tap would be refused on the card, so Make widget sends it back (found on a phone).
+{
+  const drum = fs.readFileSync(path.join(__dirname, 'examples/widget-drum.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(drum).vbc2), '')
+  const buzzing = 'import * as sdk from "std/sdk"\n' + drum.replace('return { hits: state.hits + value };',
+    'sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "60"], "buzzed"); return { hits: state.hits + 1 };') +
+    '\nfunction buzzed(state: AppState, value: string): AppState { return state; }'
+  const message = checkWidget(compileVeraSource(buzzing).vbc2)
+  assert.match(message, /makes a phone call/)
+  assert.match(message, /NEW handler/)
+  assert.match(widgetRefinementPrompt(), /must not make phone calls/)
+}
+// A drum that jumps when it is hit: ui.Motion is a card kind with the presets a card can play, and the prompt says so.
+{
+  const motion = fs.readFileSync(path.join(__dirname, 'examples/widget-drum-motion.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(motion).vbc2), '')
+  assert.match(widgetRefinementPrompt(), /ui\.Motion\(style, 0, \[the picture\]\)/)
+  assert.match(widgetRefinementPrompt(), /NEVER a ui\.Path/, 'a drawing of several colours is a Surface, not a Path')
+  assert.match(widgetRefinementPrompt(), /reacts to a touch BY ITSELF/)
+  assert.match(widgetRefinementPrompt(), /Do NOT add a counter to the state/)
+  assert.match(widgetRefinementPrompt(), /"pop", "shake", "bounce", "fade"/)
+  assert.match(widgetRefinementPrompt(), /no spinning/)
+  assert.match(checkWidget(compileVeraSource(motion.replace('"pop"', '"tumble"')).vbc2), /does not play on a card/)
+}
+// A picture on the card (ui.Surface): described to the model, its tap held to the same rules as a button's.
+{
+  const panda = fs.readFileSync(path.join(__dirname, 'examples/widget-panda.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(panda).vbc2), '')
+  assert.match(widgetRefinementPrompt(), /ui\.Surface\(style, width, height, "draw", "", "touch"\)/)
+  assert.match(widgetRefinementPrompt(), /gfx\.Shape\[\]/)
+  assert.match(widgetRefinementPrompt(), /a card has no frames/)
+  assert(CARD_KINDS.includes('Surface'), 'Surface is a card kind')
+  assert.match(widgetRefinementPrompt(), /std\/gfx \(always available as gfx/, 'the gfx functions come with it')
+  const buzzing = panda.replace('if (p.phase === "down") { return { hops: state.hops + 1 }; }',
+    'sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "60"], "buzzed"); if (p.phase === "down") { return { hops: state.hops + 1 }; }')
+    .replace('import * as gfx from "std/gfx"', 'import * as gfx from "std/gfx"\nimport * as sdk from "std/sdk"') +
+    '\nfunction buzzed(state: AppState, value: string): AppState { return state; }'
+  const message = checkWidget(compileVeraSource(buzzing).vbc2)
+  assert.match(message, /makes a phone call/)
+  // Too much around the picture: no room for it on the card.
+  const cut = panda.indexOf('function widget(')
+  const tall = panda.substring(0, cut) + panda.substring(cut).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
+    'ui.NumberText("metric", state.hops, "", " hops", 1), ui.Text("caption", "a"), ui.Text("caption", "b"), ui.Text("caption", "c")')
+  assert.match(validateWidgetRefinement(panda, tall, compileVeraSource(tall).vbc2), /too much around its picture/)
+  // The picture's tap is one of the two buttons.
+  const at = panda.indexOf('function widget(')
+  const three = panda.substring(0, at) + 'function pandaCount(state: AppState, value: number): AppState { return { hops: state.hops + value }; }\n' +
+    panda.substring(at).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
+      'ui.Button("primary", "A", "pandaCount", 1, true), ui.Button("primary", "B", "pandaCount", 2, true)')
+  assert.match(validateWidgetRefinement(panda, three, compileVeraSource(three).vbc2), /3 buttons/)
+}
+console.log('PASS carry widget: the earlier widget and its helpers come back into a version written without them')
+}
