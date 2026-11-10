@@ -96,6 +96,16 @@ export struct ProjectPage {
     cancel: () => { this.clearPanels() }
   })
 
+  private widgetController: CustomDialogController = new CustomDialogController({
+    builder: ProjectPanelDialog({ content: this.widgetDialog }),
+    autoCancel: true,
+    isModal: true,
+    alignment: DialogAlignment.Center,
+    customStyle: true,
+    maskColor: '#50000000',
+    cancel: () => { this.clearPanels() }
+  })
+
   private iconController: CustomDialogController = new CustomDialogController({
     builder: ProjectPanelDialog({ content: this.iconDialog }),
     autoCancel: true,
@@ -194,6 +204,7 @@ export struct ProjectPage {
     this.metricsController.close()
     this.renameController.close()
     this.iconController.close()
+    this.widgetController.close()
     this.clearPanels()
   }
 
@@ -384,7 +395,7 @@ export struct ProjectPage {
         if (this.widgetVbc2.length > 0) {
           WidgetPreview({ vbc2: this.widgetVbc2, seedState: this.widgetSeed, title: this.project!.name, thumbnail: true })
             .borderRadius(9)
-            .onClick(() => { this.makeWidget() })
+            .onClick(() => { this.previewWidget() })
         } else {
           Column() {
             SymbolGlyph($r(this.widget.kind === WIDGET_BROKEN ? 'sys.symbol.exclamationmark_triangle' : 'sys.symbol.plus'))
@@ -411,13 +422,14 @@ export struct ProjectPage {
       }
       .width('100%')
 
-      // The buttons in one row under it, as a version's Run / Refine / Code; Remove is behind a swipe, as a version's Delete.
+      // The buttons in one row under it, as a version's Run / Refine / Code (Preview first, as Run); Remove is behind a swipe, as a version's Delete.
       if (this.widget.kind === WIDGET_NONE) {
         Row() { this.widgetButton('Make widget', true, () => { this.makeWidget() }) }
           .width('100%').margin({ top: 8 })
       } else if (this.widget.kind === WIDGET_READY) {
         Row({ space: 6 }) {
-          this.widgetButton('Add to home screen', true, () => { this.addWidget() }, 1.8)
+          this.widgetButton('Preview', true, () => { this.previewWidget() })
+          this.widgetButton('Add to home screen', false, () => { this.addWidget() }, 1.8)
           this.widgetButton('Refine', false, () => { this.makeWidget() })
           this.widgetButton('Redo', false, () => { this.makeWidget(true) })
         }
@@ -425,6 +437,7 @@ export struct ProjectPage {
       } else if (this.widget.kind === WIDGET_PLACED) {
         // Refine edits the widget there; Redo writes another from nothing (the cards keep the old one until it is kept).
         Row({ space: 6 }) {
+          this.widgetButton('Preview', true, () => { this.previewWidget() })
           this.widgetButton('Refine', false, () => { this.makeWidget() })
           this.widgetButton('Redo', false, () => { this.makeWidget(true) })
           this.widgetButton('Add another', false, () => { this.addWidget() }, 1.4)
@@ -659,6 +672,40 @@ export struct ProjectPage {
     this.renameComposing = false
     this.activePanel = 'rename'
     this.renameController.open()
+  }
+
+  /** The card at its own size, with the size chips, over the app's saved data: taps run here only, nothing is saved. */
+  private previewWidget(): void {
+    if (!this.pageVisible || this.widgetVbc2.length === 0 || this.activePanel.length > 0) { return }
+    this.activePanel = 'widget'
+    this.widgetController.open()
+  }
+
+  @LocalBuilder
+  widgetDialog() {
+    Column() {
+      Row() {
+        Text('Widget \u00B7 Preview').fontSize(18).fontWeight(FontWeight.Bold)
+        Blank()
+        Button('Close')
+          .attributeModifier(new QuietButton())
+          .height(36)
+          .fontSize(13)
+          .onClick(() => { this.closePanels() })
+      }
+      .width('100%')
+      .padding({ left: 12, right: 4 })
+      .margin({ bottom: 10 })
+      // Wide enough for a 2x4 or 4x4 card (324 vp): the dialog takes the screen's width.
+      WidgetPreview({ vbc2: this.widgetVbc2, seedState: this.widgetSeed, title: this.project !== null ? this.project!.name : 'App' })
+        .height(450)
+        .borderRadius(12)
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12, top: 20, bottom: 16 })
+    .backgroundColor(app.surface)
+    .borderRadius(16)
+    .shadow({ radius: 8, color: '#30000000' })
   }
 
   private openIconPicker(): void {

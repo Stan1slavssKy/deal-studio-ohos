@@ -3,6 +3,7 @@
 ## Remove widget
 
 - The project page's widget block has Remove behind a swipe to the left, as a version's Delete (the block is the first row of the versions list, its buttons in one row like a version's Run / Refine / Code): the latest version is saved again without its widget, its refresh and what only they use (`WidgetRemove.ets`, on `withoutWidget`), with the app's state carried over and the widget's requests left out of its history. Earlier versions keep theirs.
+- Preview, the block's first button (blue, as a version's Run), and a tap on the thumbnail open the card at its own size with the 2×2 / 2×4 / 4×4 chips, over the app's saved data; taps there are not saved.
 - Cards already on the home screen stay (only the launcher removes them) and show "Open app"; the confirmation says so.
 
 ## Make widget: Redo
