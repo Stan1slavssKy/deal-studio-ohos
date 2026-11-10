@@ -519,12 +519,17 @@ export struct GeneratePage {
     return this.activeOperation
   }
 
+  private modelRequestHistory(): string {
+    return this.makeWidget && this.widgetFresh ? withoutWidgetRequests(this.requestHistory) : this.requestHistory
+  }
+
   private prepareRequest(ask: string): void {
     this.finishMetrics(this.runId)
     this.pendingBase = this.currentBase()
+    if (this.makeWidget && this.widgetFresh) { this.previousSource = withoutWidget(this.compiledSource) }
     this.pendingRequest = ask
-    this.pendingHistory = this.requestHistory.length > 0 ?
-      this.requestHistory + '\n\nRefinement:\n' + ask : ask
+    let history = this.modelRequestHistory()
+    this.pendingHistory = history.length > 0 ? history + '\n\nRefinement:\n' + ask : ask
     this.metricRunId = this.runId + 1
     this.metricMode = this.mode
     this.metricModel = this.mode === MODE_DEEPSEEK ? settings.getModel() :
@@ -1292,8 +1297,9 @@ export struct GeneratePage {
       }
     }
     this.status = label + ' (attempt 1/' + MAX_RETRIES + ')...'
-    let contextPrompt = this.requestHistory.length > 0 ?
-      'Version request history:\n' + this.requestHistory + '\n\nCurrent change request:\n' + userPrompt : userPrompt
+    let history = this.modelRequestHistory()
+    let contextPrompt = history.length > 0 ?
+      'Version request history:\n' + history + '\n\nCurrent change request:\n' + userPrompt : userPrompt
     this.runAttempt(plan.length > 0 ? contextPrompt + '\n\n' + plan : contextPrompt, '', operation)
   }
 
@@ -2136,7 +2142,7 @@ export struct GeneratePage {
       (_vbc2: string): void => {}, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate)
     // Redo: neither the old widget nor what it was asked to show goes to the model, or it makes the same one again.
     let base = this.widgetFresh ? withoutWidget(this.compiledSource) : this.compiledSource
-    let madeFor = this.widgetFresh ? withoutWidgetRequests(this.requestHistory) : this.requestHistory
+    let madeFor = this.modelRequestHistory()
     console.info('VERA-WIDGET ' + (this.widgetFresh ? 'redo' : 'refine') + ' base widget=' + hasWidgetFunction(base).toString() +
       ' history widget asks=' + (madeFor.split(WIDGET_ASK).length - 1).toString())
     let shows = ask.startsWith(WIDGET_ASK) ? ask.substring(WIDGET_ASK.length) : ask

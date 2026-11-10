@@ -75,6 +75,7 @@ export struct CardView {
    * seconds after a redraw, which is all a hit needs; there is no repeat or loop.
    */
   @State settled: number[] = filled(SLOTS, -1e18)
+  @State settledTouches: number[] = filled(SLOTS, 0)
   /** How far each Motion's chain of stages has got: 0 before it plays, k the pose after stage k. */
   @State phase: number[] = filled(SLOTS, 0)
   /**
@@ -86,8 +87,11 @@ export struct CardView {
   private settle(node: CardNode): void {
     if (node.slot < 0 || node.slot >= SLOTS) { return }
     let next = this.settled.slice()
-    next[node.slot] = this.effective(node)
+    next[node.slot] = node.trigger
     this.settled = next
+    let touches = this.settledTouches.slice()
+    touches[node.slot] = this.touches[node.slot]
+    this.settledTouches = touches
   }
   private setPhase(slot: number, value: number): void {
     if (slot < 0 || slot >= SLOTS) { return }
@@ -97,7 +101,7 @@ export struct CardView {
   }
 
   /**
-   * Touches on the pictures and shapes under each Motion, counted here and added to its trigger: a touch makes the picture react
+   * Touches on the pictures and shapes under each Motion, counted here independently of its trigger: a touch makes the picture react
    * whether or not the program's handler changed anything. Plain fields, not state: nothing is redrawn before the answer comes, and
    * a touch whose answer never comes (a refused tap, a busy preview) leaves the card as it was; the next frame plays it.
    */
@@ -109,8 +113,10 @@ export struct CardView {
       if (slot >= 0 && slot < SLOTS) { this.touches[slot] = this.touches[slot] + 1 }
     }
   }
-  private effective(node: CardNode): number { return node.trigger + (node.slot >= 0 && node.slot < SLOTS ? this.touches[node.slot] : 0) }
-  private playing(node: CardNode): boolean { return this.settledOf(node) > -1e17 && this.effective(node) !== this.settledOf(node) }
+  private playing(node: CardNode): boolean {
+    return this.settledOf(node) > -1e17 &&
+      (node.trigger !== this.settledOf(node) || this.touches[node.slot] !== this.settledTouches[node.slot])
+  }
 
   /** The stages of the node's preset (MOTION_STAGES in VeraMotion): row 0 is where it starts, each later row a stage. */
   private stagesOf(node: CardNode): number[][] { return motionStages(node.style) }

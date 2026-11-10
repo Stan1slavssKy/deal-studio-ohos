@@ -149,6 +149,110 @@ assert.match(view, /node.key \+ this.frameKey/)
   const nested = motionSource.replace('ui.Path(', 'ui.Motion("fade", 0, [ui.Path(').replace(', 0, "hit", 1)', ', 0, "hit", 1)])')
   assert.throws(() => compileVeraSource(nested), /E2107/, 'the compiler refuses a Motion inside a Motion')
 }
+{
+  const ts = process.env.VERA_TYPESCRIPT_PATH ? require(process.env.VERA_TYPESCRIPT_PATH) : require('typescript')
+  const { CARD_MAX_MOTIONS } = loadSource(path.join(sourceRoot, 'widget/CardModel.ets'))
+  const { motionStages, motionPivot, pivotPercent } = loadVera('VeraMotion')
+  const start = view.indexOf('  @State settled:')
+  const end = view.indexOf('  /** How the theme dressed', start)
+  assert(start >= 0 && end > start, 'the CardView Motion fields and methods must exist')
+  const motion = view.slice(start, end)
+  const filled = view.slice(view.indexOf('function filled('), view.indexOf('function contexts('))
+  const compiled = ts.transpileModule(filled + '\nclass MotionProbe {\n' + motion.replace(/@State /g, '') + '\n}', {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 }, reportDiagnostics: true
+  })
+  assert.deepEqual((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error), [])
+  const Curve = { Linear: 0, EaseOut: 1, EaseIn: 2, EaseInOut: 3 }
+  const MotionProbe = new Function('SLOTS', 'motionStages', 'motionPivot', 'pivotPercent', 'Curve',
+    compiled.outputText + '\nreturn MotionProbe;')(CARD_MAX_MOTIONS, motionStages, motionPivot, pivotPercent, Curve)
+  const stateFields = [...motion.matchAll(/@State (\w+):/g)].map(m => m[1])
+  const pose = (probe, node) => [1, 2, 3, 4, 5, 6].map(i => probe.poseOf(node, i))
+  const finish = (probe, node) => {
+    const stages = motionStages(node.style)
+    for (let at = 1; at < stages.length; at++) {
+      assert.equal(probe.phase[node.slot], at, 'each stage starts in order')
+      assert.deepEqual(pose(probe, node), stages[at].slice(1, 7), 'the stage uses the preset pose')
+      const animation = probe.motionAnimation(node)
+      assert.equal(animation.duration, stages[at][0])
+      assert.equal(animation.curve, stages[at][7])
+      animation.onFinish()
+      const phase = probe.phase.slice()
+      animation.onFinish()
+      assert.deepEqual(probe.phase, phase, 'a duplicate completion cannot advance the chain')
+    }
+    assert.equal(probe.phase[node.slot], 0)
+    assert.equal(probe.playing(node), false, 'completion settles both inputs')
+    assert.deepEqual(pose(probe, node), stages[stages.length - 1].slice(1, 7))
+  }
+  const motionSource = fs.readFileSync(path.join(__dirname, 'examples/widget-drum-motion.vera'), 'utf8').replace('"pop"', '"bounce"')
+  for (const delta of [-1, 0, 1]) {
+    const drum = new WidgetSession(compileVeraSource(motionSource.replace('state.hits + value', 'state.hits + (' + delta + ')')).vbc2, 'motion-' + delta, '')
+    const probe = new MotionProbe()
+    let current = frame(drum)
+    let node = current.nodes[0].children[0]
+    const stages = motionStages(node.style), rest = stages[stages.length - 1].slice(1, 7)
+    probe.frameKey = current.token + ':0'
+    assert.equal(probe.playing(node), false, 'the first frame never plays')
+    assert.deepEqual(pose(probe, node), rest, 'the first frame skips even a displaced starting pose')
+    probe.begin(node)
+    assert.equal(probe.phase[node.slot], 0)
+    assert.equal(probe.playing(node), false)
+    for (let tap = 1; tap <= 3; tap++) {
+      const state = stateFields.map(name => probe[name]), values = state.map(value => value.slice())
+      probe.touched(node.children[0])
+      assert.deepEqual(stateFields.map(name => probe[name]), values, 'a touch does not change reactive state')
+      stateFields.forEach((name, i) => assert.equal(probe[name], state[i], name + ' keeps its reference before redraw'))
+      assert.deepEqual(pose(probe, node), rest, 'before the answer the old frame stays at rest')
+      assert.equal(probe.phase[node.slot], 0)
+      drum.tap(current, current.token, 'hit', 1)
+      current = frame(drum)
+      node = current.nodes[0].children[0]
+      assert.equal(node.trigger, delta * tap)
+      probe.frameKey = current.token + ':' + tap
+      assert.equal(probe.playing(node), true, 'accepted tap plays with trigger delta ' + delta + ', tap ' + tap)
+      assert.deepEqual(pose(probe, node), stages[0].slice(1, 7), 'the accepted redraw starts at the first pose')
+      probe.begin(node)
+      finish(probe, node)
+      probe.frameKey += ':redraw'
+      assert.equal(probe.playing(node), false, 'an unchanged redraw cannot replay a settled tap')
+      probe.begin(node)
+      assert.deepEqual(pose(probe, node), rest)
+    }
+    probe.touched(node.children[0])
+    assert.throws(() => drum.tap(current, 'stale', 'hit', 1), /changed/)
+    assert.deepEqual(pose(probe, node), rest, 'a refused tap has no new frame and stays at rest')
+    assert.equal(probe.phase[node.slot], 0)
+    probe.frameKey += ':next'
+    probe.begin(node)
+    finish(probe, node)
+    for (const change of [-1, 1]) {
+      node = { ...node, trigger: node.trigger + change }
+      probe.frameKey += ':trigger'
+      assert.equal(probe.playing(node), true, 'a trigger change alone still plays')
+      probe.begin(node)
+      finish(probe, node)
+    }
+  }
+  const layers = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')).vbc2, 'motion-layers', '')
+  const scene = frame(layers).nodes[0].children[0]
+  const probe = new MotionProbe()
+  probe.frameKey = 'layers:0'
+  scene.children.forEach(node => probe.begin(node))
+  probe.touched(scene.children[0].children[0])
+  assert.deepEqual(probe.touches.slice(0, 3), [1, 1, 0], 'layer links count all scene Motions, not other slots')
+  scene.children.forEach(node => assert.equal(probe.phase[node.slot], 0, 'layer touches wait for a redraw'))
+  probe.frameKey = 'layers:1'
+  scene.children.forEach(node => {
+    assert.equal(probe.playing(node), true)
+    probe.begin(node)
+  })
+  const node = scene.children[0], stale = probe.motionAnimation(node)
+  probe.frameKey = 'layers:2'
+  scene.children.forEach(node => probe.begin(node))
+  stale.onFinish()
+  assert.equal(probe.phase[node.slot], 1, 'an older frame completion cannot advance the new chain')
+  scene.children.forEach(node => finish(probe, node))
+}
 // A picture on the card: ui.Surface drawn once for the state, its shapes carried in the frame (a few hundred characters), a tap on it
 // calling the pointer handler with the finger down and up at that point. No frame loop, one picture, a few dozen shapes.
 {
@@ -375,7 +479,7 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.equal((view.match(/if \(this\.touchPlays\(node\)\)/g) || []).length, 3, 'each builder level plays a Motion on touch only around a picture')
   assert.equal((view.match(/\.hitTestBehavior\(this\.layerHit\(child\)\)/g) || []).length, 6, 'each Layers part says whether it takes a touch')
   // A touch only counts: nothing is redrawn before the answer, so a touch whose answer never comes leaves no Motion in its starting pose.
-  const touched = view.substring(view.indexOf('private touched('), view.indexOf('private effective('))
+  const touched = view.substring(view.indexOf('private touched('), view.indexOf('private playing('))
   assert.doesNotMatch(touched, /setPhase|this\.phase\b|this\.settled\b/, 'a touch changes no state')
   assert.match(view, /if \(this\.begun\[node\.slot\] !== this\.frameKey\) \{ return stages\[0\]\[index\] \}/, 'only a frame not yet begun shows the starting pose')
 }

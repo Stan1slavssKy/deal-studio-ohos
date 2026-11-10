@@ -496,7 +496,7 @@ function view(state: AppState): ui.View { return ui.Column("default", [ui.Surfac
      const method=declaration(source,'  private destinationShown(').replace('  private ','')
      const compiled=ts.transpileModule('class Probe { '+method+' }',{compilerOptions:{target:ts.ScriptTarget.ES2020},reportDiagnostics:true})
      assert.equal((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).length,0,page+' destinationShown syntax')
-     const events=[], settings={getModel(){events.push('model');return 'fixture'},hasApiKey(){events.push('configured');return true}}
+     const events=[], settings={getMode(){return 'cloud'},getModel(){events.push('model');return 'fixture'},hasApiKey(){events.push('configured');return true}}
      const Probe=new Function('settings','MODE_DEEPSEEK',compiled.outputText+';return Probe')(settings,'cloud'), probe=new Probe()
      Object.assign(probe,{disposed:true,destinationHidden:true,mode:'cloud',generating:false,status:'',selectedModel:'',checkDeepSeek(){events.push('check')}})
      probe.destinationShown();assert.equal(probe.destinationHidden,true);assert.deepEqual(events,[])
