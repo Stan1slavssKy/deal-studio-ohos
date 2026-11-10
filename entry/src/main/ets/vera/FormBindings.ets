@@ -17,6 +17,14 @@ export class FormBindings {
 
   projectFor(formId: string): string { return this.read()[formId] || '' }
 
+  /** How many cards show each project, read once: for a list of projects. */
+  countsByProject(): Record<string, number> {
+    let entries = this.read()
+    let counts: Record<string, number> = {}
+    for (let id of Object.keys(entries)) { counts[entries[id]] = (counts[entries[id]] || 0) + 1 }
+    return counts
+  }
+
   formsFor(projectId: string): string[] {
     let entries = this.read()
     return Object.keys(entries).filter((id: string): boolean => entries[id] === projectId)

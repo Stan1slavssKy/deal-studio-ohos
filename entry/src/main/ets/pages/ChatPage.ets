@@ -183,7 +183,7 @@ struct StatsPanel {
       }
       if (this.widgetLine.length > 0) {
         Column({ space: 4 }) {
-          Text(this.widgetUpdate ? 'Widget request (change to the previous widget)' : 'Widget request')
+          Text(this.widgetUpdate ? 'App request (change to the previous app)' : 'App request')
             .fontSize(10).fontColor(app.inkMuted)
           if (this.widgetCutFrom > 0) {
             Text('Cut to ' + this.widgetLine.length.toString() + ' of ' + this.widgetCutFrom.toString() + ' characters')
@@ -199,7 +199,7 @@ struct StatsPanel {
       }
       Row({ space: 8 }) {
         StatCell({ label: 'Time', value: formatMs(this.tally.ms),
-          note: this.tally.attempts > 0 ? 'reply and widget' : 'reply' }).layoutWeight(1)
+          note: this.tally.attempts > 0 ? 'reply and app' : 'reply' }).layoutWeight(1)
         StatCell({ label: 'Cost', value: '~' + formatUsd(this.tally.cost),
           note: 'incl. failed attempts' }).layoutWeight(1)
       }.width('100%')
@@ -222,12 +222,12 @@ struct StatsPanel {
         Row({ space: 8 }) {
           StatCell({ label: 'Web search', value: this.tally.searches.toString() + ' calls',
             note: formatMs(this.tally.searchMs) + ' in all' }).layoutWeight(1)
-          StatCell({ label: 'Widgets', value: this.tally.widgets.toString(),
+          StatCell({ label: 'Apps', value: this.tally.widgets.toString(),
             note: this.tally.attempts.toString() + (this.tally.attempts === 1 ? ' build attempt' : ' build attempts') }).layoutWeight(1)
         }.width('100%')
       } else if (this.tally.attempts > 0) {
         Row({ space: 8 }) {
-          StatCell({ label: 'Widgets', value: this.tally.widgets.toString(),
+          StatCell({ label: 'Apps', value: this.tally.widgets.toString(),
             note: this.tally.attempts.toString() + (this.tally.attempts === 1 ? ' build attempt' : ' build attempts') }).layoutWeight(1)
         }.width('100%')
       }
@@ -316,7 +316,7 @@ struct MessageBubble {
           .copyOption(CopyOptions.LocalDevice)
       }
       if (this.msg.appState === APP_DESCRIBING) {
-        Text('Planning a widget...')
+        Text('Planning an app...')
           .fontSize(13)
           .fontColor(app.inkSoft)
           .padding(12)
@@ -332,14 +332,14 @@ struct MessageBubble {
       if (this.msg.appState === APP_BUILDING && this.msg.previewVbc2.length === 0) {
         Row({ space: 8 }) {
           LoadingProgress().width(18).height(18)
-          Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Building a widget...')
+          Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Building an app...')
             .fontSize(13).fontColor(app.inkSoft).layoutWeight(1)
         }
         .padding(12)
         .backgroundColor(app.surface)
         .borderRadius(14)
       } else if (this.msg.appState === APP_FAILED) {
-        Text(this.msg.error === 'Stopped' ? 'Widget stopped' : 'The widget could not be built: ' + this.msg.error.substring(0, 240))
+        Text(this.msg.error === 'Stopped' ? 'App stopped' : 'The app could not be built: ' + this.msg.error.substring(0, 240))
           .fontSize(12)
           .fontColor(app.dangerInk)
           .padding(10)
@@ -364,7 +364,7 @@ struct MessageBubble {
         if (this.msg.appState === APP_BUILDING) {
           Row({ space: 8 }) {
             LoadingProgress().width(14).height(14)
-            Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Finishing the widget...')
+            Text(this.msg.buildStatus.length > 0 ? this.msg.buildStatus : 'Finishing the app...')
               .fontSize(12).fontColor(app.inkMuted).layoutWeight(1)
           }
           .width('100%')
@@ -400,7 +400,7 @@ struct MessageBubble {
       if (this.showStats && this.msg.role === 'assistant' && this.msg.source.length > 0) {
         Column({ space: 6 }) {
           Row() {
-            Text('Widget code').fontSize(13).fontColor(app.inkSoft).layoutWeight(1)
+            Text('App code').fontSize(13).fontColor(app.inkSoft).layoutWeight(1)
             Text(this.showCode ? 'Hide' : 'Show').fontSize(13).fontColor(app.primary)
           }
           .width('100%')
@@ -696,7 +696,7 @@ export struct ChatPage {
       msg.templatePick = m.templatePick
       if (msg.appState === APP_DESCRIBING || msg.appState === APP_BUILDING) {
         msg.appState = APP_FAILED
-        msg.error = 'The chat was closed while this widget was still being built.'
+        msg.error = 'The chat was closed while this app was still being built.'
       }
       restored.push(msg)
     }
@@ -979,7 +979,7 @@ export struct ChatPage {
         this.status = (e as Error).message
         if (reply.appState === APP_DESCRIBING) {
           reply.appState = APP_FAILED
-          reply.error = 'The reply ended before the widget request was complete.'
+          reply.error = 'The reply ended before the app request was complete.'
         }
         // A reply that never started is not worth an empty row.
         if (reply.before.length === 0 && reply.appState === APP_NONE) {
@@ -1026,7 +1026,7 @@ export struct ChatPage {
         references.find((ref: WidgetReference): boolean => ref.messageId === parsed.targetMessageId)
       if (target === undefined) {
         reply.appState = APP_FAILED
-        reply.error = 'The selected widget is unavailable. Specify an existing widget.'
+        reply.error = 'The selected app is unavailable. Specify an existing app.'
         return
       }
       context.parentMessageId = target.messageId
@@ -1034,7 +1034,7 @@ export struct ChatPage {
       context.originalRequest = target.originalRequest.length > 0 ? target.originalRequest : target.brief
       context.latestState = target.latestState
       if (target.source.length === 0) {
-        reply.beforeNote = '\nThis older widget has no saved source. I will recreate it from its description.'
+        reply.beforeNote = '\nThis older app has no saved source. I will recreate it from its description.'
         reply.before = parsed.before + reply.beforeNote
       }
     }

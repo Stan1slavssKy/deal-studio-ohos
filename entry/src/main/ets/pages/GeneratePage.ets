@@ -5,13 +5,16 @@ import { fileIo as fs } from '@kit.CoreFileKit'
 import { http } from '@kit.NetworkKit'
 import { request } from '@kit.BasicServicesKit'
 import { Version, VersionMetrics, store } from '../vera/ProjectStore'
-import { AppRouteParams } from '../vera/AppNavigation'
+import { AppRouteParams, returnToLibrary } from '../vera/AppNavigation'
+import { formBindings } from '../vera/FormBindings'
+import { publishLiveWidget, bindLiveForm, WIDGET_ADDED } from '../vera/LiveWidgetPublish'
 import { refreshForms } from '../vera/FormUpdater'
 import { widgetRefinementPrompt, validateWidgetRefinement, widgetRepairNote } from '../vera/VeraWidgetRefine'
 import { veraStateStamp } from '../vera/VeraStateStamp'
 import { WidgetPreview } from '../components/WidgetPreview'
+import { hasWidgetFunction } from '../vera/WidgetStatus'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
-import { compileVeraSource, CompileError, spliceWidget, appUsesWidgetError } from '../vera/VeraCompiler'
+import { compileVeraSource, CompileError, spliceWidget, appUsesWidgetError, carryWidget } from '../vera/VeraCompiler'
 import { applyRepair, repairPrompt } from '../vera/VeraRepair'
 import { smokeRun } from '../vera/VeraSmoke'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
@@ -39,6 +42,8 @@ import { AgentRequest, AgentResult } from '../vera/agent/VeraAgent'
 import { appAgentHost } from '../vera/agent/AgentAppHost'
 import { drawsSurface, editSurfaceProgram, SurfaceEdit } from '../vera/agent/AgentSurfaceEdit'
 import { writeWidget, WidgetWrite, WIDGET_ASK } from '../vera/agent/AgentWidget'
+import { WidgetSuggestion, firstSuggestions, changeSuggestions } from '../vera/agent/WidgetSuggest'
+import { sameCard } from '../vera/VeraLiveWidget'
 import { surfaceRouteEnabled } from '../vera/agent/AgentSurface'
 import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
@@ -388,6 +393,8 @@ export struct GeneratePage {
   @State leaving: boolean = false
   /** Set when Save was chosen in the leaving window: the page closes once the save is done. */
   private leaveAfterSave: boolean = false
+  /** Set by Widget on an app that is not saved yet: once it is (a new app is named first), the widget screen opens. */
+  private widgetAfterSave: boolean = false
   /** Set just before the page closes itself, so that the back press it causes is not asked about again. */
   private closing: boolean = false
   @State tab: string = TAB_PREVIEW
@@ -425,6 +432,35 @@ export struct GeneratePage {
   @State widgetSeed: string = ''
   /** The project's name, for the card's frame (a live card does not show it). */
   private widgetTitle: string = 'App'
+  /** Home-screen cards that show this project: the widget screen's button adds one when there are none. */
+  @State widgetCards: number = 0
+  /** A card placed with no app yet, opened from WidgetBindPage: the widget made here is put on it. */
+  private bindFormId: string = ''
+  /** Why the last widget was not made, in the model's and the checks' words; '' when it was. */
+  @State widgetFailure: string = ''
+  @State widgetFailureOpen: boolean = false
+  /** The last thing asked of the widget screen, for Try again. */
+  private widgetAsk: string = ''
+  /** What a tapped suggestion says on its chip, for the version list: its ask is the model's instruction, not the person's words. */
+  private chipLabel: string = ''
+  private requestLabel: string = ''
+  /** Adding the card: the system dialog may take a while, and a second tap must not add two. */
+  @State widgetAdding: boolean = false
+  /** What to do next when the card could not be added here (a launcher with no add dialog, an error). */
+  @State widgetNote: string = ''
+  /** Set once the card was put on the home screen from this page: the button then says so. */
+  @State widgetPlacedHere: boolean = false
+  /** The program before the last widget request: what the new card is compared with. */
+  private widgetBeforeVbc2: string = ''
+  private widgetBeforeHad: boolean = false
+  /** widgetChangeNote's answer for widgetChangeFor, which takes a run of the widget to work out. */
+  private widgetChangeFor: string = ''
+  private widgetChangeText: string = ''
+  /** widgetSuggestions' answer for widgetChipsFor, which takes a parse of the program. */
+  private widgetChipsFor: string = ''
+  private widgetChips: WidgetSuggestion[] = []
+  /** A new app was just saved: offer it a home-screen widget, once. */
+  @State widgetOffer: boolean = false
   /** The next repair asks for SEARCH/REPLACE edits (VeraRepair); false after edits failed to apply. */
   private repairByEdit: boolean = true
   /** The section kinds of the last composed screen, kept with a saved version as its origin; empty after a scratch run. */
@@ -702,6 +738,8 @@ export struct GeneratePage {
           this.carriedState = store.loadState(this.projectId, v.id, veraStateStamp(v.vbc2))
           this.widgetSeed = this.carriedState
           this.tab = TAB_WIDGET
+          this.bindFormId = params.formId || ''
+          this.widgetCards = this.readWidgetCards()
         }
       } else {
         this.baseError = 'The selected version is unavailable or has no source. Return to the version list.'
@@ -759,6 +797,7 @@ export struct GeneratePage {
   private destinationShown(): void {
     if (this.disposed) { return }
     this.destinationHidden = false
+    if (this.makeWidget) { this.widgetCards = this.readWidgetCards() }
     if (this.generating) { return }
     // The mode, the model and the selector are chosen on the Settings page, which may have been open over this one.
     let mode = settings.getMode()
@@ -1897,9 +1936,12 @@ export struct GeneratePage {
     if (this.disposed || ask.length === 0 || this.compiledSource.length === 0 || this.generating || this.baseError.length > 0) { return }
     // What the person typed is what the widget shows; the instructions for a widget are the system prompt's (widgetRefinementPrompt).
     if (this.makeWidget) { ask = WIDGET_ASK + ask }
-    // What the person typed into the preview is kept through the refine.
-    if (!this.previewController.flushAndSnapshot()) { return }
-    this.carriedState = this.liveState
+    // What the person typed into the preview is kept through the refine. The widget screen draws no app preview: what it
+    // carries is the saved data it was opened with.
+    if (!this.makeWidget) {
+      if (!this.previewController.flushAndSnapshot()) { return }
+      this.carriedState = this.liveState
+    }
     // A change that only adds, removes, replaces or moves a block of a composed screen is made on its
     // record, with no model rewrite; anything else, and any step that does not hold, refines as before.
     // Make widget is not a structural edit: only the model, told what a widget may add, writes it.
@@ -2098,7 +2140,8 @@ export struct GeneratePage {
     if (made.source.length === 0) {
       this.metricTotals.partial = true
       this.finishMetrics(run)
-      this.status = 'Could not make this widget, the app is as it was: ' + made.failed
+      this.status = 'Could not make this widget, the app is as it was'
+      this.widgetFailure = made.failed.length > 0 ? made.failed : 'No answer passed the checks.'
       return
     }
     this.startRun(ask)
@@ -2177,7 +2220,27 @@ export struct GeneratePage {
       this.naming = true
       return
     }
-    if (this.commitSave()) { this.afterSave() } else { this.leaveAfterSave = false }
+    if (this.commitSave()) { this.afterSave() } else { this.leaveAfterSave = false; this.widgetAfterSave = false }
+  }
+
+  /**
+   * Widget, from the app on screen: the app is kept first (a new one is named, a changed one becomes its next version),
+   * since the card on the home screen draws a saved version; then the widget screen opens on it. One tap, with the name
+   * asked for if it has none, where Save and then Make widget were two.
+   */
+  private startWidget(): void {
+    if (this.disposed || this.generating || !this.hasResult() || this.makeWidget) { return }
+    let refused = appUsesWidgetError(this.compiledSource)
+    if (refused.length > 0) {
+      try { this.getUIContext().getPromptAction().showToast({ message: 'A widget cannot be added to this app.' }) } catch (e) {
+        console.error('Show widget toast failed: ' + (e as Error).message)
+      }
+      return
+    }
+    this.widgetOffer = false
+    if (this.projectId.length > 0 && this.isSaved()) { this.openWidgetFromOffer(); return }
+    this.widgetAfterSave = true
+    this.doSave()
   }
 
   /** The name was confirmed: the project is made now, with the default picture, and the result is its first version. */
@@ -2188,15 +2251,26 @@ export struct GeneratePage {
     let project = store.createProject(name, this.saveIcon)
     this.projectId = project.id
     this.naming = false
-    if (this.commitSave()) { this.afterSave() } else { this.leaveAfterSave = false }
+    if (this.commitSave()) {
+      // A new app, just saved: the moment to say it can live on the home screen too.
+      this.widgetOffer = !this.leaveAfterSave && !this.widgetAfterSave && !hasWidgetFunction(this.compiledSource) &&
+        appUsesWidgetError(this.compiledSource).length === 0
+      this.afterSave()
+    } else { this.leaveAfterSave = false; this.widgetAfterSave = false }
   }
 
   private cancelName(): void {
     this.naming = false
     this.leaveAfterSave = false
+    this.widgetAfterSave = false
   }
 
   private afterSave(): void {
+    if (this.widgetAfterSave) {
+      this.widgetAfterSave = false
+      this.openWidgetFromOffer()
+      return
+    }
     if (this.leaveAfterSave) {
       this.leaveAfterSave = false
       this.close()
@@ -2250,14 +2324,14 @@ export struct GeneratePage {
   /** Whether the result was saved: a widget that does not keep the app as it was is refused. */
   private commitSave(): boolean {
     if (this.disposed || this.generating || this.compiledSource.length === 0 || !this.hasResult()) { return false }
-    let note = this.acceptedRequest
+    let note = this.makeWidget && this.requestLabel.length > 0 ? WIDGET_ASK + this.requestLabel : this.acceptedRequest
     if (note.length > 100) { note = note.substring(0, 100) + '...' }
     let preserved = ''
     if (this.makeWidget) {
       let base = store.getVersion(this.projectId, this.baseVersionId)
       let latest = store.getLatestVersion(this.projectId)
       if (base === null || latest === null || latest.id !== base.id || this.compiledVbc2.length === 0) {
-        this.status = 'Cannot save widget: base is no longer latest or program is not compiled'
+        this.status = 'The app changed while this widget was being made. Make the widget again.'
         return false
       }
       // Read at Save, not at Generate: widget/app taps during generation must not be lost.
@@ -2265,6 +2339,7 @@ export struct GeneratePage {
       let validation = validateWidgetRefinement(base.source, this.compiledSource, this.compiledVbc2, preserved)
       if (validation.length > 0) { this.compileErrors = validation; this.status = 'Widget not saved'; return false }
     }
+    let widgetLost = !this.makeWidget && this.keepWidget()
     let saved: Version
     try {
       saved = store.createVersion(this.projectId, this.compiledSource, this.compiledVbc2, note,
@@ -2276,12 +2351,36 @@ export struct GeneratePage {
     this.baseVersionNumber = this.nextVersionNumber
     this.nextVersionNumber = this.versionCount() + 1
     this.savedVbc2 = this.compiledVbc2
-    this.status = 'Saved as version ' + this.baseVersionNumber.toString()
+    this.status = 'Saved as version ' + this.baseVersionNumber.toString() +
+      (widgetLost ? '. It has no widget: your home-screen card shows "Open app"' : '')
     refreshForms()
     try {
-      this.getUIContext().getPromptAction().showToast({ message: 'Saved as version ' + this.baseVersionNumber.toString() })
+      this.getUIContext().getPromptAction().showToast({ message: this.status })
     } catch (e) {
       console.error('Show save toast failed: ' + (e as Error).message)
+    }
+    return true
+  }
+
+  /**
+   * A change written without the widget the base had, while a card shows it: the base's widget is put back (carryWidget),
+   * if the program still compiles and runs with it. Whether the widget is lost all the same.
+   */
+  private keepWidget(): boolean {
+    let base = this.baseVersionId.length > 0 ? store.getVersion(this.projectId, this.baseVersionId) : null
+    if (base === null || !hasWidgetFunction(base.source) || hasWidgetFunction(this.compiledSource)) { return false }
+    if (this.readWidgetCards() === 0) { return false }
+    let next = carryWidget(this.compiledSource, base.source)
+    try {
+      let compiled = compileVeraSource(next)
+      if (smokeRun(compiled).length === 0) {
+        this.compiledSource = next
+        this.generatedSource = next
+        this.compiledVbc2 = compiled.vbc2
+        return false
+      }
+    } catch (e) {
+      console.warn('Carry widget failed: ' + (e as Error).message)
     }
     return true
   }
@@ -2701,15 +2800,30 @@ export struct GeneratePage {
     Column() {
       Column() {
         // With a result there is something to save; with only a request typed, or a run under way, there is not.
-        Text(this.hasUnsavedResult() ? 'Save this app?' : 'Leave without generating?')
+        Text(this.hasUnsavedResult() ? (this.makeWidget ? (this.widgetCards > 0 && this.bindFormId.length === 0 ? 'Update the widget on your home screen?' :
+          'Add this widget to your home screen?') : 'Save this app?') :
+          'Leave without generating?')
           .fontSize(20).fontWeight(FontWeight.Bold).margin({ bottom: 6 }).width('100%')
         Text(this.hasUnsavedResult() ?
-          (this.projectId.length === 0 ? 'It is not saved yet. Leaving now discards it.' :
+          (this.projectId.length === 0 || this.makeWidget ? 'It is not saved yet. Leaving now discards it.' :
             'This version is not saved yet. Leaving now discards it.') :
           (this.generating ? 'A program is still being built. Leaving now stops it.' :
             'What you typed has not been used yet. Leaving now discards it.'))
           .fontSize(13).fontColor(app.inkMuted).margin({ bottom: 20 }).width('100%')
-        if (this.hasUnsavedResult()) {
+        if (this.hasUnsavedResult() && this.makeWidget) {
+          // Save and put it on the home screen; leaves once the card is there.
+          Button(this.widgetActionLabel())
+            .attributeModifier(new PrimaryButton())
+            .width('100%')
+            .onClick(() => { this.leaving = false; this.addToHomeScreen(true) })
+          if (this.widgetCards === 0 && this.bindFormId.length === 0) {
+            Button('Save only')
+              .attributeModifier(new QuietButton())
+              .width('100%')
+              .margin({ top: 12 })
+              .onClick(() => { this.leaveSave() })
+          }
+        } else if (this.hasUnsavedResult()) {
           Button('Save')
             .attributeModifier(new PrimaryButton())
             .width('100%')
@@ -2859,7 +2973,8 @@ export struct GeneratePage {
       if (this.fullscreen && this.hasResult()) {
         this.foldButton(true)
       }
-      TextInput({ placeholder: this.makeWidget ? 'What should the widget show?' :
+      TextInput({ placeholder: this.makeWidget ? (hasWidgetFunction(this.compiledSource) ? 'Change something...' :
+        'What should it show?') :
         (this.hasResult() || this.baseVersionId.length > 0 ? 'What to change?' : 'Describe the app you want...'),
         text: this.draft })
         .onChange((value: string) => { this.draft = value })
@@ -2949,7 +3064,9 @@ export struct GeneratePage {
   /** The title bar's buttons: the program full screen once there is one, the settings, a new app. */
   private barMenus(): NavigationMenuItem[] {
     let items: NavigationMenuItem[] = []
-    if (this.hasResult() && !this.generating) {
+    // The widget screen has one thing to do besides the connection: New belongs to making an app.
+    if (this.makeWidget) { return [settingsMenuItem(this.pathStack)] }
+    if (this.hasResult() && !this.generating && !this.makeWidget) {
       items.push({
         value: 'Full screen',
         symbolIcon: new SymbolGlyphModifier($r('sys.symbol.arrow_up_left_and_arrow_down_right')),
@@ -3023,6 +3140,18 @@ export struct GeneratePage {
           .enabled(!this.generating && !this.isSaved())
           .opacity(this.generating ? 0.5 : 1)
           .onClick(() => { this.doSave() })
+          // Keeps the app, then the widget screen: the card on the home screen is made from a saved version.
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.square_grid_2x2')).fontSize(18).fontColor([app.primaryInk])
+          }
+          .width(36)
+          .height(36)
+          .backgroundColor(app.surface)
+          .shadow({ radius: 4, color: '#26000000', offsetY: 1 })
+          .enabled(!this.generating)
+          .opacity(this.generating ? 0.5 : 1)
+          .accessibilityText('Make a widget')
+          .onClick(() => { this.startWidget() })
           Button({ type: ButtonType.Circle }) {
             SymbolGlyph($r('sys.symbol.arrow_down_right_and_arrow_up_left')).fontSize(18).fontColor([app.secondaryInk])
           }
@@ -3071,6 +3200,191 @@ export struct GeneratePage {
     .layoutWeight(1)
   }
 
+  /**
+   * Make widget: the card as the home screen will draw it, ready-made requests under it, and the one thing to do next --
+   * put it on the home screen. The code is on the project page, under the version it is saved as.
+   */
+  @Builder
+  widgetPane() {
+    Column({ space: 10 }) {
+      Stack() {
+        if (hasWidgetFunction(this.compiledSource)) {
+          WidgetPreview({ vbc2: this.compiledVbc2, seedState: this.widgetSeed, title: this.widgetTitle })
+            .width('100%')
+            .height('100%')
+            .opacity(this.generating ? 0.5 : 1)
+        } else {
+          Column({ space: 10 }) {
+            if (this.generating) {
+              LoadingProgress().width(28).height(28)
+            }
+            Text(this.generating ? 'Making the widget...' : 'Your widget appears here')
+              .fontSize(13).fontColor(app.inkMuted).textAlign(TextAlign.Center)
+          }
+          .width(172)
+          .height(172)
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(20)
+          .border({ width: 1.5, color: app.lineStrong, style: BorderStyle.Dashed })
+        }
+      }
+      .width('100%')
+      .layoutWeight(1)
+
+      if (this.generating) {
+        Row({ space: 8 }) {
+          LoadingProgress().width(16).height(16)
+          Text(this.status.length > 0 ? this.status : 'Making the widget...')
+            .fontSize(13).fontColor(app.inkSoft).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+      } else if (this.widgetFailed()) {
+        this.widgetFailureCard()
+      } else if (this.widgetChangeNote().length > 0) {
+        Text(this.widgetChangeNote() === 'same' ? 'Looks the same as before. Try saying what to change.' :
+          (this.widgetChangeNote() === 'made' ? '\u2713 Widget made' : '\u2713 Updated'))
+          .fontSize(13)
+          .fontColor(this.widgetChangeNote() === 'same' ? app.warningInk : app.successInk)
+          .padding({ left: 12, right: 12, top: 4, bottom: 4 })
+          .borderRadius(12)
+          .backgroundColor(this.widgetChangeNote() === 'same' ? app.warningFill : app.successFill)
+      }
+
+      if (!this.generating) {
+        Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
+          ForEach(this.widgetSuggestions(), (suggestion: WidgetSuggestion) => {
+            Button(suggestion.label)
+              .attributeModifier(new QuietButton())
+              .height(32).fontSize(13)
+              .margin(4)
+              .enabled(this.canGenerate() && this.baseError.length === 0)
+              .onClick(() => { this.sendWidget(suggestion.ask, suggestion.label) })
+          }, (suggestion: WidgetSuggestion) => suggestion.label)
+        }
+        .width('100%')
+      }
+
+      this.widgetAction()
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
+    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+  }
+
+  /** After a new app's first save: one tap to its widget, one to say no. */
+  @Builder
+  widgetOfferCard() {
+    Column() {
+      Row({ space: 12 }) {
+        SymbolGlyph($r('sys.symbol.square_grid_2x2')).fontSize(22).fontColor([app.primaryInk])
+        Column({ space: 2 }) {
+          Text('Put it on your home screen?').fontSize(14).fontWeight(FontWeight.Medium).fontColor(app.inkStrong)
+          Text('A small card with what matters most.').fontSize(12).fontColor(app.inkMuted)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Button('Make widget')
+          .attributeModifier(new TonalButton())
+          .height(32).fontSize(13)
+          .onClick(() => { this.openWidgetFromOffer() })
+        Button({ type: ButtonType.Circle }) {
+          SymbolGlyph($r('sys.symbol.xmark')).fontSize(14).fontColor([app.inkMuted])
+        }
+        .width(28)
+        .height(28)
+        .backgroundColor(Color.Transparent)
+        .onClick(() => { this.widgetOffer = false })
+      }
+      .width('100%')
+      .padding(12)
+      .backgroundColor(app.surface)
+      .borderRadius(12)
+      .shadow({ radius: 4, color: '#1A000000', offsetY: 1 })
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12, bottom: 4 })
+  }
+
+  /** Done: the project's page, where the widget now reads "On home screen" -- not the screen the app was made on. */
+  private finishWidget(): void {
+    let names = this.pathStack.getAllPathName()
+    if (names.length >= 2 && names[names.length - 2] === 'project') { this.close(); return }
+    if (this.disposed || this.closing || this.projectId.length === 0) { this.close(); return }
+    let p = new AppRouteParams()
+    p.projectId = this.projectId
+    this.closing = true
+    this.pathStack.replacePath({ name: 'project', param: p })
+  }
+
+  /** The widget screen, in place of this one: the app is saved, and Back from the widget goes where Back from here did. */
+  private openWidgetFromOffer(): void {
+    if (this.generating || this.projectId.length === 0 || !this.isSaved()) { return }
+    this.widgetOffer = false
+    let p = new AppRouteParams()
+    p.projectId = this.projectId
+    p.baseVersionId = this.baseVersionId
+    p.makeWidget = '1'
+    this.closing = true
+    this.pathStack.replacePath({ name: 'generate', param: p })
+  }
+
+  /** Why the widget was not made, in plain words first; the checks' own words a tap away. */
+  @Builder
+  widgetFailureCard() {
+    Column({ space: 6 }) {
+      Text('Couldn\'t make that one. Try simpler wording or pick a suggestion.')
+        .fontSize(13).fontColor(app.warningInk).width('100%')
+      Row({ space: 16 }) {
+        Text(this.widgetFailureOpen ? 'Hide details' : 'Details \u203A')
+          .fontSize(12).fontColor(app.inkMuted)
+          .onClick(() => { this.widgetFailureOpen = !this.widgetFailureOpen })
+        if (this.widgetAsk.length > 0) {
+          Text('Try again').fontSize(12).fontColor(app.primaryInk)
+            .onClick(() => { this.sendWidget(this.widgetAsk, this.requestLabel) })
+        }
+      }
+      .width('100%')
+      if (this.widgetFailureOpen) {
+        Text(this.widgetFailureText()).fontSize(11).fontColor(app.inkSoft).fontFamily('monospace')
+          .maxLines(12).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+          .copyOption(CopyOptions.LocalDevice)
+      }
+    }
+    .width('100%')
+    .padding(10)
+    .backgroundColor(app.warningFill)
+    .borderRadius(10)
+  }
+
+  /** The widget screen's one button: put the card on the home screen, or say it is there. */
+  @Builder
+  widgetAction() {
+    if (hasWidgetFunction(this.compiledSource) && !this.generating) {
+      Column({ space: 8 }) {
+        if (this.isSaved() && this.bindFormId.length === 0 && (this.widgetCards > 0 || this.widgetPlacedHere)) {
+          Button('\u2713 On home screen')
+            .attributeModifier(new TonalButton())
+            .width('100%')
+            .enabled(false)
+          Text('Done').fontSize(14).fontColor(app.primaryInk).onClick(() => { this.finishWidget() })
+        } else {
+          Button(this.widgetAdding ? 'Adding...' : this.widgetActionLabel())
+            .attributeModifier(new PrimaryButton())
+            .width('100%')
+            .enabled(!this.widgetAdding)
+            .onClick(() => { this.addToHomeScreen(false) })
+          if (!this.isSaved() && this.widgetCards === 0 && this.bindFormId.length === 0) {
+            Text('Save without adding').fontSize(13).fontColor(app.inkMuted).onClick(() => { this.doSave() })
+          }
+        }
+        if (this.widgetNote.length > 0) {
+          Text(this.widgetNote).fontSize(13).fontColor(app.inkSoft).textAlign(TextAlign.Center).width('100%')
+        }
+      }
+      .width('100%')
+    }
+  }
+
   /** The program that runs, over the whole space: its status and Save on top, then Preview, Code or Metrics. */
   @Builder
   resultPane() {
@@ -3085,6 +3399,12 @@ export struct GeneratePage {
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
+        Button('Widget')
+          .attributeModifier(new TonalButton())
+          .fontSize(13)
+          .height(34)
+          .enabled(!this.generating)
+          .onClick(() => { this.startWidget() })
         Button(this.isSaved() ? 'Saved' : 'Save')
           .attributeModifier(new PrimaryButton())
           .fontSize(13)
@@ -3097,7 +3417,7 @@ export struct GeneratePage {
       // What was asked, in one line; tapped, every request that led here.
       if (this.acceptedRequest.length > 0) {
         Row({ space: 4 }) {
-          Text(this.requestOpen && this.requestHistory.length > 0 ? this.requestHistory : this.acceptedRequest)
+          Text(this.shownRequest(this.requestOpen && this.requestHistory.length > 0 ? this.requestHistory : this.acceptedRequest))
             .fontSize(13)
             .fontColor(app.inkSoft)
             .maxLines(this.requestOpen ? 12 : 1)
@@ -3187,7 +3507,7 @@ export struct GeneratePage {
 
   /** Make widget, or a program that already has one. */
   private showsWidgetTab(): boolean {
-    return this.makeWidget || /\bfunction\s+widget\s*\(/.test(this.compiledSource)
+    return this.makeWidget || hasWidgetFunction(this.compiledSource)
   }
 
   /** The source or the figures of the run, under the tab that was chosen. */
@@ -3322,9 +3642,130 @@ export struct GeneratePage {
     this.rewriting = false
   }
 
+  /** Cards on the home screen that show this project. */
+  private readWidgetCards(): number {
+    try { return formBindings.formsFor(this.projectId).length } catch (e) {
+      console.error('Read widget bindings failed: ' + (e as Error).message)
+      return 0
+    }
+  }
+
+  /**
+   * The launcher's widget list adds the card in the form's own process (formBindings.takeOffer): watched for a minute, so
+   * the button says it is there once it is.
+   */
+  private watchForCard(): void {
+    let tries = 0
+    let tick = (): void => {
+      if (this.disposed) { return }
+      this.widgetCards = this.readWidgetCards()
+      if (this.widgetCards > 0) { this.widgetPlacedHere = true; this.widgetNote = ''; return }
+      tries++
+      if (tries < 60) { setTimeout(tick, 1000) }
+    }
+    setTimeout(tick, 1000)
+  }
+
+  /** The first widget is asked for in one tap; one that is there, changed in one. */
+  private widgetSuggestions(): WidgetSuggestion[] {
+    if (this.widgetChipsFor !== this.compiledSource) {
+      this.widgetChipsFor = this.compiledSource
+      this.widgetChips = hasWidgetFunction(this.compiledSource) ? changeSuggestions(this.compiledSource) :
+        firstSuggestions(this.compiledSource)
+    }
+    return this.widgetChips
+  }
+
+  /**
+   * What the last request did to the card: made it, changed it, or left it looking as it was -- the last one says so,
+   * since a request the card cannot show otherwise reads as nothing having happened.
+   */
+  private widgetChangeNote(): string {
+    if (this.widgetBeforeVbc2.length === 0 || this.compiledVbc2 === this.widgetBeforeVbc2 ||
+      !hasWidgetFunction(this.compiledSource)) { return '' }
+    if (this.widgetChangeFor !== this.compiledVbc2) {
+      this.widgetChangeFor = this.compiledVbc2
+      this.widgetChangeText = !this.widgetBeforeHad ? 'made' :
+        (sameCard(this.widgetBeforeVbc2, this.compiledVbc2, this.widgetSeed) ? 'same' : 'updated')
+    }
+    return this.widgetChangeText
+  }
+
+  /** A suggestion or Try again: sent as if typed into the box. */
+  private sendWidget(ask: string, label: string = ''): void {
+    if (this.generating) { return }
+    this.chipLabel = label
+    this.draft = ask
+    this.send()
+  }
+
+  /** The last request built nothing: the model's checks said no, or the reply did not compile. */
+  private widgetFailed(): boolean {
+    if (this.widgetFailure.length > 0) { return true }
+    return this.runs.length > 0 && (!this.compiled || this.generatedSource.trim() !== this.compiledSource.trim())
+  }
+
+  private widgetFailureText(): string {
+    if (this.widgetFailure.length > 0) { return this.widgetFailure }
+    return this.compileErrors.length > 0 ? this.compileErrors : this.status
+  }
+
+  private widgetActionLabel(): string {
+    if (this.bindFormId.length > 0) { return 'Show on this card' }
+    if (this.widgetCards > 0) { return 'Update widget' }
+    return 'Add to home screen'
+  }
+
+  /**
+   * Save the widget, and put it on the home screen: on the card it was opened for, or a new one when there are none.
+   * Cards already there draw the saved version on their own (commitSave refreshes them).
+   */
+  private async addToHomeScreen(leave: boolean): Promise<void> {
+    if (this.disposed || this.generating || this.widgetAdding) { return }
+    if (!this.isSaved() && !this.commitSave()) { return }
+    this.widgetAdding = true
+    this.widgetNote = ''
+    let placed = false
+    try {
+      if (this.bindFormId.length > 0) {
+        await bindLiveForm(this.bindFormId, this.projectId)
+        this.bindFormId = ''
+        this.widgetAdding = false
+        returnToLibrary(this.pathStack)
+        return
+      }
+      if (this.readWidgetCards() === 0) {
+        let message = await publishLiveWidget(this.projectId)
+        placed = message === WIDGET_ADDED
+        if (!placed) { this.widgetNote = message; this.watchForCard() }
+      } else {
+        placed = true
+      }
+    } catch (e) {
+      this.widgetNote = 'Could not add the widget: ' + (e as Error).message
+    } finally {
+      this.widgetAdding = false
+    }
+    if (this.disposed) { return }
+    this.widgetCards = this.readWidgetCards()
+    this.widgetPlacedHere = this.widgetPlacedHere || placed
+    if (leave && placed) { this.close() }
+  }
+
   private send(): void {
     let text = this.draft.trim()
     if (this.disposed || text.length === 0 || this.generating) { return }
+    this.widgetOffer = false
+    this.requestLabel = this.chipLabel
+    this.chipLabel = ''
+    if (this.makeWidget) {
+      this.widgetAsk = text
+      this.widgetBeforeVbc2 = this.compiledVbc2
+      this.widgetBeforeHad = hasWidgetFunction(this.compiledSource)
+      this.widgetFailure = ''
+      this.widgetFailureOpen = false
+      this.widgetNote = ''
+    }
     if (this.rewriting) {
       this.rewriting = false
       if (this.acceptedBase !== null) { this.restoreBase(this.acceptedBase!) }
@@ -3340,6 +3781,11 @@ export struct GeneratePage {
     // when that is put right.
     if (this.generating || this.runOnOpen) { this.draft = '' }
     this.scrollDown()
+  }
+
+  /** A request as the person reads it: Make widget's wording for the model ("The home-screen widget should show: ") is "Widget: ". */
+  private shownRequest(text: string): string {
+    return text.split(WIDGET_ASK).join('Widget: ')
   }
 
   /** The request line has more to show when there is a history of requests or the text does not fit on one line. */
@@ -3397,13 +3843,12 @@ export struct GeneratePage {
         Column() {
           if (this.baseError.length > 0 && !this.fullscreen) {
             Text(this.baseError).fontSize(13).fontColor(app.dangerInk).width('100%').padding({ left: 16, right: 16, top: 8 })
-          } else if (this.makeWidget && !this.fullscreen) {
-            Text('Make widget keeps the fullscreen code and saved data.')
-              .fontSize(13).fontColor(app.primary).width('100%').padding({ left: 16, right: 16, top: 8 })
           }
           // A program that runs takes the whole space between the bar and the box, as the whole of the screen it is; before
           // and while it is built, and when it was not, the page is a thread of cards.
-          if (this.fullscreen && this.hasResult()) {
+          if (this.makeWidget && this.baseError.length === 0 && this.hasResult()) {
+            this.widgetPane()
+          } else if (this.fullscreen && this.hasResult()) {
             this.fullscreenPane()
           } else if (!this.generating && this.hasResult()) {
             this.resultPane()
@@ -3442,6 +3887,9 @@ export struct GeneratePage {
 
           // Full screen can fold the box away, leaving the program the whole screen; a round button brings it back.
           // While a field of the program has the keyboard, the box would only take room from the program.
+          if (this.widgetOffer && !this.generating && !this.makeWidget) {
+            this.widgetOfferCard()
+          }
           if (!(this.fullscreen && this.composerHidden && this.hasResult()) &&
             !(this.keyboardOpen && !this.composerFocused && this.hasResult())) {
             this.composer()
@@ -3460,7 +3908,7 @@ export struct GeneratePage {
       .width('100%')
       .height('100%')
     }
-    .title(this.baseVersionId.length > 0 ? 'Refine · Version ' + this.baseVersionNumber.toString() :
+    .title(this.makeWidget ? 'Widget \u00B7 ' + this.widgetTitle : this.baseVersionId.length > 0 ? 'Refine · Version ' + this.baseVersionNumber.toString() :
       (this.projectId.length === 0 ? 'New app' : 'New version'))
     .hideTitleBar((this.fullscreen && this.hasResult()) || this.naming || this.leaving)
     .backgroundColor(app.background)

@@ -46,7 +46,7 @@ export struct AppsPage {
           })
         // Keyed by what a row shows, so a rename, a new picture or a saved version redraws it.
         }, (row: ProjectRow) => row.project.id + '|' + row.project.name + '|' + row.project.icon + '|' +
-          row.summary.versions.toString() + '|' + row.summary.updatedAt.toString())
+          row.summary.versions.toString() + '|' + row.summary.updatedAt.toString() + '|' + row.cards.toString())
       }
       .width('100%')
       .padding({ left: 16, right: 16, top: 8, bottom: 16 })
@@ -73,8 +73,15 @@ export struct AppsPage {
             Text(row.summary.request).fontSize(13).fontColor(app.inkSoft).maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
-          Text(versionCountText(row.summary.versions) + ' · ' + new Date(row.summary.updatedAt).toLocaleDateString())
-            .fontSize(12).fontColor(app.inkMuted)
+          Row({ space: 6 }) {
+            Text(versionCountText(row.summary.versions) + ' · ' + new Date(row.summary.updatedAt).toLocaleDateString())
+              .fontSize(12).fontColor(app.inkMuted)
+            if (row.cards > 0) {
+              // The app has a card on the home screen.
+              SymbolGlyph($r('sys.symbol.square_grid_2x2')).fontSize(12).fontColor([app.primaryInk])
+              Text('Widget').fontSize(12).fontColor(app.primaryInk)
+            }
+          }
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)

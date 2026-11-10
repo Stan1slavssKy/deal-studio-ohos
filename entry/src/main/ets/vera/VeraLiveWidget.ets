@@ -616,3 +616,20 @@ export class WidgetSession {
     return requests
   }
 }
+
+/**
+ * Whether two programs' widgets draw the same card over the same data: what is on it, its colours and sizes, not the
+ * frame's token. A widget that cannot be drawn is not the same as one that can.
+ */
+export function sameCard(before: string, after: string, seed: string): boolean {
+  let draw = (vbc2: string): string => {
+    try {
+      let frame = new WidgetSession(vbc2, 'compare', seed).frame('', '', '')
+      return frame.live ? JSON.stringify(frame.nodes) + frame.background : ''
+    } catch (_e) {
+      return ''
+    }
+  }
+  let a = draw(before)
+  return a.length > 0 && a === draw(after)
+}

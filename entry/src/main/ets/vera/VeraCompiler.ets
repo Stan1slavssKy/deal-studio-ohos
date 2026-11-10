@@ -3061,6 +3061,156 @@ export function spliceWidget(base: string, candidate: string): string {
   return (imports.length > 0 ? imports.join('\n') + '\n' : '') + kept.trimEnd() + '\n\n' + added.join('\n\n') + '\n'
 }
 
+/**
+ * A new version of a program that had a home-screen widget, written without it: the earlier version's widget, its refresh
+ * and what they use that the new version does not have (helpers, classes, imports), put back at the end. A new version
+ * with a widget of its own, or an earlier one without, is returned as it is. Whether the result compiles and the card
+ * still draws is the caller's to check: the widget may read a field the new version took away.
+ */
+export function carryWidget(next: string, previous: string): string {
+  let now: Application
+  let before: Application
+  try {
+    now = new Parser(next, '<next>').parse()
+    before = new Parser(previous, '<previous>').parse()
+  } catch (_e) {
+    return next
+  }
+  let nameOf = (entry: Declaration): string => entry instanceof FunctionDeclaration ? entry.name :
+    (entry instanceof ClassDeclaration ? entry.name : '')
+  let isWidget = (entry: Declaration): boolean => entry instanceof FunctionDeclaration && entry.name === 'widget'
+  if (now.declarations.some(isWidget) || !before.declarations.some(isWidget)) { return next }
+  let present = now.declarations.map(nameOf)
+  let text = (node: Node): string => previous.substring(node.span.start.offset, node.span.end.offset)
+  let words = (node: Node): string[] => new Lexer(text(node), '<declaration>').scan().map((token: Token): string => token.text)
+  // The widget's own, then whatever they name that the new version lacks, until nothing new is named.
+  let carried: Declaration[] = before.declarations.filter((entry: Declaration): boolean =>
+    entry instanceof FunctionDeclaration && WIDGET_OWNED.indexOf(entry.name) >= 0)
+  let used: string[] = []
+  for (let i = 0; i < carried.length; i++) {
+    for (let word of words(carried[i])) {
+      if (used.indexOf(word) < 0) { used.push(word) }
+      let wanted = before.declarations.find((entry: Declaration): boolean => nameOf(entry) === word)
+      if (wanted !== undefined && present.indexOf(word) < 0 && carried.indexOf(wanted) < 0) { carried.push(wanted) }
+    }
+  }
+  carried.sort((a: Declaration, b: Declaration): number => a.span.start.offset - b.span.start.offset)
+  let imports: string[] = []
+  for (let entry of before.imports) {
+    if (used.indexOf(entry.name) >= 0 &&
+      !now.imports.some((other: ImportDeclaration): boolean => other.name === entry.name && other.specifier === entry.specifier)) {
+      imports.push(text(entry))
+    }
+  }
+  return (imports.length > 0 ? imports.join('\n') + '\n' : '') + next.trimEnd() + '\n\n' +
+    carried.map(text).join('\n\n') + '\n'
+}
+
+/** A field or handler the app shows, under the words the app itself gives it ("Score", "Start"); '' when it gives none. */
+export class WidgetFact {
+  name: string
+  label: string
+
+  constructor(name: string, label: string) {
+    this.name = name
+    this.label = label
+  }
+}
+
+/**
+ * What a program shows that a widget could: the state's numbers it puts on screen as figures, the lists it lays out as
+ * rows, and the actions its buttons take -- in the order the app shows them, primary buttons first. A number only drawn
+ * (a paddle's x) or a list only painted (a game's bricks) is not one: it means nothing on a card.
+ */
+export class WidgetFacts {
+  numbers: WidgetFact[] = []
+  lists: WidgetFact[] = []
+  handlers: WidgetFact[] = []
+  /** Names the widget and widgetRefresh mention: a field or handler in here is on the card already. */
+  used: string[] = []
+  /** The widget's and widgetRefresh's own text: a figure the app words as a label is on the card when the label is here. */
+  widgetText: string = ''
+}
+
+export function widgetFacts(source: string): WidgetFacts {
+  let facts = new WidgetFacts()
+  let app: Application
+  try { app = new Parser(source, '<facts>').parse() } catch (_e) { return facts }
+  let init = app.declarations.find((entry: Declaration): boolean =>
+    entry instanceof FunctionDeclaration && entry.name === 'init') as FunctionDeclaration | undefined
+  if (init === undefined) { return facts }
+  let stateName = init.returnType.name
+  let state = app.declarations.find((entry: Declaration): boolean =>
+    entry instanceof ClassDeclaration && entry.name === stateName) as ClassDeclaration | undefined
+  if (state === undefined) { return facts }
+  let numberFields = state.fields.filter((field: FieldDeclaration): boolean => field.type.name === 'number' && !field.type.nullable)
+    .map((field: FieldDeclaration): string => field.name)
+  let listFields = state.fields.filter((field: FieldDeclaration): boolean => field.type.name === 'array')
+    .map((field: FieldDeclaration): string => field.name)
+  let widgetText = ''
+  let appText = ''
+  let handlerNames: string[] = []
+  for (let entry of app.declarations) {
+    if (!(entry instanceof FunctionDeclaration)) { continue }
+    let fn = entry as FunctionDeclaration
+    let text = source.substring(fn.span.start.offset, fn.span.end.offset)
+    if (WIDGET_OWNED.indexOf(fn.name) >= 0) { widgetText = widgetText + '\n' + text; continue }
+    appText = appText + '\n' + text
+    if (!fn.isAsync && fn.parameters.length === 2 && fn.parameters[0].type.name === stateName &&
+      fn.returnType.name === stateName && fn.parameters[1].type.name === 'number') { handlerNames.push(fn.name) }
+    // A list laid out as rows is one a function walks while it makes ListItems or TimelineItems.
+    if (/\b(ListItem|TimelineItem)\(/.test(text)) {
+      for (let field of listFields) {
+        if (new RegExp('state\\.' + field + '\\b').test(text) && !facts.lists.some((f: WidgetFact): boolean => f.name === field)) {
+          facts.lists.push(new WidgetFact(field, ''))
+        }
+      }
+    }
+  }
+  facts.widgetText = widgetText
+  for (let token of new Lexer(widgetText, '<widget>').scan()) {
+    if (facts.used.indexOf(token.text) < 0) { facts.used.push(token.text) }
+  }
+  // Figures, in the order the app shows them: a labelled stat (its value may be worked out, not a field), then a number
+  // written straight from the state.
+  let addFigure = (field: string, label: string): void => {
+    let known = facts.numbers.find((f: WidgetFact): boolean =>
+      (field.length > 0 && f.name === field) || (label.length > 0 && f.label === label))
+    if (known === undefined) { facts.numbers.push(new WidgetFact(field, label)) }
+    else if (known.label.length === 0) { known.label = label }
+  }
+  let stat = /(?:NumberStat|\bStat|Hero)\(\s*"[^"]*"\s*,\s*"([^"]*)"\s*,\s*([^,]+),/g
+  let match = stat.exec(appText)
+  while (match !== null) {
+    let direct = /^state\.(\w+)$/.exec(match[2].trim())
+    let field = direct !== null && numberFields.indexOf(direct[1]) >= 0 ? direct[1] : ''
+    if (match[1].trim().length > 0) { addFigure(field, match[1].trim()) }
+    match = stat.exec(appText)
+  }
+  let plain = /NumberText\(\s*"[^"]*"\s*,\s*state\.(\w+)|numberToString\(\s*state\.(\w+)/g
+  match = plain.exec(appText)
+  while (match !== null) {
+    let field = match[1] !== undefined ? match[1] : match[2]
+    if (numberFields.indexOf(field) >= 0) { addFigure(field, '') }
+    match = plain.exec(appText)
+  }
+  // Buttons, with the words on them; the primary ones first, as the app's main actions.
+  // Only a button that gives its handler a fixed value: a Remove that passes the row's index means nothing on a card.
+  let button = /Button\(\s*"(\w+)"\s*,\s*"([^"]*)"\s*,\s*"(\w+)"\s*,\s*-?\d+(?:\.\d+)?\s*,/g
+  let primary: WidgetFact[] = []
+  let rest: WidgetFact[] = []
+  match = button.exec(appText)
+  while (match !== null) {
+    let name = match[3]
+    if (handlerNames.indexOf(name) >= 0 && !primary.concat(rest).some((f: WidgetFact): boolean => f.name === name)) {
+      if (match[1] === 'primary') { primary.push(new WidgetFact(name, match[2])) } else { rest.push(new WidgetFact(name, match[2])) }
+    }
+    match = button.exec(appText)
+  }
+  facts.handlers = primary.concat(rest)
+  return facts
+}
+
 export class CompileOptions {
   /**
    * Accept an action that names a handler not declared anywhere. Only for a

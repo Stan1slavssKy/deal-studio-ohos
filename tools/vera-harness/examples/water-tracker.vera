@@ -1,0 +1,122 @@
+import * as ui from "std/ui"
+
+@jsonable
+class LogEntry {
+  minute: number;
+}
+
+@jsonable
+class AppState {
+  glassSizeText: string;
+  dailyGoalText: string;
+  entries: LogEntry[];
+  removedEntries: LogEntry[];
+  removedAt: number;
+  settingsOpen: boolean;
+}
+
+function init(): AppState {
+  let emptyEntries: LogEntry[] = [];
+  return {glassSizeText: "250", dailyGoalText: "8", entries: emptyEntries, removedEntries: emptyEntries, removedAt: -1, settingsOpen: false};
+}
+
+function share(a: number, b: number): number {
+  if (b === 0) { return 0; }
+  return a / b;
+}
+
+
+
+function set_glassSize(state: AppState, value: string): AppState {
+  return {glassSizeText: value, dailyGoalText: state.dailyGoalText, entries: state.entries, removedEntries: state.removedEntries, removedAt: state.removedAt, settingsOpen: state.settingsOpen};
+}
+
+function set_dailyGoal(state: AppState, value: string): AppState {
+  return {dailyGoalText: value, glassSizeText: state.glassSizeText, entries: state.entries, removedEntries: state.removedEntries, removedAt: state.removedAt, settingsOpen: state.settingsOpen};
+}
+
+
+
+function addEntry(state: AppState, ignored: number): AppState {
+  let none: LogEntry[] = [];
+  let entry: LogEntry = {minute: time.hourOfDay() * 60 + time.minuteOfHour()};
+  let out: LogEntry[] = [];
+  for (let e: LogEntry of state.entries) { out.push(e); }
+  out.push(entry);
+  return {entries: out, removedEntries: none, glassSizeText: state.glassSizeText, dailyGoalText: state.dailyGoalText, removedAt: state.removedAt, settingsOpen: state.settingsOpen};
+}
+
+function removeEntry(state: AppState, value: number): AppState {
+  let out: LogEntry[] = [];
+  let gone: LogEntry[] = [];
+  let i: number = 0;
+  while (i < state.entries.length()) {
+    if (i !== value) { out.push(state.entries[i]); } else { gone.push(state.entries[i]); }
+    i = i + 1;
+  }
+  return {entries: out, removedEntries: gone, removedAt: value, glassSizeText: state.glassSizeText, dailyGoalText: state.dailyGoalText, settingsOpen: state.settingsOpen};
+}
+
+function undoRemove(state: AppState, ignored: number): AppState {
+  if (state.removedEntries.length() === 0) { return state; }
+  let out: LogEntry[] = [];
+  let none: LogEntry[] = [];
+  let i: number = 0;
+  while (i < state.entries.length()) {
+    if (i === state.removedAt) { out.push(state.removedEntries[0]); }
+    out.push(state.entries[i]);
+    i = i + 1;
+  }
+  if (state.removedAt >= state.entries.length()) { out.push(state.removedEntries[0]); }
+  return {entries: out, removedEntries: none, removedAt: -1, glassSizeText: state.glassSizeText, dailyGoalText: state.dailyGoalText, settingsOpen: state.settingsOpen};
+}
+
+function expireUndo(state: AppState, elapsedMs: number): AppState {
+  let none: LogEntry[] = [];
+  return {removedEntries: none, removedAt: -1, glassSizeText: state.glassSizeText, dailyGoalText: state.dailyGoalText, entries: state.entries, settingsOpen: state.settingsOpen};
+}
+
+
+
+
+
+function toggleSettings(state: AppState, ignored: number): AppState {
+  return {settingsOpen: !state.settingsOpen, glassSizeText: state.glassSizeText, dailyGoalText: state.dailyGoalText, entries: state.entries, removedEntries: state.removedEntries, removedAt: state.removedAt};
+}
+
+function view(state: AppState): ui.View {
+  let sections: ui.View[] = [];
+  sections.push(ui.Header("default", "Water Tracker", "HYDRATION", "Count your glasses and see how close you are to your daily goal.", ""));
+  {
+      let glassSize: number = strings.toNumber(state.glassSizeText, 0);
+      let dailyGoal: number = strings.toNumber(state.dailyGoalText, 0);
+      let entryCount: number = state.entries.length();
+      let entryTotal: number = 0;
+      let glassesToday: number = entryCount;
+      let goalProgress: number = math.min(1, share(entryCount, dailyGoal));
+      let remainingGlasses: number = math.max(0, (dailyGoal - entryCount));
+      let waterToday: number = glassSize * glassesToday;
+    sections.push(ui.Section("content", "", "", [ui.Progress("accent", "Goal progress", math.round(math.min(math.max(goalProgress, 0), 1) * 1000), 1000)]));
+    sections.push(ui.Section("summary", "", "", [ui.MetricGroup("default", 3, [ui.NumberStat("default", "Glasses today", glassesToday, "", " glasses", 1, "", "chart", 0), ui.NumberStat("default", "Glasses left", remainingGlasses, "", " glasses", 1, "", "chart", 0), ui.NumberStat("default", "Water today", waterToday, "", " ml", 1, "", "chart", 0)])]));
+    let rows: ui.View[] = [];
+    let i: number = entryCount - 1;
+    while (i >= 0 && i > entryCount - 21) {
+      let e: LogEntry = state.entries[i];
+      let sub: string = "Added " + ui.clockToString(e.minute);
+      rows.push(ui.ListItem("default", "#" + ui.numberToString(i + 1), sub, "", "", 0, false, ""));
+      rows.push(ui.ActionBar("end", [ui.Button("secondary", "Remove", "removeEntry", i, true)]));
+      i = i - 1;
+    }
+    sections.push(ui.Section("content", "", "", [ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, true)])]));
+    sections.push(ui.Section("content", "", "", [ui.SectionHeader("default", "Glasses of water", "Newest first", ui.numberToString(entryCount)), ui.When(entryCount === 0, ui.EmptyState("default", "Nothing added yet", "Tap Add to add one.", "", "", "list")), ui.When(entryCount > 0, ui.ListGroup("default", "", rows)), ui.When(state.removedEntries.length() > 0, ui.Snackbar("default", "Removed", "Undo", "undoRemove")), ui.Ticker("default", "undoClock", 6000 + state.entries.length() % 7, state.removedEntries.length() > 0, "expireUndo")]));
+  }
+  {
+    let settingsWord: string = "Show";
+    if (state.settingsOpen) { settingsWord = "Hide"; }
+    sections.push(ui.Section("supporting", "", "", [
+      ui.ListItem("default", "Settings", "2 settings", settingsWord, "toggleSettings", 0, true, ""),
+      ui.When(state.settingsOpen, ui.Column("default", [ui.TextField("default", "Glass size (ml)", state.glassSizeText, "set_glassSize", "number"), ui.TextField("default", "Daily goal (glasses)", state.dailyGoalText, "set_dailyGoal", "number")]))
+    ]));
+  }
+  return ui.AppTheme("clean", "", sections);
+}

@@ -357,7 +357,7 @@ export struct Index {
           ListItem() {
             this.appTile(row)
           }
-        }, (row: ProjectRow) => row.project.id + '|' + row.project.name + '|' + row.project.icon)
+        }, (row: ProjectRow) => row.project.id + '|' + row.project.name + '|' + row.project.icon + '|' + row.cards.toString())
       }
       .listDirection(Axis.Horizontal)
       .scrollBar(BarState.Off)
@@ -378,8 +378,19 @@ export struct Index {
   @Builder
   appTile(row: ProjectRow) {
     Column({ space: 10 }) {
-      Image(projectIconResource(row.project.icon)).objectFit(ImageFit.Contain)
-        .width(SHELF_ICON).height(SHELF_ICON).padding(26).borderRadius(34).backgroundColor(tileTint(row.project.id))
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Image(projectIconResource(row.project.icon)).objectFit(ImageFit.Contain)
+          .width(SHELF_ICON).height(SHELF_ICON).padding(26).borderRadius(34).backgroundColor(tileTint(row.project.id))
+        if (row.cards > 0) {
+          // A card of this app is on the home screen.
+          Column() {
+            SymbolGlyph($r('sys.symbol.square_grid_2x2')).fontSize(15).fontColor([app.onPrimary])
+          }
+          .width(30).height(30).justifyContent(FlexAlign.Center).borderRadius(15)
+          .backgroundColor(app.primary).border({ width: 2, color: app.background })
+          .margin({ top: 2, right: 2 })
+        }
+      }
       Text(row.project.name).fontSize(14).fontColor(app.inkStrong).maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis }).textAlign(TextAlign.Center)
         .width('100%').height(40)
