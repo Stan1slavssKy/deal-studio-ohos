@@ -14,7 +14,7 @@ import { veraStateStamp } from '../vera/VeraStateStamp'
 import { WidgetPreview } from '../components/WidgetPreview'
 import { hasWidgetFunction } from '../vera/WidgetStatus'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
-import { compileVeraSource, CompileError, spliceWidget, appUsesWidgetError, carryWidget } from '../vera/VeraCompiler'
+import { compileVeraSource, CompileError, spliceWidget, appUsesWidgetError, carryWidget, withoutWidget } from '../vera/VeraCompiler'
 import { applyRepair, repairPrompt } from '../vera/VeraRepair'
 import { smokeRun } from '../vera/VeraSmoke'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
@@ -23,6 +23,7 @@ import { OperationController, throwIfCancelled } from '../vera/OperationCancella
 import { VeraPreview, VeraPreviewController } from '../components/VeraPreview'
 import { settings, MODE_DEEPSEEK, MODE_SERVER, MODE_LOCAL } from '../vera/SettingsStore'
 import { settingsMenuItem } from '../components/SettingsEntry'
+import { withoutWidgetRequests } from '../vera/ProjectText'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { ensureUiEmbeddings } from '../vera/VeraUiIndex'
@@ -453,6 +454,12 @@ export struct GeneratePage {
   /** The program before the last widget request: what the new card is compared with. */
   private widgetBeforeVbc2: string = ''
   private widgetBeforeHad: boolean = false
+  /**
+   * Redo (opened so from the project page): the next widget is written from nothing, on the program without the one
+   * it has (withoutWidget), with the first widget's requests. The widget there stays on screen and on the card until a new
+   * one is made and kept; after that, requests change the new one.
+   */
+  @State widgetFresh: boolean = false
   /** widgetChangeNote's answer for widgetChangeFor, which takes a run of the widget to work out. */
   private widgetChangeFor: string = ''
   private widgetChangeText: string = ''
@@ -738,6 +745,8 @@ export struct GeneratePage {
           this.carriedState = store.loadState(this.projectId, v.id, veraStateStamp(v.vbc2))
           this.widgetSeed = this.carriedState
           this.tab = TAB_WIDGET
+          // Redo, from the project page: the widget there is not shown to the model (withoutWidget).
+          this.widgetFresh = params.widgetFresh === '1' && hasWidgetFunction(v.source)
           this.bindFormId = params.formId || ''
           this.widgetCards = this.readWidgetCards()
         }
@@ -2123,10 +2132,14 @@ export struct GeneratePage {
     this.metricTotals.partial = true
     let host = appAgentHost((text: string): void => { if (run === this.runId) { this.status = text } },
       (_vbc2: string): void => {}, (): boolean => run !== this.runId || this.cancelRequested, this.promptTemplate)
-    let base = this.compiledSource
+    // Redo: neither the old widget nor what it was asked to show goes to the model, or it makes the same one again.
+    let base = this.widgetFresh ? withoutWidget(this.compiledSource) : this.compiledSource
+    let madeFor = this.widgetFresh ? withoutWidgetRequests(this.requestHistory) : this.requestHistory
+    console.info('VERA-WIDGET ' + (this.widgetFresh ? 'redo' : 'refine') + ' base widget=' + hasWidgetFunction(base).toString() +
+      ' history widget asks=' + (madeFor.split(WIDGET_ASK).length - 1).toString())
     let shows = ask.startsWith(WIDGET_ASK) ? ask.substring(WIDGET_ASK.length) : ask
     let made: WidgetWrite = await this.metricWork(run,
-      (): Promise<WidgetWrite> => writeWidget(base, shows, this.requestHistory, this.carriedState, host))
+      (): Promise<WidgetWrite> => writeWidget(base, shows, madeFor, this.carriedState, host))
     if (run !== this.runId) { return }
     let fields: Record<string, Object> = {}
     fields['shows'] = shows
@@ -2157,6 +2170,7 @@ export struct GeneratePage {
     this.compileErrors = ''
     this.refinePrompt = ''
     this.widgetSeed = this.liveState.length > 0 ? this.liveState : this.carriedState
+    this.widgetFresh = false
     this.tab = TAB_WIDGET
     this.status = 'Widget written in ' + (this.totalMs / 1000).toFixed(1) + ' s' +
       (made.attempts > 1 ? ', on answer ' + made.attempts.toString() : '')
@@ -2973,8 +2987,8 @@ export struct GeneratePage {
       if (this.fullscreen && this.hasResult()) {
         this.foldButton(true)
       }
-      TextInput({ placeholder: this.makeWidget ? (hasWidgetFunction(this.compiledSource) ? 'Change something...' :
-        'What should it show?') :
+      TextInput({ placeholder: this.makeWidget ? (hasWidgetFunction(this.compiledSource) ?
+        (this.widgetFresh ? 'What should the new widget show?' : 'Change something...') : 'What should it show?') :
         (this.hasResult() || this.baseVersionId.length > 0 ? 'What to change?' : 'Describe the app you want...'),
         text: this.draft })
         .onChange((value: string) => { this.draft = value })
@@ -3208,7 +3222,8 @@ export struct GeneratePage {
   widgetPane() {
     Column({ space: 10 }) {
       Stack() {
-        if (hasWidgetFunction(this.compiledSource)) {
+        // Redo shows the empty card: the old widget is what is being replaced, not the start of the new one.
+        if (hasWidgetFunction(this.compiledSource) && !this.widgetFresh) {
           WidgetPreview({ vbc2: this.compiledVbc2, seedState: this.widgetSeed, title: this.widgetTitle })
             .width('100%')
             .height('100%')
@@ -3218,7 +3233,8 @@ export struct GeneratePage {
             if (this.generating) {
               LoadingProgress().width(28).height(28)
             }
-            Text(this.generating ? 'Making the widget...' : 'Your widget appears here')
+            Text(this.generating ? 'Making the widget...' :
+              (this.widgetFresh ? 'Your new widget appears here' : 'Your widget appears here'))
               .fontSize(13).fontColor(app.inkMuted).textAlign(TextAlign.Center)
           }
           .width(172)
@@ -3359,7 +3375,7 @@ export struct GeneratePage {
   /** The widget screen's one button: put the card on the home screen, or say it is there. */
   @Builder
   widgetAction() {
-    if (hasWidgetFunction(this.compiledSource) && !this.generating) {
+    if (hasWidgetFunction(this.compiledSource) && !this.generating && !this.widgetFresh) {
       Column({ space: 8 }) {
         if (this.isSaved() && this.bindFormId.length === 0 && (this.widgetCards > 0 || this.widgetPlacedHere)) {
           Button('\u2713 On home screen')
@@ -3668,10 +3684,11 @@ export struct GeneratePage {
 
   /** The first widget is asked for in one tap; one that is there, changed in one. */
   private widgetSuggestions(): WidgetSuggestion[] {
-    if (this.widgetChipsFor !== this.compiledSource) {
-      this.widgetChipsFor = this.compiledSource
-      this.widgetChips = hasWidgetFunction(this.compiledSource) ? changeSuggestions(this.compiledSource) :
-        firstSuggestions(this.compiledSource)
+    let key = (this.widgetFresh ? 'fresh:' : 'change:') + this.compiledSource
+    if (this.widgetChipsFor !== key) {
+      this.widgetChipsFor = key
+      this.widgetChips = hasWidgetFunction(this.compiledSource) && !this.widgetFresh ? changeSuggestions(this.compiledSource) :
+        firstSuggestions(withoutWidget(this.compiledSource))
     }
     return this.widgetChips
   }
@@ -3761,7 +3778,7 @@ export struct GeneratePage {
     if (this.makeWidget) {
       this.widgetAsk = text
       this.widgetBeforeVbc2 = this.compiledVbc2
-      this.widgetBeforeHad = hasWidgetFunction(this.compiledSource)
+      this.widgetBeforeHad = hasWidgetFunction(this.compiledSource) && !this.widgetFresh
       this.widgetFailure = ''
       this.widgetFailureOpen = false
       this.widgetNote = ''
@@ -3908,7 +3925,7 @@ export struct GeneratePage {
       .width('100%')
       .height('100%')
     }
-    .title(this.makeWidget ? 'Widget \u00B7 ' + this.widgetTitle : this.baseVersionId.length > 0 ? 'Refine · Version ' + this.baseVersionNumber.toString() :
+    .title(this.makeWidget ? (this.widgetFresh ? 'New widget \u00B7 ' : 'Widget \u00B7 ') + this.widgetTitle : this.baseVersionId.length > 0 ? 'Refine · Version ' + this.baseVersionNumber.toString() :
       (this.projectId.length === 0 ? 'New app' : 'New version'))
     .hideTitleBar((this.fullscreen && this.hasResult()) || this.naming || this.leaving)
     .backgroundColor(app.background)

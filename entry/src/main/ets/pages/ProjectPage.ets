@@ -411,29 +411,37 @@ export struct ProjectPage {
             .height(32).fontSize(13).margin({ top: 4 })
             .onClick(() => { this.makeWidget() })
         } else if (this.widget.kind === WIDGET_READY) {
-          Row({ space: 14 }) {
-            Button('Add to home screen')
-              .attributeModifier(new PrimaryButton())
-              .height(32).fontSize(13)
-              .enabled(!this.projectOperationPending)
-              .onClick(() => { this.addWidget() })
-            Text('Change')
+          Button('Add to home screen')
+            .attributeModifier(new PrimaryButton())
+            .height(32).fontSize(13).margin({ top: 4 })
+            .enabled(!this.projectOperationPending)
+            .onClick(() => { this.addWidget() })
+          Row({ space: 18 }) {
+            Text('Refine')
               .fontSize(13).fontColor(app.primaryInk)
               .onClick(() => { this.makeWidget() })
+            Text('Redo')
+              .fontSize(13).fontColor(app.primaryInk)
+              .onClick(() => { this.makeWidget(true) })
           }
-          .margin({ top: 4 })
+          .margin({ top: 6 })
         } else if (this.widget.kind === WIDGET_PLACED) {
-          Row({ space: 12 }) {
-            Button('Change')
+          // Refine edits the widget there; Redo writes another from nothing (the cards keep the old one until it is kept).
+          Row({ space: 8 }) {
+            Button('Refine')
               .attributeModifier(new QuietButton())
               .height(32).fontSize(13)
               .onClick(() => { this.makeWidget() })
-            Text('Add another')
-              .fontSize(13).fontColor(app.primaryInk)
-              .enabled(!this.projectOperationPending)
-              .onClick(() => { this.addWidget() })
+            Button('Redo')
+              .attributeModifier(new QuietButton())
+              .height(32).fontSize(13)
+              .onClick(() => { this.makeWidget(true) })
           }
           .margin({ top: 4 })
+          Text('Add another')
+            .fontSize(13).fontColor(app.primaryInk).margin({ top: 6 })
+            .enabled(!this.projectOperationPending)
+            .onClick(() => { this.addWidget() })
         } else if (this.widget.kind === WIDGET_BROKEN && this.versions[0].vbc2.length > 0) {
           Button('Make widget again')
             .attributeModifier(new PrimaryButton())
@@ -475,10 +483,10 @@ export struct ProjectPage {
     setTimeout(tick, 1000)
   }
 
-  /** Make, change or remake the widget: always on the latest version, the one the card draws. */
-  private makeWidget(): void {
+  /** Make, change or remake the widget: always on the latest version, the one the card draws. Fresh writes a new one. */
+  private makeWidget(fresh: boolean = false): void {
     if (this.versions.length === 0 || this.versions[0].vbc2.length === 0) { return }
-    this.openGenerate(this.versions[0].id, true)
+    this.openGenerate(this.versions[0].id, true, fresh)
   }
 
   @LocalBuilder
@@ -571,11 +579,12 @@ export struct ProjectPage {
     this.pathStack.pushPath({ name: 'runner', param: p })
   }
 
-  private openGenerate(baseVersionId: string, makeWidget: boolean = false): void {
+  private openGenerate(baseVersionId: string, makeWidget: boolean = false, widgetFresh: boolean = false): void {
     let p = new AppRouteParams()
     p.projectId = this.projectId
     p.baseVersionId = baseVersionId
     p.makeWidget = makeWidget ? '1' : ''
+    p.widgetFresh = makeWidget && widgetFresh ? '1' : ''
     this.pathStack.pushPath({ name: 'generate', param: p })
   }
 
