@@ -335,8 +335,11 @@ twelve equal segments) hides a spin (give it a mark or a ball); the model does n
 each of the three builder levels). Each child can be its own `ui.Motion` around its own `ui.Surface`, so a stick swings while the drum recoils and clouds drift over a sky.
 A `ui.Surface` above the first takes the style **`clear`** (no background of its own: `paintGfx(..., bare)`; without it the top layer hides the ones under it, found on the
 phone). Up to 5 pictures and 5 Motions (`LIVE_MAX_SURFACES`, `LIVE_MAX_MOTIONS`, five canvas contexts). A touch on any part of a Layers plays **every** Motion in it
-(`CardNode.links`: the slots a touch plays), and a touch on a Motion with no handler of its own plays it too: the card posts `#touch` (`TOUCH_ACTION`), the host runs
-nothing and answers with a new frame, in which the movement plays. Measured: stick over drum, one touch, both moved (frames ~290 ms apart).
+(`CardNode.links`: the slots a touch plays, set on the Layers too, even with one Motion). A part with no handler lets a touch through (`HitTestMode.None`), so the
+topmost layer with a pointer under the finger runs it, and a touch that no part takes lands on the Layers. A touch on a Motion around a picture or a shape with no handler of
+its own plays it too: the card posts `#touch` (`TOUCH_ACTION`), the host runs nothing and answers with a new frame, in which the movement plays. A Motion around only a
+figure or a text has no touch of its own: it plays when its trigger changes, and a tap on it opens the app as before. Measured: stick over drum, one touch, both moved
+(frames ~290 ms apart).
 
 Make widget on the user's Moscow Weather app (live figures already in the program): "weather as a living scene that matches the current condition" gave, on the first
 attempt, a sky, sun, clouds and rain/snow as separate layers chosen from the live weather code, each with its own Motion (sky breathes, clouds drift or float, rain falls); a touch

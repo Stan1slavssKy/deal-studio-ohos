@@ -65,7 +65,7 @@ export class ComponentSpec {
   constructor(name: string, nodeKind: string, props: PropSpec[], summary: string,
       payloadKind: string = '', guidance: string = '', card: boolean = false) {
     this.name = name; this.nodeKind = nodeKind; this.props = props; this.summary = summary
-    this.payloadKind = payloadKind; this.guidance = guidance; this.card = card
+    this.payloadKind = payloadKind; this.guidance = guidance; this.card = card || CARD_OPT_IN.indexOf(name) >= 0
   }
 }
 
@@ -155,6 +155,13 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   ['snackbar', ['default', 'success', 'warning', 'danger']],
   ['sparkline', ['default', 'accent', 'success', 'warning', 'danger']],
 ])
+
+/**
+ * The components a home-screen card draws besides the ones that opt in with `card` in their own spec: each is turned into card nodes by
+ * VeraLiveWidget (an icon into a stroked path, a Stat into a column of texts, a Sparkline into a picture, Progress and ProgressRing into the
+ * platform's own). Listed here, never inferred; each spec takes it as it is made (ComponentSpec), so nothing is changed after.
+ */
+const CARD_OPT_IN: string[] = ['Icon', 'IconButton', 'Badge', 'Progress', 'ProgressRing', 'Stat', 'NumberStat', 'MetricGroup', 'Sparkline', 'Toggle', 'Checkbox', 'Layers']
 
 export const CATALOG: ComponentSpec[] = [
   new ComponentSpec('Column', 'column',
@@ -553,18 +560,6 @@ export const CATALOG: ComponentSpec[] = [
     'For a trend -- a week of steps, a balance over time, a reading taken repeatedly -- leave bars false for a connected line. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the chart does not jump every time a new point arrives). The line chart (bars false) scales between minimum and maximum, not always from zero: leave minimum 0 for values that are naturally zero-based (steps, a count), but set it to a real floor for values that live in a narrow band far from zero (human height, a temperature range, a stock price) -- otherwise every point lands in a sliver at the very top of the chart with empty space below. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead; bars always start at zero regardless of minimum, the way a bar chart should. To compare two series over the same points -- men vs women, this year vs last -- pass series2 with its own style tone (series2Style) and leave bars false; a legend naming the two (seriesLabel, series2Label) is drawn automatically when series2 is non-empty. categories labels the points along the x axis, in order, when they are not plain indices (e.g. "1700s", "1800s", ...); leave it empty for a plain trend. Never draw a line chart by hand with ui.Canvas and ui.Path -- ui.Path only fills, so an open multi-point line drawn that way renders as a solid wedge, not a line.'),
 ]
 
-/**
- * The components a home-screen card draws besides the ones that opt in above (`card`): each is turned into card nodes by VeraLiveWidget (an icon into a stroked
- * path, a Stat into a column of texts, a Sparkline into a picture, Progress and ProgressRing into the platform's own). Listed here, never inferred.
- */
-const CARD_OPT_IN: string[] = ['Icon', 'IconButton', 'Badge', 'Progress', 'ProgressRing', 'Stat', 'NumberStat', 'MetricGroup', 'Sparkline', 'Toggle', 'Checkbox', 'Layers']
-function optInCard(): boolean {
-  for (let spec of CATALOG) {
-    if (CARD_OPT_IN.indexOf(spec.name) >= 0) { spec.card = true }
-  }
-  return true
-}
-export const CARD_OPTED_IN: boolean = optInCard()
 
 /**
  * Which children a container will accept, where that can be seen in the source.

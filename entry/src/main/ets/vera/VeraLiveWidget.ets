@@ -2,16 +2,16 @@ import { VirtualMachine, deserializeVbc2, encodeRuntimeValue, decodeRuntimeValue
   VeraNumberValue, VeraStringValue, VeraBooleanValue } from './VeraInterpreter'
 import { UiHostEnvironment, VeraUiNode, decodeVeraUi, formatVeraNumber } from './VeraUi'
 import { CATALOG } from './VeraUiCatalog'
-import { resolveTheme, pathFill, toneInk, toneEdge, toneFill, buttonFill } from './VeraTheme'
+import { resolveTheme, pathFill, toneInk, toneEdge, toneFill, buttonFill, buttonInk, textWeight, textInk } from './VeraTheme'
 import { iconPath } from './VeraIcons'
 import { MOTION_PRESETS } from './VeraMotion'
 import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
 import { CardNode, LiveFrame, compactFrame, CardSize, cardSize, CARD_DIMENSIONS, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_SHAPES,
-  CARD_MAX_TIMERS } from '../widget/CardModel'
-import { cardTextSize, cardTextWeight, cardTextInk, cardTextFamily, cardLetterSpacing, cardGap, cardPanelPad, cardPanelFill, cardButtonFill, cardButtonInk } from './CardStyle'
-export { CardNode, LiveFrame, compactFrame, compactNode, normalizeNodes, CardSize, cardSize, CARD_DIMENSIONS } from '../widget/CardModel'
+  CARD_MAX_TIMERS, TOUCH_ACTION } from '../widget/CardModel'
+import { cardTextSize, cardTextFamily, cardLetterSpacing, cardGap, CARD_PANEL_PAD, cardPanelFill } from './CardStyle'
+export { CardNode, LiveFrame, compactFrame, compactNode, normalizeNodes, CardSize, cardSize, CARD_DIMENSIONS, TOUCH_ACTION } from '../widget/CardModel'
 
 export const LIVE_MAX_DEPTH: number = 4
 export const LIVE_MAX_TEXT: number = 256
@@ -20,8 +20,6 @@ export const LIVE_MAX_COMMANDS: number = 600
 /** The Motion presets a card plays: every one, as stages (VeraMotion.motionStages). */
 export const CARD_MOTIONS: string[] = MOTION_PRESETS
 export const LIVE_MAX_MOTIONS: number = CARD_MAX_MOTIONS
-/** What the card posts for a touch on a ui.Motion that has no handler: the host answers with a new frame and runs nothing. */
-export const TOUCH_ACTION: string = '#touch'
 /** Pictures on a card (ui.Surface or ui.Sparkline, drawn once for the frame), of a few dozen shapes each; the frame's own size budget counts the rest. */
 export const LIVE_MAX_SURFACES: number = CARD_MAX_PICTURES
 export const LIVE_MAX_SHAPES: number = CARD_MAX_SHAPES
@@ -98,17 +96,28 @@ function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
   return out
 }
 
-/** The widest a picture may be so the pictures of a row (directly, or in a Motion) share the card's width: its inner width less the gaps. */
+/**
+ * How many pictures a node puts side by side: a row adds its children's, a Layers (one over another) or a column, Motion, Stat or
+ * Sparkline (one under another) takes the most of any child.
+ */
+function picturesAcross(node: CardNode): number {
+  if (node.kind === 'surface') { return 1 }
+  let most = 0
+  let sum = 0
+  for (let child of node.children) {
+    let across = picturesAcross(child)
+    most = Math.max(most, across)
+    sum += across
+  }
+  return node.kind === 'row' ? sum : most
+}
 
+/** The widest a picture may be so the pictures of a row, at any depth under it, share the card's width: its inner width less the gaps. */
 function widthLimit(nodes: CardNode[], size: CardSize): number {
   let limit = size.pictureMax
   for (let node of nodes) {
     if (node.kind === 'row') {
-      let count = 0
-      for (let child of node.children) {
-        if (child.kind === 'surface') { count += 1 }
-        if (child.kind === 'motion') { count += allPictures(child.children, []).length }
-      }
+      let count = picturesAcross(node)
       if (count > 1) { limit = Math.min(limit, Math.floor((size.width - LIVE_ROW_SPACE * (count - 1)) / count)) }
     }
     limit = Math.min(limit, widthLimit(node.children, size))
@@ -278,7 +287,7 @@ export class WidgetSession {
       // A Stat's figure is smaller than a lone metric (24, not 30): two of them side by side have to leave room between them.
       big.size = 24
       big.color = toneInk(theme, node.style, theme.ink)
-      let weight = cardTextWeight(theme, 'metric')
+      let weight = textWeight(theme, 'metric')
       if (weight !== 400) { big.weight = weight }
       let family = cardTextFamily(theme, 'metric')
       if (family.length > 0) { big.family = family }
@@ -357,8 +366,8 @@ export class WidgetSession {
       if (node.kind === 'text' || node.kind === 'numbertext' || node.kind === 'timer') {
         // The theme's roles, with the card's sizes (CardStyle): the app's text styles reach the card instead of being flattened to three sizes.
         item.size = cardTextSize(node.style)
-        item.color = cardTextInk(theme, node.style)
-        let weight = cardTextWeight(theme, node.style)
+        item.color = textInk(theme, node.style)
+        let weight = textWeight(theme, node.style)
         if (weight !== 400) { item.weight = weight }
         let family = cardTextFamily(theme, node.style)
         if (family.length > 0) { item.family = family }
@@ -366,8 +375,8 @@ export class WidgetSession {
         if (spacing !== 0) { item.spacing = spacing }
       }
       if (node.kind === 'button') {
-        item.fill = cardButtonFill(theme, node.style)
-        item.color = cardButtonInk(theme, node.style)
+        item.fill = buttonFill(theme, node.style)
+        item.color = buttonInk(theme, node.style)
         if (theme.radiusControl !== 10) { item.radius = theme.radiusControl }
       }
       if (node.kind === 'divider') { item.color = theme.line }
@@ -379,7 +388,7 @@ export class WidgetSession {
         let panel = cardPanelFill(theme, node.style)
         if (panel.length > 0) {
           item.panel = panel
-          item.pad = cardPanelPad(node.style)
+          item.pad = CARD_PANEL_PAD
           item.radius = theme.radiusControl
         }
       }
@@ -468,7 +477,8 @@ export class WidgetSession {
             link(child.children)
           }
         }
-        if (slots.length > 1) { link(item.children) }
+        // The scene itself carries them too: a touch on a part with no handler of its own lands on the scene (CardView).
+        if (slots.length > 0) { item.links = slots; link(item.children) }
       }
       return item
     }

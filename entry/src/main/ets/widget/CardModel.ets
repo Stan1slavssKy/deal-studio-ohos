@@ -13,6 +13,8 @@ export const CARD_MAX_PICTURES: number = 5
 export const CARD_MAX_SHAPES: number = 60
 /** ui.Timer, the platform's own TextTimer. */
 export const CARD_MAX_TIMERS: number = 3
+/** What the card posts for a touch on a moving picture that has no handler: the host answers with a new frame and runs nothing. */
+export const TOUCH_ACTION: string = '#touch'
 
 /**
  * A card's size and what a widget may put on it. The system numbers them 2 (2x2, about 150 vp square), 3 (2x4: wide, about 324 x 148) and 4 (4x4, about
@@ -64,7 +66,8 @@ export function timerFace(moment: number, countDown: boolean, now: number): Time
   let face = new TimerFace()
   let span = Math.max(0, countDown ? moment - now : now - moment)
   face.countDown = countDown
-  if (countDown) { face.count = Math.min(span, TEXT_TIMER_MAX_MS) } else { face.startTime = span }
+  // A countdown already over still gets a count of 1 ms: TextTimer takes 0 or less for its default of a minute.
+  if (countDown) { face.count = Math.max(1, Math.min(span, TEXT_TIMER_MAX_MS)) } else { face.startTime = span }
   face.format = span >= HOUR_MS ? 'HH:mm:ss' : 'mm:ss'
   return face
 }

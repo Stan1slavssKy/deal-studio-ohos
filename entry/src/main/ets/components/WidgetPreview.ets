@@ -1,4 +1,4 @@
-import { WidgetSession, LiveFrame, CardNode } from '../vera/VeraLiveWidget'
+import { WidgetSession, LiveFrame, CardNode, SourceRequest } from '../vera/VeraLiveWidget'
 import { app } from './AppStyle'
 import { sourceFetch } from '../vera/VeraSource'
 import { CardView } from '../widget/CardView'
@@ -58,15 +58,18 @@ export struct WidgetPreview {
   /** A tap is being handled (a Refresh's fetch may take seconds): another tap meanwhile is ignored, not handled twice. */
   private busy: boolean = false
 
-  private async tap(action: string, value: number): Promise<void> {
+  /**
+   * A tap of any kind, run here only and never saved: a button's handler, a switch's, a picture's pointer. Its live source call, if it
+   * makes one, is fetched and answered here too, as the card does (LiveFormService): one call, as on the card.
+   */
+  private async run(handle: (session: WidgetSession) => SourceRequest[]): Promise<void> {
     if (this.session === null || this.busy) { return }
     let session = this.session!
     // What the session held before the tap: put back if the tap or its answer fails, so it matches the frame on show.
     let before = session.encodedState()
     this.busy = true
     try {
-      // A Refresh button fetches its live source here too, as the card does: one call, as on the card.
-      let requests = session.tap(this.frame, this.frame.token, action, value)
+      let requests = handle(session)
       if (requests.length > 0) { session.answer(requests[0].handler, await sourceFetch(requests[0].params)) }
       if (session !== this.session) { return }
       this.frame = session.frame('', this.title, '', this.dimension)
@@ -80,42 +83,16 @@ export struct WidgetPreview {
     }
   }
 
-  /** A tap on a toggle or a checkbox: its handler runs here only, as a button's does; nothing is saved. */
-  private tapSwitch(handler: string, on: boolean): void {
-    if (this.session === null || this.busy) { return }
-    let session = this.session!
-    let before = session.encodedState()
-    this.busy = true
-    try {
-      session.tapSwitch(this.frame, this.frame.token, handler, on)
-      this.frame = session.frame('', this.title, '', this.dimension)
-      this.seq += 1
-      this.error = ''
-    } catch (e) {
-      if (session === this.session) { this.session = new WidgetSession(this.vbc2, 'preview', before) }
-      this.error = (e as Error).message
-    } finally {
-      this.busy = false
-    }
+  private tap(action: string, value: number): void {
+    this.run((session: WidgetSession): SourceRequest[] => session.tap(this.frame, this.frame.token, action, value))
   }
 
-  /** A tap on the picture: the pointer handler runs here only, as a button's does; nothing is saved. */
+  private tapSwitch(handler: string, on: boolean): void {
+    this.run((session: WidgetSession): SourceRequest[] => session.tapSwitch(this.frame, this.frame.token, handler, on))
+  }
+
   private tapPicture(handler: string, x: number, y: number): void {
-    if (this.session === null || this.busy) { return }
-    let session = this.session!
-    let before = session.encodedState()
-    this.busy = true
-    try {
-      session.tapSurface(this.frame, this.frame.token, handler, x, y)
-      this.frame = session.frame('', this.title, '', this.dimension)
-      this.seq += 1
-      this.error = ''
-    } catch (e) {
-      if (session === this.session) { this.session = new WidgetSession(this.vbc2, 'preview', before) }
-      this.error = (e as Error).message
-    } finally {
-      this.busy = false
-    }
+    this.run((session: WidgetSession): SourceRequest[] => session.tapSurface(this.frame, this.frame.token, handler, x, y))
   }
 
   build() {

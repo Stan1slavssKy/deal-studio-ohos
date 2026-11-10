@@ -70,8 +70,11 @@ export async function liveFormTap(formId: string, message: string,
   let version = store.getLatestVersion(projectId)
   if (project === null || version === null || version.vbc2.length === 0) { return liveBinding(projectId) }
   let saved = store.loadState(projectId, version.id, veraStateStamp(version.vbc2))
+  // The seq of the frame the card showed (LiveCard), given back on a refusal: the card is not redrawn, so nothing plays for a refused tap.
+  let shownSeq = ''
   try {
     let params = JSON.parse(message) as Record<string, Object>
+    if (typeof params['seq'] === 'string') { shownSeq = params['seq'] as string }
     // A tap on a picture carries where it fell (x, y, in the picture's own units); a button's carries a number.
     let atPoint = typeof params['x'] === 'number' && typeof params['y'] === 'number'
     // A tap on a toggle or a checkbox says whether it is now on.
@@ -98,6 +101,7 @@ export async function liveFormTap(formId: string, message: string,
   } catch (e) {
     let frame = liveFrame(projectId, formBindings.dimensionFor(formId))
     frame.formId = formId
+    frame.seq = shownSeq
     frame.status = (e as Error).message
     console.warn('VERA-FORM tap rejected: ' + frame.status)
     return formBindingData.createFormBindingData(compactFrame(frame))

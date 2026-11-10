@@ -329,7 +329,14 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.notEqual(a.ops, b.ops, 'each layer draws its own part')
   assert.deepEqual(a.links, [0, 1]); assert.deepEqual(b.links, [0, 1], 'a touch on any layer plays every Motion of the scene')
   assert.equal(f.nodes[0].children[1].links, undefined, 'a node outside the layers has no links')
+  assert.deepEqual(box.links, [0, 1], 'the scene carries its Motions: a touch no part takes lands on it')
   assert.deepEqual(lay.tap(f, f.token, '#touch', 0), [], 'a touch on a Motion with no handler runs nothing')
+  // One Motion over a still picture: a touch on the still part plays it too.
+  const one = fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')
+    .replace('ui.Motion("recoil", 0, [ui.Surface("default", 100, 100, "drum", "", "hitDrum")])', 'ui.Surface("default", 100, 100, "drum", "", "hitDrum")')
+  const fo = new WidgetSession(compileVeraSource(one).vbc2, 'one', '').frame('p', 'A', ''); const scene = fo.nodes[0].children[0]
+  assert.equal(scene.children[0].kind, 'surface'); assert.deepEqual(scene.children[0].links, [0], 'a still layer plays the one Motion of its scene')
+  assert.deepEqual(scene.links, [0])
   assert.throws(() => lay.tap(f, 'stale', '#touch', 0), /Widget changed/)
   const nested = fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8').replace('ui.Layers("default", 100, 100, [', 'ui.Layers("default", 100, 100, [ui.Layers("default", 100, 100, []),')
   assert.throws(() => compileVeraSource(nested), /Layers/, 'a Layers inside a Layers is refused')
@@ -346,7 +353,8 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.equal(M.timerFace(now + 60 * minute, true, now).format, 'HH:mm:ss', 'an hour shows hours')
   assert.equal(M.timerFace(now - 60 * minute, false, now).format, 'HH:mm:ss')
   assert.equal(M.timerFace(now + 3 * 1440 * minute, true, now).count, M.TEXT_TIMER_MAX_MS, 'a longer countdown starts from the longest TextTimer takes')
-  assert.equal(M.timerFace(now - 5, true, now).count, 0, 'a countdown that is over is at zero')
+  assert.equal(M.timerFace(now - 5, true, now).count, 1, 'a countdown that is over is at zero: 1 ms, as TextTimer takes 0 for its default minute')
+  assert.equal(M.timerFace(now, true, now).count, 1)
   const renderer = fs.readFileSync(path.join(sourceRoot, 'components/VeraPreview.ets'), 'utf8')
   for (const [name, text] of [['card', view], ['app', renderer]]) {
     assert.doesNotMatch(text, /3000000|3600000/, 'the ' + name + ' has no hour threshold of its own')
@@ -360,9 +368,26 @@ assert.match(view, /node.key \+ this.frameKey/)
     [M.CARD_MAX_PICTURES, M.CARD_MAX_MOTIONS, M.CARD_MAX_TIMERS, M.CARD_MAX_SHAPES])
   assert.match(view, /contexts\(CARD_MAX_PICTURES\)/); assert.match(view, /timerControllers\(CARD_MAX_TIMERS\)/); assert.match(view, /SLOTS: number = CARD_MAX_MOTIONS/)
   assert.doesNotMatch(view, /ctx[0-9]|timer[0-9]\b|\[0, 0, 0, 0, 0\]/, 'no hand-written list of five or three')
+  // Who takes a touch on the card: a shape without an action and a Motion around only a figure let it through to the card, which
+  // opens the app; in a Layers a part with no handler lets it through to the parts under it.
+  assert.doesNotMatch(view, /'#touch'/, 'the card posts TOUCH_ACTION, not a literal of its own')
+  assert.match(view, /if \(node\.action\.length > 0\) \{\s*Shape\(\)/, 'a Path takes a tap only when it has an action')
+  assert.equal((view.match(/if \(this\.touchPlays\(node\)\)/g) || []).length, 3, 'each builder level plays a Motion on touch only around a picture')
+  assert.equal((view.match(/\.hitTestBehavior\(this\.layerHit\(child\)\)/g) || []).length, 6, 'each Layers part says whether it takes a touch')
   // A touch only counts: nothing is redrawn before the answer, so a touch whose answer never comes leaves no Motion in its starting pose.
   const touched = view.substring(view.indexOf('private touched('), view.indexOf('private effective('))
   assert.doesNotMatch(touched, /setPhase|this\.phase\b|this\.settled\b/, 'a touch changes no state')
   assert.match(view, /if \(this\.begun\[node\.slot\] !== this\.frameKey\) \{ return stages\[0\]\[index\] \}/, 'only a frame not yet begun shows the starting pose')
+}
+// Pictures side by side in a row share its width at any depth: two Sparklines (each a column holding a picture), or two Layers.
+{
+  const two = 'import * as ui from "std/ui"\n@jsonable class AppState { n: number; }\nfunction init(): AppState { return { n: 1 }; }\n' +
+    'function view(state: AppState): ui.View { return ui.Text("body", "x"); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Row("default", [ui.Sparkline("default", [1, 2, 3], 3), ui.Sparkline("default", [3, 2, 1], 3)]); }\n'
+  let f
+  try { f = new WidgetSession(compileVeraSource(two).vbc2, 'two', '').frame('p', 'A', '') } catch (e) { throw new Error(e.message + JSON.stringify(e.diagnostics || [])) }
+  const charts = []; const walk = n => { if (n.kind === 'surface') charts.push(n); n.children.forEach(walk) }; f.nodes.forEach(walk)
+  assert.equal(charts.length, 2)
+  for (const c of charts) assert(c.size <= Math.floor((126 - 8) / 2), 'two charts in a row fit the 2x2 card: ' + c.size)
 }
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

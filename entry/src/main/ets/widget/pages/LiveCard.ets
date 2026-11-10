@@ -28,17 +28,18 @@ struct LiveCard {
       if (this.live) {
         CardView({
           nodes: normalizeNodes(this.nodes),
+          // A refused tap is answered with the same token and seq: nothing is drawn again, so a touched Motion does not play.
           frameKey: this.token + this.seq,
           preset: this.preset,
           primary: this.primary,
           onTap: (action: string, value: number): void => {
-            postCardAction(this, { action: 'message', params: { token: this.token, handler: action, value: value } })
+            postCardAction(this, { action: 'message', params: { token: this.token, seq: this.seq, handler: action, value: value } })
           },
           onSwitch: (handler: string, on: boolean): void => {
-            postCardAction(this, { action: 'message', params: { token: this.token, handler: handler, on: on } })
+            postCardAction(this, { action: 'message', params: { token: this.token, seq: this.seq, handler: handler, on: on } })
           },
           onPoint: (handler: string, x: number, y: number): void => {
-            postCardAction(this, { action: 'message', params: { token: this.token, handler: handler, x: x, y: y } })
+            postCardAction(this, { action: 'message', params: { token: this.token, seq: this.seq, handler: handler, x: x, y: y } })
           }
         })
       } else {

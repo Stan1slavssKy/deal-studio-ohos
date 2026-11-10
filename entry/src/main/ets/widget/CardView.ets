@@ -4,7 +4,7 @@
  * the painter, never the VM. What happens on a touch is the host's: this reports it through onTap and onPoint.
  */
 
-import { CardNode, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_TIMERS, cardSize, TimerFace, timerFace } from './CardModel'
+import { CardNode, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_TIMERS, cardSize, TimerFace, timerFace, TOUCH_ACTION } from './CardModel'
 import { paintGfx, decodeGfxOps, gfxFit, gfxToSurface } from '../vera/GfxPaint'
 import { resolveTheme } from '../vera/VeraTheme'
 import { motionStages, motionPivot, pivotPercent } from '../vera/VeraMotion'
@@ -61,10 +61,8 @@ export struct CardView {
   private pictureW(node: CardNode): number { return node.size > 0 ? node.size : PICTURE_WIDTH }
   private pictureH(node: CardNode): number { return Math.min(this.pictureW(node) * 1.1, this.pictureW(node) * node.h / node.w) }
   private paintPicture(node: CardNode): void {
-    let start = Date.now()
     paintGfx(this.contextOf(node), decodeGfxOps(node.ops), resolveTheme(this.preset, this.primary, false),
       this.pictureW(node), this.pictureH(node), node.w, node.h, vp2px(1), node.style === 'clear')
-    console.info('VERA-CARD picture painted ms=' + (Date.now() - start).toString() + ' at=' + Date.now().toString())
   }
   private pictureAt(node: CardNode, event: ClickEvent): number[] {
     return gfxToSurface(gfxFit(this.pictureW(node), this.pictureH(node), node.w, node.h), event.x, event.y)
@@ -177,6 +175,32 @@ export struct CardView {
   private maxOf(node: CardNode): number { return node.max !== undefined && node.max > 0 ? node.max : 100 }
   private inkOf(node: CardNode): string { return node.ink !== undefined ? node.ink : '#333333' }
   private percent(node: CardNode): string { return Math.round(100 * this.valueNow(node) / this.maxOf(node)).toString() + '%' }
+  /** Something in the node, or the node itself, runs a handler when tapped: a button, a shape or icon button with an action, a switch, a picture with a pointer. */
+  private handles(node: CardNode): boolean {
+    if (node.pointer.length > 0 || node.action.length > 0) { return true }
+    return node.children.some((child: CardNode): boolean => this.handles(child))
+  }
+  /**
+   * A Motion a touch plays: one around a picture or a shape. A figure or a text in a Motion plays when it changes, and a tap on it opens the app.
+   * One in a ui.Layers takes no touch of its own: the scene plays all its Motions, and a Motion that took the touch would keep it from the
+   * parts under it (layerHit).
+   */
+  private touchPlays(node: CardNode): boolean {
+    if (node.links !== undefined) { return false }
+    let pictured = (nodes: CardNode[]): boolean =>
+      nodes.some((child: CardNode): boolean => child.kind === 'surface' || child.kind === 'path' || pictured(child.children))
+    return pictured(node.children)
+  }
+  /** A ui.Layers with movements: a touch on a part with no handler of its own plays them all. */
+  private scenePlays(node: CardNode): boolean { return node.links !== undefined && node.links.length > 0 }
+  /**
+   * In a ui.Layers a part with nothing to run lets a touch through to the parts under it (a clear picture over the whole scene would
+   * otherwise take every touch); a part with a handler takes the touches that land on it. Transparent, not None: None lets a touch past
+   * the part itself but not past what is in it, and anything hit there (even a column with no handler) keeps it from the parts under it
+   * (measured on the phone). Nothing in such a part runs anything on a touch (touchPlays), so only the parts under it can.
+   */
+  private layerHit(node: CardNode): HitTestMode { return this.handles(node) ? HitTestMode.Default : HitTestMode.Transparent }
+
   private rowJustify(node: CardNode): FlexAlign {
     return node.align === 'split' ? FlexAlign.SpaceBetween : node.align === 'end' ? FlexAlign.End :
       node.align === 'joined' ? FlexAlign.Center : FlexAlign.SpaceEvenly
@@ -200,17 +224,26 @@ export struct CardView {
       // A shape is drawn in a 100-unit box; the viewPort has to say 'px' or the path comes out a quarter of its size
       // (VeraIcons.ets), and a Path left with the default stroke is outlined in thick black. One with an action is a
       // button: the same message a button posts.
-      Shape() {
-        Path({ commands: node.commands }).fill(node.color).stroke(Color.Transparent)
-      }
-      .viewPort({ x: '0px', y: '0px', width: '100px', height: '100px' })
-      .width(node.size).height(node.size)
-      .onClick(() => {
-        if (node.action.length > 0 && node.enabled) {
-          this.touched(node)
-          this.onTap(node.action, node.value)
+      // A shape without an action lets a tap fall through to the card, which opens the app.
+      if (node.action.length > 0) {
+        Shape() {
+          Path({ commands: node.commands }).fill(node.color).stroke(Color.Transparent)
         }
-      })
+        .viewPort({ x: '0px', y: '0px', width: '100px', height: '100px' })
+        .width(node.size).height(node.size)
+        .onClick(() => {
+          if (node.enabled) {
+            this.touched(node)
+            this.onTap(node.action, node.value)
+          }
+        })
+      } else {
+        Shape() {
+          Path({ commands: node.commands }).fill(node.color).stroke(Color.Transparent)
+        }
+        .viewPort({ x: '0px', y: '0px', width: '100px', height: '100px' })
+        .width(node.size).height(node.size)
+      }
     } else if (node.kind === 'surface') {
       // A picture without a pointer handler lets a tap fall through to the card, which opens the app.
       if (node.pointer.length > 0) {
@@ -359,23 +392,48 @@ export struct CardView {
       }.width('100%').layoutWeight(inRow ? 1 : 0).alignItems(this.colAlign(node))
       .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
     } else if (node.kind === 'layers') {
-      // The children one over another, each in the middle: a picture with another moving over it.
-      Stack() {
-        ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
-      }.layoutWeight(inRow ? 1 : 0)
-    } else if (node.kind === 'motion') {
-      Column({ space: 6 }) {
-        ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
+      // The children one over another, each in the middle: a picture with another moving over it. A touch that no part takes
+      // lands on the scene, which plays its movements; a scene with none lets it through to the card, which opens the app.
+      if (this.scenePlays(node)) {
+        Stack() {
+          ForEach(node.children, (child: CardNode) => {
+            Stack() { this.level2(child, false) }.hitTestBehavior(this.layerHit(child))
+          }, (child: CardNode) => child.key)
+        }.layoutWeight(inRow ? 1 : 0)
+        .onClick(() => { this.touched(node); this.onTap(TOUCH_ACTION, 0) })
+      } else {
+        Stack() {
+          ForEach(node.children, (child: CardNode) => {
+            Stack() { this.level2(child, false) }.hitTestBehavior(this.layerHit(child))
+          }, (child: CardNode) => child.key)
+        }.layoutWeight(inRow ? 1 : 0)
       }
-      .layoutWeight(inRow ? 1 : 0)
-      .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
-      .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
-      .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
-      .opacity(this.poseOf(node, 6))
-      .animation(this.motionAnimation(node))
-      .onAppear(() => { this.begin(node) })
-      // A touch anywhere on it plays it, as a touch on a picture with a handler of its own does: the host only draws the next frame.
-      .onClick(() => { this.touched(node); this.onTap('#touch', 0) })
+    } else if (node.kind === 'motion') {
+      // A touch on a moving picture plays it, as a touch on a picture with a handler of its own does: the host only draws the next frame.
+      if (this.touchPlays(node)) {
+        Column({ space: 6 }) {
+          ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
+        }
+        .layoutWeight(inRow ? 1 : 0)
+        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
+        .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
+        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
+        .opacity(this.poseOf(node, 6))
+        .animation(this.motionAnimation(node))
+        .onAppear(() => { this.begin(node) })
+        .onClick(() => { this.touched(node); this.onTap(TOUCH_ACTION, 0) })
+      } else {
+        Column({ space: 6 }) {
+          ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
+        }
+        .layoutWeight(inRow ? 1 : 0)
+        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
+        .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
+        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
+        .opacity(this.poseOf(node, 6))
+        .animation(this.motionAnimation(node))
+        .onAppear(() => { this.begin(node) })
+      }
     } else {
       this.leaf(node)
     }
@@ -394,23 +452,48 @@ export struct CardView {
       }.width('100%').layoutWeight(inRow ? 1 : 0).alignItems(this.colAlign(node))
       .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
     } else if (node.kind === 'layers') {
-      // The children one over another, each in the middle: a picture with another moving over it.
-      Stack() {
-        ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
-      }.layoutWeight(inRow ? 1 : 0)
-    } else if (node.kind === 'motion') {
-      Column({ space: 6 }) {
-        ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
+      // The children one over another, each in the middle: a picture with another moving over it. A touch that no part takes
+      // lands on the scene, which plays its movements; a scene with none lets it through to the card, which opens the app.
+      if (this.scenePlays(node)) {
+        Stack() {
+          ForEach(node.children, (child: CardNode) => {
+            Stack() { this.level3(child, false) }.hitTestBehavior(this.layerHit(child))
+          }, (child: CardNode) => child.key)
+        }.layoutWeight(inRow ? 1 : 0)
+        .onClick(() => { this.touched(node); this.onTap(TOUCH_ACTION, 0) })
+      } else {
+        Stack() {
+          ForEach(node.children, (child: CardNode) => {
+            Stack() { this.level3(child, false) }.hitTestBehavior(this.layerHit(child))
+          }, (child: CardNode) => child.key)
+        }.layoutWeight(inRow ? 1 : 0)
       }
-      .layoutWeight(inRow ? 1 : 0)
-      .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
-      .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
-      .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
-      .opacity(this.poseOf(node, 6))
-      .animation(this.motionAnimation(node))
-      .onAppear(() => { this.begin(node) })
-      // A touch anywhere on it plays it, as a touch on a picture with a handler of its own does: the host only draws the next frame.
-      .onClick(() => { this.touched(node); this.onTap('#touch', 0) })
+    } else if (node.kind === 'motion') {
+      // A touch on a moving picture plays it, as a touch on a picture with a handler of its own does: the host only draws the next frame.
+      if (this.touchPlays(node)) {
+        Column({ space: 6 }) {
+          ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
+        }
+        .layoutWeight(inRow ? 1 : 0)
+        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
+        .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
+        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
+        .opacity(this.poseOf(node, 6))
+        .animation(this.motionAnimation(node))
+        .onAppear(() => { this.begin(node) })
+        .onClick(() => { this.touched(node); this.onTap(TOUCH_ACTION, 0) })
+      } else {
+        Column({ space: 6 }) {
+          ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
+        }
+        .layoutWeight(inRow ? 1 : 0)
+        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
+        .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
+        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
+        .opacity(this.poseOf(node, 6))
+        .animation(this.motionAnimation(node))
+        .onAppear(() => { this.begin(node) })
+      }
     } else {
       this.leaf(node)
     }
@@ -429,23 +512,48 @@ export struct CardView {
       }.width('100%').layoutWeight(inRow ? 1 : 0).alignItems(this.colAlign(node))
       .padding(this.padOf(node)).backgroundColor(this.panelOf(node)).borderRadius(this.radiusOf(node, 0))
     } else if (node.kind === 'layers') {
-      // The children one over another, each in the middle: a picture with another moving over it.
-      Stack() {
-        ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
-      }.layoutWeight(inRow ? 1 : 0)
-    } else if (node.kind === 'motion') {
-      Column({ space: 6 }) {
-        ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
+      // The children one over another, each in the middle: a picture with another moving over it. A touch that no part takes
+      // lands on the scene, which plays its movements; a scene with none lets it through to the card, which opens the app.
+      if (this.scenePlays(node)) {
+        Stack() {
+          ForEach(node.children, (child: CardNode) => {
+            Stack() { this.level4(child, false) }.hitTestBehavior(this.layerHit(child))
+          }, (child: CardNode) => child.key)
+        }.layoutWeight(inRow ? 1 : 0)
+        .onClick(() => { this.touched(node); this.onTap(TOUCH_ACTION, 0) })
+      } else {
+        Stack() {
+          ForEach(node.children, (child: CardNode) => {
+            Stack() { this.level4(child, false) }.hitTestBehavior(this.layerHit(child))
+          }, (child: CardNode) => child.key)
+        }.layoutWeight(inRow ? 1 : 0)
       }
-      .layoutWeight(inRow ? 1 : 0)
-      .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
-      .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
-      .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
-      .opacity(this.poseOf(node, 6))
-      .animation(this.motionAnimation(node))
-      .onAppear(() => { this.begin(node) })
-      // A touch anywhere on it plays it, as a touch on a picture with a handler of its own does: the host only draws the next frame.
-      .onClick(() => { this.touched(node); this.onTap('#touch', 0) })
+    } else if (node.kind === 'motion') {
+      // A touch on a moving picture plays it, as a touch on a picture with a handler of its own does: the host only draws the next frame.
+      if (this.touchPlays(node)) {
+        Column({ space: 6 }) {
+          ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
+        }
+        .layoutWeight(inRow ? 1 : 0)
+        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
+        .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
+        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
+        .opacity(this.poseOf(node, 6))
+        .animation(this.motionAnimation(node))
+        .onAppear(() => { this.begin(node) })
+        .onClick(() => { this.touched(node); this.onTap(TOUCH_ACTION, 0) })
+      } else {
+        Column({ space: 6 }) {
+          ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
+        }
+        .layoutWeight(inRow ? 1 : 0)
+        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4) })
+        .rotate({ angle: this.poseOf(node, 5), centerX: '50%', centerY: this.pivotOf(node) })
+        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
+        .opacity(this.poseOf(node, 6))
+        .animation(this.motionAnimation(node))
+        .onAppear(() => { this.begin(node) })
+      }
     } else {
       this.leaf(node)
     }

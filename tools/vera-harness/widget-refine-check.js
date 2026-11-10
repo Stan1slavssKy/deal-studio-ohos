@@ -268,3 +268,10 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   assert.match(widgetRefinementPrompt(), /LAYERS\. A subject made of parts that move differently/)
   assert.equal(checkWidget(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')).vbc2), '')
 }
+// A control the first tap takes away is not tapped a second time: a box shown only while the task is open is a valid widget.
+{
+  const once = fs.readFileSync(path.join(__dirname, 'examples/widget-switch.vera'), 'utf8').replace(/function widget\(state: AppState\): ui\.View \{[\s\S]*$/, 'function widget(state: AppState): ui.View {\n' +
+    '  if (state.done) { return ui.AppTheme("soft", "", [ui.Column("default", [ui.Text("eyebrow", "DONE")])]); }\n' +
+    '  return ui.AppTheme("soft", "", [ui.Column("default", [ui.Checkbox("default", "Done", state.done, "setDone")])]);\n}\n')
+  assert.equal(checkWidget(compileVeraSource(once).vbc2), '')
+}

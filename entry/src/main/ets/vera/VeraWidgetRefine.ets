@@ -2,7 +2,7 @@ import { CATALOG, describeComponents } from './VeraUiCatalog'
 import { widgetRefinementError } from './VeraCompiler'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
 import { decodeVeraUi, UiHostEnvironment } from './VeraUi'
-import { WidgetSession, CardNode, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, CARD_DIMENSIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
+import { WidgetSession, CardNode, LiveFrame, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, CARD_DIMENSIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
 
 /** The card a widget is written for first: a widget with one parameter is drawn at this size on every card. */
 const SMALL = cardSize(2)
@@ -90,7 +90,7 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'of it, a body with a part that swings -- is drawn as ui.Layers(style, width, height, [back, ..., front]): the children lie one over another, ' +
     'the first at the bottom, each in the middle, and each can be its own ui.Motion(style, 0, [ui.Surface(...)]) so the parts move ' +
     'separately. Give every ui.Surface in one ui.Layers the same width and height as the ui.Layers and draw each part where it belongs ' +
-    'in that box (its own function, only its part), so they line up; every ui.Surface above the first has the style "clear" (no background of its own: without it it hides the layers under it). A touch on any layer plays that layer\'s own movement. ' +
+    'in that box (its own function, only its part), so they line up; every ui.Surface above the first has the style "clear" (no background of its own: without it it hides the layers under it). A touch anywhere on the scene plays all its movements. A tap runs the pointer handler of the topmost layer that has one under the finger, and a layer whose pointer is \"\" lets the touch through, so a scene needs one layer with a handler, not one in each. ' +
     'Draw exactly the subject the person asked for; do not reuse a shape from these instructions. '+
     'STYLES. A text style is drawn as the app draws it, with the theme\'s weight, font and colour: display, title, heading, body, caption ' +
     '(small), eyebrow (a small spaced label above something), metric (a big figure), muted (quiet), success, warning, danger (toned). ' +
@@ -135,14 +135,7 @@ export function validateWidgetRefinement(base: string, source: string, vbc2: str
   try {
     let preservation = widgetRefinementError(base, source)
     if (preservation.length > 0) { return preservation }
-    let runtime = checkWidget(vbc2, saved)
-    if (runtime.length > 0) { return runtime }
-    // A widget that asks for the card's size is held to the limits of each size it will be drawn on.
-    for (let dimension of new WidgetSession(vbc2, 'validation', saved).dimensions()) {
-      let problem = glanceError(vbc2, saved, dimension)
-      if (problem.length > 0) { return problem }
-    }
-    return ''
+    return widgetProblem(vbc2, saved, true)
   } catch (e) { return 'Widget validation: ' + (e as Error).message }
 }
 
@@ -150,8 +143,7 @@ export function validateWidgetRefinement(base: string, source: string, vbc2: str
  * More than a glance: too many buttons or lines for the few things a widget shows. Only Make widget is held to it; the card
  * itself draws any frame within its budget. Said so the model can cut the widget down on the next attempt.
  */
-function glanceError(vbc2: string, saved: string, dimension: number = 2): string {
-  let frame = new WidgetSession(vbc2, 'validation', saved).frame('project', 'App', '', dimension)
+function glanceError(frame: LiveFrame): string {
   let buttons = 0
   let texts = 0
   let count = (nodes: CardNode[]): void => {
@@ -171,14 +163,16 @@ function glanceError(vbc2: string, saved: string, dimension: number = 2): string
       ' (one to three figures with short labels). No lists or history: keep what matters most, the rest stays in the app.'
   }
   // A picture needs room: everything else on the card, counted by its height, must leave it a few dozen vp.
-  if (pictureRoom(frame) !== 0 && pictureRoom(frame) < PICTURE_SIDE_MIN) {
+  let room = pictureRoom(frame)
+  if (room !== 0 && room < PICTURE_SIDE_MIN) {
     return 'The widget has too much around its picture: the card is about 150 vp tall and the picture needs at least ' +
-      PICTURE_SIDE_MIN.toString() + ' of it, but the figures, texts and buttons leave ' + Math.max(0, pictureRoom(frame)).toString() +
+      PICTURE_SIDE_MIN.toString() + ' of it, but the figures, texts and buttons leave ' + Math.max(0, room).toString() +
       '. Keep one short line of text (one figure with a label of a word) or none, and no buttons beside the picture.'
   }
   // Taller than the card: what does not fit is cut off at the card's edge. The estimate is rough, so only what is clearly too tall is refused.
-  if (widgetHeight(frame) > size.height + 14) {
-    return 'The widget is about ' + Math.round(widgetHeight(frame)).toString() + ' vp tall and the ' + size.label + ' card is ' + size.height.toString() +
+  let height = widgetHeight(frame)
+  if (height > size.height + 14) {
+    return 'The widget is about ' + Math.round(height).toString() + ' vp tall and the ' + size.label + ' card is ' + size.height.toString() +
       ' inside its padding: what does not fit is cut off. Drop a line, a button or a figure, or shorten the texts (a text over two lines is cut).'
   }
   return ''
@@ -194,18 +188,32 @@ function phoneCallMessage(handler: string): string {
 /** Also used by smokeRun for any program that declares widget. Never executes phone effects. */
 export function checkWidget(vbc2: string, saved: string = ''): string {
   try {
-    let session = new WidgetSession(vbc2, 'validation', saved)
-    if (!session.frame('project', 'App', '').live) { return 'Missing function widget(state): ui.View' }
-    let state = session.encodedState()
-    let refreshError = checkRefresh(vbc2, state)
-    if (refreshError.length > 0) { return refreshError }
-    // Every size the widget draws differently is a card of its own: what can be tapped on it is tapped there.
-    for (let dimension of session.dimensions()) {
-      let problem = checkTaps(vbc2, state, session.frame('project', 'App', '', dimension).nodes, dimension)
-      if (problem.length > 0) { return problem }
-    }
-    return ''
+    return widgetProblem(vbc2, saved, false)
   } catch (e) { return 'Widget validation: ' + (e as Error).message }
+}
+
+/**
+ * The widget's first problem over `saved`, '' for none: it runs, its refresh and its taps work on every size it draws, and, with `glance`,
+ * each size holds no more than a glance. One session, and one frame for each size, serve all of it.
+ */
+function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
+  let session = new WidgetSession(vbc2, 'validation', saved)
+  // Every size the widget draws differently is a card of its own (2x2 first): what can be tapped on it is tapped there.
+  let frames = session.dimensions().map((dimension: number): LiveFrame => session.frame('project', 'App', '', dimension))
+  if (!frames[0].live) { return 'Missing function widget(state): ui.View' }
+  let state = session.encodedState()
+  let refreshError = checkRefresh(vbc2, state)
+  if (refreshError.length > 0) { return refreshError }
+  for (let frame of frames) {
+    let problem = checkTaps(vbc2, state, frame.nodes, frame.dimension)
+    if (problem.length > 0) { return problem }
+  }
+  // A widget that asks for the card's size is held to the limits of each size it will be drawn on.
+  for (let frame of glance ? frames : []) {
+    let problem = glanceError(frame)
+    if (problem.length > 0) { return problem }
+  }
+  return ''
 }
 
 /** The nodes, at any depth, that `pick` takes. */
@@ -245,32 +253,35 @@ function checkTaps(vbc2: string, state: string, nodes: CardNode[], dimension: nu
     drawsInApp(branch)
     return ''
   }
-  for (let item of collectNodes(nodes, (node: CardNode): boolean => (node.kind === 'toggle' || node.kind === 'checkbox') && node.enabled && node.action.length > 0)) {
+  // Each control twice, from the saved state. The first tap may take it away (a Start that becomes Stop, a box shown only while a
+  // task is open): then there is no second.
+  let twice = (handler: string, still: (node: CardNode) => boolean,
+      run: (branch: WidgetSession, current: LiveFrame, pass: number) => SourceRequest[]): string => {
     let branch = new WidgetSession(vbc2, 'validation', state)
     for (let pass = 0; pass < 2; pass++) {
       let current = branch.frame('project', 'App', '', dimension)
-      let problem = tapped(item.action, (): SourceRequest[] => branch.tapSwitch(current, current.token, item.action, pass === 0), branch)
+      if (collectNodes(current.nodes, still).length === 0) { break }
+      let problem = tapped(handler, (): SourceRequest[] => run(branch, current, pass), branch)
       if (problem.length > 0) { return problem }
     }
+    return ''
+  }
+  let isSwitch = (node: CardNode): boolean => (node.kind === 'toggle' || node.kind === 'checkbox') && node.enabled && node.action.length > 0
+  for (let item of collectNodes(nodes, isSwitch)) {
+    let problem = twice(item.action, (node: CardNode): boolean => isSwitch(node) && node.action === item.action,
+      (branch: WidgetSession, current: LiveFrame, pass: number): SourceRequest[] => branch.tapSwitch(current, current.token, item.action, pass === 0))
+    if (problem.length > 0) { return problem }
   }
   for (let picture of collectNodes(nodes, (node: CardNode): boolean => node.kind === 'surface' && node.pointer.length > 0)) {
-    let branch = new WidgetSession(vbc2, 'validation', state)
-    for (let pass = 0; pass < 2; pass++) {
-      let current = branch.frame('project', 'App', '', dimension)
-      let problem = tapped(picture.pointer, (): SourceRequest[] => branch.tapSurface(current, current.token, picture.pointer, picture.w / 2, picture.h / 2), branch)
-      if (problem.length > 0) { return problem }
-    }
+    let problem = twice(picture.pointer, (node: CardNode): boolean => node.kind === 'surface' && node.pointer === picture.pointer,
+      (branch: WidgetSession, current: LiveFrame, pass: number): SourceRequest[] =>
+        branch.tapSurface(current, current.token, picture.pointer, picture.w / 2, picture.h / 2))
+    if (problem.length > 0) { return problem }
   }
   for (let button of collectNodes(nodes, isButton)) {
-    let branch = new WidgetSession(vbc2, 'validation', state)
-    for (let pass = 0; pass < 2; pass++) {
-      let current = branch.frame('project', 'App', '', dimension)
-      // The first press may take the button away (a Start that becomes Stop): then there is no second.
-      let same = collectNodes(current.nodes, (node: CardNode): boolean => isButton(node) && node.action === button.action && node.value === button.value)
-      if (same.length === 0) { break }
-      let problem = tapped(button.action, (): SourceRequest[] => branch.tap(current, current.token, button.action, button.value), branch)
-      if (problem.length > 0) { return problem }
-    }
+    let problem = twice(button.action, (node: CardNode): boolean => isButton(node) && node.action === button.action && node.value === button.value,
+      (branch: WidgetSession, current: LiveFrame, pass: number): SourceRequest[] => branch.tap(current, current.token, button.action, button.value))
+    if (problem.length > 0) { return problem }
   }
   return ''
 }

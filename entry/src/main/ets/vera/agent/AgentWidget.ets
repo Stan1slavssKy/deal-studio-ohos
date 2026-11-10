@@ -33,11 +33,14 @@ export class WidgetWrite {
   ms: number = 0
 }
 
-/** What the model wrote, in the log in pieces a log line can hold: without it a widget that came out wrong cannot be looked at. */
+/**
+ * What the model wrote, in the log in pieces a log line can hold: without it a widget that came out wrong cannot be looked at. The
+ * answer itself is at debug level (hilog shows it only when that level is switched on); its length is always logged.
+ */
 function logWidgetAnswer(attempt: number, written: string): void {
   console.info('VERA-WIDGET attempt ' + attempt.toString() + ' answer chars=' + written.length.toString())
   for (let at = 0; at < written.length && at < 6000; at += 800) {
-    console.info('VERA-WIDGET answer[' + attempt.toString() + ']@' + at.toString() + ' ' + written.substring(at, at + 800).replace(/\n/g, ' | '))
+    console.debug('VERA-WIDGET answer[' + attempt.toString() + ']@' + at.toString() + ' ' + written.substring(at, at + 800).replace(/\n/g, ' | '))
   }
 }
 
