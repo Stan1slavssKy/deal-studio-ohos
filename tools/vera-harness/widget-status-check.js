@@ -148,3 +148,30 @@ console.log('widget-status-check: ok')
   assert.equal(withoutWidgetRequests('Tambourine'), 'Tambourine')
   console.log('widget-status-check: redo history ok')
 }
+
+// Remove widget: a new version without the widget, its refresh and what only they use; the app and its requests stay.
+{
+  const {removeWidget, WIDGET_REMOVED_NOTE} = loadVera('WidgetRemove')
+  const {WIDGET_ASK_TEXT} = loadVera('ProjectText')
+  const mark = '\n\nRefinement:\n'
+  const app = [
+    'import * as ui from "std/ui"',
+    '@jsonable class AppState { count: number; }',
+    'function init(): AppState { return { count: 0 }; }',
+    'function bump(state: AppState, value: number): AppState { return { count: state.count + value }; }',
+    'function view(state: AppState): ui.View { return ui.Column("default", [ui.NumberText("metric", state.count, "", "", 0), ui.Button("primary", "+1", "bump", 1, true)]); }',
+  ].join('\n') + '\n'
+  const withCard = app + '\nfunction cardLine(state: AppState): string { return ui.numberToString(state.count); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Text("body", cardLine(state)); }\n'
+  const removed = removeWidget(withCard, 'Counter' + mark + WIDGET_ASK_TEXT + 'the count' + mark + 'Make it blue')
+  assert.equal(removed.error, '')
+  assert.equal(hasWidgetFunction(removed.source), false)
+  assert.ok(!/cardLine/.test(removed.source) && /function view\(/.test(removed.source))
+  assert.equal(removed.vbc2, compileVeraSource(removed.source).vbc2)
+  assert.equal(removed.prompt, 'Counter' + mark + 'Make it blue')
+  assert.equal(widgetStatus(removed.source, removed.vbc2, 1).kind, 'broken', 'a card left on the home screen shows "Open app"')
+  assert.equal(widgetStatus(removed.source, removed.vbc2, 0).kind, 'none')
+  assert.notEqual(removeWidget(app, 'Counter').error, '', 'nothing to remove')
+  assert.ok(WIDGET_REMOVED_NOTE.length > 0)
+  console.log('widget-status-check: remove widget ok')
+}

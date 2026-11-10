@@ -16,6 +16,7 @@ import { veraStateStamp } from '../vera/VeraStateStamp'
 import { WidgetPreview } from '../components/WidgetPreview'
 import { WidgetStatus, widgetStatus, WIDGET_NONE, WIDGET_READY, WIDGET_PLACED, WIDGET_BROKEN, WIDGET_NEEDS_RUN,
   WIDGET_UNAVAILABLE } from '../vera/WidgetStatus'
+import { removeWidget, WIDGET_REMOVED_NOTE } from '../vera/WidgetRemove'
 
 @CustomDialog
 struct ProjectPanelDialog {
@@ -423,6 +424,7 @@ export struct ProjectPage {
             Text('Redo')
               .fontSize(13).fontColor(app.primaryInk)
               .onClick(() => { this.makeWidget(true) })
+            this.removeWidgetLink()
           }
           .margin({ top: 6 })
         } else if (this.widget.kind === WIDGET_PLACED) {
@@ -438,10 +440,14 @@ export struct ProjectPage {
               .onClick(() => { this.makeWidget(true) })
           }
           .margin({ top: 4 })
-          Text('Add another')
-            .fontSize(13).fontColor(app.primaryInk).margin({ top: 6 })
-            .enabled(!this.projectOperationPending)
-            .onClick(() => { this.addWidget() })
+          Row({ space: 18 }) {
+            Text('Add another')
+              .fontSize(13).fontColor(app.primaryInk)
+              .enabled(!this.projectOperationPending)
+              .onClick(() => { this.addWidget() })
+            this.removeWidgetLink()
+          }
+          .margin({ top: 6 })
         } else if (this.widget.kind === WIDGET_BROKEN && this.versions[0].vbc2.length > 0) {
           Button('Make widget again')
             .attributeModifier(new PrimaryButton())
@@ -481,6 +487,50 @@ export struct ProjectPage {
       if (tries < 60) { setTimeout(tick, 1000) }
     }
     setTimeout(tick, 1000)
+  }
+
+  @Builder
+  removeWidgetLink() {
+    Text('Remove')
+      .fontSize(13).fontColor(app.danger)
+      .enabled(!this.projectOperationPending)
+      .accessibilityText('Remove widget')
+      .onClick(() => { this.confirmRemoveWidget() })
+  }
+
+  /** Cards on the home screen stay (only the launcher removes them), so the person is told before. */
+  private confirmRemoveWidget(): void {
+    let placed = this.widget.placed
+    let cards = placed === 1 ? 'The card on your home screen stays and shows' :
+      'The ' + placed.toString() + ' cards on your home screen stay and show'
+    let message = 'A new version of the app is saved without its home-screen widget; earlier versions keep theirs.' +
+      (placed > 0 ? ' ' + cards + ' "Open app": press and hold ' + (placed === 1 ? 'it' : 'each') + ' to remove it there.' : '')
+    this.getUIContext().showAlertDialog({
+      title: 'Remove widget?',
+      message: message,
+      primaryButton: { value: 'Cancel', action: () => {} },
+      secondaryButton: { value: 'Remove', fontColor: app.danger, action: () => { this.doRemoveWidget() } }
+    })
+  }
+
+  /** The latest version, the one the card draws, saved again without its widget, with the app's state carried over. */
+  private doRemoveWidget(): void {
+    if (this.projectOperationPending) { return }
+    let latest = store.getLatestVersion(this.projectId)
+    if (latest === null || latest.vbc2.length === 0) { this.reload(); return }
+    let removal = removeWidget(latest.source, latest.prompt)
+    if (removal.error.length > 0) { this.showProjectMessage(removal.error); return }
+    let saved = store.loadState(this.projectId, latest.id, veraStateStamp(latest.vbc2))
+    try {
+      store.createVersion(this.projectId, removal.source, removal.vbc2, WIDGET_REMOVED_NOTE, removal.prompt, latest.origin,
+        latest.composition, '', latest.id, null, saved, veraStateStamp(removal.vbc2))
+    } catch (e) {
+      this.showProjectMessage('Cannot remove the widget: ' + (e as Error).message)
+      return
+    }
+    this.reload()
+    refreshForms()
+    this.showProjectMessage('Widget removed')
   }
 
   /** Make, change or remake the widget: always on the latest version, the one the card draws. Fresh writes a new one. */

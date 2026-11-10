@@ -1,5 +1,10 @@
 # Changelog
 
+## Remove widget
+
+- The project page's widget block has Remove (beside Refine and Redo, or Add another once a card is placed): the latest version is saved again without its widget, its refresh and what only they use (`WidgetRemove.ets`, on `withoutWidget`), with the app's state carried over and the widget's requests left out of its history. Earlier versions keep theirs.
+- Cards already on the home screen stay (only the launcher removes them) and show "Open app"; the confirmation says so.
+
 ## Make widget: Redo
 
 - A widget that is there could only be changed: the model was shown the program with it, so every request was an edit of it. The project page's widget block now has Redo beside Refine (it said Change; Refine is what a version's own button says). It opens the widget screen as New widget: the next widget is written from nothing, on the program without the old one (`withoutWidget`: widget, widgetRefresh and the helpers, classes and imports only they used) and without what it was asked to show in the history the model is told the app was made for (`withoutWidgetRequests`; with it, the model made the old widget again), with the first widget's requests. Measured on the phone: Redo on Roulette, whose widget is a spinning wheel, with Winning number gave a figure card on the first answer. The screen starts from an empty card; the old widget stays on the home screen until a new one is made and kept.
