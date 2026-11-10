@@ -8,6 +8,7 @@ import { ChatListPage } from './ChatListPage'
 import { ChatPage } from './ChatPage'
 import { AppsPage } from './AppsPage'
 import { WidgetBindPage } from './WidgetBindPage'
+import { SettingsPage } from './SettingsPage'
 
 @Entry({ useSharedStorage: true })
 @Component
@@ -42,6 +43,8 @@ struct AppShell {
       AppsPage({ params: params })
     } else if (name === 'widgetBind') {
       WidgetBindPage({ params: params })
+    } else if (name === 'settings') {
+      SettingsPage({ params: params })
     }
   }
 

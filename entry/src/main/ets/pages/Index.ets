@@ -7,6 +7,7 @@ import { app } from '../components/AppStyle'
 import { HOME_STARTERS, HomeStarter } from '../components/ChatStarters'
 import { ProjectRow, confirmDeleteProject, loadProjectRows, tileTint } from '../components/ProjectRows'
 import { AppRouteParams } from '../vera/AppNavigation'
+import { openSettings } from '../components/SettingsEntry'
 
 /** Width of one label in the Chat / App switch, in vp. */
 const MODE_TAB_WIDTH: number = 112
@@ -175,11 +176,18 @@ export struct Index {
     })
   }
 
-  /** The saved chats, at the right. */
+  /** The settings, and the saved chats or apps, at the right. */
   @Builder
   topBar() {
     Row({ space: 8 }) {
       Blank()
+      Button({ type: ButtonType.Circle }) {
+        SymbolGlyph($r('sys.symbol.gearshape')).fontSize(20).fontColor([app.inkStrong])
+      }
+      .width(44).height(44)
+      .backgroundColor(app.secondaryFill)
+      .accessibilityText('Settings')
+      .onClick(() => { openSettings(this.pathStack) })
       Button({ type: ButtonType.Circle }) {
         // The button follows the mode: chats' history for Chat, the apps made so far for App.
         SymbolGlyph($r(this.makeApp ? 'sys.symbol.square_grid_2x2' : 'sys.symbol.clock')).fontSize(20).fontColor([app.inkStrong])

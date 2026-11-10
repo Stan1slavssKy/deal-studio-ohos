@@ -5,6 +5,7 @@ import { projectIconResource } from '../vera/ProjectIcons'
 import { app } from '../components/AppStyle'
 import { tileTint } from '../components/ProjectRows'
 import { AppRouteParams, returnToLibrary } from '../vera/AppNavigation'
+import { settingsMenuItem } from '../components/SettingsEntry'
 import { widgetStatus, WIDGET_READY, WIDGET_NONE, WIDGET_NEEDS_RUN } from '../vera/WidgetStatus'
 
 /** A project in the list, with what its widget is: the card draws the latest version (LiveFormService). */
@@ -103,6 +104,7 @@ export struct WidgetBindPage {
       .width('100%').height('100%').padding(16)
     }
     .title('Choose an app for this widget')
+    .menus([settingsMenuItem(this.pathStack)])
     .backgroundColor(app.background)
   }
 

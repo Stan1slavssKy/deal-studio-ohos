@@ -83,6 +83,11 @@ export function writeText(path: string, content: string): void {
   }
 }
 
+/** How a new app is generated: a cloud model, vera-server, or the model on the phone. */
+export const MODE_DEEPSEEK: string = 'deepseek'
+export const MODE_SERVER: string = 'server'
+export const MODE_LOCAL: string = 'local'
+
 export class SettingsStore {
   private root: string = ''
   private apiKey: string = ''
@@ -128,6 +133,8 @@ export class SettingsStore {
    * to point at.
    */
   private jevProxy: string = ''
+  /** MODE_DEEPSEEK, MODE_SERVER or MODE_LOCAL; chosen on the Settings page and kept. */
+  private mode: string = MODE_DEEPSEEK
   private loaded: boolean = false
 
   init(filesDir: string): void {
@@ -156,6 +163,8 @@ export class SettingsStore {
         this.exaKey = (obj['exaKey'] as string) || ''
         this.reasoningEffort = (obj['reasoningEffort'] as string) || ''
         this.jevProxy = (obj['jevProxy'] as string) || ''
+        let mode = (obj['mode'] as string) || ''
+        this.mode = mode === MODE_SERVER || mode === MODE_LOCAL ? mode : MODE_DEEPSEEK
       } catch (_e) {}
     }
     this.loaded = true
@@ -172,6 +181,7 @@ export class SettingsStore {
     obj['exaKey'] = this.exaKey
     obj['reasoningEffort'] = this.reasoningEffort
     obj['jevProxy'] = this.jevProxy
+    obj['mode'] = this.mode
     try { writeText(this.path(), JSON.stringify(obj)) } catch (_e) {}
   }
 
@@ -181,6 +191,18 @@ export class SettingsStore {
   }
 
   hasApiKey(): boolean { return this.getApiKey().length > 0 }
+
+  getMode(): string {
+    if (!this.loaded) { this.load() }
+    return this.mode
+  }
+
+  setMode(mode: string): void {
+    if (!this.loaded) { this.load() }
+    if (mode !== MODE_DEEPSEEK && mode !== MODE_SERVER && mode !== MODE_LOCAL) { return }
+    this.mode = mode
+    this.save()
+  }
 
   getServerUrl(): string {
     if (!this.loaded) { this.load() }

@@ -9,6 +9,7 @@ import { projectOperations, ProjectOperationStatus, ProjectShortcutState } from 
 import { common } from '@kit.AbilityKit'
 import { app, PrimaryButton, TonalButton, QuietButton, DangerButton } from '../components/AppStyle'
 import { AppRouteParams, returnToLibrary } from '../vera/AppNavigation'
+import { settingsMenuItem } from '../components/SettingsEntry'
 import { publishLiveWidget, WIDGET_ADDED } from '../vera/LiveWidgetPublish'
 import { formBindings } from '../vera/FormBindings'
 import { veraStateStamp } from '../vera/VeraStateStamp'
@@ -214,6 +215,7 @@ export struct ProjectPage {
       this.pageContent()
     }
     .title(this.project !== null ? this.project!.name : 'Project')
+    .menus([settingsMenuItem(this.pathStack)])
     .backgroundColor(app.background)
     .onBackPressed((): boolean => this.handleBack())
     .onShown(() => { this.destinationShown() })

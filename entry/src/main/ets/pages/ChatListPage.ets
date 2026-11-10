@@ -2,6 +2,7 @@ import { chats, ChatSummary } from '../vera/ChatStore'
 import { app, DangerButton, TonalButton } from '../components/AppStyle'
 import { SymbolGlyphModifier } from '@kit.ArkUI'
 import { AppRouteParams } from '../vera/AppNavigation'
+import { settingsMenuItem } from '../components/SettingsEntry'
 
 /** The chats that fall in one period: today, yesterday, the week, the month, or an older month. */
 class ChatGroup {
@@ -188,6 +189,7 @@ export struct ChatListPage {
       .height('100%')
     }
     .title('Chats')
+    .menus([settingsMenuItem(this.pathStack)])
     .backgroundColor(app.background)
     .onShown(() => { this.destinationShown() })
     .toolbarConfiguration([{

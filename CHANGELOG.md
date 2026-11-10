@@ -1,5 +1,11 @@
 # Changelog
 
+## Settings from every screen
+
+- The gear is on every screen that has a title bar (the home screen, My apps, a project, Generate and the widget screen, Chats, a chat, the app list for a card) and opens one Settings page (`SettingsPage.ets`, `components/SettingsEntry.ets`). It used to be on Generate only, as a panel over the page, with the USB network under Advanced.
+- The page: how apps are generated (the cloud provider with its model and key, Server, On the phone), what is missing for the one chosen and the command that supplies it, the dashscope model picker, Jev proxy and USB network as switches.
+- The generation mode is kept (`settings.json`, `mode`); it used to start as the cloud provider on every Generate page. Generate reads it again when it is shown.
+
 ## The widget from the app: a widget block on the project page, ready-made requests, the offer after Save
 
 - The project page has a Home-screen widget block: a thumbnail of the card, what it is now (`WidgetStatus.ets`: not made, not on the home screen, on it, the card shows "Open app" because the latest version has no widget, cannot be made) and the one next thing to do (Make widget, Add, Change).

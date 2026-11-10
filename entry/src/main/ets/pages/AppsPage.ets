@@ -5,6 +5,7 @@ import { projectIconResource } from '../vera/ProjectIcons'
 import { app, DangerButton } from '../components/AppStyle'
 import { ProjectRow, RowSource, loadProjectRows, confirmDeleteProject, tileTint } from '../components/ProjectRows'
 import { AppRouteParams } from '../vera/AppNavigation'
+import { settingsMenuItem } from '../components/SettingsEntry'
 
 /** Every app made so far, one row each. Swipe or long press to delete. */
 @Component
@@ -52,6 +53,7 @@ export struct AppsPage {
       .scrollBar(BarState.Off)
     }
     .title('My apps (' + this.projects.length.toString() + ')')
+    .menus([settingsMenuItem(this.pathStack)])
     .backgroundColor(app.background)
     .onShown(() => { this.destinationShown() })
   }
