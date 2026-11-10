@@ -17,6 +17,7 @@ export class WidgetStatus {
   kind: string = WIDGET_NONE
   /** Why a widget cannot be made, for unavailable. */
   reason: string = ''
+  canRefine: boolean = true
   placed: number = 0
 }
 
@@ -31,9 +32,9 @@ export function widgetStatus(source: string, vbc2: string, placed: number): Widg
   // A card over a version that does not compile shows "Open project": as good as no widget.
   if (placed > 0 && (!has || vbc2.length === 0)) { status.kind = WIDGET_BROKEN; return status }
   if (source.length === 0 || vbc2.length === 0) { status.kind = WIDGET_NEEDS_RUN; return status }
-  let refused = appUsesWidgetError(source)
-  if (refused.length > 0) { status.kind = WIDGET_UNAVAILABLE; status.reason = refused; return status }
-  if (!has) { status.kind = WIDGET_NONE; return status }
+  status.reason = appUsesWidgetError(source)
+  status.canRefine = status.reason.length === 0
+  if (!has) { status.kind = status.canRefine ? WIDGET_NONE : WIDGET_UNAVAILABLE; return status }
   status.kind = placed > 0 ? WIDGET_PLACED : WIDGET_READY
   return status
 }

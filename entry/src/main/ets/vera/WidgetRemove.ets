@@ -1,4 +1,4 @@
-import { compileVeraSource, withoutWidget } from './VeraCompiler'
+import { compileVeraSource, withoutWidget, appUsesWidgetError } from './VeraCompiler'
 import { smokeRun } from './VeraSmoke'
 import { hasWidgetFunction } from './WidgetStatus'
 import { withoutWidgetRequests } from './ProjectText'
@@ -23,6 +23,8 @@ export class WidgetRemoval {
 export function removeWidget(source: string, prompt: string): WidgetRemoval {
   let out = new WidgetRemoval()
   if (!hasWidgetFunction(source)) { out.error = 'This version has no widget.'; return out }
+  let usesWidget = appUsesWidgetError(source)
+  if (usesWidget.length > 0) { out.error = usesWidget; return out }
   let bare = withoutWidget(source)
   if (hasWidgetFunction(bare)) { out.error = 'The widget could not be taken out of this version.'; return out }
   try {

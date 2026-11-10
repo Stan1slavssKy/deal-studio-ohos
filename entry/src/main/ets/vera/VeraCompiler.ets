@@ -3130,7 +3130,7 @@ export function withoutWidget(source: string): string {
   for (let i = 0; i < gone.length; i++) {
     for (let word of words(gone[i])) {
       let named = app.declarations.find((entry: Declaration): boolean => nameOf(entry) === word)
-      if (named !== undefined && gone.indexOf(named) < 0) { gone.push(named) }
+      if (named !== undefined && word !== 'init' && word !== 'view' && gone.indexOf(named) < 0) { gone.push(named) }
     }
   }
   // Back in: whatever a declaration that stays names, until nothing more comes back.

@@ -22,7 +22,10 @@ assert.equal(widgetStatus(withWidget, '', 1).kind, 'broken')
 assert.equal(widgetStatus(base, '', 0).kind, 'needsRun')
 assert.equal(widgetStatus('', '', 0).kind, 'needsRun')
 const refused = widgetStatus(own, vbc2(own), 0)
-assert.equal(refused.kind, 'unavailable'); assert.match(refused.reason, /calls widget\(\)/)
+assert.equal(refused.kind, 'ready'); assert.equal(refused.canRefine, false); assert.match(refused.reason, /calls widget\(\)/)
+assert.equal(widgetStatus(own, vbc2(own), 2).kind, 'placed')
+assert.equal(widgetStatus(withWidget, vbc2(withWidget), 0).canRefine, true)
+assert.equal(new (loadVera('VeraLiveWidget').WidgetSession)(vbc2(own), 'shared', '').frame('p', 'App', '').live, true)
 // The version list names a widget change by the words Make widget sends.
 const {WIDGET_ASK_TEXT, changeNote} = loadVera('ProjectText')
 assert.equal(WIDGET_ASK_TEXT, loadVera('agent/AgentWidget').WIDGET_ASK)
@@ -174,4 +177,42 @@ console.log('widget-status-check: ok')
   assert.notEqual(removeWidget(app, 'Counter').error, '', 'nothing to remove')
   assert.ok(WIDGET_REMOVED_NOTE.length > 0)
   console.log('widget-status-check: remove widget ok')
+}
+
+{
+  const {withoutWidget} = loadVera('VeraCompiler')
+  const {removeWidget} = loadVera('WidgetRemove')
+  const {smokeRun} = loadVera('VeraSmoke')
+  const app = [
+    'import * as ui from "std/ui"',
+    'import * as math from "std/math"',
+    '@jsonable class AppState { count: number; }',
+    'function startingCount(): number { return math.abs(-2); }',
+    'function init(): AppState { return { count: startingCount() }; }',
+    'function displayCount(state: AppState): string { return ui.numberToString(state.count); }',
+    'function view(state: AppState): ui.View { return ui.Column("default", [ui.Text("body", displayCount(state)), ui.Text("caption", "Count")]); }',
+  ].join('\n') + '\n'
+  const widgets = [
+    'function resetCard(state: AppState, value: number): AppState { return init(); }\n' +
+      'function widget(state: AppState): ui.View { return ui.Button("primary", "Reset", "resetCard", 0, true); }',
+    'function widget(state: AppState): ui.View { return view(state); }',
+    'function widgetRefresh(state: AppState): AppState { return init(); }\n' +
+      'function widget(state: AppState): ui.View { return view(state); }',
+  ]
+  for (const widget of widgets) {
+    const original = app + widget
+    assert.equal(smokeRun(compileVeraSource(original)), '')
+    const bare = withoutWidget(original)
+    assert.equal(smokeRun(compileVeraSource(bare)), '')
+    for (const name of ['init', 'view', 'startingCount', 'displayCount']) {
+      assert.ok(bare.includes('function ' + name + '('), name + ' must remain with its dependencies')
+    }
+    assert.ok(bare.includes('std/math'))
+    assert.doesNotMatch(bare, /function (widget|widgetRefresh|resetCard)\(/)
+    const removed = removeWidget(original, 'Counter')
+    assert.equal(removed.error, '')
+    assert.equal(smokeRun(compileVeraSource(removed.source)), '')
+  }
+  assert.match(removeWidget(own, 'Counter').error, /calls widget\(\)/)
+  console.log('widget-status-check: runtime entry points, dependencies and shared-widget removal guard ok')
 }

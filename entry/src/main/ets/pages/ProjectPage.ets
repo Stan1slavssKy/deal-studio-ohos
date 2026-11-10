@@ -430,16 +430,20 @@ export struct ProjectPage {
         Row({ space: 6 }) {
           this.widgetButton('Preview', true, () => { this.previewWidget() })
           this.widgetButton('Add to home screen', false, () => { this.addWidget() }, 1.8)
-          this.widgetButton('Refine', false, () => { this.makeWidget() })
-          this.widgetButton('Redo', false, () => { this.makeWidget(true) })
+          if (this.widget.canRefine) {
+            this.widgetButton('Refine', false, () => { this.makeWidget() })
+            this.widgetButton('Redo', false, () => { this.makeWidget(true) })
+          }
         }
         .width('100%').margin({ top: 8 })
       } else if (this.widget.kind === WIDGET_PLACED) {
         // Refine edits the widget there; Redo writes another from nothing (the cards keep the old one until it is kept).
         Row({ space: 6 }) {
           this.widgetButton('Preview', true, () => { this.previewWidget() })
-          this.widgetButton('Refine', false, () => { this.makeWidget() })
-          this.widgetButton('Redo', false, () => { this.makeWidget(true) })
+          if (this.widget.canRefine) {
+            this.widgetButton('Refine', false, () => { this.makeWidget() })
+            this.widgetButton('Redo', false, () => { this.makeWidget(true) })
+          }
           this.widgetButton('Add another', false, () => { this.addWidget() }, 1.4)
         }
         .width('100%').margin({ top: 8 })
@@ -493,7 +497,7 @@ export struct ProjectPage {
   }
 
   private canRemoveWidget(): boolean {
-    return this.widget.kind === WIDGET_READY || this.widget.kind === WIDGET_PLACED
+    return this.widget.canRefine && (this.widget.kind === WIDGET_READY || this.widget.kind === WIDGET_PLACED)
   }
 
   /** Behind a swipe to the left, as a version's Delete. */
@@ -546,7 +550,7 @@ export struct ProjectPage {
 
   /** Make, change or remake the widget: always on the latest version, the one the card draws. Fresh writes a new one. */
   private makeWidget(fresh: boolean = false): void {
-    if (this.versions.length === 0 || this.versions[0].vbc2.length === 0) { return }
+    if (!this.widget.canRefine || this.versions.length === 0 || this.versions[0].vbc2.length === 0) { return }
     this.openGenerate(this.versions[0].id, true, fresh)
   }
 

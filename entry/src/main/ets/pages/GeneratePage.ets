@@ -735,7 +735,6 @@ export struct GeneratePage {
           this.status = 'Version ' + this.baseVersionNumber.toString()
         }
         if (this.makeWidget) {
-          this.widgetBase = v.source
           // An app that draws its own screen with widget(state) would change with a new widget: refused before any is made.
           let usesWidget = appUsesWidgetError(v.source)
           if (usesWidget.length > 0) { this.baseError = usesWidget }
@@ -747,6 +746,7 @@ export struct GeneratePage {
           this.tab = TAB_WIDGET
           // Redo, from the project page: the widget there is not shown to the model (withoutWidget).
           this.widgetFresh = params.widgetFresh === '1' && hasWidgetFunction(v.source)
+          this.widgetBase = this.widgetFresh ? withoutWidget(v.source) : v.source
           this.bindFormId = params.formId || ''
           this.widgetCards = this.readWidgetCards()
         }
@@ -1385,6 +1385,7 @@ export struct GeneratePage {
         this.tab = this.makeWidget ? TAB_WIDGET : TAB_PREVIEW
         this.compiled = true
         this.compileErrors = ''
+        if (this.makeWidget) { this.widgetFresh = false }
         metrics.success = true
         this.status = 'Server compiled successfully'
       } else {
@@ -1636,6 +1637,7 @@ export struct GeneratePage {
       if (!hadProgram) { this.tab = TAB_PREVIEW }
       this.compiled = true
       this.compileErrors = ''
+      if (this.makeWidget) { this.widgetFresh = false }
       this.modelWrote = true
       this.compositionJson = ''
       this.acceptRequest()
@@ -2350,7 +2352,7 @@ export struct GeneratePage {
       }
       // Read at Save, not at Generate: widget/app taps during generation must not be lost.
       preserved = store.loadState(this.projectId, base.id, veraStateStamp(base.vbc2))
-      let validation = validateWidgetRefinement(base.source, this.compiledSource, this.compiledVbc2, preserved)
+      let validation = validateWidgetRefinement(this.widgetBase, this.compiledSource, this.compiledVbc2, preserved)
       if (validation.length > 0) { this.compileErrors = validation; this.status = 'Widget not saved'; return false }
     }
     let widgetLost = !this.makeWidget && this.keepWidget()
@@ -2362,6 +2364,7 @@ export struct GeneratePage {
     } catch (e) { this.status = 'Save failed: ' + (e as Error).message; return false }
     // Stay here: the next change is a refinement of what was just saved, and the next Save its own version.
     this.baseVersionId = saved.id
+    if (this.makeWidget) { this.widgetBase = this.compiledSource }
     this.baseVersionNumber = this.nextVersionNumber
     this.nextVersionNumber = this.versionCount() + 1
     this.savedVbc2 = this.compiledVbc2
