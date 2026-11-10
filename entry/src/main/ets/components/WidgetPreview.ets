@@ -1,9 +1,16 @@
-import { WidgetSession, LiveFrame, CardNode } from '../vera/VeraLiveWidget'
+import { WidgetSession, LiveFrame, CardNode, SourceRequest } from '../vera/VeraLiveWidget'
 import { app } from './AppStyle'
 import { sourceFetch } from '../vera/VeraSource'
+import { CardView } from '../widget/CardView'
 
-/** A 2x2 home-screen card on this phone, in vp: the size the widget is written for. */
-const CARD_SIDE: number = 172
+/** A 2x2 home-screen card on this phone, in vp: the size the widget is written for (measured: 524 px wide at 3.5 px per vp). */
+const CARD_SIDE: number = 150
+/** The other sizes the card is offered in (measured the same way): 2x4 is wide, 4x4 is nearly square. */
+const CARD_WIDE_WIDTH: number = 324
+const CARD_WIDE_HEIGHT: number = 148
+const CARD_BIG_HEIGHT: number = 340
+/** The thumbnail's side, in vp. */
+const THUMB_SIDE: number = 72
 
 /**
  * The program's widget(state) as the home-screen card will draw it: the same session (VeraLiveWidget) and the same
@@ -15,9 +22,15 @@ export struct WidgetPreview {
   @Prop @Watch('restart') seedState: string = ''
   /** Passed to the session, as the card's frame carries it; a live card does not show it. */
   @Prop title: string = 'App'
+  /** A small, still picture of the card (the project page): no note under it and no taps. */
+  @Prop thumbnail: boolean = false
+  /** Which card size to show, as the system numbers it: 2 is 2x2, 3 is 2x4, 4 is 4x4. */
+  @State dimension: number = 2
   @State frame: LiveFrame = new LiveFrame()
   @State error: string = ''
   private session: WidgetSession | null = null
+  /** Another frame after every tap, even one that left the state as it was, so the card draws it again. */
+  @State seq: number = 0
 
   aboutToAppear(): void {
     this.restart()
@@ -33,7 +46,7 @@ export struct WidgetPreview {
     for (let seed of seeds) {
       try {
         let session = new WidgetSession(this.vbc2, 'preview', seed)
-        this.frame = session.frame('', this.title, '')
+        this.frame = session.frame('', this.title, '', this.dimension)
         this.session = session
         return
       } catch (e) {
@@ -45,18 +58,22 @@ export struct WidgetPreview {
   /** A tap is being handled (a Refresh's fetch may take seconds): another tap meanwhile is ignored, not handled twice. */
   private busy: boolean = false
 
-  private async tap(node: CardNode): Promise<void> {
+  /**
+   * A tap of any kind, run here only and never saved: a button's handler, a switch's, a picture's pointer. Its live source call, if it
+   * makes one, is fetched and answered here too, as the card does (LiveFormService): one call, as on the card.
+   */
+  private async run(handle: (session: WidgetSession) => SourceRequest[]): Promise<void> {
     if (this.session === null || this.busy) { return }
     let session = this.session!
     // What the session held before the tap: put back if the tap or its answer fails, so it matches the frame on show.
     let before = session.encodedState()
     this.busy = true
     try {
-      // A Refresh button fetches its live source here too, as the card does: one call, as on the card.
-      let requests = session.tap(this.frame, this.frame.token, node.action, node.value)
+      let requests = handle(session)
       if (requests.length > 0) { session.answer(requests[0].handler, await sourceFetch(requests[0].params)) }
       if (session !== this.session) { return }
-      this.frame = session.frame('', this.title, '')
+      this.frame = session.frame('', this.title, '', this.dimension)
+      this.seq += 1
       this.error = ''
     } catch (e) {
       if (session === this.session) { this.session = new WidgetSession(this.vbc2, 'preview', before) }
@@ -66,103 +83,83 @@ export struct WidgetPreview {
     }
   }
 
+  private tap(action: string, value: number): void {
+    this.run((session: WidgetSession): SourceRequest[] => session.tap(this.frame, this.frame.token, action, value))
+  }
+
+  private tapSwitch(handler: string, on: boolean): void {
+    this.run((session: WidgetSession): SourceRequest[] => session.tapSwitch(this.frame, this.frame.token, handler, on))
+  }
+
+  private tapPicture(handler: string, x: number, y: number): void {
+    this.run((session: WidgetSession): SourceRequest[] => session.tapSurface(this.frame, this.frame.token, handler, x, y))
+  }
+
   build() {
-    Column({ space: 12 }) {
-      // As LiveCard: the widget has the whole card, with no title strip.
-      Column({ space: 6 }) {
-        if (this.frame.live) {
-          ForEach(this.frame.nodes, (node: CardNode) => { this.level1(node, false) }, (node: CardNode) => node.key + this.frame.token)
+    if (this.thumbnail) {
+      // The card at its own size, scaled down to THUMB_SIDE: what is on it lays out as on the home screen.
+      Stack() {
+        this.card()
+      }
+      .width(THUMB_SIDE)
+      .height(THUMB_SIDE)
+      .clip(true)
+      .hitTestBehavior(HitTestMode.Transparent)
+    } else {
+      Column({ space: 12 }) {
+        this.card()
+        Text(this.note())
+          .fontSize(12).fontColor(this.error.length > 0 ? app.warningInk : app.inkMuted)
+          .textAlign(TextAlign.Center).constraintSize({ maxWidth: 300 })
+        // The size the card will be placed at: the widget is fitted to it (a widget that asks for the size draws differently).
+        Row({ space: 8 }) {
+          ForEach([2, 3, 4], (d: number) => {
+            Text(d === 2 ? '2×2' : d === 3 ? '2×4' : '4×4')
+              .fontSize(12).padding({ left: 12, right: 12, top: 6, bottom: 6 }).borderRadius(14)
+              .fontColor(this.dimension === d ? app.onPrimary : app.inkStrong)
+              .backgroundColor(this.dimension === d ? app.primary : app.surface)
+              .onClick(() => { this.dimension = d; this.restart() })
+          }, (d: number) => d.toString())
         }
       }
-      .width(CARD_SIDE)
-      .height(CARD_SIDE)
-      .padding(12)
+      .width('100%')
+      .height('100%')
       .justifyContent(FlexAlign.Center)
-      .backgroundColor(this.frame.background)
-      .borderRadius(20)
-      .clip(true)
-      .shadow({ radius: 8, color: '#26000000', offsetY: 2 })
-
-      Text(this.note())
-        .fontSize(12).fontColor(this.error.length > 0 ? app.warningInk : app.inkMuted)
-        .textAlign(TextAlign.Center).constraintSize({ maxWidth: 300 })
+      .backgroundColor(app.background)
     }
-    .width('100%')
-    .height('100%')
+  }
+
+  @Builder
+  card() {
+    // As LiveCard: the widget has the whole card, with no title strip.
+    Column({ space: 6 }) {
+      if (this.frame.live) {
+        CardView({
+          nodes: this.frame.nodes,
+          frameKey: this.frame.token + this.dimension.toString() + this.seq.toString(),
+          preset: this.frame.preset,
+          primary: this.frame.primary,
+          onTap: (action: string, value: number): void => { this.tap(action, value) },
+          onSwitch: (handler: string, on: boolean): void => { this.tapSwitch(handler, on) },
+          onPoint: (handler: string, x: number, y: number): void => { this.tapPicture(handler, x, y) }
+        })
+      }
+    }
+    .width(this.dimension === 2 ? CARD_SIDE : CARD_WIDE_WIDTH)
+    .height(this.dimension === 2 ? CARD_SIDE : this.dimension === 3 ? CARD_WIDE_HEIGHT : CARD_BIG_HEIGHT)
+    .padding(12)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(app.background)
+    .backgroundColor(this.frame.background)
+    .borderRadius(20)
+    .clip(true)
+    .shadow(this.thumbnail ? { radius: 0 } : { radius: 8, color: '#26000000', offsetY: 2 })
+    .scale(this.thumbnail ? { x: THUMB_SIDE / CARD_SIDE, y: THUMB_SIDE / CARD_SIDE } : { x: 1, y: 1 })
+    .hitTestBehavior(this.thumbnail ? HitTestMode.None : HitTestMode.Default)
   }
 
   private note(): string {
     if (this.error.length > 0) { return this.error }
     if (!this.frame.live) { return 'No widget yet. Say below what it should show.' }
-    return 'The home-screen card, over the data in the preview. Taps here are not saved.'
-  }
-
-  @Builder
-  leaf(node: CardNode) {
-    if (node.kind === 'button') {
-      Button(node.text).type(ButtonType.Normal).borderRadius(10).height(40)
-        .backgroundColor(node.fill).fontColor(node.color).fontSize(14)
-        .enabled(node.enabled).onClick(() => { this.tap(node) })
-    } else if (node.kind === 'divider') {
-      Divider().color('#CBD5E1')
-    } else if (node.kind === 'spacer') {
-      Blank().height(4)
-    } else if (node.kind === 'numbertext') {
-      // A figure is never broken over two lines: beside another, it shrinks to fit its half of the card.
-      Text(node.text).maxFontSize(node.size).minFontSize(Math.min(node.size, 12)).fontColor(node.color).maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    } else {
-      Text(node.text).fontSize(node.size).fontColor(node.color).maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-  }
-
-  // This layout (leaf and the level builders) is a copy of widget/pages/LiveCard.ets's, kept in step by hand: a card cannot import the
-  // app's code. A change to how a node is drawn goes into both, or the preview stops showing what the card shows.
-  @Builder
-  level1(node: CardNode, inRow: boolean) {
-    if (node.kind === 'row') {
-      Row({ space: 8 }) {
-        ForEach(node.children, (child: CardNode) => { this.level2(child, true) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(FlexAlign.SpaceEvenly)
-    } else if (node.kind === 'column') {
-      Column({ space: 6 }) {
-        ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0)
-    } else {
-      this.leaf(node)
-    }
-  }
-
-  @Builder
-  level2(node: CardNode, inRow: boolean) {
-    if (node.kind === 'row') {
-      Row({ space: 8 }) {
-        ForEach(node.children, (child: CardNode) => { this.level3(child, true) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(FlexAlign.SpaceEvenly)
-    } else if (node.kind === 'column') {
-      Column({ space: 6 }) {
-        ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0)
-    } else {
-      this.leaf(node)
-    }
-  }
-
-  @Builder
-  level3(node: CardNode, inRow: boolean) {
-    if (node.kind === 'row') {
-      Row({ space: 8 }) {
-        ForEach(node.children, (child: CardNode) => { this.leaf(child) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(FlexAlign.SpaceEvenly)
-    } else if (node.kind === 'column') {
-      Column({ space: 6 }) {
-        ForEach(node.children, (child: CardNode) => { this.leaf(child) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0)
-    } else {
-      this.leaf(node)
-    }
+    return 'Shows your saved data. The app itself doesn\'t change. Taps here aren\'t saved.'
   }
 }

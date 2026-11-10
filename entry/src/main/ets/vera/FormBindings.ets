@@ -17,6 +17,14 @@ export class FormBindings {
 
   projectFor(formId: string): string { return this.read()[formId] || '' }
 
+  /** How many cards show each project, read once: for a list of projects. */
+  countsByProject(): Record<string, number> {
+    let entries = this.read()
+    let counts: Record<string, number> = {}
+    for (let id of Object.keys(entries)) { counts[entries[id]] = (counts[entries[id]] || 0) + 1 }
+    return counts
+  }
+
   formsFor(projectId: string): string[] {
     let entries = this.read()
     return Object.keys(entries).filter((id: string): boolean => entries[id] === projectId)
@@ -34,6 +42,32 @@ export class FormBindings {
     let kept: Record<string, string> = {}
     for (let id of Object.keys(entries)) { if (id !== formId) { kept[id] = entries[id] } }
     this.write(kept)
+    this.setDimension(formId, 0)
+  }
+
+  /** The size a card was added at, as the system numbers it (2 is 2x2, 3 is 2x4, 4 is 4x4); 2 when it never said. */
+  dimensionFor(formId: string): number {
+    try {
+      let sizes = JSON.parse(fs.readTextSync(this.sizesPath())) as Record<string, number>
+      let known = sizes[formId]
+      return known === 3 || known === 4 ? known : 2
+    } catch (_e) { return 2 }
+  }
+
+  /** Kept beside the bindings; 0 forgets it (a card that was removed). */
+  setDimension(formId: string, dimension: number): void {
+    if (formId.length === 0) { return }
+    let sizes: Record<string, number> = {}
+    try { sizes = JSON.parse(fs.readTextSync(this.sizesPath())) as Record<string, number> } catch (_e) {}
+    let kept: Record<string, number> = {}
+    for (let id of Object.keys(sizes)) { if (id !== formId) { kept[id] = sizes[id] } }
+    if (dimension === 2 || dimension === 3 || dimension === 4) { kept[formId] = dimension }
+    writeAtomically(this.sizesPath(), JSON.stringify(kept))
+  }
+
+  private sizesPath(): string {
+    if (this.path.length === 0) { throw new Error('Form bindings are not initialised') }
+    return this.path.replace(/forms\.json$/, 'form-sizes.json')
   }
 
   private write(entries: Record<string, string>): void {

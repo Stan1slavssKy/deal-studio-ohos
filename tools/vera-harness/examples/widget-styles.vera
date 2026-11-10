@@ -1,0 +1,26 @@
+import * as ui from "std/ui"
+@jsonable class AppState { done: number; total: number; }
+function init(): AppState { return { done: 3, total: 5 }; }
+function view(state: AppState): ui.View {
+  return ui.AppTheme("editorial", "", [
+    ui.Column("default", [
+      ui.Text("heading", "Plan"),
+      ui.NumberText("metric", state.done, "", " done", 1)
+    ])
+  ]);
+}
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("editorial", "", [
+    ui.Column("center", [
+      ui.Text("eyebrow", "TODAY"),
+      ui.Text("title", "Plan"),
+      ui.Column("accent", [
+        ui.Text("caption", "3 of 5 done")
+      ]),
+      ui.Row("split", [
+        ui.Text("muted", "left"),
+        ui.Text("danger", "late")
+      ])
+    ])
+  ]);
+}

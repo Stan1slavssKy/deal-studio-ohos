@@ -1,0 +1,26 @@
+import * as ui from "std/ui"
+@jsonable class AppState { steps: number; goal: number; days: number[]; }
+function init(): AppState { return { steps: 6240, goal: 8000, days: [4200, 6100, 5300, 7800, 6240] }; }
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("default", [
+      ui.Text("heading", "Steps"),
+      ui.NumberText("metric", state.steps, "", "", 1)
+    ])
+  ]);
+}
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("center", [
+      ui.Row("split", [
+        ui.Badge("success", "On track", "check"),
+        ui.Icon("accent", "star")
+      ]),
+      ui.MetricGroup("default", 2, [
+        ui.NumberStat("default", "Steps", state.steps, "", "", 1, "", "", -1),
+        ui.Stat("default", "Goal", "8,000", "", "")
+      ]),
+      ui.Sparkline("accent", state.days, 0, "", false, [], "", "", "", [], 0)
+    ])
+  ]);
+}

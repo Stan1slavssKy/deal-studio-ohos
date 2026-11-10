@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { loadVera } = require('./source-loader')
+const { loadVera, loadSource, sourceRoot } = require('./source-loader')
 const { compileVeraSource } = loadVera('VeraCompiler')
 const { WidgetSession } = loadVera('VeraLiveWidget')
 const { veraStateStamp } = loadVera('VeraStateStamp')
@@ -69,8 +69,11 @@ assert.throws(()=>list.tap(listAfter,listAfter.token,'remove',22),/not available
 list.tap(listAfter,listAfter.token,'remove',33)
 assert.deepEqual(frame(list).nodes[0].children.map(row=>row.children[1].value),[11])
 const card = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets/widget/pages/LiveCard.ets'), 'utf8')
-assert.match(card, /handler: node.action/)
-assert.match(card, /node.key \+ this.token/)
+const view = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets/widget/CardView.ets'), 'utf8')
+assert.match(card, /handler: action/, 'the card posts the handler a button or shape reports')
+assert.match(card, /handler: handler, x: x, y: y/, 'and the point a picture reports')
+assert.match(card, /frameKey: this.token \+ this.seq/, 'the nodes are made again for every frame: the token and seq are in their key')
+assert.match(view, /node.key \+ this.frameKey/)
 // The token does not grow with the app's data: a log of 400 entries still fits the card, and a different log is a different token.
 {
   const log = 'import * as ui from "std/ui"\n@jsonable class Entry { note: string; amount: number; }\n' +
@@ -87,5 +90,408 @@ assert.match(card, /node.key \+ this.token/)
   const after = frame(big)
   assert.notEqual(after.token, before.token)
   assert.throws(() => big.tap(after, before.token, 'add', 1), /changed/)
+}
+// A tappable shape: a drum on the card. Its path is carried to the card, a tap on it runs the handler, a plain one is refused.
+{
+  const drumSource = fs.readFileSync(path.join(__dirname, 'examples/widget-drum.vera'), 'utf8')
+  const drum = new WidgetSession(compileVeraSource(drumSource).vbc2, 'drum', '')
+  const f = frame(drum)
+  const shape = f.nodes[0].children[0]
+  assert.equal(shape.kind, 'path')
+  assert(shape.commands.startsWith('M50 12'), 'path data reaches the card')
+  assert.equal(shape.action, 'hit')
+  assert(JSON.stringify(f).length < 2000, 'a drum is small: ' + JSON.stringify(f).length)
+  drum.tap(f, f.token, 'hit', 1)
+  assert(texts(frame(drum).nodes).includes('1 hits'))
+  assert.throws(() => drum.tap(frame(drum), frame(drum).token, 'hit', 5), /not available/)
+  const still = compileVeraSource(drumSource.replace('0, "hit", 1)', '0)')).vbc2
+  const plain = new WidgetSession(still, 'plain', '')
+  assert.equal(frame(plain).nodes[0].children[0].action, '')
+  assert.throws(() => plain.tap(frame(plain), frame(plain).token, 'hit', 1), /not available/)
+  const long = drumSource.replace('M50 12', 'M50 12 ' + 'L1 1 '.repeat(130))
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(long).vbc2, 'long', '')), /shape exceeds/)
+}
+// A Motion on the card: a drum that jumps when it is hit. The frame carries the preset and the trigger, the trigger moves with
+// the count, a style a card cannot play, a second Motion and a Motion that is not a number are refused.
+{
+  const motionSource = fs.readFileSync(path.join(__dirname, 'examples/widget-drum-motion.vera'), 'utf8')
+  const drum = new WidgetSession(compileVeraSource(motionSource).vbc2, 'drum-motion', '')
+  const f = frame(drum)
+  const motion = f.nodes[0].children[0]
+  assert.equal(motion.kind, 'motion')
+  assert.equal(motion.style, 'pop')
+  assert.equal(motion.trigger, 0)
+  assert.equal(motion.children[0].kind, 'path')
+  assert.equal(motion.children[0].action, 'hit')
+  drum.tap(f, f.token, 'hit', 1)
+  const g = frame(drum)
+  assert.equal(g.nodes[0].children[0].trigger, 1, 'the trigger follows the count')
+  assert.notEqual(g.token, f.token)
+  assert(JSON.stringify(g).length < 2000, 'a Motion drum is small: ' + JSON.stringify(g).length)
+  for (const style of loadVera('VeraMotion').MOTION_PRESETS) {
+    const ok = motionSource.replace('"pop"', '"' + style + '"')
+    assert.equal(frame(new WidgetSession(compileVeraSource(ok).vbc2, 'ok', '')).nodes[0].children[0].style, style)
+  }
+  // Three Motions at most; each touch plays the Motion its node sits under (slot), not all of them.
+  const widgetAt = motionSource.indexOf('function widget(')
+  const withMotions = n => motionSource.substring(0, widgetAt) + motionSource.substring(widgetAt).replace('ui.NumberText("metric", state.hits, "", " hits", 1)',
+    Array.from({length: n}, (_, i) => 'ui.Motion("fade", state.hits, [ui.Text("caption", "m' + i + '")])').join(', '))
+  const three = frame(new WidgetSession(compileVeraSource(withMotions(2)).vbc2, 'three', ''))
+  const slots = []
+  const walk = (nodes) => nodes.forEach(n => { if (n.kind === 'motion') slots.push(n.slot); walk(n.children) })
+  walk(three.nodes)
+  assert.deepEqual(slots, [0, 1, 2], 'the drum and two more: slots in order')
+  assert.equal(loadVera('VeraLiveWidget').LIVE_MAX_MOTIONS, 5, 'five Motions at most')
+  const drumPath = three.nodes[0].children[0].children[0]
+  assert.equal(drumPath.kind, 'path'); assert.equal(drumPath.slot, 0, 'the drum sits under Motion 0')
+  assert.equal(three.nodes[0].children[1].children[0].slot, 1, 'a text under the second Motion carries its slot')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(withMotions(5)).vbc2, 'four', '')), /at most 5 ui\.Motion/)
+  const nested = motionSource.replace('ui.Path(', 'ui.Motion("fade", 0, [ui.Path(').replace(', 0, "hit", 1)', ', 0, "hit", 1)])')
+  assert.throws(() => compileVeraSource(nested), /E2107/, 'the compiler refuses a Motion inside a Motion')
+}
+{
+  const ts = process.env.VERA_TYPESCRIPT_PATH ? require(process.env.VERA_TYPESCRIPT_PATH) : require('typescript')
+  const { CARD_MAX_MOTIONS } = loadSource(path.join(sourceRoot, 'widget/CardModel.ets'))
+  const { motionStages, motionPivot, pivotPercent } = loadVera('VeraMotion')
+  const start = view.indexOf('  @State settled:')
+  const end = view.indexOf('  /** How the theme dressed', start)
+  assert(start >= 0 && end > start, 'the CardView Motion fields and methods must exist')
+  const motion = view.slice(start, end)
+  const filled = view.slice(view.indexOf('function filled('), view.indexOf('function contexts('))
+  const compiled = ts.transpileModule(filled + '\nclass MotionProbe {\n' + motion.replace(/@State /g, '') + '\n}', {
+    compilerOptions: { target: ts.ScriptTarget.ES2020 }, reportDiagnostics: true
+  })
+  assert.deepEqual((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error), [])
+  const Curve = { Linear: 0, EaseOut: 1, EaseIn: 2, EaseInOut: 3 }
+  const MotionProbe = new Function('SLOTS', 'motionStages', 'motionPivot', 'pivotPercent', 'Curve',
+    compiled.outputText + '\nreturn MotionProbe;')(CARD_MAX_MOTIONS, motionStages, motionPivot, pivotPercent, Curve)
+  const stateFields = [...motion.matchAll(/@State (\w+):/g)].map(m => m[1])
+  const pose = (probe, node) => [1, 2, 3, 4, 5, 6].map(i => probe.poseOf(node, i))
+  const finish = (probe, node) => {
+    const stages = motionStages(node.style)
+    for (let at = 1; at < stages.length; at++) {
+      assert.equal(probe.phase[node.slot], at, 'each stage starts in order')
+      assert.deepEqual(pose(probe, node), stages[at].slice(1, 7), 'the stage uses the preset pose')
+      const animation = probe.motionAnimation(node)
+      assert.equal(animation.duration, stages[at][0])
+      assert.equal(animation.curve, stages[at][7])
+      animation.onFinish()
+      const phase = probe.phase.slice()
+      animation.onFinish()
+      assert.deepEqual(probe.phase, phase, 'a duplicate completion cannot advance the chain')
+    }
+    assert.equal(probe.phase[node.slot], 0)
+    assert.equal(probe.playing(node), false, 'completion settles both inputs')
+    assert.deepEqual(pose(probe, node), stages[stages.length - 1].slice(1, 7))
+  }
+  const motionSource = fs.readFileSync(path.join(__dirname, 'examples/widget-drum-motion.vera'), 'utf8').replace('"pop"', '"bounce"')
+  for (const delta of [-1, 0, 1]) {
+    const drum = new WidgetSession(compileVeraSource(motionSource.replace('state.hits + value', 'state.hits + (' + delta + ')')).vbc2, 'motion-' + delta, '')
+    const probe = new MotionProbe()
+    let current = frame(drum)
+    let node = current.nodes[0].children[0]
+    const stages = motionStages(node.style), rest = stages[stages.length - 1].slice(1, 7)
+    probe.frameKey = current.token + ':0'
+    assert.equal(probe.playing(node), false, 'the first frame never plays')
+    assert.deepEqual(pose(probe, node), rest, 'the first frame skips even a displaced starting pose')
+    probe.begin(node)
+    assert.equal(probe.phase[node.slot], 0)
+    assert.equal(probe.playing(node), false)
+    for (let tap = 1; tap <= 3; tap++) {
+      const state = stateFields.map(name => probe[name]), values = state.map(value => value.slice())
+      probe.touched(node.children[0])
+      assert.deepEqual(stateFields.map(name => probe[name]), values, 'a touch does not change reactive state')
+      stateFields.forEach((name, i) => assert.equal(probe[name], state[i], name + ' keeps its reference before redraw'))
+      assert.deepEqual(pose(probe, node), rest, 'before the answer the old frame stays at rest')
+      assert.equal(probe.phase[node.slot], 0)
+      drum.tap(current, current.token, 'hit', 1)
+      current = frame(drum)
+      node = current.nodes[0].children[0]
+      assert.equal(node.trigger, delta * tap)
+      probe.frameKey = current.token + ':' + tap
+      assert.equal(probe.playing(node), true, 'accepted tap plays with trigger delta ' + delta + ', tap ' + tap)
+      assert.deepEqual(pose(probe, node), stages[0].slice(1, 7), 'the accepted redraw starts at the first pose')
+      probe.begin(node)
+      finish(probe, node)
+      probe.frameKey += ':redraw'
+      assert.equal(probe.playing(node), false, 'an unchanged redraw cannot replay a settled tap')
+      probe.begin(node)
+      assert.deepEqual(pose(probe, node), rest)
+    }
+    probe.touched(node.children[0])
+    assert.throws(() => drum.tap(current, 'stale', 'hit', 1), /changed/)
+    assert.deepEqual(pose(probe, node), rest, 'a refused tap has no new frame and stays at rest')
+    assert.equal(probe.phase[node.slot], 0)
+    probe.frameKey += ':next'
+    probe.begin(node)
+    finish(probe, node)
+    for (const change of [-1, 1]) {
+      node = { ...node, trigger: node.trigger + change }
+      probe.frameKey += ':trigger'
+      assert.equal(probe.playing(node), true, 'a trigger change alone still plays')
+      probe.begin(node)
+      finish(probe, node)
+    }
+  }
+  const layers = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')).vbc2, 'motion-layers', '')
+  const scene = frame(layers).nodes[0].children[0]
+  const probe = new MotionProbe()
+  probe.frameKey = 'layers:0'
+  scene.children.forEach(node => probe.begin(node))
+  probe.touched(scene.children[0].children[0])
+  assert.deepEqual(probe.touches.slice(0, 3), [1, 1, 0], 'layer links count all scene Motions, not other slots')
+  scene.children.forEach(node => assert.equal(probe.phase[node.slot], 0, 'layer touches wait for a redraw'))
+  probe.frameKey = 'layers:1'
+  scene.children.forEach(node => {
+    assert.equal(probe.playing(node), true)
+    probe.begin(node)
+  })
+  const node = scene.children[0], stale = probe.motionAnimation(node)
+  probe.frameKey = 'layers:2'
+  scene.children.forEach(node => probe.begin(node))
+  stale.onFinish()
+  assert.equal(probe.phase[node.slot], 1, 'an older frame completion cannot advance the new chain')
+  scene.children.forEach(node => finish(probe, node))
+}
+// A picture on the card: ui.Surface drawn once for the state, its shapes carried in the frame (a few hundred characters), a tap on it
+// calling the pointer handler with the finger down and up at that point. No frame loop, one picture, a few dozen shapes.
+{
+  const { encodeGfxOps, decodeGfxOps, decodeGfx } = loadVera('VeraGfx')
+  const pandaSource = fs.readFileSync(path.join(__dirname, 'examples/widget-panda.vera'), 'utf8')
+  const panda = new WidgetSession(compileVeraSource(pandaSource).vbc2, 'panda', '')
+  const f = frame(panda)
+  const motion = f.nodes[0].children[0]
+  const picture = motion.children[0]
+  assert.equal(picture.kind, 'surface')
+  assert.equal(picture.w, 100)
+  assert.equal(picture.h, 100)
+  assert.equal(picture.pointer, 'pandaTouch')
+  assert.equal(picture.size, 80, 'one figure under it leaves room for the full picture')
+  assert.equal(f.preset, 'playful')
+  const shapes = decodeGfxOps(picture.ops)
+  assert.equal(shapes.length, 9, 'the nine shapes the program drew')
+  assert.equal(shapes[2].kind, 'circle'); assert.equal(shapes[2].r, 36); assert.equal(shapes[2].color, '#FFFFFF')
+  assert.equal(shapes[8].kind, 'arc'); assert.equal(shapes[8].start, 110); assert.equal(shapes[8].sweep, 140)
+  assert.equal(encodeGfxOps(shapes), picture.ops, 'what is carried is what was drawn')
+  assert(JSON.stringify(f).length < 2500, 'a panda is small: ' + JSON.stringify(f).length)
+  assert.deepEqual(decodeGfxOps('not json'), [])
+  panda.tapSurface(f, f.token, 'pandaTouch', 50, 50)
+  const g = frame(panda)
+  assert.equal(g.nodes[0].children[0].trigger, 1, 'one tap is one hop: down counts, up does not')
+  assert(texts(g.nodes).includes('1 hops'))
+  assert.throws(() => panda.tapSurface(frame(panda), f.token, 'pandaTouch', 50, 50), /changed/, 'a tap from an older frame')
+  assert.throws(() => panda.tapSurface(g, g.token, 'init', 50, 50), /not available/, 'only the picture\'s own handler')
+  assert.throws(() => panda.tapSurface(g, g.token, 'pandaTouch', NaN, 5), /not available/)
+  assert.throws(() => panda.tap(g, g.token, 'pandaTouch', 0), /not available/, 'a number tap is not a picture tap')
+  // No frame loop on a card, one picture, a few dozen shapes.
+  const looping = (pandaSource + 'function pandaTick(state: AppState, elapsedMs: number): AppState { return state; }')
+    .replace('"panda", "", "pandaTouch"', '"panda", "pandaTick", "pandaTouch"')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(looping).vbc2, 'loop', '')), /no frames/)
+  // Three pictures at most; they are numbered, and pictures side by side share the card's width.
+  const cut = pandaSource.indexOf('function widget(')
+  const withPictures = (n, inRow) => {
+    const extra = Array.from({length: n}, () => 'ui.Surface("default", 100, 100, "panda", "", "")').join(', ')
+    return pandaSource.substring(0, cut) + pandaSource.substring(cut).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
+      inRow ? 'ui.Row("default", [' + extra + '])' : extra)
+  }
+  const column = frame(new WidgetSession(compileVeraSource(withPictures(2, false)).vbc2, 'two', ''))
+  const pics = []
+  const gather = (nodes) => nodes.forEach(n => { if (n.kind === 'surface') pics.push(n); gather(n.children) })
+  gather(column.nodes)
+  assert.deepEqual(pics.map(n => n.pic), [0, 1, 2], 'the first is the panda, the others follow')
+  const row = frame(new WidgetSession(compileVeraSource(withPictures(2, true)).vbc2, 'row', ''))
+  const inRow = []
+  const gatherRow = (nodes) => nodes.forEach(n => { if (n.kind === 'surface') inRow.push(n); gatherRow(n.children) })
+  gatherRow(row.nodes)
+  assert(inRow.every(n => n.size <= 59), 'two pictures in a row, and the one above, fit the width: ' + inRow.map(n => n.size))
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(withPictures(5, false)).vbc2, 'four', '')), /at most 5 ui\.Surface/)
+  const many = pandaSource.replace('  return shapes;', '  shapes.push(gfx.circle(1, 50, 2, "#1F1F1F"));\n'.repeat(60) + '  return shapes;')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(many).vbc2, 'many', '')), /at most 60 shapes/)
+  // The picture takes the room the rest leaves: more text under it, a smaller picture (never under 40).
+  const cutAt = pandaSource.indexOf('function widget(')
+  const crowded = pandaSource.substring(0, cutAt) + pandaSource.substring(cutAt).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
+    'ui.NumberText("metric", state.hops, "", " hops", 1), ui.Text("caption", "best"), ui.Text("caption", "more")')
+  const smaller = frame(new WidgetSession(compileVeraSource(crowded).vbc2, 'crowded', '')).nodes[0].children[0].children[0]
+  assert(smaller.size < 80 && smaller.size >= 40, 'a crowded card shrinks the picture: ' + smaller.size)
+  const still = compileVeraSource(pandaSource.replace('"panda", "", "pandaTouch"', '"panda", "", ""')).vbc2
+  const looked = new WidgetSession(still, 'still', '')
+  assert.equal(frame(looked).nodes[0].children[0].children[0].pointer, '')
+  assert.throws(() => looked.tapSurface(frame(looked), frame(looked).token, '', 5, 5), /not available/)
+}
+// Two pictures side by side, each under its own Motion (examples/widget-two-pictures.vera): each touch is counted for its own Motion's slot.
+{
+  const two = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-two-pictures.vera'), 'utf8')).vbc2, 'two-pictures', '')
+  const f = frame(two)
+  const [left, right] = f.nodes[0].children[0].children
+  assert.deepEqual([left.slot, right.slot], [0, 1])
+  assert.deepEqual([left.children[0].pic, right.children[0].pic], [0, 1])
+  assert.deepEqual([left.children[0].pointer, right.children[0].pointer], ['touchLeft', 'touchRight'])
+  assert(left.children[0].size <= 59 && right.children[0].size <= 59, 'side by side, each takes half the width')
+  two.tapSurface(f, f.token, 'touchRight', 50, 50)
+  assert(texts(frame(two).nodes).includes('1'), 'one touch counted')
+}
+// The theme's roles reach the card (CardStyle): sizes, weights, families, tones, panels, alignment, and only what differs from the default is in the frame.
+{
+  const styled = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-styles.vera'), 'utf8')).vbc2, 'styles', '')
+  const f = frame(styled)
+  const [eyebrow, title, panel, row] = f.nodes[0].children
+  assert.equal(eyebrow.size, 10); assert.equal(eyebrow.spacing, 2); assert(eyebrow.weight >= 500, 'an eyebrow is not light')
+  assert.equal(title.size, 22); assert.equal(title.weight, 700); assert.equal(title.family, 'Noto Serif', 'editorial headings are serif')
+  assert.equal(panel.panel !== undefined, true); assert(panel.pad > 0 && panel.radius > 0, 'a panel has a fill, padding and a radius')
+  assert.equal(row.align, 'split'); assert.equal(row.children[1].color, '#9B2226', 'danger is the theme\'s danger ink')
+  assert.equal(row.children[0].weight, undefined, 'a body text at the default weight carries no weight')
+  assert.equal(f.nodes[0].align, undefined, 'a centred column carries no alignment')
+  assert(!JSON.stringify(f).includes('"gap"'), 'no gap in the frame when it is the default')
+  assert(JSON.stringify(f).length < 2400, 'styles stay small: ' + JSON.stringify(f).length)
+}
+// Icons, badges, progress, stats and a sparkline on the card (examples/widget-water.vera, widget-metrics.vera).
+{
+  const { decodeGfxOps } = loadVera('VeraGfx')
+  const water = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-water.vera'), 'utf8')).vbc2, 'water', '')
+  const f = frame(water)
+  const ring = f.nodes[0].children[0]
+  assert.equal(ring.kind, 'ring'); assert.equal(ring.val, 3); assert.equal(ring.max, 8); assert.equal(ring.sub, '38%'); assert.equal(ring.text, 'Water')
+  assert.equal(ring.size, 52); assert.match(ring.color, /^#[0-9A-Fa-f]{6}$/); assert.notEqual(ring.color, '#172033', 'the ring takes the theme\'s accent, not the default ink')
+  const [minus, plus] = f.nodes[0].children[1].children
+  assert.equal(minus.kind, 'iconbutton'); assert(minus.commands.length > 0, 'an icon button carries its icon\'s path')
+  assert.notEqual(minus.fill, plus.fill, 'secondary and primary differ'); assert.equal(plus.color, '#FFFFFF', 'the ink on a primary button is the theme\'s onPrimary')
+  water.tap(f, f.token, 'add', 1)
+  assert.equal(frame(water).nodes[0].children[0].val, 4, 'an icon button runs its handler')
+  assert.throws(() => water.tap(frame(water), frame(water).token, 'add', 5), /not available/)
+  const metrics = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-metrics.vera'), 'utf8')).vbc2, 'metrics', '')
+  const m = frame(metrics)
+  const kinds = []; const walk = n => { kinds.push(n.kind); n.children.forEach(walk) }; m.nodes.forEach(walk)
+  assert.deepEqual(kinds.slice(0, 4), ['column', 'row', 'badge', 'icon'])
+  assert(kinds.includes('numbertext') && kinds.includes('surface'), 'a stat is a labelled figure; a sparkline is a picture')
+  const chart = []; const find = n => { if (n.kind === 'surface') chart.push(n); n.children.forEach(find) }; m.nodes.forEach(find)
+  const shapes = decodeGfxOps(chart[0].ops)
+  assert(shapes.some(o => o.kind === 'polyline') && shapes.some(o => o.kind === 'circle'), 'a line and its last point')
+  assert.equal(chart[0].pointer, '', 'a sparkline is not tappable'); assert.equal(chart[0].pic, 0)
+  assert(JSON.stringify(m).length < 4200, 'the metrics widget stays small: ' + JSON.stringify(m).length)
+  const unknownIcon = fs.readFileSync(path.join(__dirname, 'examples/widget-metrics.vera'), 'utf8').replace('"star"', '"nonesuch"')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(unknownIcon).vbc2, 'bad-icon', '')), /unknown icon/)
+}
+// A timer that runs by itself (ui.Timer): the frame carries the moment and the direction, the platform's TextTimer does the ticking.
+{
+  const timerSource = fs.readFileSync(path.join(__dirname, 'examples/widget-timer.vera'), 'utf8')
+  const timer = new WidgetSession(compileVeraSource(timerSource).vbc2, 'timer', '')
+  const f = frame(timer)
+  const [up, down] = f.nodes[0].children
+  assert.equal(up.kind, 'timer'); assert.equal(up.max, 0, 'counts up'); assert.equal(up.pic, 0)
+  assert.equal(down.kind, 'timer'); assert.equal(down.max, 1, 'counts down'); assert.equal(down.pic, 1)
+  assert(Math.abs(up.val - Date.now()) < 60000, 'the moment is milliseconds since 1970: ' + up.val)
+  assert(down.val - up.val > 5000000, 'the second one ends an hour and a half later')
+  assert.equal(up.size, 30); assert.equal(down.size, 18); assert.equal(up.family, 'monospace', 'the technical theme\'s metric font')
+  assert(!up.text, 'a timer carries no text: the platform draws it')
+  const four = timerSource.replace('ui.Timer("heading", state.endsAt, true),', 'ui.Timer("heading", state.endsAt, true), ui.Timer("caption", state.endsAt, true), ui.Timer("caption", state.endsAt, true),')
+  assert.throws(() => frame(new WidgetSession(compileVeraSource(four).vbc2, 'many-timers', '')), /at most 3 ui\.Timer/)
+}
+// The card's size: the frame is fitted to it, a widget that takes the size draws differently, and the limits grow with it.
+{
+  const { cardSize } = loadVera('VeraLiveWidget')
+  assert.deepEqual([2, 3, 4].map(d => cardSize(d).label), ['2x2', '2x4', '4x4'])
+  assert.deepEqual([2, 3, 4].map(d => cardSize(d).maxButtons), [2, 4, 6]); assert.deepEqual([cardSize(7).dimension, cardSize(0).label], [2, '2x2'], 'an unknown size is 2x2')
+  const sized = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-sizes.vera'), 'utf8')).vbc2, 'sizes', '')
+  assert.equal(sized.takesSize(), true)
+  const counts = [2, 3, 4].map(d => { const f = sized.frame('p', 'A', '', d); assert.equal(f.dimension, d); let n = 0; const walk = x => { n++; x.children.forEach(walk) }; f.nodes.forEach(walk); return n })
+  assert(counts[0] < counts[1] && counts[1] < counts[2], 'a bigger card, more on it: ' + counts)
+  assert.equal(new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-counter.vera'), 'utf8')).vbc2, 'one', '').takesSize(), false)
+  // The 41st node is refused on a 2x2 card and taken on a 4x4 one.
+  const tens = n => Array.from({length: n}, (_, i) => 'ui.Text("body", "t' + i + '")').join(', ')
+  const manyAt = (d) => { const src = fs.readFileSync(path.join(__dirname, 'examples/widget-sizes.vera'), 'utf8').replace('rows.push(ui.Text("title", "Plan"));', 'rows.push(ui.Column("default", [' + tens(5) + ']));'.repeat(1) + '\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));\n  rows.push(ui.Column("default", [' + tens(5) + ']));'); return new WidgetSession(compileVeraSource(src).vbc2, 'many', '').frame('p', 'A', '', d) }
+  assert.throws(() => manyAt(2), /widget exceeds 40 nodes/)
+  assert.equal(manyAt(4).live, true)
+}
+// The frame goes into the binding compact (only what differs from a default node) and the card gives the defaults back: the same nodes, in about half the characters.
+{
+  const { compactFrame, normalizeNodes } = loadVera('VeraLiveWidget')
+  for (const name of ['widget-metrics', 'widget-styles', 'widget-panda', 'widget-water', 'widget-two-pictures']) {
+    const f = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/' + name + '.vera'), 'utf8')).vbc2, name, '').frame('p', 'A', '')
+    const compact = JSON.parse(JSON.stringify(compactFrame(f)))
+    assert.deepEqual(JSON.parse(JSON.stringify(normalizeNodes(compact.nodes))), JSON.parse(JSON.stringify(f.nodes)), name + ': what the card restores is what was sent')
+    assert(JSON.stringify(compact).length < JSON.stringify(f).length * 0.7, name + ' is smaller compact: ' + JSON.stringify(compact).length + ' of ' + JSON.stringify(f).length)
+    assert.equal(compact.dimension, 2); assert.equal(compact.live, true)
+  }
+}
+// Switches: a toggle and a checkbox are taps that say on or off; a stale token or an unknown handler is refused.
+{
+  const sw = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-switch.vera'), 'utf8')).vbc2, 'sw', '')
+  const f0 = sw.frame('p', 'A', ''); const col = f0.nodes[0].children
+  assert.deepEqual(col.slice(1).map(n => [n.kind, n.val, n.action]), [['toggle', 0, 'setFocus'], ['checkbox', 0, 'setDone']])
+  assert(col[2].commands.length > 0, 'a checkbox carries its check mark')
+  sw.tapSwitch(f0, f0.token, 'setFocus', true); sw.tapSwitch(f0, f0.token, 'setDone', true)
+  const f1 = sw.frame('p', 'A', ''); assert.deepEqual(f1.nodes[0].children.slice(1).map(n => n.val), [1, 1])
+  assert.throws(() => sw.tapSwitch(f1, 'stale', 'setFocus', false), /Widget changed/)
+  assert.throws(() => sw.tapSwitch(f1, f1.token, 'nope', false), /not available/)
+}
+// Layers: parts one over another, each its own Motion and picture, all at one size.
+{
+  const lay = new WidgetSession(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')).vbc2, 'lay', '')
+  const f = lay.frame('p', 'A', ''); const box = f.nodes[0].children[0]
+  assert.equal(box.kind, 'layers'); assert.deepEqual(box.children.map(c => [c.kind, c.style, c.slot]), [['motion', 'recoil', 0], ['motion', 'swing', 1]])
+  const [a, b] = box.children.map(c => c.children[0]); assert.equal(a.size, b.size, 'the layers of a picture are drawn at one size')
+  assert.notEqual(a.ops, b.ops, 'each layer draws its own part')
+  assert.deepEqual(a.links, [0, 1]); assert.deepEqual(b.links, [0, 1], 'a touch on any layer plays every Motion of the scene')
+  assert.equal(f.nodes[0].children[1].links, undefined, 'a node outside the layers has no links')
+  assert.deepEqual(box.links, [0, 1], 'the scene carries its Motions: a touch no part takes lands on it')
+  assert.deepEqual(lay.tap(f, f.token, '#touch', 0), [], 'a touch on a Motion with no handler runs nothing')
+  // One Motion over a still picture: a touch on the still part plays it too.
+  const one = fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')
+    .replace('ui.Motion("recoil", 0, [ui.Surface("default", 100, 100, "drum", "", "hitDrum")])', 'ui.Surface("default", 100, 100, "drum", "", "hitDrum")')
+  const fo = new WidgetSession(compileVeraSource(one).vbc2, 'one', '').frame('p', 'A', ''); const scene = fo.nodes[0].children[0]
+  assert.equal(scene.children[0].kind, 'surface'); assert.deepEqual(scene.children[0].links, [0], 'a still layer plays the one Motion of its scene')
+  assert.deepEqual(scene.links, [0])
+  assert.throws(() => lay.tap(f, 'stale', '#touch', 0), /Widget changed/)
+  const nested = fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8').replace('ui.Layers("default", 100, 100, [', 'ui.Layers("default", 100, 100, [ui.Layers("default", 100, 100, []),')
+  assert.throws(() => compileVeraSource(nested), /Layers/, 'a Layers inside a Layers is refused')
+}
+// ui.Timer is set on TextTimer the one way, in the app and on the card (CardModel.timerFace): TextTimer reads `count` only when it
+// counts down, so a timer counting up starts from `startTime`, or it would start from 00:00 at every redraw.
+{
+  const M = loadSource(path.join(sourceRoot, 'widget/CardModel.ets'))
+  const now = 1e12, minute = 60000
+  const up = M.timerFace(now - 20 * minute, false, now)
+  assert.deepEqual([up.countDown, up.startTime, up.count, up.format], [false, 20 * minute, -1, 'mm:ss'], 'counting up starts from the time already gone')
+  const down = M.timerFace(now + 55 * minute, true, now)
+  assert.deepEqual([down.countDown, down.count, down.format], [true, 55 * minute, 'mm:ss'], 'under an hour, no hours')
+  assert.equal(M.timerFace(now + 60 * minute, true, now).format, 'HH:mm:ss', 'an hour shows hours')
+  assert.equal(M.timerFace(now - 60 * minute, false, now).format, 'HH:mm:ss')
+  assert.equal(M.timerFace(now + 3 * 1440 * minute, true, now).count, M.TEXT_TIMER_MAX_MS, 'a longer countdown starts from the longest TextTimer takes')
+  assert.equal(M.timerFace(now - 5, true, now).count, 1, 'a countdown that is over is at zero: 1 ms, as TextTimer takes 0 for its default minute')
+  assert.equal(M.timerFace(now, true, now).count, 1)
+  const renderer = fs.readFileSync(path.join(sourceRoot, 'components/VeraPreview.ets'), 'utf8')
+  for (const [name, text] of [['card', view], ['app', renderer]]) {
+    assert.doesNotMatch(text, /3000000|3600000/, 'the ' + name + ' has no hour threshold of its own')
+    assert.match(text, /startTime: this\.\w+\(node\)\.startTime/, 'the ' + name + ' sets where a timer counting up starts')
+  }
+  // The app keeps a timer's controller only while its node is drawn.
+  assert.match(renderer, /this\.textTimers\.delete\(node\)/)
+  // One limit for each thing a card carries: the widget is refused beyond it and the card keeps that many canvases, timers and Motion slots.
+  const live = loadVera('VeraLiveWidget')
+  assert.deepEqual([live.LIVE_MAX_SURFACES, live.LIVE_MAX_MOTIONS, live.LIVE_MAX_TIMERS, live.LIVE_MAX_SHAPES],
+    [M.CARD_MAX_PICTURES, M.CARD_MAX_MOTIONS, M.CARD_MAX_TIMERS, M.CARD_MAX_SHAPES])
+  assert.match(view, /contexts\(CARD_MAX_PICTURES\)/); assert.match(view, /timerControllers\(CARD_MAX_TIMERS\)/); assert.match(view, /SLOTS: number = CARD_MAX_MOTIONS/)
+  assert.doesNotMatch(view, /ctx[0-9]|timer[0-9]\b|\[0, 0, 0, 0, 0\]/, 'no hand-written list of five or three')
+  // Who takes a touch on the card: a shape without an action and a Motion around only a figure let it through to the card, which
+  // opens the app; in a Layers a part with no handler lets it through to the parts under it.
+  assert.doesNotMatch(view, /'#touch'/, 'the card posts TOUCH_ACTION, not a literal of its own')
+  assert.match(view, /if \(node\.action\.length > 0\) \{\s*Shape\(\)/, 'a Path takes a tap only when it has an action')
+  assert.equal((view.match(/if \(this\.touchPlays\(node\)\)/g) || []).length, 3, 'each builder level plays a Motion on touch only around a picture')
+  assert.equal((view.match(/\.hitTestBehavior\(this\.layerHit\(child\)\)/g) || []).length, 6, 'each Layers part says whether it takes a touch')
+  // A touch only counts: nothing is redrawn before the answer, so a touch whose answer never comes leaves no Motion in its starting pose.
+  const touched = view.substring(view.indexOf('private touched('), view.indexOf('private playing('))
+  assert.doesNotMatch(touched, /setPhase|this\.phase\b|this\.settled\b/, 'a touch changes no state')
+  assert.match(view, /if \(this\.begun\[node\.slot\] !== this\.frameKey\) \{ return stages\[0\]\[index\] \}/, 'only a frame not yet begun shows the starting pose')
+}
+// Pictures side by side in a row share its width at any depth: two Sparklines (each a column holding a picture), or two Layers.
+{
+  const two = 'import * as ui from "std/ui"\n@jsonable class AppState { n: number; }\nfunction init(): AppState { return { n: 1 }; }\n' +
+    'function view(state: AppState): ui.View { return ui.Text("body", "x"); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Row("default", [ui.Sparkline("default", [1, 2, 3], 3), ui.Sparkline("default", [3, 2, 1], 3)]); }\n'
+  let f
+  try { f = new WidgetSession(compileVeraSource(two).vbc2, 'two', '').frame('p', 'A', '') } catch (e) { throw new Error(e.message + JSON.stringify(e.diagnostics || [])) }
+  const charts = []; const walk = n => { if (n.kind === 'surface') charts.push(n); n.children.forEach(walk) }; f.nodes.forEach(walk)
+  assert.equal(charts.length, 2)
+  for (const c of charts) assert(c.size <= Math.floor((126 - 8) / 2), 'two charts in a row fit the 2x2 card: ' + c.size)
 }
 console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

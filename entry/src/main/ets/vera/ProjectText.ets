@@ -17,7 +17,24 @@ export function requestHeadline(prompt: string, note: string): string {
 
 /** What this version changed: the last request of a refinement, and '' for a version that is the first answer to its request. */
 export function changeNote(prompt: string, note: string): string {
-  return prompt.indexOf(REFINEMENT_MARK) >= 0 ? note.trim() : ''
+  if (prompt.indexOf(REFINEMENT_MARK) < 0) { return '' }
+  let text = note.trim()
+  return text.startsWith(WIDGET_ASK_TEXT) ? 'Widget: ' + text.substring(WIDGET_ASK_TEXT.length) : text
+}
+
+/**
+ * How Make widget words a request (WIDGET_ASK in agent/AgentWidget.ets, which this file cannot import: the card's process
+ * reads it through ProjectStore). The list shows it as "Widget: ...". widget-status-check holds the two equal.
+ */
+export const WIDGET_ASK_TEXT: string = 'The home-screen widget should show: '
+
+/**
+ * The history without its widget requests, for a widget made again from nothing (Redo): told what the old widget was
+ * asked to show, the model makes it again.
+ */
+export function withoutWidgetRequests(prompt: string): string {
+  return prompt.split(REFINEMENT_MARK).filter((part: string, index: number): boolean =>
+    index === 0 || !part.trim().startsWith(WIDGET_ASK_TEXT)).join(REFINEMENT_MARK)
 }
 
 /** "3 versions", "1 version", "No versions yet". */

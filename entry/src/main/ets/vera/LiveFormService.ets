@@ -1,13 +1,14 @@
 import { formBindingData } from '@kit.FormKit'
 import { store } from './ProjectStore'
 import { formBindings, refreshLedger } from './FormBindings'
-import { LiveFrame, WidgetSession, SourceRequest } from './VeraLiveWidget'
+import { LiveFrame, WidgetSession, SourceRequest, compactFrame } from './VeraLiveWidget'
 import { veraStateStamp } from './VeraStateStamp'
 import { sourceFetch } from './VeraSource'
 
-export function liveFrame(projectId: string): LiveFrame {
+export function liveFrame(projectId: string, dimension: number = 2): LiveFrame {
   let fallback = new LiveFrame()
   fallback.projectId = projectId
+  fallback.dimension = dimension
   if (projectId.length === 0) { fallback.status = 'Tap to choose an app'; return fallback }
   let project = store.getProject(projectId)
   if (project === null) {
@@ -22,7 +23,7 @@ export function liveFrame(projectId: string): LiveFrame {
   try {
     let saved = store.loadState(projectId, version.id, veraStateStamp(version.vbc2))
     let session = new WidgetSession(version.vbc2, version.id, saved)
-    let frame = session.frame(projectId, project.name, project.icon)
+    let frame = session.frame(projectId, project.name, project.icon, dimension)
     // A clock-dependent init must not generate a different state/token on the first tap.
     if (frame.live && saved.length === 0) {
       store.saveState(projectId, version.id, veraStateStamp(version.vbc2), session.encodedState())
@@ -52,9 +53,9 @@ async function answerSource(session: WidgetSession, requests: SourceRequest[], l
 }
 
 export function liveBinding(projectId: string, formId: string = ''): formBindingData.FormBindingData {
-  let frame = liveFrame(projectId)
+  let frame = liveFrame(projectId, formId.length > 0 ? formBindings.dimensionFor(formId) : 2)
   frame.formId = formId
-  return formBindingData.createFormBindingData(frame)
+  return formBindingData.createFormBindingData(compactFrame(frame))
 }
 
 /**
@@ -69,28 +70,41 @@ export async function liveFormTap(formId: string, message: string,
   let version = store.getLatestVersion(projectId)
   if (project === null || version === null || version.vbc2.length === 0) { return liveBinding(projectId) }
   let saved = store.loadState(projectId, version.id, veraStateStamp(version.vbc2))
+  // The seq of the frame the card showed (LiveCard), given back on a refusal: the card is not redrawn, so nothing plays for a refused tap.
+  let shownSeq = ''
   try {
     let params = JSON.parse(message) as Record<string, Object>
-    if (typeof params['token'] !== 'string' || typeof params['handler'] !== 'string' || typeof params['value'] !== 'number') {
+    if (typeof params['seq'] === 'string') { shownSeq = params['seq'] as string }
+    // A tap on a picture carries where it fell (x, y, in the picture's own units); a button's carries a number.
+    let atPoint = typeof params['x'] === 'number' && typeof params['y'] === 'number'
+    // A tap on a toggle or a checkbox says whether it is now on.
+    let atSwitch = typeof params['on'] === 'boolean'
+    if (typeof params['token'] !== 'string' || typeof params['handler'] !== 'string' || (!atPoint && !atSwitch && typeof params['value'] !== 'number')) {
       throw new Error('Invalid widget event')
     }
-    console.info('VERA-FORM event action=' + String(params['handler']) + ' value=' + String(params['value']))
+    console.info('VERA-FORM event action=' + String(params['handler']) + (atPoint ? ' at=' + String(params['x']) + ',' + String(params['y']) : atSwitch ? ' on=' + String(params['on']) : ' value=' + String(params['value'])))
     let session = new WidgetSession(version.vbc2, version.id, saved)
-    let requests = session.tap(session.frame(projectId, project.name, project.icon), params['token'] as string,
-      params['handler'] as string, params['value'] as number)
+    let dimension = formBindings.dimensionFor(formId)
+    let shown = session.frame(projectId, project.name, project.icon, dimension)
+    let requests = atPoint ?
+      session.tapSurface(shown, params['token'] as string, params['handler'] as string, params['x'] as number, params['y'] as number) :
+      atSwitch ? session.tapSwitch(shown, params['token'] as string, params['handler'] as string, params['on'] as boolean) :
+      session.tap(shown, params['token'] as string, params['handler'] as string, params['value'] as number)
     // A Refresh button: its live source is fetched and the answer handled before the card is drawn and saved.
     session = await answerSource(session, requests, saved, projectId, version.id, version.vbc2, fetchSource)
-    let frame = session.frame(projectId, project.name, project.icon)
+    let frame = session.frame(projectId, project.name, project.icon, formBindings.dimensionFor(formId))
     frame.formId = formId
+    frame.seq = Date.now().toString()
     store.saveState(projectId, version.id, veraStateStamp(version.vbc2), session.encodedState())
-    console.info('VERA-FORM tap ms=' + (Date.now() - start).toString() + ' bytes=' + JSON.stringify(frame).length.toString())
-    return formBindingData.createFormBindingData(frame)
+    console.info('VERA-FORM tap ms=' + (Date.now() - start).toString() + ' bytes=' + JSON.stringify(compactFrame(frame)).length.toString())
+    return formBindingData.createFormBindingData(compactFrame(frame))
   } catch (e) {
-    let frame = liveFrame(projectId)
+    let frame = liveFrame(projectId, formBindings.dimensionFor(formId))
     frame.formId = formId
+    frame.seq = shownSeq
     frame.status = (e as Error).message
     console.warn('VERA-FORM tap rejected: ' + frame.status)
-    return formBindingData.createFormBindingData(frame)
+    return formBindingData.createFormBindingData(compactFrame(frame))
   }
 }
 
@@ -130,11 +144,11 @@ export async function liveFormRefresh(formId: string, now: number = Date.now(),
     refreshLedger.markRun(projectId, now)
     // A live source widgetRefresh asked for is fetched here, and its answer handled, before anything is drawn or saved.
     session = await answerSource(session, session.refresh(), loaded, projectId, version.id, version.vbc2, fetchSource)
-    let frame = session.frame(projectId, project.name, project.icon)
+    let frame = session.frame(projectId, project.name, project.icon, formBindings.dimensionFor(formId))
     frame.formId = formId
     store.saveState(projectId, version.id, stamp, session.encodedState())
     console.info('VERA-FORM refresh project=' + projectId)
-    let result = new LiveRefresh(formBindingData.createFormBindingData(frame))
+    let result = new LiveRefresh(formBindingData.createFormBindingData(compactFrame(frame)))
     result.ran = true
     return result
   } catch (e) {

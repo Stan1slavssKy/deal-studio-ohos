@@ -1,0 +1,45 @@
+import * as ui from "std/ui"
+import * as gfx from "std/gfx"
+@jsonable class AppState { left: number; right: number; }
+function init(): AppState { return { left: 0, right: 0 }; }
+function view(state: AppState): ui.View {
+  return ui.AppTheme("playful", "", [
+    ui.Column("default", [
+      ui.Text("heading", "Two pictures"),
+      ui.NumberText("metric", state.left + state.right, "", " touches", 1)
+    ])
+  ]);
+}
+function leftPicture(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.circle(50, 50, 44, "#FCA5A5"));
+  shapes.push(gfx.circle(50, 50, 26, "#DC2626"));
+  shapes.push(gfx.circle(50, 50, 10, "#FFFFFF"));
+  return shapes;
+}
+function rightPicture(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.roundRect(8, 8, 84, 84, 14, "#93C5FD"));
+  shapes.push(gfx.roundRect(26, 26, 48, 48, 8, "#2563EB"));
+  shapes.push(gfx.circle(50, 50, 8, "#FFFFFF"));
+  return shapes;
+}
+function touchLeft(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase === "down") { return { left: state.left + 1, right: state.right }; }
+  return state;
+}
+function touchRight(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase === "down") { return { left: state.left, right: state.right + 1 }; }
+  return state;
+}
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("playful", "", [
+    ui.Column("default", [
+      ui.Row("center", [
+        ui.Motion("bounce", 0, [ui.Surface("default", 100, 100, "leftPicture", "", "touchLeft")]),
+        ui.Motion("pop", 0, [ui.Surface("default", 100, 100, "rightPicture", "", "touchRight")])
+      ]),
+      ui.NumberText("metric", state.left + state.right, "", "", 1)
+    ])
+  ]);
+}

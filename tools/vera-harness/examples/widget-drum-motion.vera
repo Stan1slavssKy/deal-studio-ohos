@@ -1,0 +1,15 @@
+import * as ui from "std/ui"
+@jsonable class AppState { hits: number; }
+function init(): AppState { return { hits: 0 }; }
+function hit(state: AppState, value: number): AppState { return { hits: state.hits + value }; }
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("default", [
+      ui.Motion("pop", state.hits, [
+        ui.Path("accent", "M50 12 A38 38 0 1 0 50 88 A38 38 0 1 0 50 12 Z M16 50 A6 6 0 1 0 16 51 Z M84 50 A6 6 0 1 0 84 51 Z M50 8 A5 5 0 1 0 50 9 Z M50 92 A5 5 0 1 0 50 93 Z", 0, "hit", 1)
+      ]),
+      ui.NumberText("metric", state.hits, "", " hits", 1)
+    ])
+  ]);
+}
+function view(state: AppState): ui.View { return widget(state); }

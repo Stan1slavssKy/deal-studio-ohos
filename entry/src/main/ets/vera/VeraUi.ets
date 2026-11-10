@@ -500,6 +500,13 @@ export class UiHostEnvironment extends HostEnvironment {
           ['minimum', new VeraNumberValue(argNum(args, 2))],
           ['children', argArray(args, 3)],
         ])
+      case 'Layers':
+        return viewNode('layers', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['minimum', new VeraNumberValue(argNum(args, 1))],
+          ['maximum', new VeraNumberValue(argNum(args, 2))],
+          ['children', argArray(args, 3)],
+        ])
       case 'Motion':
         // The preset is the style; the trigger rides numberValue, as other components reuse an existing field.
         return viewNode('motion', [
@@ -527,6 +534,8 @@ export class UiHostEnvironment extends HostEnvironment {
           ['style', new VeraStringValue(argString(args, 0))],
           ['commands', new VeraStringValue(argString(args, 1))],
           ['spinPeriodMs', new VeraNumberValue(argNum(args, 2))],
+          ['action', new VeraStringValue(argString(args, 3))],
+          ['value', new VeraNumberValue(argNum(args, 4))],
         ])
       case 'TextField':
         return viewNode('field', [
@@ -895,6 +904,13 @@ export class UiHostEnvironment extends HostEnvironment {
       // Ticker already does for intervalMs/running, and Snackbar reuses
       // text/value/action exactly as InsetBanner does for message/
       // actionText/action.
+      case 'Timer':
+        // The moment rides numberValue and the direction checked, as other components reuse an existing field.
+        return viewNode('timer', [
+          ['style', new VeraStringValue(argString(args, 0))],
+          ['numberValue', new VeraNumberValue(argNum(args, 1))],
+          ['checked', new VeraBooleanValue(argBool(args, 2, false))],
+        ])
       case 'Skeleton':
         return viewNode('skeleton', [
           ['style', new VeraStringValue(argString(args, 0))],

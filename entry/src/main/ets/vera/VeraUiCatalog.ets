@@ -13,6 +13,8 @@
 
 import { iconNames } from './VeraIcons'
 import { describeGfxForPrompt } from './VeraGfx'
+import { MOTION_PRESETS } from './VeraMotion'
+import { CARD_MAX_PICTURES, CARD_MAX_SHAPES } from '../widget/CardModel'
 
 export class PropSpec {
   name: string
@@ -63,7 +65,7 @@ export class ComponentSpec {
   constructor(name: string, nodeKind: string, props: PropSpec[], summary: string,
       payloadKind: string = '', guidance: string = '', card: boolean = false) {
     this.name = name; this.nodeKind = nodeKind; this.props = props; this.summary = summary
-    this.payloadKind = payloadKind; this.guidance = guidance; this.card = card
+    this.payloadKind = payloadKind; this.guidance = guidance; this.card = card || CARD_OPT_IN.indexOf(name) >= 0
   }
 }
 
@@ -140,17 +142,26 @@ export const STYLE_SETS: Map<string, string[]> = new Map<string, string[]>([
   // one-entry list here means describeCatalogForPrompt leaves the "styles:"
   // line out, the same way ui.Divider and ui.Scroll already do.
   ['skeleton', ['default']],
+  ['timer', ['body', 'caption', 'heading', 'title', 'display', 'metric', 'muted', 'success', 'warning', 'danger']],
   ['spinner', ['default', 'accent']],
   // The preset is the style, so the compiler validates it and the prompt lists it. See VeraMotion.ets.
-  ['motion', ['tumble', 'flip', 'shake', 'bounce', 'pop', 'fade']],
+  ['motion', MOTION_PRESETS],
+  ['layers', ['default']],
   // transform: solid hides a layer while its back is to the viewer (the far faces of a cube); stage has no variants.
   ['transform', ['default', 'solid']],
   ['stage', ['default', 'floor']],
   // surface: default is as wide as its column and as tall as its proportions; fill also runs to the bottom of the screen.
-  ['surface', ['default', 'fill']],
+  ['surface', ['default', 'fill', 'clear']],
   ['snackbar', ['default', 'success', 'warning', 'danger']],
   ['sparkline', ['default', 'accent', 'success', 'warning', 'danger']],
 ])
+
+/**
+ * The components a home-screen card draws besides the ones that opt in with `card` in their own spec: each is turned into card nodes by
+ * VeraLiveWidget (an icon into a stroked path, a Stat into a column of texts, a Sparkline into a picture, Progress and ProgressRing into the
+ * platform's own). Listed here, never inferred; each spec takes it as it is made (ComponentSpec), so nothing is changed after.
+ */
+const CARD_OPT_IN: string[] = ['Icon', 'IconButton', 'Badge', 'Progress', 'ProgressRing', 'Stat', 'NumberStat', 'MetricGroup', 'Sparkline', 'Toggle', 'Checkbox', 'Layers']
 
 export const CATALOG: ComponentSpec[] = [
   new ComponentSpec('Column', 'column',
@@ -168,9 +179,10 @@ export const CATALOG: ComponentSpec[] = [
   new ComponentSpec('Image', 'image',
     [style('image'), new PropSpec('src', 'string'), new PropSpec('alt', 'string')], 'https image'),
   new ComponentSpec('Path', 'path',
-    [style('path'), new PropSpec('commands', 'string'), new PropSpec('spinPeriodMs', 'number')],
-    'vector shape; spinPeriodMs > 0 rotates it', '',
-    'Draws real vector graphics -- circles, gears, arrows, icons, chart shapes -- so use it whenever the user asks to draw something, instead of substituting a number and buttons. commands is an SVG path string using M L C Q A Z with absolute coordinates only. The drawing box is 0..100 in both axes; centre artwork on 50,50. There is no math at runtime: compute every coordinate yourself and write plain number literals. spinPeriodMs rotates the shape (0 is static, 2000 is one turn every 2 seconds) and needs no handler, state field or timer. A circle is "M50 10 A40 40 0 1 0 50 90 A40 40 0 1 0 50 10 Z".'),
+    [style('path'), new PropSpec('commands', 'string'), new PropSpec('spinPeriodMs', 'number'),
+      new PropSpec('action', 'string', '', true), new PropSpec('value', 'number', '', true)],
+    'vector shape; spinPeriodMs > 0 rotates it; a non-empty action makes it tappable like a button, handler (state, value: number)', 'number',
+    'Draws real vector graphics -- circles, gears, arrows, icons, chart shapes -- so use it whenever the user asks to draw something, instead of substituting a number and buttons. commands is an SVG path string using M L C Q A Z with absolute coordinates only. The drawing box is 0..100 in both axes; centre artwork on 50,50. There is no math at runtime: compute every coordinate yourself and write plain number literals. spinPeriodMs rotates the shape (0 is static, 2000 is one turn every 2 seconds) and needs no handler, state field or timer. A circle is "M50 10 A40 40 0 1 0 50 90 A40 40 0 1 0 50 10 Z". The optional action and value make the shape itself tappable, exactly like a Button (the handler takes (state, value: number)); leave them off for a plain drawing. On a home-screen card a Path is ONE shape in ONE colour (an icon, a symbol): a drawing of an animal, a face or a scene is a ui.Surface there.', true),
   new ComponentSpec('Button', 'button',
     [style('button'), new PropSpec('text', 'string'), new PropSpec('action', 'string'),
       new PropSpec('value', 'number'), new PropSpec('enabled', 'boolean')], 'tappable button; the handler takes (state, value: number)', 'number', '', true),
@@ -228,9 +240,14 @@ export const CATALOG: ComponentSpec[] = [
     'For anything laid out in equal columns -- a board, a calendar, a keypad -- rather than building rows by hand.'),
   new ComponentSpec('Motion', 'motion',
     [style('motion'), new PropSpec('trigger', 'number'), new PropSpec('children', 'view[]')],
-    'plays an animation on its children each time the trigger number changes: tumble, flip, shake, bounce, pop or fade; a wrong-answer shake, a counter that pops, a new row that bounces',
+    'plays a movement on its children each time the trigger number changes (25 presets, picked by what the movement means: pop, pulse, jelly, press, shake, hop, jump, spin, swing, fall, fade, ...); a wrong-answer shake, a counter that pops, a new row that bounces, a wheel that spins',
     '',
-    'Wrap the one thing that should animate: a rolled die, a flashcard, a result, a new row. Never wrap a board, grid, list, form or whole screen, and do not bump the trigger on every tap or move: a game board that pops on each move makes every square jump under the player\'s finger. Animate only what the person should notice -- a win message, a wrong answer, the die that was just thrown -- and keep the Motion around that one item, not around the controls they are pressing. The style is the animation. tumble spins and hops and lands (a die or coin being thrown), flip turns the new content into view (a card turned over, a question replaced by its answer), shake wobbles sideways (a wrong answer, a refusal), bounce drops and settles (something added), pop swells and returns (a counter that just changed), fade brings the content in. The children are drawn normally; when the trigger changes they arrive with the animation, so change the content and the trigger in the same handler: keep a number in state, add 1 to it each time, and pass it as trigger. The first time the screen is drawn nothing animates, and a change of content without a new trigger does not animate either. A die is not a Motion: build the solid with ui.Stage and ui.Transform. Do not nest one Motion in another.'),
+    'Wrap the one thing that should animate: a rolled die, a flashcard, a result, a new row. Never wrap a board, grid, list, form or whole screen, and do not bump the trigger on every tap or move: a game board that pops on each move makes every square jump under the player\'s finger. Animate only what the person should notice -- a win message, a wrong answer, the die that was just thrown -- and keep the Motion around that one item, not around the controls they are pressing. The style is the movement; choose it by what the thing does, not by what it looks like. Emphasis (it stays where it is): pop swells once, pulse beats twice, jelly squashes and wobbles, press dips like a pushed button, flash blinks, breathe swells slowly. Reaction (a hit, a refusal, a wag): shake goes sideways, nod goes up and down, wobble rocks on its base, swing hangs from its top edge like a pendulum and slows, recoil is a sharp kick. Gravity (it leaves the ground): bounce drops in and settles, hop jumps once, jump crouches, leaps and lands squashed, fall drops in from above. Turning: spin turns two whole times and slows (a wheel, a dial), turn is one quick whole turn, tumble spins and hops and lands (a thrown die or coin), flip turns new content into view. Arrival (the content comes in): fade, rise from below, zoom from small, slide from the side. Ambient (a slow drift): float rises and sinks, drift sways sideways. The children are drawn normally; when the trigger changes they arrive with the animation, so change the content and the trigger in the same handler: keep a number in state, add 1 to it each time, and pass it as trigger. The first time the screen is drawn nothing animates, and a change of content without a new trigger does not animate either. A die is not a Motion: build the solid with ui.Stage and ui.Transform. Do not nest one Motion in another. On a home-screen card every preset plays once per change, in about a second, never in a loop, and several Motions can play at once, each around its own drawing or figure: a touch on a picture inside a Motion plays it by itself; otherwise keep a count in state, add 1 in the tap handler and pass it as trigger.', true),
+  new ComponentSpec('Layers', 'layers',
+    [style('layers'), new PropSpec('width', 'number'), new PropSpec('height', 'number'), new PropSpec('children', 'view[]')],
+    'stacks its children one over another, each in the middle, the last on top: a scene made of parts that move on their own (a sky, a sun and clouds; a drum and its stick; a body and its shadow)',
+    '',
+    'Each child is a Surface, a Path, a Text or an Icon, and a Motion around any of them, so that every part moves by itself: a stick that swings over a drum, rain that falls in front of a cloud. width and height are the size of the box in points (give both; a Surface in it is scaled to fit the box and the Surfaces of one Layers should have the same width and height so their drawings line up). The first child is the bottom one; every Surface above it takes the style "clear" (no background of its own), or it hides what is under it. Do not nest one Layers in another.'),
   new ComponentSpec('Transform', 'transform',
     [style('transform'), new PropSpec('pose', 'number[]'), new PropSpec('durationMs', 'number'), new PropSpec('size', 'number'),
       new PropSpec('children', 'view[]')],
@@ -247,7 +264,7 @@ export const CATALOG: ComponentSpec[] = [
       new PropSpec('draw', 'string'), new PropSpec('frame', 'string'), new PropSpec('pointer', 'string')],
     'a box the program draws itself every frame with std/gfx shapes, in its own units, and that a finger can touch: a game, a drawing pad, a simulation, an animated scene',
     '',
-    'For anything that moves continuously or is drawn freely: a game, a ball that bounces, a drawing or signature pad, a physics toy, a clock face that sweeps. Not for lists, forms or charts of data -- those have components. width and height are the surface\'s own units (say 360 by 640 for a phone-shaped game, 100 by 100 for a square): every position the program draws or receives is in them, and the renderer scales the whole surface to fit, so nothing depends on the size of the phone. draw names function draw(state: AppState): gfx.Shape[] -- it returns the shapes back to front and is called for every frame, so it must only read state. frame names function onFrame(state: AppState, elapsedMs: number): AppState, called before every frame (about 60 a second) with the milliseconds since the last one: move things by speed * elapsedMs / 1000 so the speed does not depend on the phone; pass "" for a surface that only changes when touched. pointer names function onPointer(state: AppState, p: gfx.Pointer): AppState, called when a finger goes down, moves, lifts or is cancelled, with p.x and p.y in surface units; pass "" for none. Style fill makes the surface run from where it starts to the bottom of the screen, for a full-screen game: put the score in the drawing, or a ui.Header above it. Keep what the game needs between frames -- positions, speeds, score, a seed for math.randomBelow -- in AppState, and keep the shapes out of it. A tap is a pointer "down" then "up"; a drag is "down", many "move", then "up".'),
+    'For anything that moves continuously or is drawn freely: a game, a ball that bounces, a drawing or signature pad, a physics toy, a clock face that sweeps. Not for lists, forms or charts of data -- those have components. width and height are the surface\'s own units (say 360 by 640 for a phone-shaped game, 100 by 100 for a square): every position the program draws or receives is in them, and the renderer scales the whole surface to fit, so nothing depends on the size of the phone. draw names function draw(state: AppState): gfx.Shape[] -- it returns the shapes back to front and is called for every frame, so it must only read state. frame names function onFrame(state: AppState, elapsedMs: number): AppState, called before every frame (about 60 a second) with the milliseconds since the last one: move things by speed * elapsedMs / 1000 so the speed does not depend on the phone; pass "" for a surface that only changes when touched. pointer names function onPointer(state: AppState, p: gfx.Pointer): AppState, called when a finger goes down, moves, lifts or is cancelled, with p.x and p.y in surface units; pass "" for none. Style fill makes the surface run from where it starts to the bottom of the screen, for a full-screen game: put the score in the drawing, or a ui.Header above it. Keep what the game needs between frames -- positions, speeds, score, a seed for math.randomBelow -- in AppState, and keep the shapes out of it. A tap is a pointer "down" then "up"; a drag is "down", many "move", then "up". On a home-screen card a Surface is a still picture: its draw function runs once for each state, there is no frame loop (the frame handler must be ""), and a tap on it calls the pointer handler with "down" then "up" at the tapped point -- so a picture that reacts to a touch changes the state in that handler. Up to ' + CARD_MAX_PICTURES.toString() + ' pictures on a card (a ui.Sparkline is one too), side by side or one over another in a ui.Layers, each of at most ' + CARD_MAX_SHAPES.toString() + ' shapes.', true),
   new ComponentSpec('ListItem', 'listitem',
     [style('listitem'), new PropSpec('text', 'string'), new PropSpec('label', 'string'),
       new PropSpec('value', 'string'), new PropSpec('action', 'string'),
@@ -509,6 +526,11 @@ export const CATALOG: ComponentSpec[] = [
     'a placeholder box the size of the content that has not arrived yet',
     '',
     'Put one where real content will appear once it is ready, instead of leaving that space blank or showing a zero. width and height are the box in points; rounded softens the corners for anything that will end up looking like a chip or an avatar.'),
+  new ComponentSpec('Timer', 'timer',
+    [style('timer'), new PropSpec('millis', 'number'), new PropSpec('down', 'boolean')],
+    'a clock that runs by itself: counts up from a moment or down to one, as minutes and seconds (hours when it is long)',
+    '',
+    'For the time since something began (a workout, a stopwatch that is running) or the time left until it ends. millis is that moment in milliseconds since 1970 (time.nowMillis() plus or minus a length); down true counts down to it, false counts up from it. It ticks without the program: no ticker, no refresh, nothing to save every second. On a home-screen card it is the only way to show a time that moves.', true),
   new ComponentSpec('Spinner', 'spinner',
     [style('spinner'), new PropSpec('label', 'string', '', true)],
     'a small spinning indicator that something is in progress',
@@ -537,6 +559,7 @@ export const CATALOG: ComponentSpec[] = [
     '',
     'For a trend -- a week of steps, a balance over time, a reading taken repeatedly -- leave bars false for a connected line. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead. series is the values in order; maximum bounds the vertical scale (pass the largest value you expect, not the largest value in series, so the chart does not jump every time a new point arrives). The line chart (bars false) scales between minimum and maximum, not always from zero: leave minimum 0 for values that are naturally zero-based (steps, a count), but set it to a real floor for values that live in a narrow band far from zero (human height, a temperature range, a stock price) -- otherwise every point lands in a sliver at the very top of the chart with empty space below. For a handful of categories compared side by side -- spending per category, votes per option -- pass bars true for separate bars instead; bars always start at zero regardless of minimum, the way a bar chart should. To compare two series over the same points -- men vs women, this year vs last -- pass series2 with its own style tone (series2Style) and leave bars false; a legend naming the two (seriesLabel, series2Label) is drawn automatically when series2 is non-empty. categories labels the points along the x axis, in order, when they are not plain indices (e.g. "1700s", "1800s", ...); leave it empty for a plain trend. Never draw a line chart by hand with ui.Canvas and ui.Path -- ui.Path only fills, so an open multi-point line drawn that way renders as a solid wedge, not a line.'),
 ]
+
 
 /**
  * Which children a container will accept, where that can be seen in the source.
@@ -586,6 +609,7 @@ export const CHILD_RULES: ChildRule[] = [
   // frames, two paddings, and no more meaning than one.
   new ChildRule('Card', [], ['Card']),
   new ChildRule('Motion', [], ['Motion']),
+  new ChildRule('Layers', [], ['Layers']),
   new ChildRule('Tabs', [], ['Tabs']),
   new ChildRule('Stage', ['Transform'], ['Stage']),
   new ChildRule('Transform', [], ['Stage']),

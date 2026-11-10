@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Gives the whole phone this computer's internet over the USB cable, for the
-# app's "USB network" switch (Generate > Settings > Advanced). Runs the
+# app's "USB network" switch (the gear on any screen > Settings). Runs the
 # gnirehtet relay here (needs java) and maps the phone's 127.0.0.1:28416 to it
 # with `hdc rport`, re-adding the mapping when the phone is replugged.
 # Stop with Ctrl-C; the phone's VPN then waits and resumes when this runs again.

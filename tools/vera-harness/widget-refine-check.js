@@ -1,9 +1,9 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs'), path = require('node:path')
-const {loadVera} = require('./source-loader')
-const {compileVeraSource, widgetRefinementError, spliceWidget} = loadVera('VeraCompiler')
+const {loadVera, sourceRoot} = require('./source-loader')
+const {compileVeraSource, widgetRefinementError, spliceWidget, withoutWidget, appUsesWidgetError} = loadVera('VeraCompiler')
 const {smokeRun} = loadVera('VeraSmoke')
-const {widgetRefinementPrompt, validateWidgetRefinement, widgetRepairNote, checkWidget} = loadVera('VeraWidgetRefine')
+const {widgetRefinementPrompt, validateWidgetRefinement, widgetRepairNote, checkWidget, CARD_KINDS} = loadVera('VeraWidgetRefine')
 const {WidgetSession} = loadVera('VeraLiveWidget')
 const source = fs.readFileSync(path.join(__dirname,'examples/widget-counter.vera'),'utf8')
 // Standalone fullscreen base, not a view delegating to widget.
@@ -76,7 +76,7 @@ assert.match(prompt, /widgetRefresh/)
 // A widget is a glance: a button per item is refused with the reason, for the next attempt.
 const crowded = base + '\nfunction widget(state: AppState): ui.View { return ui.Column("default", [ui.Button("default", "+1", "change", 1, true), ' +
   'ui.Button("default", "+2", "change", 2, true), ui.Button("default", "+3", "change", 3, true)]); }'
-assert.match(validateWidgetRefinement(base, crowded, compileVeraSource(crowded).vbc2), /3 buttons; a widget has at most 2/)
+assert.match(validateWidgetRefinement(base, crowded, compileVeraSource(crowded).vbc2), /3 buttons; a 2x2 widget has at most 2/)
 // An app whose own screen is drawn by widget(state) would change with a new widget: Make widget is refused for it, before and
 // after the model answers.
 {
@@ -115,7 +115,7 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   assert(!asked[0].system.includes('full screens'), 'the advice on full screens is left out')
   assert(asked[0].budget <= W.WIDGET_TOKENS && !asked[0].think)
   assert.match(asked[0].user, /The home-screen widget should show: the count and a plus button/)
-  assert.match(asked[1].user, /3 buttons; a widget has at most 2/)
+  assert.match(asked[1].user, /3 buttons; a 2x2 widget has at most 2/)
   const none = new AgentHost(); none.language = host.language
   none.askCode = async () => 'function helper(): number { return 1; }'
   const refused = await W.writeWidget(base, 'x', 'a counter', '', none)
@@ -156,4 +156,390 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   assert.doesNotMatch(asked[1], /has no function widget/)
   assert.match(made.source, /^import \* as time from "std\/time"$/m)
   console.log('PASS widget answers: an import with a semicolon is taken, a parse error is passed on as it is')
+})().catch(e => { console.error(e); process.exit(1) })
+
+  // A drum on the card whose handler vibrates: the tap would be refused on the card, so Make widget sends it back (found on a phone).
+{
+  const drum = fs.readFileSync(path.join(__dirname, 'examples/widget-drum.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(drum).vbc2), '')
+  const buzzing = 'import * as sdk from "std/sdk"\n' + drum.replace('return { hits: state.hits + value };',
+    'sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "60"], "buzzed"); return { hits: state.hits + 1 };') +
+    '\nfunction buzzed(state: AppState, value: string): AppState { return state; }'
+  const message = checkWidget(compileVeraSource(buzzing).vbc2)
+  assert.match(message, /makes a phone call/)
+  assert.match(message, /NEW handler/)
+  assert.match(widgetRefinementPrompt(), /must not make phone calls/)
+}
+// A drum that jumps when it is hit: ui.Motion is a card kind with the presets a card can play, and the prompt says so.
+{
+  const motion = fs.readFileSync(path.join(__dirname, 'examples/widget-drum-motion.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(motion).vbc2), '')
+  assert.match(widgetRefinementPrompt(), /ui\.Motion\(style, 0, \[the picture\]\)/)
+  assert.match(widgetRefinementPrompt(), /NEVER a ui\.Path/, 'a drawing of several colours is a Surface, not a Path')
+  assert.match(widgetRefinementPrompt(), /should DO what that thing does/)
+  assert.match(widgetRefinementPrompt(), /every touch on the picture inside plays the movement by itself/)
+  assert.match(widgetRefinementPrompt(), /Do NOT add a counter to the state/)
+  for (const preset of require('./source-loader').loadVera('VeraMotion').MOTION_PRESETS) assert.ok(widgetRefinementPrompt().includes(preset), 'the prompt names ' + preset)
+  assert.match(widgetRefinementPrompt(), /cannot loop/)
+  assert.equal(checkWidget(compileVeraSource(motion.replace('"pop"', '"spin"')).vbc2), '', 'a turning preset plays on a card')
+}
+// A picture on the card (ui.Surface): described to the model, its tap held to the same rules as a button's.
+{
+  const panda = fs.readFileSync(path.join(__dirname, 'examples/widget-panda.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(panda).vbc2), '')
+  assert.match(widgetRefinementPrompt(), /ui\.Surface\(style, width, height, "draw", "", "touch"\)/)
+  assert.match(widgetRefinementPrompt(), /gfx\.Shape\[\]/)
+  assert.match(widgetRefinementPrompt(), /a card has no frames/)
+  assert(CARD_KINDS.includes('Surface'), 'Surface is a card kind')
+  assert.match(widgetRefinementPrompt(), /std\/gfx \(always available as gfx/, 'the gfx functions come with it')
+  const buzzing = panda.replace('if (p.phase === "down") { return { hops: state.hops + 1 }; }',
+    'sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "60"], "buzzed"); if (p.phase === "down") { return { hops: state.hops + 1 }; }')
+    .replace('import * as gfx from "std/gfx"', 'import * as gfx from "std/gfx"\nimport * as sdk from "std/sdk"') +
+    '\nfunction buzzed(state: AppState, value: string): AppState { return state; }'
+  const message = checkWidget(compileVeraSource(buzzing).vbc2)
+  assert.match(message, /makes a phone call/)
+  // Too much around the picture: no room for it on the card.
+  const cut = panda.indexOf('function widget(')
+  const tall = panda.substring(0, cut) + panda.substring(cut).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
+    'ui.NumberText("metric", state.hops, "", " hops", 1), ui.Text("caption", "a"), ui.Text("caption", "b"), ui.Text("caption", "c")')
+  assert.match(validateWidgetRefinement(panda, tall, compileVeraSource(tall).vbc2), /too much around its picture/)
+  // The picture's tap is one of the two buttons.
+  const at = panda.indexOf('function widget(')
+  const three = panda.substring(0, at) + 'function pandaCount(state: AppState, value: number): AppState { return { hops: state.hops + value }; }\n' +
+    panda.substring(at).replace('ui.NumberText("metric", state.hops, "", " hops", 1)',
+      'ui.Button("primary", "A", "pandaCount", 1, true), ui.Button("primary", "B", "pandaCount", 2, true)')
+  assert.match(validateWidgetRefinement(panda, three, compileVeraSource(three).vbc2), /3 buttons/)
+}
+// Styles reach the model, and a widget clearly taller than the card is refused with the reason.
+{
+  assert.match(widgetRefinementPrompt(), /STYLES\. A text style is drawn as the app draws it/)
+  assert.match(widgetRefinementPrompt(), /eyebrow \(a small spaced label/)
+  const styles = fs.readFileSync(path.join(__dirname, 'examples/widget-styles.vera'), 'utf8')
+  const at = styles.indexOf('function widget(')
+  const lines = n => Array.from({length: n}, (_, i) => 'ui.Text("display", "big ' + i + '")').join(', ')
+  const tall = styles.substring(0, at) + styles.substring(at).replace('ui.Column("accent", [\n        ui.Text("caption", "3 of 5 done")\n      ])', lines(3))
+  assert.match(validateWidgetRefinement(styles, tall, compileVeraSource(tall).vbc2), /vp tall and the 2x2 card is 126/)
+}
+// An icon button is one of the two buttons; the new kinds are on the card list and in the prompt.
+{
+  const water = fs.readFileSync(path.join(__dirname, 'examples/widget-water.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(water).vbc2), '')
+  for (const kind of ['Icon', 'IconButton', 'Badge', 'Progress', 'ProgressRing', 'Stat', 'NumberStat', 'MetricGroup', 'Sparkline']) assert(CARD_KINDS.includes(kind), kind + ' is a card kind')
+  const at = water.indexOf('function widget(')
+  const three = water.substring(0, at) + water.substring(at).replace('ui.IconButton("primary", "plus", "More", "add", 1, true)',
+    'ui.IconButton("primary", "plus", "More", "add", 1, true), ui.IconButton("danger", "trash", "Clear", "remove", 1, true)')
+  assert.match(validateWidgetRefinement(water, three, compileVeraSource(three).vbc2), /3 buttons/)
+  assert.match(widgetRefinementPrompt(), /ICONS AND DATA/)
+}
+// A timer is a card kind and the prompt says when to use it.
+{
+  assert(CARD_KINDS.includes('Timer'), 'Timer is a card kind')
+  assert.match(widgetRefinementPrompt(), /TIME THAT MOVES\. ui\.Timer\(style, millis, down\) runs by itself/)
+  assert.equal(checkWidget(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-timer.vera'), 'utf8')).vbc2), '')
+}
+// A widget that takes the card's size is held to the limits of every size; the prompt says how to ask for it.
+{
+  const sized = fs.readFileSync(path.join(__dirname, 'examples/widget-sizes.vera'), 'utf8')
+  assert.equal(checkWidget(compileVeraSource(sized).vbc2), '')
+  assert.match(widgetRefinementPrompt(), /CARD SIZES\. The card is 2x2 by default/)
+  assert.match(widgetRefinementPrompt(), /function widget\(state, size: number\): ui\.View/)
+  const at = sized.indexOf('function widget(')
+  const crowded = sized.substring(0, at) + sized.substring(at).replace('rows.push(ui.Row("split", [ui.Text("muted", "left"), ui.Text("danger", "late")]));',
+    'rows.push(ui.Column("default", [' + Array.from({length: 13}, (_, i) => 'ui.Text("caption", "c' + i + '")').join(', ') + ']));')
+  assert.match(validateWidgetRefinement(sized, crowded, compileVeraSource(crowded).vbc2), /a 2x4 widget shows at most 12/)
+  // A button only the 4x4 card shows is pressed there too: one that makes a phone call is sent back.
+  const buzzing = 'import * as sdk from "std/sdk"\n' + sized.replace('return { done: state.done + value };',
+    'sdk.call("SensorServiceKit.vibrator.vibrate", ["duration", "60"], "buzzed"); return { done: state.done + value };') +
+    '\nfunction buzzed(state: AppState, value: string): AppState { return state; }'
+  assert.match(checkWidget(compileVeraSource(buzzing).vbc2), /"more" makes a phone call/)
+  // What the prompt says a card holds is what the card holds.
+  const prompt = widgetRefinementPrompt()
+  assert.doesNotMatch(prompt, /three pictures|no overlap/)
+  assert.match(prompt, /a 2x4 has room for up to 4 buttons and 12 texts, a 4x4 has room for up to 6 buttons and 24 texts/)
+  assert.match(prompt, /5 pictures \(ui\.Surface or ui\.Sparkline\) in all/)
+  assert.match(prompt, /one of the two buttons/)
+  const surface = require('./source-loader').loadVera('VeraUiCatalog').CATALOG.find(c => c.name === 'Surface').guidance
+  assert.doesNotMatch(surface, /One Surface at most/); assert.match(surface, /Up to 5 pictures on a card/)
+  const badParam = sized.replace('function widget(state: AppState, size: number)', 'function widget(state: AppState, size: string)')
+  assert.throws(() => compileVeraSource(badParam), /E2115/)
+}
+// ui.Layers: in the prompt, and a widget that uses it passes the glance checks.
+{
+  assert.match(widgetRefinementPrompt(), /LAYERS\. A subject made of parts that move differently/)
+  assert.equal(checkWidget(compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-layers.vera'), 'utf8')).vbc2), '')
+}
+// A control the first tap takes away is not tapped a second time: a box shown only while the task is open is a valid widget.
+{
+  const once = fs.readFileSync(path.join(__dirname, 'examples/widget-switch.vera'), 'utf8').replace(/function widget\(state: AppState\): ui\.View \{[\s\S]*$/, 'function widget(state: AppState): ui.View {\n' +
+    '  if (state.done) { return ui.AppTheme("soft", "", [ui.Column("default", [ui.Text("eyebrow", "DONE")])]); }\n' +
+    '  return ui.AppTheme("soft", "", [ui.Column("default", [ui.Checkbox("default", "Done", state.done, "setDone")])]);\n}\n')
+  assert.equal(checkWidget(compileVeraSource(once).vbc2), '')
+}
+
+;(async () => {
+  const ts = require(process.env.VERA_TYPESCRIPT_PATH || 'typescript')
+  const {hasWidgetFunction} = loadVera('WidgetStatus')
+  const {veraStateStamp} = loadVera('VeraStateStamp')
+  const {withoutWidgetRequests} = loadVera('ProjectText')
+  const {WIDGET_ASK} = loadVera('agent/AgentWidget')
+  const pageSource = fs.readFileSync(path.join(sourceRoot, 'pages/GeneratePage.ets'), 'utf8')
+  const {OperationController, throwIfCancelled} = loadVera('OperationCancellation')
+  const {GenerateRequest, GenerateResult} = loadVera('LlamaEngine')
+  const names = ['aboutToAppear', 'makeWidgetAlone', 'doServerGenerate', 'commitSave', 'hasResult', 'versionCount',
+    'modelRequestHistory', 'prepareRequest', 'acceptRequest', 'doRefine', 'refineWithModel', 'startAttemptOne', 'runAttempt', 'callModel']
+  const methods = names.map(name => {
+    const match = pageSource.match(new RegExp('^  (?:private )?(?:async )?' + name + '\\([^\\{]*\\{[\\s\\S]*?^  \\}', 'm'))
+    assert(match, 'GeneratePage.' + name + ' must exist')
+    return match[0]
+  })
+  const declarations = ['class ServerDecodedResponse', 'class RefineRequest', 'class AttemptMetrics', 'class RunTotals',
+    'class SourceDelta', 'function diffLines', 'function decodeServerResponse'].map(name => {
+    const match = pageSource.match(new RegExp('^' + name + '\\b[\\s\\S]*?^\\}', 'm'))
+    assert(match, name + ' must exist')
+    return match[0]
+  })
+  const transpiled = ts.transpileModule(declarations.join('\n') + '\nclass GeneratePage {\n' + methods.join('\n') + '\n}', {
+    compilerOptions: {target: ts.ScriptTarget.ES2020}, reportDiagnostics: true
+  })
+  assert.deepEqual((transpiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error), [])
+  function fixture(original, fresh = true) {
+    const initial = {id: 'v1', source: original, vbc2: compileVeraSource(original).vbc2,
+      prompt: 'A counter\n\nRefinement:\n' + WIDGET_ASK + 'Old widget', composition: '', origin: '', lastPrompt: '', note: ''}
+    const versions = [initial], writes = [], saves = [], stateReads = [], serverRequests = [], localRequests = []
+    let latest = initial, failSave = false, failWrite = false, savedState = '', serverResponse, localResponse = ''
+    const store = {
+      init() {}, listVersions: () => versions, getVersion: (project, id) => versions.find(v => v.id === id) || null,
+      getLatestVersion: () => latest, getProject: () => ({name: 'Counter'}),
+      loadState(project, id, stamp) { stateReads.push({id, stamp}); return savedState },
+      createVersion(...args) {
+        if (failSave) { throw Error('disk full') }
+        saves.push(args)
+        latest = {id: 'v' + (versions.length + 1), source: args[1], vbc2: args[2]}
+        versions.unshift(latest)
+        return latest
+      }
+    }
+    const dependencies = {
+      store, appUsesWidgetError, withoutWidget, hasWidgetFunction, veraStateStamp, validateWidgetRefinement,
+      compileVeraSource, spliceWidget, smokeRun, widgetRefinementPrompt, Curve: {EaseInOut: 'ease-in-out'},
+      serverUrl: () => 'http://fixture.invalid', http: {RequestMethod: {POST: 'POST'}, createHttp: () => ({
+        async request(url, options) { serverRequests.push({url, ...options}); assert(serverResponse); return serverResponse },
+        destroy() {}
+      })},
+      withoutWidgetRequests, WIDGET_ASK, TAB_WIDGET: 'widget', TAB_PREVIEW: 'preview', KeyboardAvoidMode: {RESIZE: 'resize'},
+      settings: {init() {}, getMode: () => 'DeepSeek', getModel: () => 'test', useJevProxy: () => false,
+        hasServerUrl: () => true, getBaseUrl: () => 'https://fixture.invalid'},
+      MODE_DEEPSEEK: 'DeepSeek', MODE_LOCAL: 'Local', MODE_SERVER: 'Server', UI_SELECT_MODE: 'full', UI_SELECT_FULL: 'full',
+      MAX_RETRIES: 3, GenerateRequest, GenerateResult, throwIfCancelled,
+      CompileError: loadVera('VeraCompiler').CompileError, widgetRepairNote,
+      logStep() {}, logMark() {}, traceCompile() {},
+      engine: {stop() {}, async generate(request) {
+        localRequests.push(request)
+        return Object.assign(new GenerateResult(), {text: localResponse})
+      }},
+      initTrace() {}, trace() {}, refreshForms() {}, appAgentHost: () => ({}),
+      window: {getLastWindow: async () => ({on() {}})},
+      async writeWidget(program, ask, history, state) {
+        writes.push({program, ask, history, state})
+        if (failWrite) { return {source: '', failed: 'try again', attempts: 3, ms: 0, written: ''} }
+        const written = 'import * as math from "std/math"\n' +
+          'function newFigure(state: AppState): number { return state.count + 1; }\n' +
+          'function widget(state: AppState): ui.View { return ui.NumberText("metric", newFigure(state), "", "", 1); }'
+        const source = spliceWidget(program, written), vbc2 = compileVeraSource(source).vbc2
+        assert.equal(validateWidgetRefinement(program, source, vbc2, state), '')
+        return {source, vbc2, failed: '', attempts: 1, ms: 0, written}
+      }
+    }
+    const prototype = new Function(...Object.keys(dependencies), transpiled.outputText + '\nreturn GeneratePage.prototype;')
+      (...Object.values(dependencies))
+    const page = Object.assign(Object.create(prototype), {
+      params: {projectId: 'project', baseVersionId: 'v1', makeWidget: '1', widgetFresh: fresh ? '1' : ''},
+      widgetBase: '', widgetFresh: false, disposed: false, generating: false, runId: 0, baseError: '',
+      requestLabel: '', liveState: '', metricTotals: {}, promptTemplate: '',
+      hostContext: () => ({filesDir: '/fixture/files'}), readWidgetCards: () => 0,
+      getUIContext: () => ({setKeyboardAvoidMode() {}, animateTo(options, work) { work() },
+        getPromptAction: () => ({showToast() {}})}),
+      loadResources: async () => {}, currentBase: () => ({}), ratePerMillion: () => 0,
+      modeLabel: () => 'fixture', originLabel: () => '', copyMetrics: metrics => metrics,
+      beginOperation: () => new OperationController(), resetRunMetrics() { this.attempt = 1; this.attempts = [] },
+      beginMetricAttempt() {}, recordMetricResult() {}, addToProgram() {}, traceEnd() {}, currentRun: () => null,
+      closeRun() {}, grammar: '', skillText: '',
+      metricWork: (run, work) => work(), finishMetrics() {}, startRun() {}
+    })
+    page.aboutToAppear()
+    return {page, initial, writes, saves, stateReads, serverRequests, localRequests,
+      setServerResponse(value) { serverResponse = value }, setLocalResponse(value) { localResponse = value },
+      failSave(value) { failSave = value }, failWrite(value) { failWrite = value },
+      setLatest(value) { latest = value }, setState(value) { savedState = value }}
+  }
+  const oldPrograms = [
+    base + '\nfunction oldFigure(state: AppState): number { return state.count; }\n' +
+      'function widget(state: AppState): ui.View { return ui.NumberText("metric", oldFigure(state), "", "", 1); }',
+    'import * as time from "std/time"\n' + base +
+      '\nfunction widget(state: AppState): ui.View { return ui.NumberText("metric", time.nowSeconds(), "", "", 1); }'
+  ]
+  for (const [index, original] of oldPrograms.entries()) {
+    const f = fixture(original), p = f.page, baseline = withoutWidget(original)
+    assert.equal(p.widgetFresh, true)
+    assert.equal(p.widgetBase, baseline, 'Redo initialization must strip widget-only declarations and imports')
+    assert.doesNotMatch(baseline, index === 0 ? /oldFigure/ : /std\/time/)
+    assert.equal(fixture(original, false).page.widgetBase, original, 'ordinary refinement keeps its saved baseline')
+    f.failWrite(true)
+    await p.makeWidgetAlone(WIDGET_ASK + 'New widget')
+    assert.equal(p.widgetBase, baseline)
+    assert.equal(p.compiledSource, original)
+    assert.equal(p.widgetFresh, true, 'failed Redo must still retry without the old widget')
+    f.failWrite(false)
+    await p.makeWidgetAlone(WIDGET_ASK + 'New widget')
+    assert.equal(f.writes[1].program, baseline)
+    assert.doesNotMatch(f.writes[1].history, /Old widget/)
+    assert.equal(p.widgetFresh, false)
+    const first = p.compiledSource
+    assert.doesNotMatch(first, index === 0 ? /oldFigure/ : /std\/time/)
+    assert.equal(p.widgetBase, baseline, 'a successful unsaved Redo must not replace the preservation baseline')
+    await p.makeWidgetAlone(WIDGET_ASK + 'Another refinement')
+    assert.equal(f.writes[2].program, first)
+    assert.equal(p.widgetBase, baseline, 'multiple unsaved refinements retain the original stripped baseline')
+    const good = p.compiledSource
+    const goodVbc2 = p.compiledVbc2
+    p.compiledSource = good.replace('count: 0', 'count: 10')
+    p.compiledVbc2 = compileVeraSource(p.compiledSource).vbc2
+    assert.equal(p.commitSave(), false)
+    assert.match(p.compileErrors, /preserve existing declaration init/)
+    assert.equal(f.saves.length, 0)
+    assert.equal(p.widgetBase, baseline, 'rejected app tampering must not advance the baseline')
+    p.compiledSource = good
+    p.compiledVbc2 = goodVbc2
+    f.setLatest({id: 'other'})
+    assert.equal(p.commitSave(), false, 'a concurrent app change still rejects Save')
+    assert.equal(p.widgetBase, baseline)
+    f.setLatest(f.initial)
+    f.failSave(true)
+    assert.equal(p.commitSave(), false)
+    assert.match(p.status, /Save failed: disk full/)
+    assert.equal(p.baseVersionId, f.initial.id)
+    assert.equal(p.widgetBase, baseline, 'a failed persistence attempt must be retryable against the same baseline')
+    f.failSave(false)
+    const state = new WidgetSession(p.compiledVbc2, 'saved', '').encodedState()
+    f.setState(state)
+    assert.equal(p.commitSave(), true, 'Redo must save after intentional widget helper/import removal')
+    assert.equal(f.saves.length, 1)
+    assert.equal(f.saves[0][10], state, 'Save reads and preserves the latest stored app state')
+    assert.equal(f.stateReads.at(-1).id, f.initial.id)
+    assert.equal(p.widgetBase, good, 'only a successful save advances the preservation baseline')
+    assert.equal(p.baseVersionId, 'v2')
+    await p.makeWidgetAlone(WIDGET_ASK + 'Refine saved widget')
+    assert.equal(f.writes.at(-1).program, good)
+    assert.equal(p.widgetBase, good)
+    const next = p.compiledSource, nextVbc2 = p.compiledVbc2
+    p.compiledSource = spliceWidget(baseline, 'function widget(state: AppState): ui.View { return compact(state); }')
+    p.compiledVbc2 = compileVeraSource(p.compiledSource).vbc2
+    assert.equal(p.commitSave(), false, 'the next refinement must preserve helpers from the newly saved version')
+    assert.match(p.compileErrors, /preserve existing declaration newFigure/)
+    p.compiledSource = next.replace('import * as math from "std/math"', '')
+    p.compiledVbc2 = compileVeraSource(p.compiledSource).vbc2
+    assert.equal(p.commitSave(), false, 'the next refinement must preserve imports from the newly saved version')
+    assert.match(p.compileErrors, /preserve existing imports/)
+    assert.equal(p.widgetBase, good)
+    p.compiledSource = next
+    p.compiledVbc2 = nextVbc2
+    assert.equal(p.commitSave(), true)
+    assert.equal(f.saves.length, 2)
+    assert.equal(f.saves[1][8], 'v2')
+    assert.equal(f.stateReads.at(-1).id, 'v2')
+    assert.equal(p.widgetBase, next)
+  }
+  async function submit(page, ask, mode) {
+    page.mode = mode
+    page.refinePrompt = ask
+    page.doRefine()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(page.generating, false, 'the fixture request must finish')
+  }
+  function assertFreshRequest(program, history, baseline, ask) {
+    assert.equal(program, baseline, 'the model must receive the app without the old widget, helpers and imports')
+    assert.match(history, /A counter/)
+    assert.doesNotMatch(history, /Old widget/)
+    assert(history.includes(ask), 'the current widget request must reach the model')
+  }
+  const serverBody = (program, bytecode = 'server bytecode') => ';vera-source-begin\n' +
+    program.split('\n').map(line => ';|' + line).join('\n') + '\n;vera-source-end\n' + bytecode
+  for (const original of oldPrograms) {
+    const f = fixture(original), p = f.page, baseline = withoutWidget(original)
+    const ask = WIDGET_ASK + 'New server widget'
+    assert.equal(p.widgetFresh, true)
+    for (const response of [
+      {responseCode: 500, result: JSON.stringify({diagnostics: [{message: 'generation failed'}]})},
+      {responseCode: 200, result: serverBody('', '')},
+      {responseCode: 200, result: serverBody('function widget(state: AppState): ui.View { return missing(); }')}
+    ]) {
+      f.setServerResponse(response)
+      await submit(p, 'New server widget', 'Server')
+      const outbound = JSON.parse(f.serverRequests.at(-1).extraData)
+      assertFreshRequest(outbound.previousSource, outbound.prompt, baseline, ask)
+      assert.equal(p.requestHistory, f.initial.prompt, 'failure must not discard the saved request history')
+      assert.equal(p.widgetFresh, true, 'a failed server Redo must keep the New widget state')
+      assert.equal(p.widgetBase, baseline, 'a failed server Redo must keep the stripped preservation baseline')
+      assert.equal(p.compiledSource, original)
+      assert.equal(p.compiledVbc2, f.initial.vbc2)
+      assert.equal(p.generating, false)
+      assert.equal(f.saves.length, 0)
+    }
+    const reply = 'function widget(state: AppState): ui.View { return compact(state); }'
+    f.setServerResponse({responseCode: 200, result: serverBody(reply)})
+    await submit(p, 'New server widget', 'Server')
+    const outbound = JSON.parse(f.serverRequests.at(-1).extraData)
+    assertFreshRequest(outbound.previousSource, outbound.prompt, baseline, ask)
+    assert.doesNotMatch(p.requestHistory, /Old widget/, 'successful Redo must replace old widget history')
+    const good = spliceWidget(baseline, reply)
+    assert.equal(p.status, 'Server compiled successfully')
+    assert.equal(p.widgetFresh, false, 'a successful server Redo must reveal the widget and save/action controls')
+    assert.equal(p.widgetBase, baseline, 'server completion must not advance the unsaved preservation baseline')
+    assert.equal(p.compiledSource, good)
+    assert.equal(p.compiledVbc2, compileVeraSource(good).vbc2, 'server widgets use locally validated bytecode')
+    assert.equal(p.compiled, true)
+    assert.equal(p.generating, false)
+    assert.equal(p.tab, 'widget')
+    assert.equal(p.attempts[0].success, true)
+    assert.equal(p.acceptedRequest, ask)
+    assert.equal(f.serverRequests.length, 4)
+    assert.equal(f.saves.length, 0, 'server completion must not save implicitly')
+    assert.equal(p.commitSave(), true, 'a completed server Redo must be saveable against its stripped baseline')
+    assert.equal(f.saves.length, 1)
+    assert.equal(f.saves[0][1], good)
+    assert.equal(f.saves[0][2], p.compiledVbc2)
+    assert.equal(f.saves[0][8], f.initial.id)
+    assert.equal(p.widgetBase, good, 'only Save advances the server Redo baseline')
+    assert.equal(p.baseVersionId, 'v2')
+  }
+  for (const original of oldPrograms) {
+    const f = fixture(original), p = f.page, baseline = withoutWidget(original)
+    const ask = WIDGET_ASK + 'New local widget'
+    await submit(p, 'New local widget', 'Local')
+    assertFreshRequest(f.localRequests[0].previousSource, f.localRequests[0].userPrompt, baseline, ask)
+    assert.equal(p.widgetFresh, true, 'empty local output must keep Redo fresh')
+    assert.equal(p.compiledSource, original)
+    assert.equal(p.requestHistory, f.initial.prompt)
+    const reply = 'function widget(state: AppState): ui.View { return compact(state); }'
+    f.setLocalResponse(reply)
+    await submit(p, 'New local widget', 'Local')
+    assertFreshRequest(f.localRequests[1].previousSource, f.localRequests[1].userPrompt, baseline, ask)
+    const good = spliceWidget(baseline, reply).trim()
+    assert.equal(p.compiledSource, good)
+    assert.equal(p.widgetFresh, false)
+    assert.doesNotMatch(p.requestHistory, /Old widget/)
+    assert.equal(p.widgetBase, baseline)
+    assert.equal(p.commitSave(), true)
+    assert.equal(p.widgetBase, good)
+    await submit(p, 'Refine local widget', 'Local')
+    assert.equal(f.localRequests[2].previousSource, good, 'later refinements must see the replacement widget')
+    assert(f.localRequests[2].userPrompt.includes(ask), 'later refinements keep the replacement widget history')
+    const refine = fixture(original, false)
+    await submit(refine.page, 'Change old widget', 'Local')
+    assert.equal(refine.localRequests[0].previousSource, original, 'ordinary refinement keeps its widget')
+    assert.match(refine.localRequests[0].userPrompt, /Old widget/)
+  }
+  console.log('PASS GeneratePage Redo dispatch: Server/local outbound source/history stripped, failures retry fresh, ordinary refinements retain context')
+  console.log('PASS GeneratePage server Redo: failures retain fresh state, success reveals widget/actions, baseline preserved until Save')
+  console.log('PASS GeneratePage Redo: helper/import removal, failures and retries, unsaved refinements, app preservation, saved baseline advancement')
 })().catch(e => { console.error(e); process.exit(1) })

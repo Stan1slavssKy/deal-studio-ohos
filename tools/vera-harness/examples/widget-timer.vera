@@ -1,0 +1,22 @@
+import * as ui from "std/ui"
+import * as time from "std/time"
+@jsonable class AppState { startedAt: number; endsAt: number; }
+function init(): AppState { return { startedAt: time.nowMillis(), endsAt: time.nowMillis() + 5400000 }; }
+function reset(state: AppState, value: number): AppState { return { startedAt: time.nowMillis(), endsAt: time.nowMillis() + 5400000 }; }
+function view(state: AppState): ui.View {
+  return ui.AppTheme("technical", "", [
+    ui.Column("default", [
+      ui.Text("heading", "Session"),
+      ui.Timer("metric", state.startedAt, false)
+    ])
+  ]);
+}
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("technical", "", [
+    ui.Column("center", [
+      ui.Timer("metric", state.startedAt, false),
+      ui.Timer("heading", state.endsAt, true),
+      ui.Button("secondary", "Restart", "reset", 0, true)
+    ])
+  ]);
+}

@@ -79,8 +79,8 @@ the box empty -- "What should the widget show?" -- and the **Widget** tab open. 
   draws -- read at a glance: one to three figures or short lines with labels of a word or two, at most two buttons for the
   actions worth doing without opening the app, nothing else (no lists, history, settings, inputs, explanations, no heading
   with the app's name: the card has no title strip). When the request asks for more, keep what matters most. No button that opens the app.
-- **Held to it:** Make widget's validation refuses more than 2 buttons or 8 texts (`WIDGET_MAX_BUTTONS`,
-  `WIDGET_MAX_TEXTS`), with a reason the repair loop passes to the next attempt. The card's own budgets are unchanged.
+- **Held to it:** Make widget's validation refuses more than 2 buttons or 8 texts on a 2x2 card (`cardSize`'s `maxButtons`,
+  `maxTexts`; more on the bigger sizes), with a reason the repair loop passes to the next attempt. The card's own budgets are unchanged.
 - **Only the widget is written** (DeepSeek mode, `agent/AgentWidget.ets`): the model is shown the program, the request and
   the card's components only (`languageWith`, the full-screen composition advice left out), and answers with the widget's
   declarations alone (`widgetRefinementPrompt(false)`); a failing answer goes back with its reason, three answers at most,
@@ -128,6 +128,223 @@ Host evidence for this follow-up:
 Native build: `./build-hap.sh --unsigned` passes with zero diagnostics on this branch.
 
 Independent QC and device/visual verification remain blocked: tool discovery exposes no independent task/subagent review tool. No merge-ready or full Part 2 claim is made.
+
+## Animation on the card: a drum that moves when it is hit
+
+A card can play **one short movement per redraw**; it cannot loop. Measured on this phone (API 26, the card is drawn by
+`com.ohos.formrenderservice`), with a throwaway block in `LiveCard.ets` that was removed afterwards:
+
+- A property that changes after `updateForm` (`rotate`, `scale`, `opacity`, `translate`) animates with `.animation({duration, curve: Curve.*})`, on a
+  plain node and on a `Shape/Path`; `onFinish` arrives after the duration. The platform's card rules (a duration of at most 1 s;
+  `iterations`, `delay` and `tempo` not allowed) match the `@form` marks in the SDK's `common.d.ts`: `iterations: -1` played once.
+- A node **made again** for the frame (the ForEach key carries the frame token) has nothing to animate from. The way that works:
+  create it in the hit pose when the frame carries a new trigger, and set it to rest in `onAppear`; it settles with the
+  animation. Three hits out of three: `watch`, `appear` within 5 ms, `finish` about 410 ms later.
+- Not available: `spinPeriodMs` (the app's ticker has no counterpart on a card), `LoadingProgress` (turns for about 1 s after a
+  redraw), curves from `@ohos.curves` (not `@form`), `playMode: Reverse/AlternateReverse` (settle upright whatever the state says).
+  A chain of animations driven from `onFinish` stops about two seconds after the redraw (2.35 s with 600 ms steps, 2.0 s with
+  300 ms), a time and not a count; the reason is not known.
+- Six taps 330 ms apart (the fastest `uitest` clicks) all reached the handler (8-17 ms each) and the shape was at rest at the end.
+  Faster hits, and rhythm, are not measured.
+
+How it is built: `ui.Motion(style, trigger, children)` is a card kind (`CARD_MOTIONS`: pop, shake, bounce, fade; no tumble or flip),
+**one per widget** (`LIVE_MAX_MOTIONS`; the compiler already refuses one Motion inside another, E2107). The frame carries the
+preset and the trigger (`CardNode.style`, `.trigger`). `LiveCard` and `WidgetPreview` keep `settled`, the trigger last drawn: a
+frame with another trigger starts the Motion in its pose (pop 1.25x, shake +-12 degrees alternating with the trigger, bounce 16 up,
+fade transparent) and `onAppear` sets `settled`, which animates it back (350-600 ms). The first frame only records the trigger,
+so a card never plays on opening or after the launcher restarts it. The program keeps the count in its state and passes it as the
+trigger (`examples/widget-drum-motion.vera`); the Make widget prompt says so, and says there is no continuous motion, sound or vibration.
+
+On the phone (a saved project with `examples/widget-drum-motion-app.vera`, a card bound to it): one tap on the drum, and the next
+frame shows it 1.18x its size (210 px against 178 at rest, on the way down from 1.25x) with the counter already at "1 hits"; from the
+second frame on it is at rest. Six taps about 330 ms apart all counted (1 -> 7 hits); while they ran the drum stayed enlarged (193-211 px,
+each hit starting the settle again) and 1.5 s after the last one it was at 178 px. The other three presets were played on the card too
+(shake: tilted on the first frame after the tap; bounce: displaced upwards, settling; fade: about half transparent on the first
+frame), and the Widget tab (`WidgetPreview`) plays them the same way. A `Path` on a card needs `.stroke(Color.Transparent)`: left
+with ArkUI's default stroke the drum came out outlined in thick black (found on the phone, fixed in both `LiveCard` and `WidgetPreview`).
+
+Host checks: `live-widget-check.js` (the frame, the trigger following the count, the presets, a second Motion refused),
+`widget-refine-check.js` (the prompt, `tumble` refused). Not covered by a check: the picture on a phone.
+
+## A picture on the card: ui.Surface, drawn once for the state
+
+The card is drawn by the launcher's render service from data the extension sends, so the VM cannot run there (no frame loop, no
+timers). But the card **can import the app's pure modules and use a `Canvas`**: `paintGfx` (VeraGfx), `resolveTheme` (VeraTheme) ran in
+`formrenderservice` on this phone, and a black-and-white panda drawn by the app's own painter showed in the widget picker. So the app's
+drawing path is shared; only the program's execution stays in the extension.
+
+How: `ui.Surface` is a card kind in a static form. `WidgetSession.frame` runs the program's draw function once for the state
+(`decodeGfx`), checks it (one Surface per widget, `LIVE_MAX_SHAPES` = 60 shapes, an empty frame handler: "a card has no frames"), and
+carries the shapes in the frame as a compact text (`encodeGfxOps`: only what each shape sets; the nine-shape panda is 464
+characters, the whole frame 1.8 KB of the 8 KB budget). The frame also carries the widget's theme (`preset`, `primary`). `LiveCard` and
+`WidgetPreview` draw it with `paintGfx` on a `Canvas` 80 vp wide (a card is about 150 vp square -- 524 px at 3.5 px per vp -- with 12 of padding; at 100 vp the figure
+under the picture was cut off on the phone. The Widget tab used to draw the card at 172 vp, which hid such overflow; it now draws 150). A tap on the picture sends the point (`x`, `y`, in the picture's own units) to
+`liveFormTap`, which calls the program's pointer handler with a finger "down" and then "up" there (`WidgetSession.tapSurface`); a
+picture without a pointer handler lets the tap fall through to the card, which opens the app. The picture counts as one of the two
+buttons in Make widget when it takes a tap, and the tap is checked like a button's (twice, no phone calls). `ui.Motion` around it makes it
+jump (`examples/widget-panda.vera`).
+
+Measured on the phone (a saved project with the panda, a card bound to it): a tap on the panda reached the handler at 50.3, 54 (the
+middle of 100 by 100 units), the handler and save took 6-13 ms, the picture was painted about 30 ms after the extension finished, the
+paint itself 2 ms; the panda jumped (bounce) and the counter rose by one per tap, on the card and in the Widget tab. Cost of loading: the
+card now pulls in about 87 KB of source (`VeraGfx` 27, `VeraInterpreter` 26, `VeraTheme` 24, `LiveCard` 11). `VeraGfx` brings the
+interpreter with it; a split that leaves the painter and `GfxOp` in a module of their own would drop that. Memory of the render service
+was 129 MB PSS in total (all cards, all apps): the share of this card was not isolated and a build without the imports was not measured.
+
+What a real generation showed (Make widget on a copy of the "Little panda that jump" game, request "a little panda that jumps when I touch it",
+read from the log: `VERA-WIDGET attempt N answer ...` in `AgentWidget`). The first build drew a one-colour blob and did not move:
+
+- The model drew the panda with `ui.Path`: the catalogue's own text for Path says "use it whenever the user asks to draw something", which
+  outweighed the paragraph about `ui.Surface`. A Path is one colour, so ears and eyes were lost. The prompt now says, first and in capitals, that a
+  drawing of more than one colour is a Surface and never a Path (`WHAT TO DRAW WITH`), and the catalogue's Path text says the same for a card.
+- The program had no counter of touches and a widget may not add state fields (`E2022 unknown field taps`); the next answer used `state.score` as
+  the Motion's trigger with a handler that returned the state unchanged, so nothing could ever move. A touch now plays a Motion **by itself**:
+  `LiveCard` and `WidgetPreview` count the touches on their pictures and shapes (`touches`, a plain field) and add them to the Motion's trigger, and a
+  tap's answer carries `seq` (`LiveFrame.seq`, set in `liveFormTap`) so the card draws another frame even when the state came out the same. The widget
+  writes `ui.Motion("bounce", 0, [picture])` and a touch handler that may return the state as it is.
+- The picture was 80 vp whatever else was on the card, and "Best 0" fell off the bottom. The frame now sizes it to the room the rest leaves
+  (`pictureRoom`, `nodeHeight`: a card is 126 vp inside its padding, rows 6 apart, 40 for a button, 1.25 x the size for text; 40 to 80 vp), and Make
+  widget refuses a widget that leaves under 40 ("too much around its picture"), with the reason fed back.
+
+After these, the same request gave a panda of several colours (a green disc, a platform, orange ears, cheeks) on the first attempt, the widget passed
+every check, and on the phone a touch on it makes it jump, in the Widget tab and on the card on the home screen, with the score unchanged.
+
+The layout is one component, `widget/CardView.ets`, which `LiveCard` and the Widget tab (`WidgetPreview`) both use, over the plain frame classes in
+`widget/CardModel.ets`; the painter and colours moved to `vera/GfxPaint.ets` (no interpreter import; `VeraGfx` re-exports them). A widget may have up to three
+pictures and three Motions: a Motion has a `slot`, a node under it carries that slot, and a touch is counted for that slot only. On the phone, two pictures side by
+side (`examples/widget-two-pictures.vera`): a touch on the left one moved only it (it rose from y 150 to 100 px and settled), the right square stayed where it was,
+and the other way round for the right one.
+
+Not covered: a picture changing under a finger (a card has no moves), pictures of more than 60 shapes, dark theme, 2x4 and 4x4 cards.
+
+## What else a card can draw: spikes on the phone (stage 0 of the full-UI plan)
+
+Throwaway blocks in `LiveCard.ets` (restored afterwards), each rendered on a card on the home screen of this phone (API 26). **The ArkTS compiler itself
+refuses what a card may not use** (`11706006 'onAreaChange' can't support form application`), so a build that passes is a first check of `@form`;
+the picture on the phone is the second.
+
+Drawn and working:
+- `TextTimer` ticks by itself on the card, up and down (a 90 s countdown read 01:19, 01:18, 01:16, and 00:10 seventy seconds later); `TextClock`
+  moves on (2:59 to 3:00), but its `format` was not honoured (it showed H:mm). So the card is not frozen for the platform's own components: only our code and animations are.
+- `Progress` (linear and ring), `Gauge`, `Rating`, `SymbolGlyph($r('sys.symbol.ohos_wifi'))`, `Stack` (a badge over a square), `linearGradient`, `shadow`,
+  `fontWeight`, `fontFamily` (`'Noto Serif'` and `'monospace'`, the ones the themes use).
+- A `@Component` imported from its own module (`widget/CardParts.ets`), and two `Canvas` with their own contexts in one card.
+
+Not working or not possible:
+- `DataPanel` (circle, three values) drew nothing.
+- A local `onClick` that changes `@State` does not run on a card (only `postCardAction`), so a transition cannot be tried by touching the card; it needs a frame from the extension.
+- `Image('memory://...')` made the **whole card blank**, text included, in both variants tried (with `formImages` in the binding, and without): not resolved. The documented
+  pattern (the image's key carried in the data and read with `@LocalStorageProp`, plus a loaded flag) was not tried. Images stay unverified.
+
+Sizes: `onAddForm` receives the dimension in `ohos.extra.param.key.form_dimension` (2 = 2*2, 3 = 2*4, 4 = 4*4; the widget manager calls it once per
+variant it previews). With `supportDimensions` ["2*2", "2*4", "4*4"]: 2*2 is about 150 x 150 vp, **2*4 is wide (about 324 x 148 vp: four columns, two rows)**, 4*4 about 324 x 340 vp
+(measured from screenshots at 3.5 px per vp).
+
+## Styles: the theme's roles on the card
+
+The card used to flatten the catalogue's styles into three text sizes and one ink. `vera/CardStyle.ets` (pure; the extension calls it while it builds the
+frame) now carries the theme's roles to the card: a text's size by style (display 28, title 22, heading 18, metric 30, caption 12, eyebrow 10, the rest 14: the three
+sizes a widget already had are unchanged), its weight, family and letter spacing from the theme (an editorial heading is bold Noto Serif, an eyebrow is spaced and
+quiet), tone inks (muted, success, warning, danger), buttons in all four styles with the theme's radius, the divider in the theme's line colour; a column's `end`,
+`compact`, `spacious`, a row's `split`, `end`, `joined`, and panels (`surface`, `accent`: the theme's fill, padding and radius). A field that equals the card's default
+is not in the frame (the new node fields are optional), so the frame stays small: `examples/widget-styles.vera` is 2.2 KB. On the phone the card drew "TODAY" spaced and
+muted, "Plan" in bold serif, a panel with the accent fill and rounded corners, and a split row (a muted word at the left, a red one at the right).
+
+The height estimate (`widgetHeight`) uses the real sizes, wraps a long text at two lines (0.55 em a character) and counts a row's width as shared; Make widget refuses a
+widget estimated more than 14 vp over the card's 126 ("what does not fit is cut off"). The estimate was 84 to 126 vp for every example in `tools/vera-harness/examples`.
+
+## Icons, marks and data on the card
+
+`ui.Icon`, `ui.IconButton`, `ui.Badge`, `ui.Progress`, `ui.ProgressRing`, `ui.Stat`, `ui.NumberStat`, `ui.MetricGroup` and `ui.Sparkline` are card kinds (opted in by
+name in `VeraUiCatalog`, `CARD_OPT_IN`). VeraLiveWidget turns each into card nodes: an icon into the catalogue's stroked path (`VeraIcons`; the card draws it with the
+viewPort and stroke in px, as the app does), a bar and a ring into the platform's own `Progress` (spike: it draws on a card), a Stat or NumberStat into a column of a caption, a
+figure that shrinks to fit and a supporting line, a MetricGroup into a row of them, and a Sparkline into a small picture (100 by 36 units: a line and its last point, or one
+bar for each value; a card draws it with the same painter, and it counts among the three pictures). An IconButton is one of the two buttons.
+
+On the phone (examples/widget-water.vera, widget-metrics.vera): a ring at 38 % that went to 50 % when the plus button was touched, the buttons in the theme's primary and
+secondary fills with their icons; a "On track" badge with a check, a star, two stats side by side and a trend line with its last point. A bug found there: the block that fills
+these nodes ran before the default colour and fill were assigned, so a ring came out in the plain ink and the buttons white; the order is now fixed and a test holds it.
+
+## Time that moves: ui.Timer
+
+`ui.Timer(style, millis, down)` is a new catalogue component, in the app and on the card: the platform's own `TextTimer`, which keeps counting without our code (the card is
+frozen for our animations, not for platform components: stage-0 spike). `millis` is a moment in ms since 1970; `down` false counts up from it, true counts down to it. The
+program keeps the moment in its state as a number (`time.nowMillis()` plus or minus a length), the frame carries it (`CardNode.val`, direction in `max`), and at draw time the
+card works out where the timer starts (`timerFace` in `widget/CardModel.ets`, which the app uses too: a countdown starts from the time left, `count`; a timer counting up from the
+time already gone, `startTime`, since TextTimer ignores `count` when it counts up), so a card the launcher redraws later still shows the right time. The format is
+`mm:ss`, or `HH:mm:ss` once an hour or more is involved. Up to three timers per widget; the theme's size, weight, family and ink apply as for a text.
+
+On the phone (examples/widget-timer.vera, technical theme): a monospace stopwatch read 00:03, 00:07, 00:16 and a countdown 01:29:53, 01:29:49, 01:29:40 over a quarter of a minute with no
+update from the app, and Restart (a handler that sets both moments to now) started both over. The Make widget prompt says to prefer it to a figure computed from the clock, which stands
+still between redraws. Not done: what a countdown does at zero (it stops at 00:00; the program's `widgetRefresh`, about every 30 minutes, is what can change the state then).
+
+## Card sizes: 2x2, 2x4, 4x4
+
+`form_config.json` offers the live card in all three. The system numbers them 2 (2x2), 3 (2x4) and 4 (4x4) (`FormDimension`); `onAddForm` receives the number in
+`ohos.extra.param.key.form_dimension` and `FormBindings` keeps it per form (`form-sizes.json`, beside the bindings; a removed card forgets it). Measured from screenshots at
+3.5 px per vp: 2x2 is about 150 x 150, **2x4 is wide, about 324 x 148** (four columns, two rows), 4x4 about 324 x 340; inside the 12 vp padding 126 x 126, 300 x 124 and 300 x 316.
+`cardSize(dimension)` holds those and the limits that grow with them (nodes 40, 60, 80; buttons 2, 4, 6; texts 8, 12, 24; the largest picture 80, 100, 200 vp). The frame is
+fitted to its card: the picture's side and the height gate use that card's inner size, and the frame says its `dimension`.
+
+A widget may declare `function widget(state, size: number): ui.View` (the compiler accepts the second parameter, E2115 otherwise) and draw differently: `size` is 2, 3 or 4.
+One with a single parameter is drawn the same everywhere. Make widget checks a size-aware widget at all three sizes, with each size's limits; `examples/widget-sizes.vera` shows a
+plan with one figure on 2x2, a row more on 2x4 and a bar and a button more on 4x4. The Widget tab shows the card at the chosen size (chips under it).
+
+The 8000-character budget bound before the node limit on the bigger cards, so the frame now goes into the binding **compact**: `CardModel.compactFrame` keeps on a node only what
+differs from a new `CardNode`, `normalizeNodes` puts the defaults back in the card. Every example frame is under 70 % of its full size (the metrics widget: half).
+Not measured on the phone: the cards placed at 2x4 and 4x4 with real content (see the next section for what was checked).
+
+## Switches: ui.Toggle and ui.Checkbox
+
+Both draw on the card (a pill with a knob; a rounded box with the check mark from `VeraIcons`) and are taps like a button: the card posts `{handler, on}`,
+`LiveFormService.liveFormTap` runs `WidgetSession.tapSwitch` (token-checked, handler must be a switch on the shown frame) and the answer is the next frame. The handler takes
+`(state, value: boolean)` as in the app. Measured on the phone (4x4 card, `examples/widget-switch.vera`): tap Focus then Done -> `VERA-FORM event action=setFocus on=true`,
+both drawn on, about 9 ms each. Make widget counts them as buttons, runs each handler on and off and re-checks the view; the prompt has a SWITCHES paragraph.
+Not done: multi-step motion presets and button press feedback (unmeasured on the card), and images (stage 7: `Image('memory://')` blanked the card).
+
+## Motion: 25 presets by meaning, played as stages
+
+`ui.Motion` has 25 presets, chosen by what the movement means so a prompt never needs a preset made for it: emphasis (pop, pulse, jelly, press,
+flash, breathe), reaction (shake, nod, wobble, swing, recoil), gravity (bounce, hop, jump, fall), turning (spin, turn, tumble, flip), arrival
+(fade, rise, zoom, slide), ambient (float, drift). Each is a table in `VeraMotion.motionStages`: a starting pose and stages
+`[ms, dx, dy, scaleX, scaleY, rotation, opacity, curve]`. The card plays a preset as a **chain of platform animations**, each stage started from the
+`onFinish` of the one before (`CardView.motionAnimation/advance`); the app samples the same table for the new presets (the six it had first keep their formulas).
+Every preset lasts under `MOTION_BUDGET_MS` (1500; the chain stops about 2 s after a redraw) and ends where it should rest (`motion-check.js`).
+Swing hangs from its top edge and wobble rocks on its base (`motionPivot`); up to 5 Motions play at once, each by its own touch (`LIVE_MAX_MOTIONS`).
+
+Measured on the phone (a gallery widget with five Motions in the Widget tab at 4x4, frames about 290 ms apart): jump rises about 46 vp and lands in
+three frames; spin turns the arrow through down, right, left and up; swing hangs and swings from the top. On the **home-screen card** (a project saved
+from Make widget, card bound to it): a touch on the panda made it jump clear of the top of the card and settle in under a second.
+
+Make widget with four short requests (a panda that jumps; a casino roulette wheel that spins; a tambourine and a drumstick; live weather in Moscow),
+before and after the new presets and prompt paragraph (one attempt each, 2.5-3.6 s):
+
+| request | before | after |
+|---|---|---|
+| panda | pop (a few pixels) | jump: leaps clear of the card |
+| roulette | a dartboard, touch did nothing | a wheel of segments, spin |
+| tambourine and stick | static, touch did nothing | two Motions: recoil (drum) and wobble (stick) |
+| weather | static picture | float; **still not live**: no source was written for it |
+
+Not solved: a card cannot loop, so rain "falling" or a sun that keeps shining is one movement per touch or refresh; a symmetric drawing (a wheel with
+twelve equal segments) hides a spin (give it a mark or a ball); the model does not yet reach for `Vera.Source` for "live" on its own.
+
+## Layers: a scene of parts that move on their own
+
+`ui.Layers(style, width, height, children)` lays its children one over another, each in the middle, the first at the bottom (the app: a `Stack`; the card: a `Stack` in
+each of the three builder levels). Each child can be its own `ui.Motion` around its own `ui.Surface`, so a stick swings while the drum recoils and clouds drift over a sky.
+A `ui.Surface` above the first takes the style **`clear`** (no background of its own: `paintGfx(..., bare)`; without it the top layer hides the ones under it, found on the
+phone). Up to 5 pictures and 5 Motions (`LIVE_MAX_SURFACES`, `LIVE_MAX_MOTIONS`, five canvas contexts). A touch on any part of a Layers plays **every** Motion in it
+(`CardNode.links`: the slots a touch plays, set on the Layers too, even with one Motion). A part with no handler lets a touch through (`HitTestMode.None`), so the
+topmost layer with a pointer under the finger runs it, and a touch that no part takes lands on the Layers. A touch on a Motion around a picture or a shape with no handler of
+its own plays it too: the card posts `#touch` (`TOUCH_ACTION`), the host runs nothing and answers with a new frame, in which the movement plays. A Motion around only a
+figure or a text has no touch of its own: it plays when its trigger changes, and a tap on it opens the app as before. Measured: stick over drum, one touch, both moved
+(frames ~290 ms apart).
+
+Make widget on the user's Moscow Weather app (live figures already in the program): "weather as a living scene that matches the current condition" gave, on the first
+attempt, a sky, sun, clouds and rain/snow as separate layers chosen from the live weather code, each with its own Motion (sky breathes, clouds drift or float, rain falls); a touch
+moved them all. With the earlier limit of 3 pictures the model had to drop a layer (found when the clouds vanished), hence 5.
+A widget can only be live when the program already has the source (Vera.Source); Make widget does not add one.
 
 ## Deferred / known limits
 

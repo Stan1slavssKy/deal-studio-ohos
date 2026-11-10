@@ -1,0 +1,30 @@
+import * as ui from "std/ui"
+import * as gfx from "std/gfx"
+@jsonable class AppState { hits: number; }
+function init(): AppState { return { hits: 0 }; }
+function view(state: AppState): ui.View { return ui.AppTheme("playful", "", [ui.Column("default", [ui.Text("heading", "Drum")])]); }
+function drum(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.circle(50, 62, 34, "#C98B3F"));
+  shapes.push(gfx.circle(50, 62, 29, "#F3E2C0"));
+  return shapes;
+}
+function stick(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.line(20, 8, 46, 44, 5, "#8A5A22"));
+  shapes.push(gfx.circle(48, 47, 6, "#F5D76E"));
+  return shapes;
+}
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("playful", "", [
+    ui.Column("default", [
+      ui.Layers("default", 100, 100, [
+        ui.Motion("recoil", 0, [ui.Surface("default", 100, 100, "drum", "", "hitDrum")]),
+        ui.Motion("swing", 0, [ui.Surface("clear", 100, 100, "stick", "", "hitStick")])
+      ]),
+      ui.Text("caption", "Drum")
+    ])
+  ]);
+}
+function hitDrum(state: AppState, p: gfx.Pointer): AppState { return state; }
+function hitStick(state: AppState, p: gfx.Pointer): AppState { return state; }

@@ -28,10 +28,11 @@ import { store } from '../vera/ProjectStore'
 import { consent } from '../vera/VeraConsentStore'
 import { LiveNode, toLive, reconcile, armReveal, markIconRoom } from './VeraLiveTree'
 import { carryState } from '../vera/VeraStateCarry'
-import { MotionPose, motionPose, motionDuration, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
+import { MotionPose, motionPose, motionDuration, pivotPercent, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
   columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
 import { displaySync } from '@kit.ArkGraphics2D'
 import { decodeGfx, paintGfx, pointerValue, gfxFit, gfxToSurface, gfxNaturalHeight } from '../vera/VeraGfx'
+import { TimerFace, timerFace } from '../widget/CardModel'
 
 /**
  * The rotation of every spinning shape on screen.
@@ -518,6 +519,17 @@ export struct VeraPreview {
    * brought up to date every SURFACE_VIEW_MS, which is plenty for a score and nothing like sixty times a second.
    */
   private surfaces: Map<LiveNode, SurfaceBox> = new Map<LiveNode, SurfaceBox>()
+  /** Each ui.Timer's controller: the platform's TextTimer ticks by itself once started. */
+  private textTimers: Map<LiveNode, TextTimerController> = new Map<LiveNode, TextTimerController>()
+  private textTimerOf(node: LiveNode): TextTimerController {
+    let known = this.textTimers.get(node)
+    if (known !== undefined) { return known }
+    let made = new TextTimerController()
+    this.textTimers.set(node, made)
+    return made
+  }
+  /** How the timer is set, as of now: counting up from the moment, or (checked) down to it. */
+  private textTimerFace(node: LiveNode): TimerFace { return timerFace(node.numberValue, node.checked, Date.now()) }
   private liveSurfaces: LiveNode[] = []
   private surfaceSync: displaySync.DisplaySync | null = null
   private surfaceTimer: number = -1
@@ -547,8 +559,8 @@ export struct VeraPreview {
     'emptystate', 'stat', 'metricgroup', 'tilegrid', 'tile',
     'numbertext', 'numberstat', 'numberfield', 'timefield', 'datefield', 'numberlistitem', 'actionbar',
     'kvgroup', 'kvitem', 'icon', 'iconbutton', 'badge', 'clocktext',
-    'timeline', 'timelineitem', 'skeleton', 'spinner', 'snackbar', 'sparkline', 'backhandler',
-    'table', 'tablerow', 'motion', 'transform', 'stage', 'surface']
+    'timeline', 'timelineitem', 'skeleton', 'timer', 'spinner', 'snackbar', 'sparkline', 'backhandler',
+    'table', 'tablerow', 'motion', 'layers', 'transform', 'stage', 'surface']
 
   aboutToAppear(): void {
     this.disposed = false
@@ -1149,14 +1161,22 @@ export struct VeraPreview {
 
   /**
    * Bring the surfaces in line with the frame just reconciled: forget the canvases of nodes that are no longer
-   * surfaces, run the frame loop exactly while one of them has a frame handler, and paint them all now unless the
+   * surfaces (and the controllers of timers that are gone), run the frame loop exactly while one of them has a frame handler, and paint them all now unless the
    * frame loop is the one asking (it paints straight after).
    */
   private reconcileSurfaces(paint: boolean): void {
     let found: LiveNode[] = []
-    if (this.liveRoot !== null) { this.collectSurfaces(this.liveRoot!, found) }
+    let timers: LiveNode[] = []
+    if (this.liveRoot !== null) {
+      this.collectKind(this.liveRoot!, 'surface', found)
+      this.collectKind(this.liveRoot!, 'timer', timers)
+    }
     for (let node of Array.from(this.surfaces.keys())) {
       if (found.indexOf(node) < 0) { this.surfaces.delete(node) }
+    }
+    // A timer's controller lives as long as its node is in the tree.
+    for (let node of Array.from(this.textTimers.keys())) {
+      if (timers.indexOf(node) < 0) { this.textTimers.delete(node) }
     }
     this.liveSurfaces = found
     let animated = false
@@ -1215,9 +1235,9 @@ export struct VeraPreview {
     return false
   }
 
-  private collectSurfaces(node: LiveNode, found: LiveNode[]): void {
-    if (node.kind === 'surface') { found.push(node) }
-    for (let child of node.children) { this.collectSurfaces(child, found) }
+  private collectKind(node: LiveNode, kind: string, found: LiveNode[]): void {
+    if (node.kind === kind) { found.push(node) }
+    for (let child of node.children) { this.collectKind(child, kind, found) }
   }
 
   /**
@@ -1353,7 +1373,7 @@ export struct VeraPreview {
       let drawAt = Date.now()
       let ops = decodeGfx(this.vm!.execute(node.label, [this.currentState!]))
       let paintAt = Date.now()
-      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum, this.getUIContext().vp2px(1))
+      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum, this.getUIContext().vp2px(1), node.style === 'clear')
       this.frameSplit[1] += paintAt - drawAt
       this.frameSplit[2] += Date.now() - paintAt
     } catch (e) {
@@ -3086,6 +3106,13 @@ export struct VeraPreview {
       .borderRadius(node.kind === 'stage' && node.style === 'floor' ? this.t().radiusCard : 0)
     } else if (node.kind === 'transform') {
       // Inside a Stage or another Transform: drawn by the scene that owns it, not here.
+    } else if (node.kind === 'layers') {
+      // One over another, each in the middle; the box is the size the program gave.
+      Stack({ alignContent: Alignment.Center }) {
+        this.renderChildren(node)
+      }
+      .width(node.minimum > 0 ? node.minimum : undefined)
+      .height(node.maximum > 0 ? node.maximum : undefined)
     } else if (node.kind === 'motion') {
       // The children are drawn as they are; only the pose around them moves. Drawn inline, no component of its own.
       Column() {
@@ -3095,8 +3122,8 @@ export struct VeraPreview {
       .layoutWeight(parentKind === 'row' ? 1 : 0)
       .alignItems(HorizontalAlign.Center)
       .rotate({ x: this.motionPoseOf(node).axisX, y: this.motionPoseOf(node).axisY, z: this.motionPoseOf(node).axisZ,
-                angle: this.motionPoseOf(node).angle, centerX: '50%', centerY: '50%', perspective: 2400 })
-      .scale({ x: this.motionPoseOf(node).scale, y: this.motionPoseOf(node).scale, centerX: '50%', centerY: '50%' })
+                angle: this.motionPoseOf(node).angle, centerX: '50%', centerY: pivotPercent(this.motionPoseOf(node).pivotY), perspective: 2400 })
+      .scale({ x: this.motionPoseOf(node).scale * this.motionPoseOf(node).scaleX, y: this.motionPoseOf(node).scale * this.motionPoseOf(node).scaleY, centerX: '50%', centerY: '50%' })
       .translate({ x: this.motionPoseOf(node).dx, y: this.motionPoseOf(node).dy })
       .opacity(this.motionPoseOf(node).opacity)
     } else if (node.kind === 'text') {
@@ -4110,6 +4137,14 @@ export struct VeraPreview {
                  top: this.t().gapTight - 1, bottom: this.t().gapTight - 1 })
       .backgroundColor(toneFill(this.t(), node.style, this.t().surface))
       .borderRadius(this.t().radiusSmall)
+    } else if (node.kind === 'timer') {
+      TextTimer({ isCountDown: this.textTimerFace(node).countDown, count: this.textTimerFace(node).count,
+                  startTime: this.textTimerFace(node).startTime, controller: this.textTimerOf(node) })
+        .format(this.textTimerFace(node).format)
+        .fontSize(textSize(this.t(), node.style))
+        .fontWeight(textWeight(this.t(), node.style))
+        .fontColor(textInk(this.t(), node.style))
+        .onAppear(() => { this.textTimerOf(node).start() })
     } else if (node.kind === 'skeleton') {
       // width/height/rounded ride minimum/maximum/checked -- the same field
       // reuse Ticker already does for intervalMs/running, so decode needed
@@ -4741,6 +4776,10 @@ export struct VeraPreview {
       .height(PATH_BAND_HEIGHT)
       .alignItems(HorizontalAlign.Center)
       .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        // A shape given an action is tappable like a button (the home-screen widget's drum).
+        if (node.action.length > 0 && node.enabled) { this.handleAction(node.action, node.eventValue) }
+      })
     } else if (node.kind === 'image') {
       // std/ui has declared Image since the first version, but there was no
       // branch here, so every generated program that used one painted nothing

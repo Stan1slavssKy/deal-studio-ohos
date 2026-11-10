@@ -1,18 +1,9 @@
-// The launcher only consumes binding DTOs. No VM, filesystem, or app imports here.
-let liveStorage = new LocalStorage()
+// The launcher's live card. It draws what the form extension sends (the frame, widget/CardModel.ets) with the layout the app's Widget tab also uses
+// (widget/CardView.ets); it loads the theme and the painter, never the VM.
+import { CardNode, normalizeNodes } from '../CardModel'
+import { CardView } from '../CardView'
 
-class CardNode {
-  key: string = ''
-  kind: string = ''
-  text: string = ''
-  action: string = ''
-  value: number = 0
-  enabled: boolean = true
-  color: string = '#172033'
-  fill: string = '#FFFFFF'
-  size: number = 14
-  children: CardNode[] = []
-}
+let liveStorage = new LocalStorage()
 
 @Entry(liveStorage)
 @Component
@@ -22,9 +13,12 @@ struct LiveCard {
   @LocalStorageProp('title') title: string = 'VERA app'
   @LocalStorageProp('icon') icon: string = '📱'
   @LocalStorageProp('token') token: string = ''
+  @LocalStorageProp('seq') seq: string = ''
   @LocalStorageProp('status') status: string = ''
   @LocalStorageProp('live') live: boolean = false
   @LocalStorageProp('background') cardBackground: string = '#F8FAFC'
+  @LocalStorageProp('preset') preset: string = 'clean'
+  @LocalStorageProp('primary') primary: string = ''
   @LocalStorageProp('nodes') nodes: CardNode[] = []
 
   build() {
@@ -32,7 +26,22 @@ struct LiveCard {
     // (an unbound card: the page that binds it); a button's own tap is the button's.
     Column({ space: 6 }) {
       if (this.live) {
-        ForEach(this.nodes, (node: CardNode) => { this.level1(node, false) }, (node: CardNode) => node.key + this.token)
+        CardView({
+          nodes: normalizeNodes(this.nodes),
+          // A refused tap is answered with the same token and seq: nothing is drawn again, so a touched Motion does not play.
+          frameKey: this.token + this.seq,
+          preset: this.preset,
+          primary: this.primary,
+          onTap: (action: string, value: number): void => {
+            postCardAction(this, { action: 'message', params: { token: this.token, seq: this.seq, handler: action, value: value } })
+          },
+          onSwitch: (handler: string, on: boolean): void => {
+            postCardAction(this, { action: 'message', params: { token: this.token, seq: this.seq, handler: handler, on: on } })
+          },
+          onPoint: (handler: string, x: number, y: number): void => {
+            postCardAction(this, { action: 'message', params: { token: this.token, seq: this.seq, handler: handler, x: x, y: y } })
+          }
+        })
       } else {
         Text(this.title).fontSize(13).fontWeight(FontWeight.Medium).fontColor('#475569')
           .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -47,79 +56,5 @@ struct LiveCard {
     .onClick(() => {
       postCardAction(this, { action: 'router', abilityName: 'EntryAbility', params: { projectId: this.projectId, veraRun: '1', veraFormId: this.projectId.length === 0 ? this.formId : '' } })
     })
-  }
-
-  @Builder
-  leaf(node: CardNode) {
-    if (node.kind === 'button') {
-      Button(node.text).type(ButtonType.Normal).borderRadius(10).height(40)
-        .backgroundColor(node.fill).fontColor(node.color).fontSize(14)
-        .enabled(node.enabled).onClick(() => {
-          postCardAction(this, { action: 'message', params: { token: this.token, handler: node.action, value: node.value } })
-        })
-    } else if (node.kind === 'divider') {
-      Divider().color('#CBD5E1')
-    } else if (node.kind === 'spacer') {
-      Blank().height(4)
-    } else if (node.kind === 'numbertext') {
-      // A figure is never broken over two lines: beside another, it shrinks to fit its half of the card.
-      Text(node.text).maxFontSize(node.size).minFontSize(Math.min(node.size, 12)).fontColor(node.color).maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    } else {
-      Text(node.text).fontSize(node.size).fontColor(node.color).maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-  }
-
-  // This layout (leaf and the level builders) is a copy of components/WidgetPreview.ets's, kept in step by hand: a card cannot import the
-  // app's code. A change to how a node is drawn goes into both, or the preview stops showing what the card shows.
-  @Builder
-  level1(node: CardNode, inRow: boolean) {
-    if (node.kind === 'row') {
-      Row({ space: 8 }) {
-        ForEach(node.children, (child: CardNode) => { this.level2(child, true) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(FlexAlign.SpaceEvenly)
-    } else if (node.kind === 'column') {
-      Column({ space: 6 }) {
-        ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0)
-    } else {
-      this.leaf(node)
-    }
-  }
-
-  @Builder
-  level2(node: CardNode, inRow: boolean) {
-    if (node.kind === 'row') {
-      Row({ space: 8 }) {
-        ForEach(node.children, (child: CardNode) => { this.level3(child, true) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(FlexAlign.SpaceEvenly)
-    } else if (node.kind === 'column') {
-      Column({ space: 6 }) {
-        ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0)
-    } else {
-      this.leaf(node)
-    }
-  }
-
-  @Builder
-  level3(node: CardNode, inRow: boolean) {
-    if (node.kind === 'row') {
-      Row({ space: 8 }) {
-        ForEach(node.children, (child: CardNode) => { this.level4(child, true) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0).justifyContent(FlexAlign.SpaceEvenly)
-    } else if (node.kind === 'column') {
-      Column({ space: 6 }) {
-        ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
-      }.width('100%').layoutWeight(inRow ? 1 : 0)
-    } else {
-      this.leaf(node)
-    }
-  }
-
-  @Builder
-  level4(node: CardNode, inRow: boolean) {
-    this.leaf(node)
   }
 }

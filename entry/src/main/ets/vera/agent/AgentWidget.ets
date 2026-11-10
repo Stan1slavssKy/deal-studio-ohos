@@ -33,6 +33,17 @@ export class WidgetWrite {
   ms: number = 0
 }
 
+/**
+ * What the model wrote, in the log in pieces a log line can hold: without it a widget that came out wrong cannot be looked at. The
+ * answer itself is at debug level (hilog shows it only when that level is switched on); its length is always logged.
+ */
+function logWidgetAnswer(attempt: number, written: string): void {
+  console.info('VERA-WIDGET attempt ' + attempt.toString() + ' answer chars=' + written.length.toString())
+  for (let at = 0; at < written.length && at < 6000; at += 800) {
+    console.debug('VERA-WIDGET answer[' + attempt.toString() + ']@' + at.toString() + ' ' + written.substring(at, at + 800).replace(/\n/g, ' | '))
+  }
+}
+
 /** '' when the program with the widget compiles, runs, and its widget draws within a glance over `saved`; else why not. */
 export function checkWidgetProgram(base: string, source: string, saved: string): string {
   try {
@@ -63,15 +74,17 @@ export async function writeWidget(source: string, ask: string, prompt: string, s
     if (host.cancelled()) { out.failed = 'cancelled'; break }
     let think = attempt === WIDGET_ATTEMPTS - 1
     out.attempts = attempt + 1
-    host.status(attempt === 0 ? 'Writing the widget...' : 'Fixing the widget...')
+    host.status(attempt === 0 ? 'Making the widget...' : 'Adjusting the widget...')
     let reply = await host.askCode!(system, asked + feedback, WIDGET_TOKENS, think)
     if (reply === null || reply.trim().length === 0) { out.failed = 'no answer for the widget'; continue }
     // An import line closed with a semicolon, as in TypeScript, is the one slip that stops a widget's answer from parsing.
     out.written = sourceIn(reply).replace(/^(\s*import\s[^\n;]*);[ \t]*$/gm, '$1')
+    logWidgetAnswer(attempt + 1, out.written)
     let program = spliceWidget(source, out.written)
     let unparsed = program === out.written ? parseErrorOf(out.written) : ''
     let problem = program !== out.written ? checkWidgetProgram(source, program, saved) :
       (unparsed.length > 0 ? 'The answer does not parse: ' + unparsed : 'The answer has no function widget.')
+    console.info('VERA-WIDGET attempt ' + (attempt + 1).toString() + (problem.length > 0 ? ' failed: ' + problem.split('\n')[0].substring(0, 300) : ' served'))
     if (problem.length > 0) {
       out.failed = problem.split('\n')[0]
       feedback = '\n\nYour previous answer:\n' + out.written + '\n\nIt does not work: ' + widgetRepairNote(problem) +

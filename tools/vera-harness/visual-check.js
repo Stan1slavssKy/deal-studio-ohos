@@ -346,7 +346,7 @@ if (!baseline) {
    })
     function surfaceProbe(route='displaySync') {
      const renderer=fs.readFileSync(path.join(sourceRoot,'components/VeraPreview.ets'),'utf8')
-     const names=['disposed','effectGeneration','liveGeneration','heldEffects','vm','host','currentState','pageHidden','fieldEdits','surfaces','liveSurfaces','surfaceSync','surfaceTimer','lastFrameAt','lastViewAt','lastSurfaceSave','framing','frameCount','frameWork','frameWorst','frameSplit','frameReportAt']
+     const names=['disposed','effectGeneration','liveGeneration','heldEffects','vm','host','currentState','pageHidden','fieldEdits','surfaces','textTimers','liveSurfaces','surfaceSync','surfaceTimer','lastFrameAt','lastViewAt','lastSurfaceSave','framing','frameCount','frameWork','frameWorst','frameSplit','frameReportAt']
      const fields=names.map(name=>{
       const field=renderer.match(new RegExp('^  private '+name+':[^\\n]+','m'));assert(field,name)
       return field[0].replace('  private ','')
@@ -354,7 +354,7 @@ if (!baseline) {
      const constants=['SURFACE_VIEW_MS','SURFACE_SAVE_MS','SURFACE_MAX_ELAPSED_MS'].map(name=>{
       const value=renderer.match(new RegExp('^const '+name+':[^\\n]+','m'));assert(value,name);return value[0]
      }).join('\n')
-     const methods=['invalidateEffects','load','runWidgetRefresh','renderView','markLiveNodeGeneration','onDestinationHidden','reconcileSurfaces','collectSurfaces','startSurfaceLoop','stopSurfaceLoop','surfaceFrame'].map(name=>declaration(renderer,'  private '+name+'(').replace('  private ',''))
+     const methods=['invalidateEffects','load','runWidgetRefresh','renderView','markLiveNodeGeneration','onDestinationHidden','reconcileSurfaces','collectKind','startSurfaceLoop','stopSurfaceLoop','surfaceFrame'].map(name=>declaration(renderer,'  private '+name+'(').replace('  private ',''))
      const body=methods.concat(['aboutToAppear','aboutToDisappear','onProgramChanged','onPreviewOnlyChanged'].map(name=>declaration(renderer,'  '+name+'('))).join('\n')
      const compiled=ts.transpileModule(constants+'\nclass Probe { static RENDERED=[]; '+fields+'\n'+body+' }',{compilerOptions:{target:ts.ScriptTarget.ES2020},reportDiagnostics:true})
      assert.equal((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).length,0,'surface probe syntax')
@@ -496,7 +496,7 @@ function view(state: AppState): ui.View { return ui.Column("default", [ui.Surfac
      const method=declaration(source,'  private destinationShown(').replace('  private ','')
      const compiled=ts.transpileModule('class Probe { '+method+' }',{compilerOptions:{target:ts.ScriptTarget.ES2020},reportDiagnostics:true})
      assert.equal((compiled.diagnostics||[]).filter(d=>d.category===ts.DiagnosticCategory.Error).length,0,page+' destinationShown syntax')
-     const events=[], settings={getModel(){events.push('model');return 'fixture'},hasApiKey(){events.push('configured');return true}}
+     const events=[], settings={getMode(){return 'cloud'},getModel(){events.push('model');return 'fixture'},hasApiKey(){events.push('configured');return true}}
      const Probe=new Function('settings','MODE_DEEPSEEK',compiled.outputText+';return Probe')(settings,'cloud'), probe=new Probe()
      Object.assign(probe,{disposed:true,destinationHidden:true,mode:'cloud',generating:false,status:'',selectedModel:'',checkDeepSeek(){events.push('check')}})
      probe.destinationShown();assert.equal(probe.destinationHidden,true);assert.deepEqual(events,[])

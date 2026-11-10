@@ -1,5 +1,81 @@
 # Changelog
 
+## Remove widget
+
+- The project page's widget block has Remove behind a swipe to the left, as a version's Delete (the block is the first row of the versions list, its buttons in one row like a version's Run / Refine / Code): the latest version is saved again without its widget, its refresh and what only they use (`WidgetRemove.ets`, on `withoutWidget`), with the app's state carried over and the widget's requests left out of its history. Earlier versions keep theirs.
+- Preview, the block's first button (blue, as a version's Run), and a tap on the thumbnail open the card at its own size with the 2×2 / 2×4 / 4×4 chips, over the app's saved data; taps there are not saved.
+- Cards already on the home screen stay (only the launcher removes them) and show "Open app"; the confirmation says so.
+
+## Make widget: Redo
+
+- A widget that is there could only be changed: the model was shown the program with it, so every request was an edit of it. The project page's widget block now has Redo beside Refine (it said Change; Refine is what a version's own button says). It opens the widget screen as New widget: the next widget is written from nothing, on the program without the old one (`withoutWidget`: widget, widgetRefresh and the helpers, classes and imports only they used) and without what it was asked to show in the history the model is told the app was made for (`withoutWidgetRequests`; with it, the model made the old widget again), with the first widget's requests. Measured on the phone: Redo on Roulette, whose widget is a spinning wheel, with Winning number gave a figure card on the first answer. The screen starts from an empty card; the old widget stays on the home screen until a new one is made and kept.
+- Host check in `widget-status-check.js`.
+
+## Settings from every screen
+
+- The gear is on every screen that has a title bar (the home screen, My apps, a project, Generate and the widget screen, Chats, a chat, the app list for a card) and opens one Settings page (`SettingsPage.ets`, `components/SettingsEntry.ets`). It used to be on Generate only, as a panel over the page, with the USB network under Advanced.
+- The page: how apps are generated (the cloud provider with its model and key, Server, On the phone), what is missing for the one chosen and the command that supplies it, the dashscope model picker, Jev proxy and USB network as switches.
+- The generation mode is kept (`settings.json`, `mode`); it used to start as the cloud provider on every Generate page. Generate reads it again when it is shown.
+
+## The widget from the app: a widget block on the project page, ready-made requests, the offer after Save
+
+- The project page has a Home-screen widget block: a thumbnail of the card, what it is now (`WidgetStatus.ets`: not made, not on the home screen, on it, the card shows "Open app" because the latest version has no widget, cannot be made) and the one next thing to do (Make widget, Add, Refine).
+- A new app, just saved, offers Make widget; Widget from the app on screen saves it first and opens the widget screen, one tap where Save and Make widget were two.
+- The widget screen offers ready-made requests made from the app itself (`agent/WidgetSuggest.ets`: its state's figures and lists, the actions its buttons take, Let VERA choose), says whether the last request made, changed or left the card as it was (`sameCard`), and has one button: Add to home screen, Update widget or Show on this card.
+- A card placed from the launcher with no app yet opens a list of apps; one with no widget opens Make widget for that card.
+- Host check `widget-status-check.js`.
+
+## ui.Layers: scenes of parts that move on their own
+
+- New `ui.Layers(style, width, height, children)`: children one over another, each in the middle. Surface style `clear` has no background so layers show through. A touch on any part plays every Motion in the Layers; a touch on a Motion with no handler plays it (`#touch`). Up to 5 pictures and 5 Motions on a card. Make widget's prompt says how to build a scene from layers.
+- The Widget tab redraws at once when the card size chip changes (the picture size was stale).
+
+## ui.Motion: 25 presets by meaning, played in stages on the card
+
+- New presets: pulse, jelly, press, flash, breathe, nod, wobble, swing, recoil, hop, jump, fall, spin, turn, rise, zoom, slide, float, drift (with pop, shake, bounce, tumble, flip, fade: 25). Each is a table of stages (`VeraMotion.motionStages`); the app and the card play the same table, the card as a chain of platform animations. All 25 play on a card; up to five Motions at once.
+- Make widget's prompt names every preset by what the movement means and asks that a touchable picture move.
+- Host check: `motion-check.js` verifies every table.
+
+## Widget card: sizes 2x2, 2x4, 4x4 and switches
+
+- The live card is offered at 2x2, 2x4 and 4x4; `onAddForm` records the size (`form-sizes.json`), the frame is fitted to it and the limits grow with it (`cardSize`). A widget may declare `widget(state, size: number)` to draw differently; Make widget checks it at every size. The Widget tab has size chips.
+- The frame goes into the binding compact (only non-default fields), so the 8000-character budget goes about twice as far.
+- `ui.Toggle` and `ui.Checkbox` are card kinds: a tap that says on or off, handler `(state, value: boolean)`.
+
+## ui.Timer: a time that moves, in the app and on the card
+
+- New component `ui.Timer(style, millis, down)`: counts up from a moment or down to one with the platform's own `TextTimer`, which keeps going on a home-screen card where our code does not (no refresh, no ticker). The theme's text styles apply; the Make widget prompt says to use it for "since" and "left until".
+
+## Widget card: icons, badges, progress, stats and a sparkline
+
+- `ui.Icon`, `ui.IconButton`, `ui.Badge`, `ui.Progress`, `ui.ProgressRing`, `ui.Stat`, `ui.NumberStat`, `ui.MetricGroup` and `ui.Sparkline` are card kinds: icons in the theme's colours, the platform's own bar and ring, labelled figures, and a small trend. An icon button counts as one of the two buttons. The Make widget prompt describes them.
+
+## Widget card: the theme's styles, one layout, up to three pictures and Motions
+
+- The card draws the catalogue's styles as the app does: text roles (display, title, heading, caption, eyebrow, metric, muted, success, warning, danger) with the theme's weight, font and ink, column and row alignment and density, panels (`surface`, `accent`), all four button styles, the divider in the theme's colour (`CardStyle.ets`). Sizes a widget already had are unchanged. Make widget refuses a widget clearly taller than the card.
+- `CardView.ets` is the one layout the launcher's card and the Widget tab share (it was two copies kept in step by hand); `GfxPaint.ets` holds the painter without the interpreter. A widget may have three pictures and three Motions, each touch playing the Motion its node sits under.
+- Spike results on what else a card can draw (live `TextTimer`, `Progress`, `Gauge`, `SymbolGlyph`, gradients, shadows; not `DataPanel`; `Image('memory://')` blanked the card) and the card sizes are in `docs/live-widget-proof.md`.
+
+## Make widget: a drawing of several colours that reacts to a touch, found by a real generation
+
+- A generated panda used to come out as a one-colour blob that never moved. The prompt now says a drawing of more than one colour is a `ui.Surface`, never a `ui.Path` (the catalogue's Path text said "use it whenever the user asks to draw something"); a card's `ui.Motion` plays on every touch on its picture by itself, with no counter in the state (`touches`, and `seq` in the tap's frame, so a touch that changes nothing still plays); the picture is sized to the room the rest of the card leaves, and a widget that leaves it under 40 vp is refused with a reason.
+- Make widget now logs each attempt and what the model wrote (`VERA-WIDGET attempt N answer ...`, `served`/`failed: ...`).
+- The Widget tab draws the card at 150 vp, as measured (it was 172, which hid clipping).
+
+## A picture of several colours on the home-screen card: ui.Surface
+
+- A card can show a still picture made of `std/gfx` shapes (a panda, an animal, a gauge), which one `ui.Path` (one colour) could not. `ui.Surface` is a card kind in a static form: its draw function runs once for the state in the form extension, the shapes ride in the frame (`encodeGfxOps`), and `LiveCard` / `WidgetPreview` draw them with the app's own `paintGfx` on a `Canvas`, in the widget's theme. At most one picture of 60 shapes, no frame handler.
+- A tap on the picture goes to the program's pointer handler as a finger down and up at that point (`WidgetSession.tapSurface`, `liveFormTap`); with `ui.Motion` around it the picture jumps when touched.
+- Make widget's prompt describes it; a picture that takes a tap counts as one of the two buttons and is checked like one.
+- Host checks in `live-widget-check.js` and `widget-refine-check.js`; example `tools/vera-harness/examples/widget-panda.vera`.
+
+## A drum that moves when it is hit: ui.Motion on the home-screen card
+
+- `ui.Motion` is a card kind with the presets a card can play (pop, shake, bounce, fade), one per widget. The card frame carries `style` and `trigger`; `LiveCard` and `WidgetPreview` start the Motion in its hit pose when the trigger changes and settle it in `onAppear` (a card cannot loop: `iterations` is not allowed there and a card is frozen about two seconds after a redraw; measured on a phone, see `docs/live-widget-proof.md`).
+- The Make widget prompt describes it (a count in the state as the trigger) and says what a card cannot do; `ui.Motion` styles a card cannot play, and a second Motion, are refused with a reason for the repair loop.
+- A shape on the card (and in the Widget tab) is no longer outlined in black: `Path` is given a transparent stroke in `LiveCard` and `WidgetPreview`.
+- Host checks added to `live-widget-check.js` and `widget-refine-check.js`; example `tools/vera-harness/examples/widget-drum-motion.vera`.
+
 ## TextField input buffering and commit lifecycle
 
 This change moves `ui.TextField` from per-keystroke VM execution to field-local buffering with deferred commits. Its purpose is to keep ordinary text editing responsive while avoiding repeated VM execution, state persistence, and view reconciliation for every character.

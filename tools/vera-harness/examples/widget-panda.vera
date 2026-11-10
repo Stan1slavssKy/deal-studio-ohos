@@ -1,0 +1,39 @@
+import * as ui from "std/ui"
+import * as gfx from "std/gfx"
+@jsonable class AppState { hops: number; }
+function init(): AppState { return { hops: 0 }; }
+function view(state: AppState): ui.View {
+  return ui.AppTheme("playful", "", [
+    ui.Column("default", [
+      ui.Text("heading", "Panda"),
+      ui.NumberText("metric", state.hops, "", " hops", 1)
+    ])
+  ]);
+}
+function panda(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.circle(26, 24, 14, "#1F1F1F"));
+  shapes.push(gfx.circle(74, 24, 14, "#1F1F1F"));
+  shapes.push(gfx.circle(50, 54, 36, "#FFFFFF"));
+  shapes.push(gfx.circle(35, 48, 9, "#1F1F1F"));
+  shapes.push(gfx.circle(65, 48, 9, "#1F1F1F"));
+  shapes.push(gfx.circle(36, 47, 3, "#FFFFFF"));
+  shapes.push(gfx.circle(64, 47, 3, "#FFFFFF"));
+  shapes.push(gfx.circle(50, 62, 5, "#1F1F1F"));
+  shapes.push(gfx.arc(50, 64, 9, 110, 140, 2, "#1F1F1F"));
+  return shapes;
+}
+function pandaTouch(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase === "down") { return { hops: state.hops + 1 }; }
+  return state;
+}
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("playful", "", [
+    ui.Column("default", [
+      ui.Motion("bounce", state.hops, [
+        ui.Surface("default", 100, 100, "panda", "", "pandaTouch")
+      ]),
+      ui.NumberText("metric", state.hops, "", " hops", 1)
+    ])
+  ]);
+}
