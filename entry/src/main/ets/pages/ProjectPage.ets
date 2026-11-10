@@ -284,13 +284,11 @@ export struct ProjectPage {
               .padding({ left: 16, right: 16, bottom: 12 })
           }
 
-          if (this.versions.length > 0) {
-            Column() { this.widgetSection() }
-              .width('100%')
-              .padding({ left: 16, right: 16 })
-          }
-
           List({ space: 12 }) {
+            if (this.versions.length > 0) {
+              ListItem() { this.widgetSection() }
+                .swipeAction(this.canRemoveWidget() ? { end: { builder: () => { this.removeWidgetAction() } } } : {})
+            }
             ForEach(this.versions, (v: Version, index: number) => {
               ListItem() {
                 Column() {
@@ -381,88 +379,80 @@ export struct ProjectPage {
   /** The home-screen widget: what it is, and the one next thing to do with it. */
   @LocalBuilder
   widgetSection() {
-    Row({ space: 14 }) {
-      if (this.widgetVbc2.length > 0) {
-        WidgetPreview({ vbc2: this.widgetVbc2, seedState: this.widgetSeed, title: this.project!.name, thumbnail: true })
-          .borderRadius(9)
-          .onClick(() => { this.makeWidget() })
-      } else {
-        Column() {
-          SymbolGlyph($r(this.widget.kind === WIDGET_BROKEN ? 'sys.symbol.exclamationmark_triangle' : 'sys.symbol.plus'))
-            .fontSize(24)
-            .fontColor([this.widget.kind === WIDGET_BROKEN ? app.warningInk : app.inkMuted])
-        }
-        .width(72)
-        .height(72)
-        .justifyContent(FlexAlign.Center)
-        .borderRadius(12)
-        .border({ width: 1.5, color: app.lineStrong, style: BorderStyle.Dashed })
-      }
-      Column({ space: 4 }) {
-        Text('Home-screen widget').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong)
-        Text(this.widgetLine())
-          .fontSize(13)
-          .fontColor(this.widget.kind === WIDGET_BROKEN ? app.warningInk :
-            (this.widget.kind === WIDGET_PLACED ? app.successInk : app.inkMuted))
-          .maxLines(3)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        if (this.widget.kind === WIDGET_NONE) {
-          Button('Make widget')
-            .attributeModifier(new TonalButton())
-            .height(32).fontSize(13).margin({ top: 4 })
+    Column() {
+      Row({ space: 14 }) {
+        if (this.widgetVbc2.length > 0) {
+          WidgetPreview({ vbc2: this.widgetVbc2, seedState: this.widgetSeed, title: this.project!.name, thumbnail: true })
+            .borderRadius(9)
             .onClick(() => { this.makeWidget() })
-        } else if (this.widget.kind === WIDGET_READY) {
-          Button('Add to home screen')
-            .attributeModifier(new PrimaryButton())
-            .height(32).fontSize(13).margin({ top: 4 })
-            .enabled(!this.projectOperationPending)
-            .onClick(() => { this.addWidget() })
-          Row({ space: 18 }) {
-            Text('Refine')
-              .fontSize(13).fontColor(app.primaryInk)
-              .onClick(() => { this.makeWidget() })
-            Text('Redo')
-              .fontSize(13).fontColor(app.primaryInk)
-              .onClick(() => { this.makeWidget(true) })
-            this.removeWidgetLink()
+        } else {
+          Column() {
+            SymbolGlyph($r(this.widget.kind === WIDGET_BROKEN ? 'sys.symbol.exclamationmark_triangle' : 'sys.symbol.plus'))
+              .fontSize(24)
+              .fontColor([this.widget.kind === WIDGET_BROKEN ? app.warningInk : app.inkMuted])
           }
-          .margin({ top: 6 })
-        } else if (this.widget.kind === WIDGET_PLACED) {
-          // Refine edits the widget there; Redo writes another from nothing (the cards keep the old one until it is kept).
-          Row({ space: 8 }) {
-            Button('Refine')
-              .attributeModifier(new QuietButton())
-              .height(32).fontSize(13)
-              .onClick(() => { this.makeWidget() })
-            Button('Redo')
-              .attributeModifier(new QuietButton())
-              .height(32).fontSize(13)
-              .onClick(() => { this.makeWidget(true) })
-          }
-          .margin({ top: 4 })
-          Row({ space: 18 }) {
-            Text('Add another')
-              .fontSize(13).fontColor(app.primaryInk)
-              .enabled(!this.projectOperationPending)
-              .onClick(() => { this.addWidget() })
-            this.removeWidgetLink()
-          }
-          .margin({ top: 6 })
-        } else if (this.widget.kind === WIDGET_BROKEN && this.versions[0].vbc2.length > 0) {
-          Button('Make widget again')
-            .attributeModifier(new PrimaryButton())
-            .height(32).fontSize(13).margin({ top: 4 })
-            .onClick(() => { this.makeWidget() })
+          .width(72)
+          .height(72)
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(12)
+          .border({ width: 1.5, color: app.lineStrong, style: BorderStyle.Dashed })
         }
+        Column({ space: 4 }) {
+          Text('Home-screen widget').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong)
+          Text(this.widgetLine())
+            .fontSize(13)
+            .fontColor(this.widget.kind === WIDGET_BROKEN ? app.warningInk :
+              (this.widget.kind === WIDGET_PLACED ? app.successInk : app.inkMuted))
+            .maxLines(3)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
       }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
+      .width('100%')
+
+      // The buttons in one row under it, as a version's Run / Refine / Code; Remove is behind a swipe, as a version's Delete.
+      if (this.widget.kind === WIDGET_NONE) {
+        Row() { this.widgetButton('Make widget', true, () => { this.makeWidget() }) }
+          .width('100%').margin({ top: 8 })
+      } else if (this.widget.kind === WIDGET_READY) {
+        Row({ space: 6 }) {
+          this.widgetButton('Add to home screen', true, () => { this.addWidget() }, 1.8)
+          this.widgetButton('Refine', false, () => { this.makeWidget() })
+          this.widgetButton('Redo', false, () => { this.makeWidget(true) })
+        }
+        .width('100%').margin({ top: 8 })
+      } else if (this.widget.kind === WIDGET_PLACED) {
+        // Refine edits the widget there; Redo writes another from nothing (the cards keep the old one until it is kept).
+        Row({ space: 6 }) {
+          this.widgetButton('Refine', false, () => { this.makeWidget() })
+          this.widgetButton('Redo', false, () => { this.makeWidget(true) })
+          this.widgetButton('Add another', false, () => { this.addWidget() }, 1.4)
+        }
+        .width('100%').margin({ top: 8 })
+      } else if (this.widget.kind === WIDGET_BROKEN && this.versions[0].vbc2.length > 0) {
+        Row() { this.widgetButton('Make widget again', true, () => { this.makeWidget() }) }
+          .width('100%').margin({ top: 8 })
+      }
     }
     .width('100%')
     .padding(14)
     .backgroundColor(app.surface)
     .borderRadius(12)
     .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
+  }
+
+  /** A button of the widget block, sized like a version's Run / Refine / Code. */
+  @Builder
+  widgetButton(label: string, tonal: boolean, action: () => void, weight: number = 1) {
+    Button(label)
+      .attributeModifier(tonal ? new TonalButton() : new QuietButton())
+      .height(32)
+      .fontSize(12)
+      .padding({ left: 4, right: 4 })
+      .layoutWeight(weight)
+      .enabled(!this.projectOperationPending)
+      .onClick(action)
   }
 
   private widgetLine(): string {
@@ -489,13 +479,21 @@ export struct ProjectPage {
     setTimeout(tick, 1000)
   }
 
-  @Builder
-  removeWidgetLink() {
-    Text('Remove')
-      .fontSize(13).fontColor(app.danger)
-      .enabled(!this.projectOperationPending)
-      .accessibilityText('Remove widget')
-      .onClick(() => { this.confirmRemoveWidget() })
+  private canRemoveWidget(): boolean {
+    return this.widget.kind === WIDGET_READY || this.widget.kind === WIDGET_PLACED
+  }
+
+  /** Behind a swipe to the left, as a version's Delete. */
+  @LocalBuilder
+  removeWidgetAction() {
+    Row() {
+      Button('Remove')
+        .attributeModifier(new DangerButton())
+        .height('100%')
+        .enabled(!this.projectOperationPending)
+        .accessibilityText('Remove widget')
+        .onClick(() => { this.confirmRemoveWidget() })
+    }.height('100%').padding({ left: 8 })
   }
 
   /** Cards on the home screen stay (only the launcher removes them), so the person is told before. */
