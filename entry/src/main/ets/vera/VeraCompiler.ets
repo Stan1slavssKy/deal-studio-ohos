@@ -3106,6 +3106,56 @@ export function carryWidget(next: string, previous: string): string {
     carried.map(text).join('\n\n') + '\n'
 }
 
+/**
+ * The program without its home-screen widget, for a widget made again from nothing: widget, widgetRefresh, and what only
+ * they use (a helper, a class, an import the app itself never names). What the app uses as well stays. Left in, the old
+ * widget is what the model edits, and a helper of the old one would win over the new one's of the same name (spliceWidget
+ * keeps the base's). A program without a widget, or one that does not parse, is returned as it is.
+ */
+export function withoutWidget(source: string): string {
+  let app: Application
+  try {
+    app = new Parser(source, '<program>').parse()
+  } catch (_e) {
+    return source
+  }
+  let nameOf = (entry: Declaration): string => entry instanceof FunctionDeclaration ? entry.name :
+    (entry instanceof ClassDeclaration ? entry.name : '')
+  let owned = (entry: Declaration): boolean => entry instanceof FunctionDeclaration && WIDGET_OWNED.indexOf(entry.name) >= 0
+  if (!app.declarations.some(owned)) { return source }
+  let text = (node: Node): string => source.substring(node.span.start.offset, node.span.end.offset)
+  let words = (node: Node): string[] => new Lexer(text(node), '<declaration>').scan().map((token: Token): string => token.text)
+  // What the widget's declarations name, and what those name in turn.
+  let gone: Declaration[] = app.declarations.filter(owned)
+  for (let i = 0; i < gone.length; i++) {
+    for (let word of words(gone[i])) {
+      let named = app.declarations.find((entry: Declaration): boolean => nameOf(entry) === word)
+      if (named !== undefined && gone.indexOf(named) < 0) { gone.push(named) }
+    }
+  }
+  // Back in: whatever a declaration that stays names, until nothing more comes back.
+  let changed = true
+  while (changed) {
+    changed = false
+    let staying = app.declarations.filter((entry: Declaration): boolean => gone.indexOf(entry) < 0)
+    let used: string[] = []
+    for (let entry of staying) { used = used.concat(words(entry)) }
+    let back = gone.filter((entry: Declaration): boolean => !owned(entry) && used.indexOf(nameOf(entry)) >= 0)
+    if (back.length > 0) {
+      gone = gone.filter((entry: Declaration): boolean => back.indexOf(entry) < 0)
+      changed = true
+    }
+  }
+  let staying = app.declarations.filter((entry: Declaration): boolean => gone.indexOf(entry) < 0)
+  let used: string[] = []
+  for (let entry of staying) { used = used.concat(words(entry)) }
+  let cut: Node[] = (gone as Node[]).concat(app.imports.filter((entry: ImportDeclaration): boolean => used.indexOf(entry.name) < 0))
+  cut.sort((a: Node, b: Node): number => b.span.start.offset - a.span.start.offset)
+  let kept = source
+  for (let node of cut) { kept = kept.substring(0, node.span.start.offset) + kept.substring(node.span.end.offset) }
+  return kept.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n'
+}
+
 /** A field or handler the app shows, under the words the app itself gives it ("Score", "Start"); '' when it gives none. */
 export class WidgetFact {
   name: string

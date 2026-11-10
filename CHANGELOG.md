@@ -1,5 +1,10 @@
 # Changelog
 
+## Make widget: Redo
+
+- A widget that is there could only be changed: the model was shown the program with it, so every request was an edit of it. The project page's widget block now has Redo beside Refine (it said Change; Refine is what a version's own button says). It opens the widget screen as New widget: the next widget is written from nothing, on the program without the old one (`withoutWidget`: widget, widgetRefresh and the helpers, classes and imports only they used) and without what it was asked to show in the history the model is told the app was made for (`withoutWidgetRequests`; with it, the model made the old widget again), with the first widget's requests. Measured on the phone: Redo on Roulette, whose widget is a spinning wheel, with Winning number gave a figure card on the first answer. The screen starts from an empty card; the old widget stays on the home screen until a new one is made and kept.
+- Host check in `widget-status-check.js`.
+
 ## Settings from every screen
 
 - The gear is on every screen that has a title bar (the home screen, My apps, a project, Generate and the widget screen, Chats, a chat, the app list for a card) and opens one Settings page (`SettingsPage.ets`, `components/SettingsEntry.ets`). It used to be on Generate only, as a panel over the page, with the USB network under Advanced.
@@ -8,7 +13,7 @@
 
 ## The widget from the app: a widget block on the project page, ready-made requests, the offer after Save
 
-- The project page has a Home-screen widget block: a thumbnail of the card, what it is now (`WidgetStatus.ets`: not made, not on the home screen, on it, the card shows "Open app" because the latest version has no widget, cannot be made) and the one next thing to do (Make widget, Add, Change).
+- The project page has a Home-screen widget block: a thumbnail of the card, what it is now (`WidgetStatus.ets`: not made, not on the home screen, on it, the card shows "Open app" because the latest version has no widget, cannot be made) and the one next thing to do (Make widget, Add, Refine).
 - A new app, just saved, offers Make widget; Widget from the app on screen saves it first and opens the widget screen, one tap where Save and Make widget were two.
 - The widget screen offers ready-made requests made from the app itself (`agent/WidgetSuggest.ets`: its state's figures and lists, the actions its buttons take, Let VERA choose), says whether the last request made, changed or left the card as it was (`sameCard`), and has one button: Add to home screen, Update widget or Show on this card.
 - A card placed from the launcher with no app yet opens a list of apps; one with no widget opens Make widget for that card.

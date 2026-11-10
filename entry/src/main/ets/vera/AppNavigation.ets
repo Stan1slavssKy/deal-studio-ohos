@@ -11,6 +11,8 @@ export class AppRouteParams {
   fromList: string = ''
   /** generate: '1' opens Make widget on the version baseVersionId names. */
   makeWidget: string = ''
+  /** generate with makeWidget: '1' writes a new widget from nothing in place of the one the app has (Redo). */
+  widgetFresh: string = ''
   /** widgetBind: the home-screen card to choose an app for. */
   formId: string = ''
 }

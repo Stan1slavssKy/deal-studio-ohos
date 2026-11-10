@@ -28,6 +28,15 @@ export function changeNote(prompt: string, note: string): string {
  */
 export const WIDGET_ASK_TEXT: string = 'The home-screen widget should show: '
 
+/**
+ * The history without its widget requests, for a widget made again from nothing (Redo): told what the old widget was
+ * asked to show, the model makes it again.
+ */
+export function withoutWidgetRequests(prompt: string): string {
+  return prompt.split(REFINEMENT_MARK).filter((part: string, index: number): boolean =>
+    index === 0 || !part.trim().startsWith(WIDGET_ASK_TEXT)).join(REFINEMENT_MARK)
+}
+
 /** "3 versions", "1 version", "No versions yet". */
 export function versionCountText(count: number): string {
   if (count <= 0) { return 'No versions yet' }

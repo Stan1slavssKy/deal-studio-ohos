@@ -100,3 +100,51 @@ console.log('widget-status-check: ok')
   assert.equal(firstSuggestions(push)[0].label, 'Total pushups')
   console.log('widget-status-check: chips from the app ok')
 }
+
+// Start over: the program without its widget, its refresh and what only they use; what the app uses as well stays.
+{
+  const {withoutWidget, spliceWidget} = loadVera('VeraCompiler')
+  const app = [
+    'import * as ui from "std/ui"',
+    '@jsonable class AppState { count: number; }',
+    'function init(): AppState { return { count: 0 }; }',
+    'function left(state: AppState): number { return 10 - state.count; }',
+    'function bump(state: AppState, value: number): AppState { return { count: state.count + value }; }',
+    'function view(state: AppState): ui.View { return ui.Column("default", [ui.NumberText("metric", left(state), "", "", 1), ui.Button("primary", "+1", "bump", 1, true)]); }',
+  ].join('\n') + '\n'
+  const card = '\nfunction cardLine(state: AppState): string { return ui.numberToString(left(state)) + " left"; }\n' +
+    'function widget(state: AppState): ui.View { return ui.Text("body", cardLine(state)); }\n' +
+    'function widgetRefresh(state: AppState): AppState { return state; }\n'
+  const withCard = app + card
+  compileVeraSource(withCard)
+  const bare = withoutWidget(withCard)
+  compileVeraSource(bare)
+  assert.equal(hasWidgetFunction(bare), false)
+  assert.ok(!/widgetRefresh|cardLine/.test(bare), 'the widget and what only it used are gone')
+  assert.ok(/function left\(/.test(bare) && /function view\(/.test(bare), 'what the app uses stays')
+  assert.equal(withoutWidget(app), app, 'a program without a widget is left as it is')
+  assert.equal(withoutWidget('not a program'), 'not a program')
+  // A new widget with a helper of the old one's name: on the bare program its own helper is taken, not the old one.
+  const fresh = 'function cardLine(state: AppState): string { return "now " + ui.numberToString(state.count); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Text("body", cardLine(state)); }'
+  const made = spliceWidget(bare, fresh)
+  compileVeraSource(made)
+  assert.ok(made.includes('"now "') && !made.includes('" left"'))
+  // On the program with the old widget, the old helper would have won: why Start over cuts it.
+  assert.ok(spliceWidget(withCard, fresh).includes('" left"'))
+  // Start over offers the first widget's requests again.
+  const {firstSuggestions} = loadVera('agent/WidgetSuggest')
+  assert.ok(firstSuggestions(bare).some(s => s.label === 'Let VERA choose'))
+  console.log('widget-status-check: start over ok')
+}
+
+// Redo: the history the model is told the app was made for leaves out what the old widget was asked to show.
+{
+  const {withoutWidgetRequests, WIDGET_ASK_TEXT} = loadVera('ProjectText')
+  const mark = '\n\nRefinement:\n'
+  const history = 'Tambourine' + mark + WIDGET_ASK_TEXT + 'a stick that hits it' + mark + 'Make it louder' + mark +
+    WIDGET_ASK_TEXT + 'bigger stick'
+  assert.equal(withoutWidgetRequests(history), 'Tambourine' + mark + 'Make it louder')
+  assert.equal(withoutWidgetRequests('Tambourine'), 'Tambourine')
+  console.log('widget-status-check: redo history ok')
+}
