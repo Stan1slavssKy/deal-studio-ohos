@@ -1,0 +1,142 @@
+import * as ui from "std/ui"
+
+@jsonable
+class LogEntry {
+  reps: number;
+  minute: number;
+}
+
+@jsonable
+class AppState {
+  elapsedMs: number;
+  running: boolean;
+  finished: boolean;
+  countdownLength: number;
+  entries: LogEntry[];
+  draft_reps: string;
+  removedEntries: LogEntry[];
+  removedAt: number;
+}
+
+function init(): AppState {
+  let emptyEntries: LogEntry[] = [];
+  return {elapsedMs: 0, running: false, finished: false, countdownLength: 5, entries: emptyEntries, draft_reps: "", removedEntries: emptyEntries, removedAt: -1};
+}
+
+function countdownSeconds(state: AppState): number {
+  let countdownLength: number = state.countdownLength;
+  return countdownLength * 60;
+}
+
+function onTick(state: AppState, elapsedMs: number): AppState {
+  if (!state.running) { return state; }
+  let total: number = countdownSeconds(state) * 1000;
+  let next: number = state.elapsedMs + elapsedMs;
+  if (next < total) { return {elapsedMs: next, running: state.running, finished: state.finished, countdownLength: state.countdownLength, entries: state.entries, draft_reps: state.draft_reps, removedEntries: state.removedEntries, removedAt: state.removedAt}; }
+  return {elapsedMs: total, running: false, finished: true, countdownLength: state.countdownLength, entries: state.entries, draft_reps: state.draft_reps, removedEntries: state.removedEntries, removedAt: state.removedAt};
+}
+
+function onStart(state: AppState, ignored: number): AppState {
+  let startAt: number = state.elapsedMs;
+  if (state.finished) { startAt = 0; }
+  return {running: true, finished: false, elapsedMs: startAt, countdownLength: state.countdownLength, entries: state.entries, draft_reps: state.draft_reps, removedEntries: state.removedEntries, removedAt: state.removedAt};
+}
+
+function onStop(state: AppState, ignored: number): AppState {
+  return {running: false, elapsedMs: state.elapsedMs, finished: state.finished, countdownLength: state.countdownLength, entries: state.entries, draft_reps: state.draft_reps, removedEntries: state.removedEntries, removedAt: state.removedAt};
+}
+
+function onReset(state: AppState, ignored: number): AppState {
+  return {running: false, finished: false, elapsedMs: 0, countdownLength: state.countdownLength, entries: state.entries, draft_reps: state.draft_reps, removedEntries: state.removedEntries, removedAt: state.removedAt};
+}
+
+function share(a: number, b: number): number {
+  if (b === 0) { return 0; }
+  return a / b;
+}
+
+
+
+function set_countdownLength(state: AppState, value: number): AppState {
+  return {countdownLength: value, elapsedMs: 0, running: false, finished: false, entries: state.entries, draft_reps: state.draft_reps, removedEntries: state.removedEntries, removedAt: state.removedAt};
+}
+
+
+
+function set_draft_reps(state: AppState, value: string): AppState {
+  return {draft_reps: value, elapsedMs: state.elapsedMs, running: state.running, finished: state.finished, countdownLength: state.countdownLength, entries: state.entries, removedEntries: state.removedEntries, removedAt: state.removedAt};
+}
+
+function addEntry(state: AppState, ignored: number): AppState {
+  if (strings.trim(state.draft_reps) === "") { return state; }
+  let none: LogEntry[] = [];
+  let entry: LogEntry = {reps: strings.toNumber(state.draft_reps, 0), minute: time.hourOfDay() * 60 + time.minuteOfHour()};
+  let out: LogEntry[] = [];
+  for (let e: LogEntry of state.entries) { out.push(e); }
+  out.push(entry);
+  return {entries: out, removedEntries: none, draft_reps: "", elapsedMs: state.elapsedMs, running: state.running, finished: state.finished, countdownLength: state.countdownLength, removedAt: state.removedAt};
+}
+
+function removeEntry(state: AppState, value: number): AppState {
+  let out: LogEntry[] = [];
+  let gone: LogEntry[] = [];
+  let i: number = 0;
+  while (i < state.entries.length()) {
+    if (i !== value) { out.push(state.entries[i]); } else { gone.push(state.entries[i]); }
+    i = i + 1;
+  }
+  return {entries: out, removedEntries: gone, removedAt: value, elapsedMs: state.elapsedMs, running: state.running, finished: state.finished, countdownLength: state.countdownLength, draft_reps: state.draft_reps};
+}
+
+function undoRemove(state: AppState, ignored: number): AppState {
+  if (state.removedEntries.length() === 0) { return state; }
+  let out: LogEntry[] = [];
+  let none: LogEntry[] = [];
+  let i: number = 0;
+  while (i < state.entries.length()) {
+    if (i === state.removedAt) { out.push(state.removedEntries[0]); }
+    out.push(state.entries[i]);
+    i = i + 1;
+  }
+  if (state.removedAt >= state.entries.length()) { out.push(state.removedEntries[0]); }
+  return {entries: out, removedEntries: none, removedAt: -1, elapsedMs: state.elapsedMs, running: state.running, finished: state.finished, countdownLength: state.countdownLength, draft_reps: state.draft_reps};
+}
+
+function expireUndo(state: AppState, elapsedMs: number): AppState {
+  let none: LogEntry[] = [];
+  return {removedEntries: none, removedAt: -1, elapsedMs: state.elapsedMs, running: state.running, finished: state.finished, countdownLength: state.countdownLength, entries: state.entries, draft_reps: state.draft_reps};
+}
+
+
+
+
+
+function view(state: AppState): ui.View {
+  let sections: ui.View[] = [];
+  sections.push(ui.Header("default", "Pushups Counter", "TALLY", "Count your pushups set by set", "clock"));
+  {
+    sections.push(ui.Ticker("default", "clock", 200, state.running, "onTick"));
+      let countdownLength: number = state.countdownLength;
+      let duration: number = countdownSeconds(state);
+      let elapsed: number = math.min(state.elapsedMs / 1000, duration);
+      let remaining: number = duration - elapsed;
+      let entryCount: number = state.entries.length();
+      let entryTotal: number = 0;
+      for (let e: LogEntry of state.entries) { entryTotal = entryTotal + e.reps; }
+      let totalPushups: number = entryTotal;
+    sections.push(ui.Section("hero", "", "", [ui.Hero("accent", "Total pushups", ui.formatNumber(totalPushups, 0), "", [ui.ActionBar("spread", [ui.Button("primary", "Start", "onStart", 0, !state.running), ui.Button("secondary", "Stop", "onStop", 0, state.running), ui.Button("secondary", "Reset", "onReset", 0, true)])])]));
+    sections.push(ui.Section("content", "", "", [ui.NumberField("default", "Set timer length (minutes)", state.countdownLength, 1, 100, "set_countdownLength")]));
+    let rows: ui.View[] = [];
+    let i: number = entryCount - 1;
+    while (i >= 0 && i > entryCount - 21) {
+      let e: LogEntry = state.entries[i];
+      let sub: string = "Added " + ui.clockToString(e.minute);
+      rows.push(ui.ListItem("default", ui.formatNumber(e.reps, 0), sub, "", "", 0, false, ""));
+      rows.push(ui.ActionBar("end", [ui.Button("secondary", "Remove", "removeEntry", i, true)]));
+      i = i - 1;
+    }
+    sections.push(ui.Section("content", "", "", [ui.TextField("default", "Pushups", state.draft_reps, "set_draft_reps", "number"), ui.ActionBar("end", [ui.Button("primary", "Add", "addEntry", 0, strings.trim(state.draft_reps) !== "")])]));
+    sections.push(ui.Section("content", "", "", [ui.SectionHeader("default", "Sets", "Newest first", ui.numberToString(entryCount)), ui.When(entryCount === 0, ui.EmptyState("default", "Nothing added yet", "Fill in the fields above and tap Add.", "", "", "list")), ui.When(entryCount > 0, ui.ListGroup("default", "", rows)), ui.When(state.removedEntries.length() > 0, ui.Snackbar("default", "Removed", "Undo", "undoRemove")), ui.Ticker("default", "undoClock", 6000 + state.entries.length() % 7, state.removedEntries.length() > 0, "expireUndo")]));
+  }
+  return ui.AppTheme("technical", "", sections);
+}

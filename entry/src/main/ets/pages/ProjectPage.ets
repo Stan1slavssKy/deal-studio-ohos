@@ -9,7 +9,12 @@ import { projectOperations, ProjectOperationStatus, ProjectShortcutState } from 
 import { common } from '@kit.AbilityKit'
 import { app, PrimaryButton, TonalButton, QuietButton, DangerButton } from '../components/AppStyle'
 import { AppRouteParams, returnToLibrary } from '../vera/AppNavigation'
-import { publishLiveWidget } from '../vera/LiveWidgetPublish'
+import { publishLiveWidget, WIDGET_ADDED } from '../vera/LiveWidgetPublish'
+import { formBindings } from '../vera/FormBindings'
+import { veraStateStamp } from '../vera/VeraStateStamp'
+import { WidgetPreview } from '../components/WidgetPreview'
+import { WidgetStatus, widgetStatus, WIDGET_NONE, WIDGET_READY, WIDGET_PLACED, WIDGET_BROKEN, WIDGET_NEEDS_RUN,
+  WIDGET_UNAVAILABLE } from '../vera/WidgetStatus'
 
 @CustomDialog
 struct ProjectPanelDialog {
@@ -53,6 +58,10 @@ export struct ProjectPage {
   @State renameText: string = ''
   @State renameComposing: boolean = false
   private renameInputController: TextInputController = new TextInputController()
+  /** The home-screen widget: what it is now, and the latest version and data its thumbnail draws. */
+  @State widget: WidgetStatus = new WidgetStatus()
+  @State widgetVbc2: string = ''
+  @State widgetSeed: string = ''
   private activePanel: string = ''
 
   private sourceController: CustomDialogController = new CustomDialogController({
@@ -126,7 +135,21 @@ export struct ProjectPage {
       this.returnToIndex()
       return
     }
+    this.reloadWidget()
     this.refreshShortcutState()
+  }
+
+  /** The widget as the home-screen card sees it: the latest version (LiveFormService) and the cards bound to it. */
+  private reloadWidget(): void {
+    let latest = this.versions.length > 0 ? this.versions[0] : null
+    let placed = 0
+    try { placed = formBindings.formsFor(this.projectId).length } catch (e) {
+      console.error('Read widget bindings failed: ' + (e as Error).message)
+    }
+    this.widget = widgetStatus(latest !== null ? latest.source : '', latest !== null ? latest.vbc2 : '', placed)
+    let shows = this.widget.kind === WIDGET_READY || this.widget.kind === WIDGET_PLACED
+    this.widgetVbc2 = shows && latest !== null ? latest.vbc2 : ''
+    this.widgetSeed = shows && latest !== null ? store.loadState(this.projectId, latest.id, veraStateStamp(latest.vbc2)) : ''
   }
 
   private returnToIndex(): void {
@@ -244,9 +267,6 @@ export struct ProjectPage {
                 { value: this.shortcutButtonLabel(), action: () => { this.onShortcutMenu() },
                   enabled: this.shortcutMenuEnabled() },
                 { value: 'Rename', action: () => { this.openRename() } },
-                { value: 'Add widget', action: () => { this.addWidget() }, enabled: !this.projectOperationPending },
-                { value: 'Make widget', action: () => { this.openGenerate(this.versions[0].id, true) },
-                  enabled: this.versions.length > 0 && this.versions[0].vbc2.length > 0 },
                 { value: 'Delete project', action: () => { this.askDeleteProject() } }
               ])
           }
@@ -259,6 +279,12 @@ export struct ProjectPage {
               .fontColor(app.warningInk)
               .width('100%')
               .padding({ left: 16, right: 16, bottom: 12 })
+          }
+
+          if (this.versions.length > 0) {
+            Column() { this.widgetSection() }
+              .width('100%')
+              .padding({ left: 16, right: 16 })
           }
 
           List({ space: 12 }) {
@@ -347,6 +373,110 @@ export struct ProjectPage {
         }
 
       }.width('100%').height('100%')
+  }
+
+  /** The home-screen widget: what it is, and the one next thing to do with it. */
+  @LocalBuilder
+  widgetSection() {
+    Row({ space: 14 }) {
+      if (this.widgetVbc2.length > 0) {
+        WidgetPreview({ vbc2: this.widgetVbc2, seedState: this.widgetSeed, title: this.project!.name, thumbnail: true })
+          .borderRadius(9)
+          .onClick(() => { this.makeWidget() })
+      } else {
+        Column() {
+          SymbolGlyph($r(this.widget.kind === WIDGET_BROKEN ? 'sys.symbol.exclamationmark_triangle' : 'sys.symbol.plus'))
+            .fontSize(24)
+            .fontColor([this.widget.kind === WIDGET_BROKEN ? app.warningInk : app.inkMuted])
+        }
+        .width(72)
+        .height(72)
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(12)
+        .border({ width: 1.5, color: app.lineStrong, style: BorderStyle.Dashed })
+      }
+      Column({ space: 4 }) {
+        Text('Home-screen widget').fontSize(15).fontWeight(FontWeight.Medium).fontColor(app.inkStrong)
+        Text(this.widgetLine())
+          .fontSize(13)
+          .fontColor(this.widget.kind === WIDGET_BROKEN ? app.warningInk :
+            (this.widget.kind === WIDGET_PLACED ? app.successInk : app.inkMuted))
+          .maxLines(3)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.widget.kind === WIDGET_NONE) {
+          Button('Make widget')
+            .attributeModifier(new TonalButton())
+            .height(32).fontSize(13).margin({ top: 4 })
+            .onClick(() => { this.makeWidget() })
+        } else if (this.widget.kind === WIDGET_READY) {
+          Row({ space: 14 }) {
+            Button('Add to home screen')
+              .attributeModifier(new PrimaryButton())
+              .height(32).fontSize(13)
+              .enabled(!this.projectOperationPending)
+              .onClick(() => { this.addWidget() })
+            Text('Change')
+              .fontSize(13).fontColor(app.primaryInk)
+              .onClick(() => { this.makeWidget() })
+          }
+          .margin({ top: 4 })
+        } else if (this.widget.kind === WIDGET_PLACED) {
+          Row({ space: 12 }) {
+            Button('Change')
+              .attributeModifier(new QuietButton())
+              .height(32).fontSize(13)
+              .onClick(() => { this.makeWidget() })
+            Text('Add another')
+              .fontSize(13).fontColor(app.primaryInk)
+              .enabled(!this.projectOperationPending)
+              .onClick(() => { this.addWidget() })
+          }
+          .margin({ top: 4 })
+        } else if (this.widget.kind === WIDGET_BROKEN && this.versions[0].vbc2.length > 0) {
+          Button('Make widget again')
+            .attributeModifier(new PrimaryButton())
+            .height(32).fontSize(13).margin({ top: 4 })
+            .onClick(() => { this.makeWidget() })
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .padding(14)
+    .backgroundColor(app.surface)
+    .borderRadius(12)
+    .shadow({ radius: 2, color: '#10000000', offsetY: 1 })
+  }
+
+  private widgetLine(): string {
+    let kind = this.widget.kind
+    if (kind === WIDGET_READY) { return 'Not on home screen yet' }
+    if (kind === WIDGET_PLACED) {
+      return '\u2713 On home screen' + (this.widget.placed > 1 ? ' \u00B7 ' + this.widget.placed.toString() + ' cards' : '')
+    }
+    if (kind === WIDGET_BROKEN) { return 'Your home-screen card shows "Open app": the latest version has no widget.' }
+    if (kind === WIDGET_NEEDS_RUN) { return 'The latest version did not finish building. Refine it, then make a widget.' }
+    if (kind === WIDGET_UNAVAILABLE) { return 'This app already uses its widget for its own screen, so a separate one cannot be added.' }
+    return 'Not made yet'
+  }
+
+  private watchForCard(): void {
+    let tries = 0
+    let tick = (): void => {
+      if (!this.pageVisible || this.project === null) { return }
+      this.reloadWidget()
+      if (this.widget.placed > 0) { return }
+      tries++
+      if (tries < 60) { setTimeout(tick, 1000) }
+    }
+    setTimeout(tick, 1000)
+  }
+
+  /** Make, change or remake the widget: always on the latest version, the one the card draws. */
+  private makeWidget(): void {
+    if (this.versions.length === 0 || this.versions[0].vbc2.length === 0) { return }
+    this.openGenerate(this.versions[0].id, true)
   }
 
   @LocalBuilder
@@ -675,7 +805,10 @@ export struct ProjectPage {
     try { message = await publishLiveWidget(this.projectId) }
     catch (e) { message = 'Could not add widget: ' + (e as Error).message }
     finally { this.projectOperationPending = false }
+    this.reloadWidget()
     this.showProjectMessage(message)
+    // From the launcher's widget list the card is bound in the form's process, a moment later.
+    if (message !== WIDGET_ADDED) { this.watchForCard() }
   }
 
   @LocalBuilder

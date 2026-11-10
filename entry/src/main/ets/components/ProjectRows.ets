@@ -1,6 +1,7 @@
 import { Project, ProjectSummary, store } from '../vera/ProjectStore'
 import { projectOperations, ProjectOperationStatus } from '../vera/ProjectOperations'
 import { refreshForms } from '../vera/FormUpdater'
+import { formBindings } from '../vera/FormBindings'
 import { common } from '@kit.AbilityKit'
 import { app } from './AppStyle'
 
@@ -12,15 +13,20 @@ export class ProjectNavParams {
 export class ProjectRow {
   project: Project = new Project()
   summary: ProjectSummary = new ProjectSummary()
+  /** Cards on the home screen that show it. */
+  cards: number = 0
 }
 
 /** Newest work first: by when a project's latest version was saved, or when it was made if it has none. */
 export function loadProjectRows(): ProjectRow[] {
   let rows: ProjectRow[] = []
+  let cards: Record<string, number> = {}
+  try { cards = formBindings.countsByProject() } catch (e) { console.error('Read widget bindings failed: ' + (e as Error).message) }
   for (let project of store.listProjects()) {
     let row = new ProjectRow()
     row.project = project
     row.summary = store.summaryOf(project)
+    row.cards = cards[project.id] || 0
     rows.push(row)
   }
   rows.sort((a: ProjectRow, b: ProjectRow): number => b.summary.updatedAt - a.summary.updatedAt)

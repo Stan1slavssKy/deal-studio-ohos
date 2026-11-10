@@ -17,8 +17,16 @@ export function requestHeadline(prompt: string, note: string): string {
 
 /** What this version changed: the last request of a refinement, and '' for a version that is the first answer to its request. */
 export function changeNote(prompt: string, note: string): string {
-  return prompt.indexOf(REFINEMENT_MARK) >= 0 ? note.trim() : ''
+  if (prompt.indexOf(REFINEMENT_MARK) < 0) { return '' }
+  let text = note.trim()
+  return text.startsWith(WIDGET_ASK_TEXT) ? 'Widget: ' + text.substring(WIDGET_ASK_TEXT.length) : text
 }
+
+/**
+ * How Make widget words a request (WIDGET_ASK in agent/AgentWidget.ets, which this file cannot import: the card's process
+ * reads it through ProjectStore). The list shows it as "Widget: ...". widget-status-check holds the two equal.
+ */
+export const WIDGET_ASK_TEXT: string = 'The home-screen widget should show: '
 
 /** "3 versions", "1 version", "No versions yet". */
 export function versionCountText(count: number): string {

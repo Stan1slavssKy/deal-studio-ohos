@@ -1,5 +1,13 @@
 # Changelog
 
+## The widget from the app: a widget block on the project page, ready-made requests, the offer after Save
+
+- The project page has a Home-screen widget block: a thumbnail of the card, what it is now (`WidgetStatus.ets`: not made, not on the home screen, on it, the card shows "Open app" because the latest version has no widget, cannot be made) and the one next thing to do (Make widget, Add, Change).
+- A new app, just saved, offers Make widget; Widget from the app on screen saves it first and opens the widget screen, one tap where Save and Make widget were two.
+- The widget screen offers ready-made requests made from the app itself (`agent/WidgetSuggest.ets`: its state's figures and lists, the actions its buttons take, Let VERA choose), says whether the last request made, changed or left the card as it was (`sameCard`), and has one button: Add to home screen, Update widget or Show on this card.
+- A card placed from the launcher with no app yet opens a list of apps; one with no widget opens Make widget for that card.
+- Host check `widget-status-check.js`.
+
 ## ui.Layers: scenes of parts that move on their own
 
 - New `ui.Layers(style, width, height, children)`: children one over another, each in the middle. Surface style `clear` has no background so layers show through. A touch on any part plays every Motion in the Layers; a touch on a Motion with no handler plays it (`#touch`). Up to 5 pictures and 5 Motions on a card. Make widget's prompt says how to build a scene from layers.
