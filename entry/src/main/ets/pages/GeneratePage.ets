@@ -18,9 +18,8 @@ import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTi
 import { deepseek, DEEPSEEK_GENERATION_MAX_TOKENS, SideCall } from '../vera/DeepSeekEngine'
 import { OperationController, throwIfCancelled } from '../vera/OperationCancellation'
 import { VeraPreview, VeraPreviewController } from '../components/VeraPreview'
-import { settings } from '../vera/SettingsStore'
-import { startUsbNet, stopUsbNet, readUsbNetStatus, usbNetIsOn } from '../vera/UsbNet'
-import { resetLogprobsProbe } from '../vera/JevProxy'
+import { settings, MODE_DEEPSEEK, MODE_SERVER, MODE_LOCAL } from '../vera/SettingsStore'
+import { settingsMenuItem } from '../components/SettingsEntry'
 import { consent } from '../vera/VeraConsentStore'
 import { describeCatalogForPrompt } from '../vera/VeraUiCatalog'
 import { ensureUiEmbeddings } from '../vera/VeraUiIndex'
@@ -70,9 +69,6 @@ function serverUrl(): string { return settings.getServerUrl() }
 
 // DeepSeek and Local both run the agent loop on the device and differ only in
 // which model writes the code; Server hands the whole job to vera-server.
-const MODE_DEEPSEEK: string = 'deepseek'
-const MODE_SERVER: string = 'server'
-const MODE_LOCAL: string = 'local'
 
 // The lower half of the screen is one pane at a time: the running program,
 // its source, or the numbers behind the run.
@@ -304,8 +300,6 @@ export struct GeneratePage {
   // flips. Kept in sync in aboutToAppear, checkDeepSeek and the toggle onClick.
   @State jevProxyOn: boolean = false
   // What the USB-network VPN last reported (UsbNet.ets), read once a second while Advanced is open (syncUsbNetPoll).
-  @State usbNetStatus: string = 'off'
-  private usbNetTimer: number = -1
   /** The timer that takes the run's line off the full screen (openWhole); -1 when none. */
   private readyNoteTimer: number = -1
   @State attempt: number = 0
@@ -401,9 +395,6 @@ export struct GeneratePage {
   @State draft: string = ''
   /** The box holds an edit of the last request: sending it runs it again on what was there before it (rewriteRequest). */
   @State rewriting: boolean = false
-  @State @Watch('syncUsbNetPoll') settingsOpen: boolean = false
-  /** The selector route switch is for working on the app, not for making one: folded away until asked for. */
-  @State @Watch('syncUsbNetPoll') advancedOpen: boolean = false
   /** The program alone over the whole screen, with the box under it; see fullscreenPane. */
   @State fullscreen: boolean = false
   /** The full-screen corner buttons stepped aside while the program is read further down (VeraPreview onReadingDown). */
@@ -717,6 +708,7 @@ export struct GeneratePage {
       }
     }
     settings.init(context.filesDir)
+    this.mode = settings.getMode()
     this.selectedModel = settings.getModel()
     this.jevProxyOn = settings.useJevProxy()
     initTrace(context.filesDir)
@@ -743,10 +735,6 @@ export struct GeneratePage {
 
   aboutToDisappear(): void {
     this.disposed = true
-    if (this.usbNetTimer >= 0) {
-      clearInterval(this.usbNetTimer)
-      this.usbNetTimer = -1
-    }
     if (this.readyNoteTimer >= 0) {
       clearTimeout(this.readyNoteTimer)
       this.readyNoteTimer = -1
@@ -771,7 +759,13 @@ export struct GeneratePage {
   private destinationShown(): void {
     if (this.disposed) { return }
     this.destinationHidden = false
-    if (this.mode === MODE_DEEPSEEK && !this.generating) {
+    if (this.generating) { return }
+    // The mode, the model and the selector are chosen on the Settings page, which may have been open over this one.
+    let mode = settings.getMode()
+    if (mode !== this.mode) {
+      this.mode = mode
+      this.checkProvider()
+    } else if (this.mode === MODE_DEEPSEEK) {
       this.checkDeepSeek()
     }
   }
@@ -2317,105 +2311,6 @@ export struct GeneratePage {
     return 'Local'
   }
 
-  /** Labels for the dashscope model picker, in candidate order. */
-  private modelPickerLabels(): string[] {
-    let labels: string[] = []
-    for (let i = 0; i < settings.modelCandidateCount(); i++) {
-      labels.push(settings.modelCandidateLabel(i))
-    }
-    return labels
-  }
-
-  /** Index of the selected model among the candidates, or -1 if it is not one. */
-  private selectedModelIndex(): number {
-    let m = this.selectedModel.length > 0 ? this.selectedModel : settings.getModel()
-    for (let i = 0; i < settings.modelCandidateCount(); i++) {
-      if (settings.modelCandidateModel(i) === m) { return i }
-    }
-    return -1
-  }
-
-  /** The selected model is tinted, the others quiet. */
-  private modelPickerLook(index: number): AttributeModifier<ButtonAttribute> {
-    return this.selectedModelIndex() === index ? new TonalButton() : new QuietButton()
-  }
-
-  /**
-   * The Jev proxy toggle, like the model picker above it. On routes the
-   * composer's selector calls (askJev/selectEdit) through the configured cloud
-   * model on-device (JevProxy.ets); off sends them to api.typesafe.ai as before,
-   * which needs a separate selector key or the agent route is gated off. The
-   * proxy uses the cloud key (getApiKey), not the selector key, so it is offered
-   * whenever there is a cloud key -- independent of whether the provider is
-   * dashscope (the model picker only shows for dashscope).
-   */
-  private jevProxyLabel(): string {
-    return this.jevProxyOn ? 'Jev proxy: on' : 'Jev proxy: off'
-  }
-
-  private jevProxyLook(): AttributeModifier<ButtonAttribute> {
-    return this.jevProxyOn ? new TonalButton() : new QuietButton()
-  }
-
-  private toggleJevProxy(): void {
-    if (this.jevProxyOn) {
-      settings.setJevProxy('')
-      this.jevProxyOn = false
-    } else {
-      settings.setJevProxy('1')
-      this.jevProxyOn = true
-    }
-    // Rebuild the status line so the selector note reflects the new state.
-    this.checkDeepSeek()
-  }
-
-  private usbNetOn(): boolean {
-    return usbNetIsOn(this.usbNetStatus)
-  }
-
-  /** Reads the USB network status once a second, only while Settings > Advanced is open. */
-  private syncUsbNetPoll(): void {
-    let shown = this.settingsOpen && this.advancedOpen
-    if (shown && this.usbNetTimer < 0) {
-      let filesDir = this.hostContext().filesDir
-      this.usbNetStatus = readUsbNetStatus(filesDir)
-      this.usbNetTimer = setInterval(() => { this.usbNetStatus = readUsbNetStatus(filesDir) }, 1000)
-    } else if (!shown && this.usbNetTimer >= 0) {
-      clearInterval(this.usbNetTimer)
-      this.usbNetTimer = -1
-    }
-  }
-
-  /** Starts or stops the VPN that sends the whole phone's traffic through the computer (UsbNetAbility). */
-  private async toggleUsbNet(): Promise<void> {
-    let filesDir = this.hostContext().filesDir
-    try {
-      if (this.usbNetOn()) {
-        await stopUsbNet(filesDir)
-      } else {
-        await startUsbNet(filesDir)
-      }
-      this.usbNetStatus = readUsbNetStatus(filesDir)
-    } catch (e) {
-      this.usbNetStatus = 'failed: ' + (e as Error).message
-    }
-  }
-
-  /** One line of the mode menu: a mark on the one in use, the name, and what it runs on. */
-  private modeMenuLabel(mode: string): string {
-    let name = mode === MODE_DEEPSEEK ? settings.providerLabel() + ' \u00B7 ' +
-      (this.selectedModel.length > 0 ? this.selectedModel : settings.getModel()) :
-      (mode === MODE_SERVER ? 'Server' + (settings.hasServerUrl() ? ' \u00B7 ' + serverUrl() : ' \u00B7 no address') :
-        'Local \u00B7 Qwen3-Coder-3B')
-    return (this.mode === mode ? '\u2713  ' : '     ') + name
-  }
-
-  private pickMode(mode: string): void {
-    if (this.generating || mode === this.mode) { return }
-    this.mode = mode
-    this.checkProvider()
-  }
-
   /** The open tab is the tinted one; the others are the page's own colour, so the row reads as one control. */
   private tabTint(name: string): string {
     return this.tab === name ? app.primaryFill : app.secondaryFill
@@ -3061,11 +2956,7 @@ export struct GeneratePage {
         action: () => { this.setFullscreen(true) }
       })
     }
-    items.push({
-      value: 'Settings',
-      symbolIcon: new SymbolGlyphModifier($r('sys.symbol.gearshape')),
-      action: () => { this.settingsOpen = !this.settingsOpen }
-    })
+    items.push(settingsMenuItem(this.pathStack))
     items.push({
       value: 'New',
       symbolIcon: new SymbolGlyphModifier($r('sys.symbol.plus')),
@@ -3347,92 +3238,6 @@ export struct GeneratePage {
     .width('100%')
   }
 
-  /** The engine's settings, out of the way until the title bar's gear is tapped: provider, model, selector. */
-  @Builder
-  settingsPanel() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
-        Button(this.modeLabel() + ' ▾')
-          .attributeModifier(new QuietButton())
-          .fontSize(12)
-          .height(30)
-          .enabled(!this.generating)
-          .bindMenu([
-            { value: this.modeMenuLabel(MODE_DEEPSEEK), action: () => { this.pickMode(MODE_DEEPSEEK) } },
-            { value: this.modeMenuLabel(MODE_SERVER), action: () => { this.pickMode(MODE_SERVER) } },
-            { value: this.modeMenuLabel(MODE_LOCAL), action: () => { this.pickMode(MODE_LOCAL) } }
-          ])
-        Text(this.status)
-          .fontSize(12)
-          .fontColor(this.compiled ? app.successInk : app.inkMuted)
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-      }
-      .width('100%')
-
-      // The three dashscope models (glm-5.2 and the two deepseek-v4 ones) share one key and base URL, so the choice is
-      // the model name alone -- which also flips isDeepSeek() and so the request shape. Shown only when the configured
-      // endpoint is dashscope; tapping applies and persists.
-      if (this.mode === MODE_DEEPSEEK && settings.isDashscopeProvider() && settings.hasApiKey()) {
-        Row({ space: 6 }) {
-          ForEach(this.modelPickerLabels(), (label: string, index: number) => {
-            Button(label)
-              .attributeModifier(this.modelPickerLook(index))
-              .fontSize(11)
-              .height(26)
-              .enabled(!this.generating)
-              .onClick(() => {
-                settings.applyModelCandidate(index)
-                // Whether the proxy can use logprobs is per model, so a switch drops any cached rejection.
-                resetLogprobsProbe()
-                this.selectedModel = settings.getModel()
-                this.checkDeepSeek()
-              })
-          }, (label: string, index: number) => label + index.toString())
-        }
-        .width('100%')
-      }
-
-      Text(this.advancedOpen ? 'Advanced \u25B4' : 'Advanced \u25BE').fontSize(12).fontColor(app.inkMuted)
-        .padding({ top: 4, bottom: 4 })
-        .onClick(() => { this.advancedOpen = !this.advancedOpen })
-      // Toggle for the on-device Jev proxy (see jevProxyLabel). Offered for any cloud provider with a key.
-      if (this.advancedOpen && this.mode === MODE_DEEPSEEK && settings.hasApiKey()) {
-        Row({ space: 8 }) {
-          Button(this.jevProxyLabel())
-            .attributeModifier(this.jevProxyLook())
-            .fontSize(11)
-            .height(26)
-            .enabled(!this.generating)
-            .onClick(() => { this.toggleJevProxy() })
-          Text(this.jevProxyOn ? 'selector via cloud model' :
-            (settings.hasSelectorKey() ? 'selector via TypeSafe' : 'no selector — agent route off'))
-            .fontSize(11).fontColor(app.inkMuted).layoutWeight(1)
-        }
-        .width('100%')
-      }
-      // The whole phone's traffic through the computer (UsbNet.ets); needs no key, so offered in every mode.
-      if (this.advancedOpen) {
-        Row({ space: 8 }) {
-          Button(this.usbNetOn() ? 'USB network: on' : 'USB network: off')
-            .attributeModifier(this.usbNetOn() ? new TonalButton() : new QuietButton())
-            .fontSize(11)
-            .height(26)
-            .onClick(() => { this.toggleUsbNet() })
-          Text(this.usbNetStatus === 'off' ? 'whole phone via the computer; run ./usb-net.sh there' :
-            (this.usbNetStatus === 'starting' ? 'starting; allow the VPN if the phone asks' : this.usbNetStatus))
-            .fontSize(11).fontColor(app.inkMuted).layoutWeight(1)
-        }
-        .width('100%')
-      }
-    }
-    .width('100%')
-    .padding(12)
-    .backgroundColor(app.surface)
-    .borderRadius(14)
-  }
-
   @Builder
   modelCard() {
     // The model (~1.9 GB) is fetched from vera-server, so what is missing is either the address or the download.
@@ -3595,11 +3400,6 @@ export struct GeneratePage {
           } else if (this.makeWidget && !this.fullscreen) {
             Text('Make widget keeps the fullscreen code and saved data.')
               .fontSize(13).fontColor(app.primary).width('100%').padding({ left: 16, right: 16, top: 8 })
-          }
-          if (this.settingsOpen && !this.fullscreen) {
-            Column() { this.settingsPanel() }
-              .width('100%')
-              .padding({ left: 12, right: 12, top: 8 })
           }
           // A program that runs takes the whole space between the bar and the box, as the whole of the screen it is; before
           // and while it is built, and when it was not, the page is a thread of cards.

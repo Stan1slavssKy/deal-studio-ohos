@@ -21,6 +21,7 @@ import { AgentQuestion, PersonAnswer } from '../vera/agent/AgentQuestions'
 import { QuestionCard } from '../components/QuestionCard'
 import { buildScreen, RouteRequest, RouteOutcome, OUTCOME_AGENT, OUTCOME_NOT_BUILT } from '../vera/agent/VeraBuildRoute'
 import { app, TonalButton } from '../components/AppStyle'
+import { settingsMenuItem } from '../components/SettingsEntry'
 import { ChatStarters, STARTERS_ZH, STARTERS_EN } from '../components/ChatStarters'
 
 const APP_NONE: string = 'none'
@@ -1258,7 +1259,7 @@ export struct ChatPage {
       value: 'History',
       symbolIcon: new SymbolGlyphModifier($r('sys.symbol.clock')),
       action: () => { this.openHistory() }
-    }])
+    }, settingsMenuItem(this.pathStack)])
     .onShown(() => { this.destinationShown() })
     .onHidden(() => { this.destinationHidden = true })
   }

@@ -135,7 +135,7 @@ conversation is not.
 
 When the phone's Wi-Fi is poor, its whole traffic can go over the USB cable:
 run `./usb-net.sh` on the computer (needs java; leave it running) and switch
-on Generate > Settings > Advanced > **USB network** on the phone. Off by
+on the gear (Settings, on every screen) > **USB network** on the phone. Off by
 default; the first start asks the person to allow the VPN.
 
 - The computer side is the relay from gnirehtet (`tools/gnirehtet/`), on

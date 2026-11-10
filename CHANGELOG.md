@@ -1,5 +1,11 @@
 # Changelog
 
+## Settings from every screen
+
+- The gear is on every screen that has a title bar (the home screen, My apps, a project, Generate and the widget screen, Chats, a chat, the app list for a card) and opens one Settings page (`SettingsPage.ets`, `components/SettingsEntry.ets`). It used to be on Generate only, as a panel over the page, with the USB network under Advanced.
+- The page: how apps are generated (the cloud provider with its model and key, Server, On the phone), what is missing for the one chosen and the command that supplies it, the dashscope model picker, Jev proxy and USB network as switches.
+- The generation mode is kept (`settings.json`, `mode`); it used to start as the cloud provider on every Generate page. Generate reads it again when it is shown.
+
 ## ui.Layers: scenes of parts that move on their own
 
 - New `ui.Layers(style, width, height, children)`: children one over another, each in the middle. Surface style `clear` has no background so layers show through. A touch on any part plays every Motion in the Layers; a touch on a Motion with no handler plays it (`#touch`). Up to 5 pictures and 5 Motions on a card. Make widget's prompt says how to build a scene from layers.

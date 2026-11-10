@@ -10,6 +10,7 @@ import { common } from '@kit.AbilityKit'
 import { app, PrimaryButton, TonalButton, QuietButton, DangerButton } from '../components/AppStyle'
 import { AppRouteParams, returnToLibrary } from '../vera/AppNavigation'
 import { publishLiveWidget } from '../vera/LiveWidgetPublish'
+import { settingsMenuItem } from '../components/SettingsEntry'
 
 @CustomDialog
 struct ProjectPanelDialog {
@@ -191,6 +192,7 @@ export struct ProjectPage {
       this.pageContent()
     }
     .title(this.project !== null ? this.project!.name : 'Project')
+    .menus([settingsMenuItem(this.pathStack)])
     .backgroundColor(app.background)
     .onBackPressed((): boolean => this.handleBack())
     .onShown(() => { this.destinationShown() })

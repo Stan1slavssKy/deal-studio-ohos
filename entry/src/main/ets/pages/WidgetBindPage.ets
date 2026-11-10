@@ -6,6 +6,7 @@ import { projectIconResource } from '../vera/ProjectIcons'
 import { app } from '../components/AppStyle'
 import { tileTint } from '../components/ProjectRows'
 import { AppRouteParams, returnToLibrary } from '../vera/AppNavigation'
+import { settingsMenuItem } from '../components/SettingsEntry'
 
 /** A program a live card can show: its latest version that runs declares widget(state). */
 function hasWidget(project: Project): boolean {
@@ -67,6 +68,7 @@ export struct WidgetBindPage {
       .width('100%').height('100%').padding(16)
     }
     .title('Choose widget app')
+    .menus([settingsMenuItem(this.pathStack)])
     .backgroundColor(app.background)
   }
 }
