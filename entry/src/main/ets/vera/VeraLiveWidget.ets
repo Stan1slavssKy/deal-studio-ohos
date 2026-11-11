@@ -48,6 +48,11 @@ export const SETTLE_CLOCK_EARLY_STEPS: number = 300
 /** How often, in steps, the view is asked again what runs (a tap may have started a ticker that the next tick stops). */
 export const SETTLE_REASK_STEPS: number = 5
 export const LIVE_MAX_SHAPES: number = CARD_MAX_SHAPES
+/**
+ * What one card picture paints, every copy of a gfx.repeat counted: its 60 shapes are what the frame carries, and a repeat is carried once, so
+ * this keeps what the render service paints for a redraw within reach (a 12 x 12 sheet of bubble wrap of two shapes a bubble is 289).
+ */
+export const LIVE_MAX_DRAWN: number = 400
 /** Timers a card runs (ui.Timer, the platform's own TextTimer). */
 export const LIVE_MAX_TIMERS: number = CARD_MAX_TIMERS
 
@@ -662,9 +667,16 @@ export class WidgetSession {
         if (!(node.minimum > 0) || !(node.maximum > 0)) { throw new Error('ui.Surface width and height must be above 0') }
         let ops = decodeGfx(this.vm.execute(node.label, [this.state]))
         let shapes = 0
-        for (let o of ops) { shapes += o.count }
+        let drawn = 0
+        for (let o of ops) { shapes += o.count; drawn += o.drawn }
         if (shapes > LIVE_MAX_SHAPES) {
-          throw new Error('a card picture has at most ' + LIVE_MAX_SHAPES.toString() + ' shapes; this one has ' + shapes.toString())
+          throw new Error('a card picture has at most ' + LIVE_MAX_SHAPES.toString() + ' shapes; this one has ' + shapes.toString() +
+            '. Many of the same (bubbles, bricks, stars, dots in a grid) is one gfx.repeat(columns, rows, dx, dy, [the shapes of one]), ' +
+            'which counts its shapes once; draw only what differs from copy to copy (a popped bubble) over it, or show fewer')
+        }
+        if (drawn > LIVE_MAX_DRAWN) {
+          throw new Error('a card picture paints at most ' + LIVE_MAX_DRAWN.toString() + ' shapes, every copy of a gfx.repeat counted; this one ' +
+            'paints ' + drawn.toString() + ': use fewer copies or fewer shapes in each')
         }
         let nested = (list: GfxOp[], top: boolean): boolean =>
           list.some((o: GfxOp): boolean => (!top && (o.kind === 'moving' || o.kind === 'drift')) || nested(o.children, false))

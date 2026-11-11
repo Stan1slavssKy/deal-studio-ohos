@@ -651,4 +651,30 @@ assert.match(view, /node.key \+ this.frameKey/)
   s.tapSurface(f, f.token, 'onPad', 50, 50)
   assert(texts(s.frame('p1', 'Rocket', '🚀').nodes).includes('Liftoff!'), 'the countdown ran out and the rocket left: ' + texts(s.frame('p1', 'Rocket', '🚀').nodes))
 }
+// Many of the same: a 12 x 12 sheet of bubble wrap is one gfx.repeat, within a card picture's 60 shapes and the frame's 8000 characters;
+// a tap pops the bubble under the finger. The same sheet as 144 shapes of its own is refused with a reason that names gfx.repeat, and a
+// repeat that paints more than the card's 400 shapes is refused.
+{
+  const { compactFrame } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const bubbles = fs.readFileSync(path.join(__dirname, 'examples/widget-bubbles.vera'), 'utf8')
+  const s = new WidgetSession(compileVeraSource(bubbles).vbc2, 'bubbles', '')
+  const f = s.frame('p1', 'Bubbles', '🫧')
+  const size = JSON.stringify(compactFrame(f)).length
+  assert(size <= 2000, 'the sheet is a small frame: ' + size)
+  const picture = f.nodes[0].children[0]
+  assert.equal(picture.kind, 'surface')
+  assert.equal(decodeGfxOps(picture.ops)[0].kind, 'repeat', 'the repeat rides in the frame as itself')
+  assert(texts(f.nodes).includes('6 popped'))
+  s.tapSurface(f, f.token, 'pop', 15, 15)
+  assert(texts(s.frame('p1', 'Bubbles', '🫧').nodes).includes('7 popped'), 'a tap pops a bubble')
+  const loose = bubbles.replace(/  shapes\.push\(gfx\.repeat\(12, 12, 10, 10, \[\n([\s\S]*?)\n  \]\)\);/,
+    '  let k: number = 0;\n  while (k < 144) { shapes.push(gfx.circle((k % 12) * 10 + 5, math.floor(k / 12) * 10 + 5, 4.2, "#93c5fd")); k = k + 1; }')
+  assert.notEqual(loose, bubbles)
+  assert.throws(() => new WidgetSession(compileVeraSource(loose).vbc2, 'loose', '').frame('p1', 'Bubbles', '🫧'),
+    /at most 60 shapes; this one has 150\. Many of the same .* is one gfx\.repeat\(columns, rows, dx, dy/)
+  const heavy = bubbles.replace('gfx.repeat(12, 12, 10, 10, [', 'gfx.repeat(20, 20, 6, 6, [')
+  assert.throws(() => new WidgetSession(compileVeraSource(heavy).vbc2, 'heavy', '').frame('p1', 'Bubbles', '🫧'),
+    /paints at most 400 shapes, every copy of a gfx\.repeat counted; this one paints 807/)
+}
 console.log('PASS live counter: tickers in settle, drifts, settle after a tap, moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

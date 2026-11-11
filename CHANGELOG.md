@@ -1,5 +1,12 @@
 # Changelog
 
+## Many of the same: gfx.repeat
+
+- `gfx.repeat(columns, rows, dx, dy, shapes)` draws shapes in a grid (bubble wrap, bricks, a grid of stars). It is written once: a card picture counts its shapes once, while the app's frame limit counts every copy. At most 400 copies in one repeat, and at most 400 shapes painted in a card picture.
+- The card's 60-shape refusal names gfx.repeat, and so does the prompt. On the phone, bubble wrap reached the card as a 10 x 10 sheet whose bubbles pop.
+- Make widget tries a touch at several points of a picture before it calls a touch unseen: the middle of a grid can fall between two bubbles. It also logs an attempt that got no answer from the model.
+- Host checks in `gfx-check.js`, `live-widget-check.js`, `widget-refine-check.js`; `examples/widget-bubbles.vera`.
+
 ## Wheels of slices: gfx.sector
 
 - `gfx.sector(x, y, radius, start, sweep, colour)` draws a filled pie slice (angles as `gfx.arc`): a wheel of fortune, a pie chart or a pizza is sectors, not stroked arcs or polygons.

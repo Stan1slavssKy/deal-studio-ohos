@@ -70,7 +70,8 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     '"down", then "up"), or "" for a picture that is only looked at. The third argument must be "": a card has no frames, the picture ' +
     'is drawn once for each state. The card is about 150 vp tall: the picture takes what the rest leaves (it is shrunk to fit), so ' +
     'put at most one figure or one short line beside it, with no buttons. At most ' + LIVE_MAX_SHAPES.toString() + ' shapes and ' + LIVE_MAX_SURFACES.toString() +
-    ' pictures (ui.Surface or ui.Sparkline) in all. A picture or shape that takes a touch counts as one of the ' + counted(SMALL.maxButtons) + ' buttons. A handler the card runs must not make phone calls ' +
+    ' pictures (ui.Surface or ui.Sparkline) in all; many of the same (bubbles, bricks, stars in a grid) is one gfx.repeat(columns, rows, dx, dy, [the shapes of one]), ' +
+    'which counts its shapes once whatever the copies. A picture or shape that takes a touch counts as one of the ' + counted(SMALL.maxButtons) + ' buttons. A handler the card runs must not make phone calls ' +
     '(no sdk.call): when the app\'s own handler vibrates, plays a sound or the like, write a new handler that only changes the ' +
     'state -- or returns it as it is. ' +
     'MOVING PARTS. Only what moves in life moves: a pendulum\'s bob swings and its clock stays, a wheel spins under a pointer that stays, a ' +
@@ -414,6 +415,9 @@ function stuckButton(vbc2: string, state: string, button: CardNode, dimension: n
   return ''
 }
 
+/** Where a picture is touched to see whether a touch shows, as shares of its width and height: the middle first. */
+const TOUCH_POINTS: number[][] = [[0.5, 0.5], [0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7], [0.43, 0.57]]
+
 /**
  * A picture that takes a touch and shows nothing for it: no movement around it (a ui.Motion, gfx.moving parts) and, after the tap and what
  * the card runs after it, the same card as before. The rocket of a generated countdown app was such a widget: its tap started a countdown
@@ -423,15 +427,21 @@ function unseenTouch(vbc2: string, state: string, frame: LiveFrame): string {
   let still = collectNodes(frame.nodes, (node: CardNode): boolean =>
     node.kind === 'surface' && node.pointer.length > 0 && node.slot < 0 && node.links === undefined)
   for (let picture of still) {
-    let branch = new WidgetSession(vbc2, 'validation', state)
-    let before = branch.frame('project', 'App', '', frame.dimension)
-    try {
-      branch.tapSurface(before, before.token, picture.pointer, picture.w / 2, picture.h / 2)
-    } catch (e) {
-      continue
+    // Not only the middle: in a grid (bubble wrap) the middle may fall between two things a touch acts on.
+    let shows = false
+    for (let at of TOUCH_POINTS) {
+      let branch = new WidgetSession(vbc2, 'validation', state)
+      let before = branch.frame('project', 'App', '', frame.dimension)
+      try {
+        branch.tapSurface(before, before.token, picture.pointer, picture.w * at[0], picture.h * at[1])
+      } catch (e) {
+        shows = true
+        break
+      }
+      let after = branch.frame('project', 'App', '', frame.dimension)
+      if (JSON.stringify(after.nodes) !== JSON.stringify(before.nodes)) { shows = true; break }
     }
-    let after = branch.frame('project', 'App', '', frame.dimension)
-    if (JSON.stringify(after.nodes) === JSON.stringify(before.nodes)) {
+    if (!shows) {
       return 'A touch on the picture changes nothing you can see on the card: nothing in it moves and it is drawn the same after the tap ' +
         '(what the tap starts in the app may need its timers, which the card does not run for long). Make the touched thing move: wrap its ' +
         'shapes in gfx.moving(style, 0, pivotX, pivotY, [shapes]) with the movement it makes (a rocket launches, a frog hops), or the whole ' +

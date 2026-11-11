@@ -67,6 +67,18 @@ function view(state: AppState): ui.View { return ui.AppTheme("soft", "", [ui.Sur
   assert.equal(validateWidgetRefinement(app, withWidget, built.vbc2), '', 'a widget of the example passes')
 }
 
+// Many of the same is one gfx.repeat: the prompt says so beside the card's shape limit, and the bubble wrap example's widget passes.
+{
+  assert.match(widgetRefinementPrompt(false), /At most 60 shapes and 5 pictures \(ui\.Surface or ui\.Sparkline\) in all; many of the same \(bubbles, bricks, stars in a grid\) is one gfx\.repeat\(columns, rows, dx, dy/)
+  const bubbles = fs.readFileSync(path.join(__dirname, 'examples/widget-bubbles.vera'), 'utf8')
+  assert.equal(validateWidgetRefinement(withoutWidget(bubbles), bubbles, compileVeraSource(bubbles).vbc2), '', 'the bubble wrap widget passes')
+  // A touch in the middle of the sheet falls between four bubbles and pops none; one a little off it pops one, so the touch shows.
+  const exact = bubbles.replace('let at: number = row * 12 + column;',
+    'if (gfx.distance(p.x, p.y, column * 10 + 5, row * 10 + 5) > 4.2) { return state; }\n  let at: number = row * 12 + column;')
+  assert.notEqual(exact, bubbles)
+  assert.equal(validateWidgetRefinement(withoutWidget(exact), exact, compileVeraSource(exact).vbc2), '', 'a touch between bubbles is not the only one tried')
+}
+
 // A picture that takes a touch and shows nothing for it -- no movement, the same card after the tap -- is refused.
 {
   const rocket = fs.readFileSync(path.join(__dirname, 'examples/widget-countdown-rocket.vera'), 'utf8')

@@ -312,4 +312,38 @@ fs.writeFileSync(path.join(__dirname, 'proofs/widget-rich.svg'), svgOf(richOps, 
   assert.ok(wheelSvg.includes('L50 12 A40 40 0 0 1 84.64 32 Z') && wheelSvg.includes('L84.64 32 A40 40 0 0 1 84.64 72 Z'), 'each starting where the last ended')
 }
 
+// A repeat (gfx.repeat) draws its shapes once for every copy, each moved by its column and row; it is written once (a card counts its
+// shapes once), painted every time (the app's frame limit counts the copies), and makes at most 400 copies.
+{
+  const dot = () => G.invokeStdGfx('circle', nums([5, 5, 2]).concat([str('accent')]))
+  const grid = G.invokeStdGfx('repeat', nums([3, 2, 10, 20]).concat([new VeraArrayValue([dot(), dot()])]))
+  assert.deepEqual([grid.op.kind, grid.op.w, grid.op.h, grid.op.x, grid.op.y, grid.op.count, grid.op.drawn], ['repeat', 3, 2, 10, 20, 3, 13],
+    'three columns, two rows: written as three shapes, painted as thirteen')
+  const svg = svgOf([grid.op])
+  for (const at of ['M7 5', 'M17 5', 'M27 5', 'M7 25', 'M17 25', 'M27 25']) assert.ok(svg.includes(at), 'a copy at ' + at)
+  assert.equal((svg.match(/<path d="M\d+ \d+ A2 2/g) || []).length, 12, 'two shapes in each of six copies')
+  const back = G.decodeGfxOps(G.encodeGfxOps([grid.op]))[0]
+  assert.deepEqual([back.kind, back.w, back.h, back.x, back.y, back.children.length], ['repeat', 3, 2, 10, 20, 2], 'a repeat survives the card frame')
+  assert.equal(G.invokeStdGfx('repeat', nums([2.7, -1, 1, 1]).concat([new VeraArrayValue([dot()])])).op.drawn, 1, 'columns and rows are whole, none below zero')
+  assert.throws(() => G.invokeStdGfx('repeat', nums([21, 20, 1, 1]).concat([new VeraArrayValue([dot()])])), e => e.trapCode === 'R0028' && /at most 400 copies/.test(e.message),
+    'more than 400 copies trap')
+  // Ten shapes in each of 400 copies is past what one frame of the app draws.
+  const ten = Array.from({length: 10}, dot)
+  assert.throws(() => G.invokeStdGfx('repeat', nums([20, 20, 1, 1]).concat([new VeraArrayValue(ten)])), e => e.trapCode === 'R0028', 'the app counts the copies')
+  const tooMany = createRecorder(100, 100)
+  const forged = G.decodeGfxOps(JSON.stringify([{k: 'repeat', w: 1000, h: 1000, x: 1, y: 1, o: [{k: 'circle', x: 1, y: 1, r: 1}]}]))
+  G.paintGfx(tooMany.ctx, forged, light, 100, 100, 100, 100)
+  assert.ok(!tooMany.svg().includes('A1 1'), 'a frame from elsewhere past the cap is not painted')
+  // The bubble wrap example: a 12 x 12 sheet within a card picture's 60 shapes, painted in full.
+  const bubbles = compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-bubbles.vera'), 'utf8'))
+  const bvm = new VirtualMachine(deserializeVbc2(bubbles.vbc2), new UiHostEnvironment())
+  const bops = G.decodeGfx(bvm.execute('sheet', [bvm.execute('init')]))
+  assert.equal(bops.reduce((sum, o) => sum + o.count, 0), 9, 'the repeat of two shapes and six popped bubbles')
+  assert.equal(bops.reduce((sum, o) => sum + o.drawn, 0), 1 + 144 * 2 + 6)
+  const sheet = createRecorder(360, 360)
+  G.paintGfx(sheet.ctx, bops, light, 360, 360, 120, 120)
+  assert.equal((sheet.svg().match(/<radialGradient/g) || []).length, 144, 'every bubble lit')
+  fs.writeFileSync(path.join(__dirname, 'proofs/widget-bubbles.svg'), sheet.svg())
+}
+
 console.log('gfx-check ok')

@@ -76,7 +76,11 @@ export async function writeWidget(source: string, ask: string, prompt: string, s
     out.attempts = attempt + 1
     host.status(attempt === 0 ? 'Making the widget...' : 'Adjusting the widget...')
     let reply = await host.askCode!(system, asked + feedback, WIDGET_TOKENS, think)
-    if (reply === null || reply.trim().length === 0) { out.failed = 'no answer for the widget'; continue }
+    if (reply === null || reply.trim().length === 0) {
+      console.info('VERA-WIDGET attempt ' + (attempt + 1).toString() + ' failed: no answer')
+      out.failed = 'no answer for the widget'
+      continue
+    }
     // An import line closed with a semicolon, as in TypeScript, is the one slip that stops a widget's answer from parsing.
     out.written = sourceIn(reply).replace(/^(\s*import\s[^\n;]*);[ \t]*$/gm, '$1')
     logWidgetAnswer(attempt + 1, out.written)

@@ -494,6 +494,35 @@ before, prose in the prompt moves the model only some of the time; the next step
 is a closed wedge at the right angles, a whole turn a disc, a negative sweep anticlockwise, the frame round trip, six slices that meet),
 `widget-refine-check.js` (the example in the prompt compiles in a draw function, and a widget of it passes Make widget's checks).
 
+## Many of the same: gfx.repeat
+
+Bubble wrap could not be drawn on a card: about 145 circles against 60 shapes for each card picture and 8000 characters for the whole frame.
+`gfx.repeat(columns, rows, dx, dy, shapes)` draws its shapes `columns x rows` times. Each copy is `dx` further right and `dy` further down than the
+one before. It is one `GfxOp` of kind `repeat`: its children are written once, and the painter repeats them (`GfxPaint.paintOp`). That keeps a
+12 x 12 sheet short in the frame: `examples/widget-bubbles.vera` is under 2000 characters. Two counts are kept. `count` is the number of shapes
+written: a card picture may hold 60 of these, and a repeat counts its children once. `drawn` is the number of shapes painted: every copy counts.
+The app's 4000-shape frame limit (`MAX_GFX_SHAPES`) uses `drawn`. A card picture may paint at most 400 shapes (`LIVE_MAX_DRAWN`), and one repeat
+may make at most 400 copies (`MAX_GFX_REPEAT`). The painter applies the copy limit as well, so a frame from anywhere else cannot paint more. A touch on the picture goes to the picture's pointer handler, as before.
+
+The card's 60-shape refusal now says what to do: "Many of the same (bubbles, bricks, stars, dots in a grid) is one gfx.repeat(...), which counts
+its shapes once; draw only what differs from copy to copy (a popped bubble) over it". The prompt says the same beside the limit.
+
+One limit remains. Copies of a repeat cannot differ from one another, so whatever differs is drawn as shapes of its own. A sheet with more than about
+50 popped bubbles, each drawn separately, goes over the 60 shapes again. When that happens, the card refuses to draw it, just as it did before
+gfx.repeat existed.
+
+Measured on the phone (seven runs: bubble wrap four times, a brick wall twice, a box of chocolates once). Each time the 60-shape refusal named
+gfx.repeat, the model's next answer for bubble wrap used it (the answers are logged at debug level). One sheet of 10 x 10 lit bubbles became a cover
+picture on the card, and a tap there popped a bubble ("99 bubbles left"). A second answer with a repeat was refused by the touch check: that check
+touched only the middle of the picture, and on this sheet the middle falls between bubbles. It now tries six points (`TOUCH_POINTS`) before it calls a
+touch unseen. On the host the same answer is then served. Of the other runs, one bubble wrap app had a small sheet (48 bubbles) and needed no repeat.
+One run failed: a depth error, then no answer from the model. The two brick walls (66 and 68 shapes) failed on other checks, without a repeat. The
+box of chocolates fitted as it was. Make widget now logs `attempt N failed: no answer` when the model sends nothing back
+(`AgentWidget.writeWidget`). Host checks: `gfx-check.js` (copies at their offsets, written once and painted every time, whole columns, the 400-copy
+trap, the app's limit counting copies, a forged frame not painted, the bubble wrap example within 60 shapes, `proofs/widget-bubbles.svg`),
+`live-widget-check.js` (the sheet in a small frame, a tap pops a bubble, the same sheet as 144 shapes refused with the gfx.repeat reason, a
+repeat that paints 807 refused), `widget-refine-check.js` (the prompt, the example's widget passes, a touch between bubbles is not the only one tried).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

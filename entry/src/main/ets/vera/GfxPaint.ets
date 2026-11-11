@@ -116,9 +116,12 @@ export const DRIFT_SPEEDS: string[] = ['slow', 'medium', 'fast']
 export const DRIFT_PAGE_MS: number = 1050
 export function driftSlices(speed: string): number { return speed === 'fast' ? 2 : speed === 'medium' ? 4 : 8 }
 
+/** The most copies one gfx.repeat makes (columns x rows): a 12 x 12 sheet of bubble wrap is 144. */
+export const MAX_GFX_REPEAT: number = 400
+
 /** One thing to draw, as the program asked for it. Plain data: built by the host functions, read by paintGfx. */
 export class GfxOp {
-  /** rect | roundRect | circle | arc | sector | line | polyline | polygon | path | strokePath | text | group | fx | moving | drift */
+  /** rect | roundRect | circle | arc | sector | line | polyline | polygon | path | strokePath | text | group | fx | moving | drift | repeat */
   kind: string = ''
   /**
    * An fx's effect: glow | shadow | blur | add | screen | multiply ('' draws its shapes plain). Its blur is lineWidth, a shadow's offset w, h.
@@ -128,9 +131,9 @@ export class GfxOp {
   fx: string = ''
   x: number = 0
   y: number = 0
-  /** width, or x2 for a line */
+  /** width, or x2 for a line, or a repeat's columns (its step to the right is x, down y) */
   w: number = 0
-  /** height, or y2 for a line */
+  /** height, or y2 for a line, or a repeat's rows */
   h: number = 0
   /** radius; for a group its scale */
   r: number = 0
@@ -146,8 +149,10 @@ export class GfxOp {
   bold: boolean = false
   points: number[] = []
   children: GfxOp[] = []
-  /** Shapes in this one, itself included; the frame limit counts these. */
+  /** Shapes in this one, itself included, as written: a card's limit counts these. */
   count: number = 1
+  /** Shapes painted, a repeat's children once for every copy: the app's frame limit counts these. Not carried in a card's frame. */
+  drawn: number = 1
   depth: number = 0
 }
 
@@ -393,6 +398,21 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, path
   }
   if (o.kind === 'fx') {
     paintFx(ctx, o, t, pathScale, unit)
+    return
+  }
+  // Many of the same: the shapes once for every copy, each moved by its column and row. A frame read from a card is held to the cap too.
+  if (o.kind === 'repeat') {
+    let columns = Math.max(0, Math.floor(o.w))
+    let rows = Math.max(0, Math.floor(o.h))
+    if (columns * rows > MAX_GFX_REPEAT) { return }
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        ctx.save()
+        ctx.translate(column * o.x, row * o.y)
+        for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
+        ctx.restore()
+      }
+    }
     return
   }
   // A moving part at rest: its shapes as they are (paintMoving draws it in a pose). A drift met inside a group is drawn where it is.

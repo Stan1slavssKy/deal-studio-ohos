@@ -20,14 +20,14 @@
 
 import { RuntimeValue, VeraNumberValue, VeraStringValue, VeraBooleanValue, VeraArrayValue, VeraObjectValue,
   RuntimeTrap } from './VeraInterpreter'
-import { GfxOp, GFX_ROLES, isGfxColor, gfxColor, hex2, DRIFT_DIRECTIONS, DRIFT_SPEEDS } from './GfxPaint'
-export { GfxOp, GfxFit, GFX_ROLES, isGfxColor, gfxColor, gfxFit, gfxToSurface, gfxNaturalHeight, encodeGfxOps, decodeGfxOps, paintGfx, DRIFT_DIRECTIONS, DRIFT_SPEEDS } from './GfxPaint'
+import { GfxOp, GFX_ROLES, isGfxColor, gfxColor, hex2, DRIFT_DIRECTIONS, DRIFT_SPEEDS, MAX_GFX_REPEAT } from './GfxPaint'
+export { GfxOp, GfxFit, GFX_ROLES, isGfxColor, gfxColor, gfxFit, gfxToSurface, gfxNaturalHeight, encodeGfxOps, decodeGfxOps, paintGfx, DRIFT_DIRECTIONS, DRIFT_SPEEDS, MAX_GFX_REPEAT } from './GfxPaint'
 
 /** Class identities of the module's two types, as the compiler names them. */
 export const GFX_SHAPE: string = 'std/gfx:Shape'
 export const GFX_POINTER: string = 'std/gfx:Pointer'
 
-/** The most shapes one frame may draw, counting the inside of every group. Past it the frame traps rather than stalls. */
+/** The most shapes one frame may draw, counting the inside of every group and every copy a gfx.repeat makes. Past it the frame traps rather than stalls. */
 export const MAX_GFX_SHAPES: number = 4000
 /** Groups inside groups, at most. */
 export const MAX_GFX_DEPTH: number = 12
@@ -109,6 +109,10 @@ export const GFX_FUNCTIONS: GfxFunction[] = [
     'of the picture that slides on and on towards direction ("left", "right", "up", "down") at speed ("slow", "medium", "fast") and comes back ' +
     'in from the other side, so spread them over the whole picture; on a home-screen card it is the one thing that moves without a touch. ' +
     'Only among the shapes the draw function returns, at most 2 in a picture'),
+  new GfxFunction('repeat', [num('columns'), num('rows'), num('dx'), num('dy'), new GfxParam('shapes', 'shapes')], 'shape',
+    'shapes drawn columns x rows times, each copy dx further right and dy further down than the one before (the first where the shapes ' +
+    'are): bubble wrap, a wall of bricks, a grid of stars, seats or dots -- many of the same, written once; at most ' +
+    MAX_GFX_REPEAT.toString() + ' copies. Draw what differs from copy to copy (a popped bubble) over it as shapes of its own'),
   new GfxFunction('rgb', [num('red'), num('green'), num('blue'), new GfxParam('alpha', 'number', true)], 'string',
     'a colour from 0..255 channels and an optional 0..1 alpha, for colours computed at run time'),
   new GfxFunction('distance', [num('x1'), num('y1'), num('x2'), num('y2')], 'number',
@@ -194,22 +198,29 @@ function gradientNumber(n: number): string {
   return isFinite(n) ? (Math.round(n * 100) / 100).toString() : 'NaN'
 }
 
-/** Children of a shape that holds others (group, fx): counted and nested as the frame limits say. */
+/**
+ * Children of a shape that holds others (group, fx, moving, drift, repeat): counted and nested as the frame limits say. `count` is what is
+ * written (a card holds that many), `drawn` what is painted: a repeat's shapes once each for the first, once for every copy for the second.
+ */
 function holding(o: GfxOp, children: GfxOp[]): RuntimeValue {
   o.children = children
   let count = 1
+  let inside = 0
   let depth = 0
   for (let c of o.children) {
     count += c.count
+    inside += c.drawn
     if (c.depth + 1 > depth) { depth = c.depth + 1 }
   }
+  let drawn = 1 + inside * (o.kind === 'repeat' ? o.w * o.h : 1)
   if (depth > MAX_GFX_DEPTH) {
     throw new RuntimeTrap('R0028', 'groups nest at most ' + MAX_GFX_DEPTH.toString() + ' deep')
   }
-  if (count > MAX_GFX_SHAPES) {
+  if (drawn > MAX_GFX_SHAPES) {
     throw new RuntimeTrap('R0028', 'one frame draws at most ' + MAX_GFX_SHAPES.toString() + ' shapes')
   }
   o.count = count
+  o.drawn = drawn
   o.depth = depth
   return shape(o)
 }
@@ -222,6 +233,11 @@ function shapesIn(value: RuntimeValue): GfxOp[] {
     if (item instanceof GfxShapeValue) { out.push((item as GfxShapeValue).op) }
   }
   return out
+}
+
+/** A gfx.repeat's columns or rows: a whole number, none for one that is not a number or below zero. */
+function copies(n: number): number {
+  return isFinite(n) && n > 0 ? Math.floor(n) : 0
 }
 
 function shape(op: GfxOp): RuntimeValue {
@@ -317,6 +333,15 @@ export function invokeStdGfx(name: string, args: RuntimeValue[]): RuntimeValue {
       o.fx = asStr(args, 0); o.sweep = asNum(args, 1); o.x = asNum(args, 2); o.y = asNum(args, 3)
       return holding(o, args.length > 4 ? shapesIn(args[4]) : [])
     }
+    case 'repeat': {
+      let o = op('repeat', '')
+      o.w = copies(asNum(args, 0)); o.h = copies(asNum(args, 1)); o.x = asNum(args, 2); o.y = asNum(args, 3)
+      if (o.w * o.h > MAX_GFX_REPEAT) {
+        throw new RuntimeTrap('R0028', 'gfx.repeat makes at most ' + MAX_GFX_REPEAT.toString() + ' copies; this one asked for ' +
+          o.w.toString() + ' x ' + o.h.toString())
+      }
+      return holding(o, args.length > 4 ? shapesIn(args[4]) : [])
+    }
     case 'drift': {
       let o = op('drift', '')
       let direction = asStr(args, 0)
@@ -382,7 +407,7 @@ export function pointerValue(phase: string, id: number, x: number, y: number): R
 export function decodeGfx(value: RuntimeValue): GfxOp[] {
   let ops = shapesIn(value)
   let count = 0
-  for (let o of ops) { count += o.count }
+  for (let o of ops) { count += o.drawn }
   if (count > MAX_GFX_SHAPES) {
     throw new RuntimeTrap('R0028', 'one frame draws at most ' + MAX_GFX_SHAPES.toString() + ' shapes; this one drew ' +
       count.toString())
