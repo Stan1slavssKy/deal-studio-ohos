@@ -1,0 +1,55 @@
+@jsonable class AppState { elapsedMs: number; running: boolean; finished: boolean; lift: number; launching: boolean; }
+
+function init(): AppState { return {elapsedMs: 0, running: false, finished: false, lift: 0, launching: false}; }
+
+function onTick(state: AppState, ms: number): AppState {
+  if (!state.running) { return state; }
+  let next: number = state.elapsedMs + ms;
+  if (next < 3000) { return {elapsedMs: next, running: true, finished: false, lift: state.lift, launching: state.launching}; }
+  return {elapsedMs: 3000, running: false, finished: true, lift: state.lift, launching: state.launching};
+}
+
+function onFrame(state: AppState, ms: number): AppState {
+  if (!state.launching || !state.finished) { return state; }
+  let lift: number = state.lift + 90 * math.min(ms, 50) / 1000;
+  if (lift >= 340) { return {elapsedMs: state.elapsedMs, running: false, finished: true, lift: 340, launching: false}; }
+  return {elapsedMs: state.elapsedMs, running: false, finished: true, lift: lift, launching: true};
+}
+
+function onPad(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase !== "up" || state.launching) { return state; }
+  return {elapsedMs: 0, running: true, finished: false, lift: 0, launching: true};
+}
+
+function scene(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.rect(0, 0, 100, 100, gfx.linear(0, 0, 0, 100, ["#0b1a3a", "#3a6ea5"])));
+  let y: number = 70 - state.lift * 0.2;
+  shapes.push(gfx.polygon([50, y - 18, 56, y - 6, 44, y - 6], "#ef4444"));
+  shapes.push(gfx.roundRect(44, y - 6, 12, 22, 4, "#e5e7eb"));
+  shapes.push(gfx.rect(30, 88, 40, 6, "#4b5563"));
+  return shapes;
+}
+
+function status(state: AppState): string {
+  if (state.lift >= 340) { return "Liftoff!"; }
+  if (state.running) { return "Counting down"; }
+  return "Ready";
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Ticker("default", "count", 200, state.running, "onTick"),
+    ui.Surface("default", 100, 100, "scene", "onFrame", "onPad"),
+    ui.Text("caption", status(state))
+  ]);
+}
+
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("center", [
+      ui.Surface("cover", 100, 100, "scene", "", "onPad"),
+      ui.Text("caption", status(state))
+    ])
+  ]);
+}

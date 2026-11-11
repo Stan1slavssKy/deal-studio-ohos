@@ -240,7 +240,8 @@ function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
     let problem = glanceError(frame)
     if (problem.length > 0) { return problem }
   }
-  return glance ? (movingSceneError(frames[0].nodes) || backgroundError(frames[0].nodes) || deadPicture(vbc2, state, frames[0].nodes)) : ''
+  return glance ? (movingSceneError(frames[0].nodes) || backgroundError(frames[0].nodes) || deadPicture(vbc2, state, frames[0].nodes) ||
+    unseenTouch(vbc2, state, frames[0])) : ''
 }
 
 /** The first shape of a picture fills it: the picture paints its own background. */
@@ -378,8 +379,9 @@ function checkTaps(vbc2: string, state: string, nodes: CardNode[], dimension: nu
 }
 
 /**
- * A button that a tap leaves off for good: what it started only the app's frames finish, and they did not come to rest within the few
- * seconds the card runs them after a tap (a wheel whose Spin waits for it to stop). On the card it would stay off.
+ * A button that a tap leaves off for good: what it started only the app's clock finishes, and it did not come to rest within the seconds the
+ * card runs it after a tap (a wheel whose Spin waits for it to stop). On the card it would stay off. A button off after a tap whose work came
+ * to rest is the app's own rule (a generated countdown's Start waits for Reset) and passes.
  */
 function stuckButton(vbc2: string, state: string, button: CardNode, dimension: number): string {
   let branch = new WidgetSession(vbc2, 'validation', state)
@@ -389,6 +391,8 @@ function stuckButton(vbc2: string, state: string, button: CardNode, dimension: n
   } catch (e) {
     return ''
   }
+  // What the tap started came to rest: a button that is off now is the app's own rule (a Start that waits for Reset), not something unfinished.
+  if (branch.lastTapRested) { return '' }
   let after = branch.frame('project', 'App', '', dimension)
   let same = collectNodes(after.nodes, (node: CardNode): boolean =>
     (node.kind === 'button' || node.kind === 'iconbutton') && node.action === button.action && node.value === button.value)
@@ -397,6 +401,33 @@ function stuckButton(vbc2: string, state: string, button: CardNode, dimension: n
       'starts something only the app\'s frames finish, and the card runs them for ' + Math.round(SETTLE_MAX_STEPS * SETTLE_STEP_MS / 1000).toString() +
       ' s after a tap, which is not enough for it to come to rest. Give the widget its own handler (a new name) that finishes at once -- ' +
       'works out the result straight away (where the wheel stops, the die\'s face) and returns the state at rest -- and give the button that handler.'
+  }
+  return ''
+}
+
+/**
+ * A picture that takes a touch and shows nothing for it: no movement around it (a ui.Motion, gfx.moving parts) and, after the tap and what
+ * the card runs after it, the same card as before. The rocket of a generated countdown app was such a widget: its tap started a countdown
+ * the card could not finish, and nothing on the card moved.
+ */
+function unseenTouch(vbc2: string, state: string, frame: LiveFrame): string {
+  let still = collectNodes(frame.nodes, (node: CardNode): boolean =>
+    node.kind === 'surface' && node.pointer.length > 0 && node.slot < 0 && node.links === undefined)
+  for (let picture of still) {
+    let branch = new WidgetSession(vbc2, 'validation', state)
+    let before = branch.frame('project', 'App', '', frame.dimension)
+    try {
+      branch.tapSurface(before, before.token, picture.pointer, picture.w / 2, picture.h / 2)
+    } catch (e) {
+      continue
+    }
+    let after = branch.frame('project', 'App', '', frame.dimension)
+    if (JSON.stringify(after.nodes) === JSON.stringify(before.nodes)) {
+      return 'A touch on the picture changes nothing you can see on the card: nothing in it moves and it is drawn the same after the tap ' +
+        '(what the tap starts in the app may need its timers, which the card does not run for long). Make the touched thing move: wrap its ' +
+        'shapes in gfx.moving(style, 0, pivotX, pivotY, [shapes]) with the movement it makes (a rocket launches, a frog hops), or the whole ' +
+        'picture in ui.Motion when it is only that thing; or give it a handler of its own that changes what is drawn at once.'
+    }
   }
   return ''
 }

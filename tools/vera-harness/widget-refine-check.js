@@ -27,15 +27,28 @@ assert.equal(smokeRun(compiled),'')
   const wheel = fs.readFileSync(path.join(__dirname, 'examples/widget-wheel.vera'), 'utf8')
   const wheelBase = withoutWidget(wheel)
   assert.equal(validateWidgetRefinement(wheelBase, wheel, compileVeraSource(wheel).vbc2), '', 'a wheel that lands within the card\'s frames passes')
-  const slow = wheel.replace('let speed: number = state.speed - 900 * ms / 1000;', 'let speed: number = state.speed - 60 * ms / 1000;')
+  const slow = wheel.replace('let speed: number = state.speed - 900 * ms / 1000;', 'let speed: number = state.speed - 30 * ms / 1000;')
   assert.match(validateWidgetRefinement(withoutWidget(slow), slow, compileVeraSource(slow).vbc2), /"Spin" that button stays off on the card for good[\s\S]*finishes at once/)
+  const once = wheel.replace('ui.Button("primary", "Spin", "spin", 0, state.speed === 0)', 'ui.Button("primary", "Spin", "spin", 0, state.spins === 0)')
+  assert.notEqual(once, wheel)
+  assert.equal(validateWidgetRefinement(withoutWidget(once), once, compileVeraSource(once).vbc2), '',
+    'a button the app turns off once what it started is over (one spin only) is the app\'s rule, not something left unfinished')
   const dead = wheel.replace('ui.Surface("default", 100, 100, "wheel", "", "onTouch"),\n      ui.Text("caption", result(state)),\n      ui.Button("primary", "Spin", "spin", 0, state.speed === 0)',
     'ui.Surface("default", 100, 100, "wheel", "", ""),\n      ui.Text("caption", result(state))')
   assert.notEqual(dead, wheel)
   assert.match(validateWidgetRefinement(withoutWidget(dead), dead, compileVeraSource(dead).vbc2), /In the app a touch on the picture does something \(its handler "onTouch"\)/)
-  assert.match(widgetRefinementPrompt(false), /After a tap the card runs the app's own frame handlers for up to 10 s/)
+  assert.match(widgetRefinementPrompt(false), /After a tap the card runs the app's own frame handlers for up to 20 s/)
   assert.match(widgetRefinementPrompt(false), /for size 3, draws its picture wide/)
   assert.match(widgetRefinementPrompt(false), /ALWAYS MOVING[\s\S]*gfx\.drift\(direction, speed/)
+}
+
+// A picture that takes a touch and shows nothing for it -- no movement, the same card after the tap -- is refused.
+{
+  const rocket = fs.readFileSync(path.join(__dirname, 'examples/widget-countdown-rocket.vera'), 'utf8')
+  assert.equal(validateWidgetRefinement(withoutWidget(rocket), rocket, compileVeraSource(rocket).vbc2), '', 'a tap that launches the rocket on the card passes')
+  const inert = rocket.replace('if (p.phase !== "up" || state.launching) { return state; }', 'return state;')
+  assert.notEqual(inert, rocket)
+  assert.match(validateWidgetRefinement(withoutWidget(inert), inert, compileVeraSource(inert).vbc2), /A touch on the picture changes nothing you can see/)
 }
 
 // A picture that paints its own background is a scene: Make widget asks for it as a cover picture, so it is not a square in the middle of the card.

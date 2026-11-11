@@ -29,9 +29,19 @@ export const LIVE_MAX_PARTS: number = 3
 export const LIVE_MAX_DRIFTS: number = 2
 /** After a tap the app's frame handlers run in steps of this many ms (a card has no frames of its own)... */
 export const SETTLE_STEP_MS: number = 33
-/** ...for at most this many steps (10 s: a wheel takes 4 or 5), and the state they reach is kept only once this many steps in a row change nothing. */
-export const SETTLE_MAX_STEPS: number = 300
+/**
+ * ...for at most this many steps (20 s: a wheel takes 4 or 5, a 10 s countdown and the launch after it 14), and the state they reach is kept only
+ * once this many steps in a row change nothing.
+ */
+export const SETTLE_MAX_STEPS: number = 600
 export const SETTLE_CALM_STEPS: number = 3
+/**
+ * A state whose only changing fields are clocks (each step adds the same to them: an animation's time, for the twinkle of stars or a flame)
+ * for this many steps (1 s) by the end of the budget is at rest: the clock never stops, what it animates has.
+ */
+export const SETTLE_CLOCK_CALM_STEPS: number = 30
+/** How often, in steps, the view is asked again what runs (a tap may have started a ticker that the next tick stops). */
+export const SETTLE_REASK_STEPS: number = 5
 export const LIVE_MAX_SHAPES: number = CARD_MAX_SHAPES
 /** Timers a card runs (ui.Timer, the platform's own TextTimer). */
 export const LIVE_MAX_TIMERS: number = CARD_MAX_TIMERS
@@ -237,6 +247,56 @@ function sparkOps(series: number[], series2: number[], maximum: number, bars: bo
   return ops
 }
 
+/** A handler that moves a state on with the time: a ui.Surface frame function (interval 0, every step) or a running ui.Ticker's. */
+class ClockDriver {
+  handler: string
+  interval: number
+  constructor(handler: string, interval: number) { this.handler = handler; this.interval = interval }
+}
+
+/**
+ * The fields of a state from one step to the next: see() says whether nothing but clocks changed -- numbers that grew by the same amount as
+ * at the step before -- while everything else stayed as it was.
+ */
+class StateClocks {
+  private values: Map<string, string> = new Map<string, string>()
+  private numbers: Map<string, number> = new Map<string, number>()
+  private steps: Map<string, number> = new Map<string, number>()
+
+  see(state: RuntimeValue): boolean {
+    let encoded = encodeRuntimeValue(state) as Object
+    let fields = Array.isArray(encoded) && (encoded as Object[]).length > 2 && Array.isArray((encoded as Object[])[2]) ? (encoded as Object[])[2] as Object[] : []
+    let onlyClocks = this.values.size > 0
+    for (let entry of fields) {
+      if (!Array.isArray(entry) || (entry as Object[]).length < 2) { continue }
+      let name = String((entry as Object[])[0])
+      let value = (entry as Object[])[1]
+      let text = JSON.stringify(value)
+      let isNumber = Array.isArray(value) && (value as Object[])[0] === 'n' && typeof (value as Object[])[1] === 'number'
+      if (isNumber) {
+        let now = (value as Object[])[1] as number
+        let before = this.numbers.get(name)
+        let step = before !== undefined ? now - before : 0
+        let stepBefore = this.steps.get(name)
+        let clock = step !== 0 && stepBefore !== undefined && Math.abs(step - stepBefore) <= 1e-6 * Math.max(1, Math.abs(step))
+        if (step !== 0 && !clock) { onlyClocks = false }
+        this.numbers.set(name, now)
+        this.steps.set(name, step)
+      } else if (this.values.has(name) && this.values.get(name) !== text) {
+        onlyClocks = false
+      }
+      this.values.set(name, text)
+    }
+    return onlyClocks
+  }
+}
+
+function slowest(drivers: ClockDriver[]): number {
+  let most = 0
+  for (let driver of drivers) { most = Math.max(most, driver.interval) }
+  return most
+}
+
 export class WidgetSession {
   private host: UiHostEnvironment = new UiHostEnvironment()
   private vm: VirtualMachine
@@ -247,6 +307,8 @@ export class WidgetSession {
   private hasRefresh: boolean = false
   /** widget(state, size: number): the program asked for the card's size too. */
   private hasSize: boolean = false
+  /** Whether what the last tap started came to rest on the card (settle); true when there was nothing to run. */
+  lastTapRested: boolean = true
 
   constructor(vbc2: string, versionId: string, saved: string) {
     this.bytecode = vbc2
@@ -261,54 +323,83 @@ export class WidgetSession {
 
   encodedState(): string { return JSON.stringify(encodeRuntimeValue(this.state)) }
 
-  /** The frame handlers of the app's own view: the ui.Surface frame functions the app runs about 60 times a second. */
-  private frameHandlers(): string[] {
-    let names: string[] = []
+  /**
+   * What moves the app's state on with the time, as its view now asks: the ui.Surface frame functions (about 60 a second) and the ui.Ticker
+   * handlers that are running, with their intervals. Asked again as the state goes on, since a tap often starts a ticker (a countdown).
+   */
+  private clockDrivers(state: RuntimeValue): ClockDriver[] {
+    let drivers: ClockDriver[] = []
     try {
       let walk = (nodes: VeraUiNode[]): void => {
         for (let node of nodes) {
-          if (node.kind === 'surface' && node.action.length > 0 && names.indexOf(node.action) < 0) { names.push(node.action) }
+          if (node.kind === 'surface' && node.action.length > 0) { drivers.push(new ClockDriver(node.action, 0)) }
+          if (node.kind === 'ticker' && node.checked && node.action.length > 0 && node.minimum > 0) {
+            drivers.push(new ClockDriver(node.action, node.minimum))
+          }
           walk(node.children)
         }
       }
-      walk(decodeVeraUi(this.vm.execute('view', [this.state])))
+      walk(decodeVeraUi(this.vm.execute('view', [state])))
     } catch (e) {
       return []
     }
-    return names
+    return drivers
   }
 
   /**
-   * What a tap started, finished: a card has no frames, so a wheel set spinning by a tap would spin for ever and its Spin button stay off
-   * (found on the phone). The app's frame handlers run on the state in SETTLE_STEP_MS steps, as the app would run them, and the state they
-   * reach is kept once it stops changing. What a frame asks of the phone (a tick's vibration, a sound) is dropped, as the card can do none of
+   * What a tap started, finished: a card has no frames or tickers, so a wheel set spinning by a tap would spin for ever and its Spin button
+   * stay off, and a countdown started by a tap would never reach its launch (found on the phone). The app's frame handlers and running tickers
+   * run on the state in SETTLE_STEP_MS steps of its clock, as the app would run them (a ticker of 200 ms every sixth step or so), and the state
+   * they reach is kept once it stops changing. What they ask of the phone (a tick's vibration, a sound) is dropped, as the card can do none of
    * it, and never answered. A state that does not come to rest within SETTLE_MAX_STEPS -- a game that plays on, a clock that counts -- is left
-   * as the tap left it, so the card never plays a game on for the person; so is one whose frame traps.
+   * as the tap left it, so the card never plays a game on for the person; so is one whose step traps.
    */
   private settle(): void {
-    let handlers = this.frameHandlers()
-    if (handlers.length === 0) { return }
     let started = Date.now()
     let current = this.state
+    let drivers = this.clockDrivers(current)
+    this.lastTapRested = true
+    if (drivers.length === 0) { return }
+    let owed = new Map<string, number>()
     let last = JSON.stringify(encodeRuntimeValue(current))
     let calm = 0
+    let clocks = new StateClocks()
+    clocks.see(current)
+    let clockCalm = 0
     let step = 0
     let rested = false
     this.host.effectsAllowed = true
     try {
       for (; step < SETTLE_MAX_STEPS && !rested; step++) {
-        for (let handler of handlers) {
+        // What runs may change with the state: a ticker started or stopped. Asked again every few steps, not every one (a view is not free).
+        if (step > 0 && step % SETTLE_REASK_STEPS === 0) { drivers = this.clockDrivers(current) }
+        for (let driver of drivers) {
           this.host.pendingEffects = []
-          current = this.vm.execute(handler, [current, new VeraNumberValue(SETTLE_STEP_MS)])
+          if (driver.interval === 0) {
+            current = this.vm.execute(driver.handler, [current, new VeraNumberValue(SETTLE_STEP_MS)])
+            continue
+          }
+          let due = (owed.has(driver.handler) ? owed.get(driver.handler)! : 0) + SETTLE_STEP_MS
+          while (due >= driver.interval) {
+            current = this.vm.execute(driver.handler, [current, new VeraNumberValue(driver.interval)])
+            due -= driver.interval
+          }
+          owed.set(driver.handler, due)
         }
         let encoded = JSON.stringify(encodeRuntimeValue(current))
         calm = encoded === last ? calm + 1 : 0
         last = encoded
-        rested = calm >= SETTLE_CALM_STEPS
+        clockCalm = clocks.see(current) ? clockCalm + 1 : 0
+        // A ticker slower than the calm window would look like rest between its ticks: wait out the slowest one too.
+        rested = calm >= Math.max(SETTLE_CALM_STEPS, Math.ceil(slowest(drivers) / SETTLE_STEP_MS) + 1)
       }
+      // Only its clocks still going, everything they animate still for a second: what the tap started is over.
+      if (!rested && clockCalm >= SETTLE_CLOCK_CALM_STEPS) { rested = true }
       if (rested) { this.state = current }
+      this.lastTapRested = rested
     } catch (e) {
-      // A frame that traps does not count: the state stays as the tap left it.
+      this.lastTapRested = false
+      // A step that traps does not count: the state stays as the tap left it.
     } finally {
       this.host.effectsAllowed = false
       this.host.pendingEffects = []

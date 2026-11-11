@@ -586,7 +586,7 @@ assert.match(view, /node.key \+ this.frameKey/)
 }
 
 // A tap finishes what it started: the card has no frames, so after a tap the app's frame handlers run until the state comes to rest -- a wheel
-// stops on its prize and Spin comes back on, even when each tick asks for a vibration. A state that does not come to rest in 10 s stays as the tap left it.
+// stops on its prize and Spin comes back on, even when each tick asks for a vibration. A state that does not come to rest in 20 s stays as the tap left it.
 {
   const wheel = fs.readFileSync(path.join(__dirname, 'examples/widget-wheel.vera'), 'utf8')
   const spinOf = src => {
@@ -606,8 +606,8 @@ assert.match(view, /node.key \+ this.frameKey/)
   touched.tapSurface(tf, tf.token, 'onTouch', 50, 50)
   assert(texts(touched.frame('p1', 'Wheel', '🎡').nodes).some(t => /^Won/.test(t)), 'a touch on the wheel lands it too')
   // One that would take longer than 3 s is left spinning: the card does not play on for the person.
-  const slow = spinOf(wheel.replace('let speed: number = state.speed - 900 * ms / 1000;', 'let speed: number = state.speed - 60 * ms / 1000;'))
-  assert(texts(slow.frame('p1', 'Wheel', '🎡').nodes).includes('Spinning...'), 'a spin that does not stop in 10 s stays as the tap left it')
+  const slow = spinOf(wheel.replace('let speed: number = state.speed - 900 * ms / 1000;', 'let speed: number = state.speed - 30 * ms / 1000;'))
+  assert(texts(slow.frame('p1', 'Wheel', '🎡').nodes).includes('Spinning...'), 'a spin that does not stop in 20 s stays as the tap left it')
   // A frame that asks for the phone does not count either.
   const buzzing = 'import * as sdk from "std/sdk"\n' + wheel.replace('  if (state.speed <= 0) { return state; }', '  if (state.speed <= 0) { return state; }\n  sdk.call("fixture/phone/Ability/buzz", [], "buzzed", "foreground");') +
     '\nfunction buzzed(state: AppState, answer: string): AppState { return state; }\n'
@@ -641,4 +641,14 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.notEqual(three, sky)
   assert.throws(() => new WidgetSession(compileVeraSource(three).vbc2, 'three', '').frame('p1', 'Sky', '🌌'), /at most 2 gfx.drift/)
 }
-console.log('PASS live counter: drifts, settle after a tap, moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
+
+// The app's tickers run too: a tap that starts a countdown (a ui.Ticker) whose end launches the rocket (frames) is finished on the card --
+// the rocket of a generated app stood on its pad because only frames ran.
+{
+  const rocket = fs.readFileSync(path.join(__dirname, 'examples/widget-countdown-rocket.vera'), 'utf8')
+  const s = new WidgetSession(compileVeraSource(rocket).vbc2, 'rocket', '')
+  const f = s.frame('p1', 'Rocket', '🚀')
+  s.tapSurface(f, f.token, 'onPad', 50, 50)
+  assert(texts(s.frame('p1', 'Rocket', '🚀').nodes).includes('Liftoff!'), 'the countdown ran out and the rocket left: ' + texts(s.frame('p1', 'Rocket', '🚀').nodes))
+}
+console.log('PASS live counter: tickers in settle, drifts, settle after a tap, moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
