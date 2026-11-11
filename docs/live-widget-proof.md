@@ -426,6 +426,15 @@ Now the running tickers run too, and a state whose only changing fields are such
 generations of the prompt: a tap finished the countdown and the launch on the card ("Liftoff complete"), and one written with a `gfx.moving("launch")`
 rocket flew off its sky and came back. A button the app turns off once its work is over (a Start that waits for Reset) is no longer refused.
 
+What settling costs: on a scene that never rests (a generated night sky whose stars twinkle on a clock) a tap first took 657 ms on the phone; most of it was
+encoding the state, twice a step. Encoded once a step: 365 ms. Taking a state whose only changing fields are clocks at once from 10 s on
+(`SETTLE_CLOCK_EARLY_STEPS`) rather than at the end of the 20 s: 186 ms. A wheel that lands takes a few ms.
+
+The 15 toy prompts at the end of the day, on the phone, against the morning's run: 13 of 15 widgets made (bubble wrap still over the 60-shape picture limit;
+the fish tank's third answer did not come). The frog hops off a lily pad that fills the card, the cat fills the card and is stroked, the die tumbles and shows
+a new face, the rocket launches out of a sky that stays, the punching bag swings from its hook, the wheel lands on its result, the night sky's stars drift; the
+pendulum still swings whole and one wheel was drawn as a single slice by the model.
+
 Make widget holds two more things to the card:
 
 - a picture that takes a touch and shows nothing for it: no ui.Motion or gfx.moving around it and the same card after the tap and the settling (`unseenTouch`;

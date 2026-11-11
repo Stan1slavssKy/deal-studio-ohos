@@ -40,6 +40,11 @@ export const SETTLE_CALM_STEPS: number = 3
  * for this many steps (1 s) by the end of the budget is at rest: the clock never stops, what it animates has.
  */
 export const SETTLE_CLOCK_CALM_STEPS: number = 30
+/**
+ * ...and from this step on (10 s) such a state is taken at once rather than at the end of the budget: a motion at a steady speed (a rocket
+ * rising) looks like a clock too, and most are over by then. On the phone it halved what a tap on a never-resting scene cost (365 ms).
+ */
+export const SETTLE_CLOCK_EARLY_STEPS: number = 300
 /** How often, in steps, the view is asked again what runs (a tap may have started a ticker that the next tick stops). */
 export const SETTLE_REASK_STEPS: number = 5
 export const LIVE_MAX_SHAPES: number = CARD_MAX_SHAPES
@@ -263,16 +268,17 @@ class StateClocks {
   private numbers: Map<string, number> = new Map<string, number>()
   private steps: Map<string, number> = new Map<string, number>()
 
-  see(state: RuntimeValue): boolean {
-    let encoded = encodeRuntimeValue(state) as Object
+  /** `encoded` is the state as encodeRuntimeValue wrote it. */
+  see(encoded: Object): boolean {
     let fields = Array.isArray(encoded) && (encoded as Object[]).length > 2 && Array.isArray((encoded as Object[])[2]) ? (encoded as Object[])[2] as Object[] : []
-    let onlyClocks = this.values.size > 0
+    let onlyClocks = this.values.size > 0 || this.numbers.size > 0
     for (let entry of fields) {
       if (!Array.isArray(entry) || (entry as Object[]).length < 2) { continue }
       let name = String((entry as Object[])[0])
       let value = (entry as Object[])[1]
-      let text = JSON.stringify(value)
       let isNumber = Array.isArray(value) && (value as Object[])[0] === 'n' && typeof (value as Object[])[1] === 'number'
+      // A number is compared as a number; anything else as its text, written only for what is not a number.
+      let text = isNumber ? '' : JSON.stringify(value)
       if (isNumber) {
         let now = (value as Object[])[1] as number
         let before = this.numbers.get(name)
@@ -282,10 +288,10 @@ class StateClocks {
         if (step !== 0 && !clock) { onlyClocks = false }
         this.numbers.set(name, now)
         this.steps.set(name, step)
-      } else if (this.values.has(name) && this.values.get(name) !== text) {
-        onlyClocks = false
+      } else {
+        if (this.values.has(name) && this.values.get(name) !== text) { onlyClocks = false }
+        this.values.set(name, text)
       }
-      this.values.set(name, text)
     }
     return onlyClocks
   }
@@ -364,7 +370,7 @@ export class WidgetSession {
     let last = JSON.stringify(encodeRuntimeValue(current))
     let calm = 0
     let clocks = new StateClocks()
-    clocks.see(current)
+    clocks.see(encodeRuntimeValue(current) as Object)
     let clockCalm = 0
     let step = 0
     let rested = false
@@ -386,12 +392,15 @@ export class WidgetSession {
           }
           owed.set(driver.handler, due)
         }
-        let encoded = JSON.stringify(encodeRuntimeValue(current))
+        // One encoding a step serves both: the state as a whole, and its fields one by one (encoding is most of a step's cost).
+        let tree = encodeRuntimeValue(current) as Object
+        let encoded = JSON.stringify(tree)
         calm = encoded === last ? calm + 1 : 0
         last = encoded
-        clockCalm = clocks.see(current) ? clockCalm + 1 : 0
+        clockCalm = clocks.see(tree) ? clockCalm + 1 : 0
         // A ticker slower than the calm window would look like rest between its ticks: wait out the slowest one too.
-        rested = calm >= Math.max(SETTLE_CALM_STEPS, Math.ceil(slowest(drivers) / SETTLE_STEP_MS) + 1)
+        rested = calm >= Math.max(SETTLE_CALM_STEPS, Math.ceil(slowest(drivers) / SETTLE_STEP_MS) + 1) ||
+          (step + 1 >= SETTLE_CLOCK_EARLY_STEPS && clockCalm >= SETTLE_CLOCK_CALM_STEPS)
       }
       // Only its clocks still going, everything they animate still for a second: what the tap started is over.
       if (!rested && clockCalm >= SETTLE_CLOCK_CALM_STEPS) { rested = true }
