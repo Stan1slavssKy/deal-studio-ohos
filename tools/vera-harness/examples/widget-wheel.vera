@@ -4,7 +4,7 @@ function init(): AppState { return {angle: 0, speed: 0, prize: -1, spins: 0}; }
 
 function prizes(): number[] { return [10, 50, 0, 100, 5, 20, 0, 200]; }
 
-function wheel(state: AppState): gfx.Shape[] {
+function disc(state: AppState): gfx.Shape {
   let colours: string[] = ["#f87171", "#fbbf24", "#34d399", "#60a5fa", "#a78bfa", "#f472b6", "#2dd4bf", "#fb923c"];
   let slices: gfx.Shape[] = [];
   let i: number = 0;
@@ -20,11 +20,16 @@ function wheel(state: AppState): gfx.Shape[] {
     slices.push(gfx.polygon(points, colours[i]));
     i = i + 1;
   }
-  let shapes: gfx.Shape[] = [];
-  shapes.push(gfx.group(50, 52, state.angle, 1, 1, slices));
-  shapes.push(gfx.circle(50, 52, 6, "white"));
-  shapes.push(gfx.polygon([44, 4, 56, 4, 50, 14], "#1f2937"));
-  return shapes;
+  return gfx.group(50, 52, state.angle, 1, 1, slices);
+}
+
+function wheel(state: AppState): gfx.Shape[] {
+  return [disc(state), gfx.circle(50, 52, 6, "white"), gfx.polygon([44, 4, 56, 4, 50, 14], "#1f2937")];
+}
+
+// The card's picture: the wheel turns about its centre (a gfx.moving part) under the hub and the pointer, which stay.
+function wheelCard(state: AppState): gfx.Shape[] {
+  return [gfx.moving("spin", state.spins, 50, 52, [disc(state)]), gfx.circle(50, 52, 6, "white"), gfx.polygon([44, 4, 56, 4, 50, 14], "#1f2937")];
 }
 
 function settleAngle(angle: number): number { return angle - 360 * math.floor(angle / 360); }
@@ -64,7 +69,7 @@ function view(state: AppState): ui.View {
 function widget(state: AppState): ui.View {
   return ui.AppTheme("playful", "", [
     ui.Column("center", [
-      ui.Surface("default", 100, 100, "wheel", "", "onTouch"),
+      ui.Surface("default", 100, 100, "wheelCard", "", "onTouch"),
       ui.Text("caption", result(state)),
       ui.Button("primary", "Spin", "spin", 0, state.speed === 0)
     ])

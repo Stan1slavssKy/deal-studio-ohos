@@ -523,6 +523,51 @@ trap, the app's limit counting copies, a forged frame not painted, the bubble wr
 `live-widget-check.js` (the sheet in a small frame, a tap pops a bubble, the same sheet as 144 shapes refused with the gfx.repeat reason, a
 repeat that paints 807 refused), `widget-refine-check.js` (the prompt, the example's widget passes, a touch between bubbles is not the only one tried).
 
+## The moving part, learnt from the app's own animation
+
+The prompt's example did not get the model to use moving parts (step above), but the generated apps already show which part moves: many of them
+animate their subject in the frame handler. `VeraMovingPart.appMovingPart` runs that handler from the saved state, in a VM of its own, with phone
+effects dropped. It first watches the state as it is. When nothing turns, it tries again after a touch in the middle of the picture, then after a
+press of each of the first three buttons, because a wheel is still until it is spun. Each try runs 90 frames of 33 ms and decodes the draw
+function every third frame. `partFromLooks` then compares those frames. Each shape is reduced to the points that say where it is (`pointsOf`: a
+centre, the ends of a line, a polygon's corners, a group's origin and what the group holds, through the group's transform). Shapes whose points
+move are candidates for the part.
+
+The point they turn about is found by least squares: for every moving point, `|P_t|^2 - |P_0|^2 = 2 c . (P_t - P_0)`. Two things may turn about
+different points, for example a dial's second hand and the pendulum under it (a generated clock had both, and a single fit over all points
+missed). So each point's own circle is a candidate centre, and the centre that the most points lie on wins. A point whose own circle has a
+different centre does not count for it. The centre is then fitted again on the points that lie on it. What turns must also turn whole: the
+distances between its points do not change, so seaweed that bends, a burst ring that grows, or sparks that fly apart are not a part. A part is
+also refused when its centre is far outside the picture (a slide or a rise, not a turn), when it turns less than 8 degrees, or when nothing
+stays. If a point of a moving shape stays put near the centre, the pivot is exactly that point (the top of the rod, a group's origin): otherwise
+the shine on a pendulum's bob, which moves with the bob but does not turn about the pivot, pulled the fit 2 units off. A turn of 200 degrees or
+more is a `spin`; anything less is a `swing`.
+
+Make widget uses this in `movingPartError`, which runs after the scene check. It finds the widget's picture of the part by colour, using the
+part's colours that no still shape also uses (a pin in the rod's brass is not the rod). It refuses two cases: a picture wrapped in a `ui.Motion`
+that turns (spin, turn, tumble, flip, swing, wobble, roll) while it also shows what should stay, and a picture in which nothing moves. The reason
+names both sets of shapes by kind and colour and asks for `gfx.moving(style, 0, x, y, [those shapes])`. The pivot is given in the widget
+picture's own units: the same point of the same shape when the widget draws its own version, otherwise in proportion to the app's picture. When
+the widget draws with the app's own draw function, the reason also says that function cannot be changed and the widget needs a draw function of
+its own. A `ui.Motion` around only the part (in a `ui.Layers` over the rest) passes, and so does a movement that does not turn (a sleepy cat that
+breathes). Nothing is rewritten automatically. Over the 63 apps saved from this and earlier runs, a part was found in 19: every wheel, pendulum,
+punching bag, windmill and ferris wheel, and an 8-ball whose window turns while it is shaken. No rocket, frog, die, fish tank or bubble wrap was
+taken for a turn. Each search took 15-80 ms on the host.
+
+Measured on the phone (nine runs: pendulum clock three times, fortune wheel, windmill, ferris wheel, bubble wrap twice). Six widgets were made,
+and five of them move only their part with `gfx.moving`. The wheel's first answer did not move at all; the check named its group and the pivot
+150, 150 -> 50, 50, and the second answer was a wheel of `gfx.sector` slices in `gfx.moving("spin")` under a pointer that stays. On the card the
+wheel turned and landed on a fortune. Without any check firing, the windmill turned its sails while the tower and sky stayed, the ferris wheel
+turned its spokes in a night sky, and two pendulum clocks swung their rod and bob while the face stayed. One pendulum clock was made on the build
+before the fit could tell the clock's second hand from the pendulum: its widget did not move, and that build's check found no part. That app, run
+on the host with the current fit, is refused with the pivot 150, 226. Three runs failed on other checks: bubble wrap twice (each used `gfx.repeat`
+after the shape refusal, then hit the room or background checks) and the ferris wheel's other run (a parse error). The morning's run of the same
+toys had the pendulum swinging whole and the wheel spinning whole or not at all. Host checks: `widget-refine-check.js`
+(`examples/widget-pendulum-frames.vera`: the part, pivot and swing found from the frames, the naive and still widgets refused with the shapes and
+the pivot, the pivot found in the widget's own smaller drawing, a Motion around only the bob passes, a breathing Motion passes, a dial's hand
+beside the pendulum is not the part; `examples/widget-wheel.vera`: the wheel found after a touch, its naive widget refused; the countdown rocket
+is not a turn).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

@@ -1,6 +1,7 @@
 import { CATALOG, describeComponents } from './VeraUiCatalog'
 import { widgetRefinementError } from './VeraCompiler'
-import { decodeGfxOps } from './GfxPaint'
+import { decodeGfxOps, GfxOp } from './GfxPaint'
+import { appMovingPart, coloursOf, pointsOf, IDENTITY, MovingPart } from './VeraMovingPart'
 import { pictureCovers, pictureBare } from '../widget/CardModel'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
 import { decodeVeraUi, UiHostEnvironment, VeraUiNode } from './VeraUi'
@@ -250,7 +251,8 @@ function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
     let problem = glanceError(frame)
     if (problem.length > 0) { return problem }
   }
-  return glance ? (movingSceneError(frames[0].nodes) || backgroundError(frames[0].nodes) || deadPicture(vbc2, state, frames[0].nodes) ||
+  return glance ? (movingSceneError(frames[0].nodes) || movingPartError(vbc2, state, frames[0].nodes) || backgroundError(frames[0].nodes) ||
+    deadPicture(vbc2, state, frames[0].nodes) ||
     unseenTouch(vbc2, state, frames[0])) : ''
 }
 
@@ -280,6 +282,80 @@ function movingSceneError(nodes: CardNode[]): string {
     }
   }
   return ''
+}
+
+/** The ui.Motion presets that turn the picture: around a picture whose app turns only a part of it, they turn what should stay. */
+const TURNING: string[] = ['spin', 'turn', 'tumble', 'flip', 'swing', 'wobble', 'roll']
+
+/** A number for the model: at most one decimal. */
+function short(n: number): string {
+  return (Math.round(n * 10) / 10).toString()
+}
+
+/**
+ * The app turns a part of its picture (a pendulum swings, a wheel spins) while the rest stays, and the widget draws that picture but moves
+ * it whole (a ui.Motion around it: the clock case swings with the pendulum, the pointer spins with the wheel) or not at all. Seen on the
+ * phone in every toy run, with the prompt saying otherwise; the app's own frames say which shapes turn and about which point
+ * (VeraMovingPart), so the reason names them and gives the pivot. The widget's picture of the part is the one drawn in its colours.
+ */
+function movingPartError(vbc2: string, state: string, nodes: CardNode[]): string {
+  let pictures = collectNodes(nodes, (n: CardNode): boolean => n.kind === 'surface' && n.ops.length > 0)
+  if (pictures.length === 0) { return '' }
+  // A picture with gfx.moving parts is split into layers: the widget moves a part already.
+  if (collectNodes(nodes, (n: CardNode): boolean => n.kind === 'layers' && n.parts === true).length > 0) { return '' }
+  let part: MovingPart | null = null
+  for (let picture of pictures) {
+    let ops = decodeGfxOps(picture.ops)
+    let colours = coloursOf(ops)
+    if (part === null) {
+      part = appMovingPart(vbc2, state)
+      if (part === null) { return '' }
+    }
+    let moving = part.ownColours.length > 0 ? part.ownColours : part.movingColours
+    let shown = moving.filter((c: string): boolean => colours.indexOf(c) >= 0).length
+    if (moving.length === 0 || shown * 2 < moving.length) { continue }
+    let around = collectNodes(nodes, (n: CardNode): boolean => n.kind === 'motion' &&
+      collectNodes(n.children, (c: CardNode): boolean => c === picture).length > 0)
+    // A movement that does not turn (a sleepy cat that breathes, a drum that shakes) is the model's own choice of what a touch shows.
+    if (around.length > 0 && TURNING.indexOf(around[0].style) < 0) { continue }
+    let still = part.stillColours
+    // A ui.Motion around only the part (one layer of a ui.Layers, the rest in another) is right.
+    if (around.length > 0 && still.length > 0 && !still.some((c: string): boolean => colours.indexOf(c) >= 0)) { continue }
+    let pivot = widgetPivot(part, picture, ops)
+    let own = picture.ops === part.firstOps
+    let what = 'In the app\'s picture these shapes ' + (part.style === 'spin' ? 'turn round' : 'swing') + ' about the point ' + pivot +
+      ' of the widget\'s picture: ' + part.movingText + '; and these stay where they are: ' + part.stillText + '.'
+    let fix = (own ? 'The app\'s draw function "' + part.draw + '" cannot be changed from here: give the widget\'s picture a draw function of ' +
+      'its own (a new name) that draws the same shapes, and in it wrap ' : 'In the draw function wrap ') + 'only the shapes that turn in gfx.moving("' +
+      part.style + '", 0, ' + pivot + ', [those shapes]) among the shapes it returns, and leave the rest outside it.'
+    if (around.length > 0) {
+      return what + ' On the card the ui.Motion("' + around[0].style + '") moves the whole picture, what should stay too. Take the ui.Motion away. ' + fix
+    }
+    return what + ' On the card nothing in the picture moves. ' + fix
+  }
+  return ''
+}
+
+/**
+ * Where the part's pivot is in the widget's picture: the same point of the same shape when the part's pivot is a point of one of its shapes
+ * and the widget draws that shape (same kind, its colours); else the app's pivot in proportion to the two pictures' sizes.
+ */
+function widgetPivot(part: MovingPart, picture: CardNode, ops: GfxOp[]): string {
+  if (part.anchorPoint >= 0) {
+    for (let o of ops) {
+      if (o.kind !== part.anchorKind) { continue }
+      let colours = coloursOf([o])
+      if (!part.anchorColours.some((c: string): boolean => colours.indexOf(c) >= 0)) { continue }
+      let points: number[] = []
+      pointsOf(o, IDENTITY, points)
+      if (part.anchorPoint * 2 + 1 < points.length) {
+        return short(points[part.anchorPoint * 2]) + ', ' + short(points[part.anchorPoint * 2 + 1])
+      }
+    }
+  }
+  let scaleX = part.width > 0 ? picture.w / part.width : 1
+  let scaleY = part.height > 0 ? picture.h / part.height : 1
+  return short(part.pivotX * scaleX) + ', ' + short(part.pivotY * scaleY)
 }
 
 /**

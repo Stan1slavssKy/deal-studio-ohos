@@ -1,5 +1,12 @@
 # Changelog
 
+## The moving part, learnt from the app's own animation
+
+- Make widget runs the app's own frames (as they are, else after a touch or a button), compares its drawing frame by frame, and finds the shapes that turn and the point they turn about (`VeraMovingPart`).
+- A widget that turns the whole picture in a `ui.Motion`, or moves nothing, is refused with those shapes and the pivot in the widget's own units, and asked for `gfx.moving`.
+- On the phone, five of six widgets made for pendulums, wheels, a windmill and a ferris wheel moved only their part. See `docs/live-widget-proof.md`.
+- `examples/widget-wheel.vera` now draws its card picture with a `gfx.moving` wheel. Host checks in `widget-refine-check.js`; `examples/widget-pendulum-frames.vera`.
+
 ## Many of the same: gfx.repeat
 
 - `gfx.repeat(columns, rows, dx, dy, shapes)` draws shapes in a grid (bubble wrap, bricks, a grid of stars). It is written once: a card picture counts its shapes once, while the app's frame limit counts every copy. At most 400 copies in one repeat, and at most 400 shapes painted in a card picture.

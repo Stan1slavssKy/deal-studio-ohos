@@ -33,8 +33,8 @@ assert.equal(smokeRun(compiled),'')
   assert.notEqual(once, wheel)
   assert.equal(validateWidgetRefinement(withoutWidget(once), once, compileVeraSource(once).vbc2), '',
     'a button the app turns off once what it started is over (one spin only) is the app\'s rule, not something left unfinished')
-  const dead = wheel.replace('ui.Surface("default", 100, 100, "wheel", "", "onTouch"),\n      ui.Text("caption", result(state)),\n      ui.Button("primary", "Spin", "spin", 0, state.speed === 0)',
-    'ui.Surface("default", 100, 100, "wheel", "", ""),\n      ui.Text("caption", result(state))')
+  const dead = wheel.replace('ui.Surface("default", 100, 100, "wheelCard", "", "onTouch"),\n      ui.Text("caption", result(state)),\n      ui.Button("primary", "Spin", "spin", 0, state.speed === 0)',
+    'ui.Surface("default", 100, 100, "wheelCard", "", ""),\n      ui.Text("caption", result(state))')
   assert.notEqual(dead, wheel)
   assert.match(validateWidgetRefinement(withoutWidget(dead), dead, compileVeraSource(dead).vbc2), /In the app a touch on the picture does something \(its handler "onTouch"\)/)
   assert.match(widgetRefinementPrompt(false), /After a tap the card runs the app's own frame handlers for up to 20 s/)
@@ -65,6 +65,74 @@ function view(state: AppState): ui.View { return ui.AppTheme("soft", "", [ui.Sur
   const withWidget = app + 'function widget(state: AppState): ui.View { return ui.AppTheme("soft", "", [ui.Column("center", [ui.Surface("default", 100, 100, "draw", "", "onTouch"), ui.Text("caption", ui.numberToString(state.n))])]); }\n'
   const built = compileVeraSource(withWidget)
   assert.equal(validateWidgetRefinement(app, withWidget, built.vbc2), '', 'a widget of the example passes')
+}
+
+// The moving part, learnt from the app's own animation: the frames are run, the draw function looked at, and the shapes that turn and the point
+// they turn about found (VeraMovingPart). A widget that swings the whole clock in a ui.Motion, or moves nothing, is refused with the shapes
+// and the pivot; the widget that moves only the rod and the bob passes.
+{
+  const {appMovingPart, partFromLooks} = loadVera('VeraMovingPart')
+  const clock = fs.readFileSync(path.join(__dirname, 'examples/widget-pendulum-frames.vera'), 'utf8')
+  const code = compileVeraSource(clock).vbc2
+  const started = Date.now()
+  const part = appMovingPart(code, '')
+  const took = Date.now() - started
+  assert.ok(part !== null, 'the pendulum is found')
+  assert.deepEqual([part.draw, part.style, part.pivotX, part.pivotY, part.moving, part.still], ['clock', 'swing', 50, 18, [3, 4], [0, 1, 2]],
+    'the rod and the bob swing about the top of the rod; the case, its back and the pin stay')
+  assert.ok(part.turn >= 40 && part.turn <= 60, 'it swings about 57 degrees: ' + part.turn)
+  assert.ok(took < 2000, 'found in ' + took + ' ms')
+  assert.equal(part.movingText, 'the gfx.line in #d4a64a and the gfx.circle in #fff3c4')
+  assert.equal(part.stillText, '2 gfx.roundRect (#7c4a2d, #2a1a12) and the gfx.circle in #d4a64a')
+  assert.equal(validateWidgetRefinement(withoutWidget(clock), clock, code), '', 'the widget with the rod and bob as a gfx.moving part passes')
+  const whole = clock.replace('ui.Surface("default", 100, 100, "clockCard", "", ""),\n      ui.Text', 'ui.Motion("swing", 0, [ui.Surface("default", 100, 100, "clock", "", "")]),\n      ui.Text')
+  assert.notEqual(whole, clock)
+  const wholeWhy = validateWidgetRefinement(withoutWidget(whole), whole, compileVeraSource(whole).vbc2)
+  assert.match(wholeWhy, /^In the app's picture these shapes swing about the point 50, 18 of the widget's picture: the gfx\.line in #d4a64a and the gfx\.circle in #fff3c4; and these stay where they are: 2 gfx\.roundRect/)
+  assert.match(wholeWhy, /the ui\.Motion\("swing"\) moves the whole picture[\s\S]*The app's draw function "clock" cannot be changed from here: give the widget's picture a draw function of its own[\s\S]*gfx\.moving\("swing", 0, 50, 18, \[those shapes\]\)/)
+  const breathing = whole.replace('ui.Motion("swing", 0, [ui.Surface("default", 100, 100, "clock"', 'ui.Motion("breathe", 0, [ui.Surface("default", 100, 100, "clock"')
+  assert.notEqual(breathing, whole)
+  assert.equal(validateWidgetRefinement(withoutWidget(breathing), breathing, compileVeraSource(breathing).vbc2), '', 'a movement that does not turn is the model\'s choice')
+  const still = clock.replace('"clockCard", "", ""', '"clock", "", ""')
+  assert.match(validateWidgetRefinement(withoutWidget(still), still, compileVeraSource(still).vbc2), /On the card nothing in the picture moves\./)
+  // The widget's own drawing at another size: the pivot is the same point of the same shape there (the top of its rod), not a proportion.
+  const own = clock.replace('function widget(', `function smallClock(state: AppState): gfx.Shape[] {
+  return [gfx.roundRect(10, 2, 40, 56, 6, "#7c4a2d"), gfx.line(30, 8, 30, 40, 1, "#d4a64a"), gfx.circle(30, 44, 5, "#fff3c4")];
+}
+
+function widget(`).replace('ui.Surface("default", 100, 100, "clockCard", "", ""),\n      ui.Text', 'ui.Motion("swing", 0, [ui.Surface("default", 60, 60, "smallClock", "", "")]),\n      ui.Text')
+  const ownWhy = validateWidgetRefinement(withoutWidget(own), own, compileVeraSource(own).vbc2)
+  assert.match(ownWhy, /swing about the point 30, 8 of the widget's picture/)
+  assert.match(ownWhy, /Take the ui\.Motion away\. In the draw function wrap only the shapes that turn in gfx\.moving\("swing", 0, 30, 8, /)
+  // A ui.Motion around only the part, in a ui.Layers over the case, is right.
+  const layered = clock.replace('function widget(', `function caseOnly(state: AppState): gfx.Shape[] { return caseShapes(); }
+function bobOnly(state: AppState): gfx.Shape[] { return bob(state); }
+
+function widget(`).replace('ui.Surface("default", 100, 100, "clockCard", "", ""),\n      ui.Text', 'ui.Layers("default", 100, 100, [ui.Surface("default", 100, 100, "caseOnly", "", ""), ui.Motion("swing", 0, [ui.Surface("clear", 100, 100, "bobOnly", "", "")])]),\n      ui.Text')
+  assert.equal(validateWidgetRefinement(withoutWidget(layered), layered, compileVeraSource(layered).vbc2), '', 'a Motion around only the bob passes')
+
+  // Two things turning about different points (a dial's hand and the pendulum): the part is the one most of the moving points turn with, and
+  // the hand is in neither list.
+  const handed = clock.replace('  let shapes: gfx.Shape[] = caseShapes();\n  for (let s: gfx.Shape of bob(state)) { shapes.push(s); }',
+    '  let shapes: gfx.Shape[] = caseShapes();\n  shapes.push(gfx.line(50, 40, 50 + 10 * math.sin(state.t * 0.3), 40 - 10 * math.cos(state.t * 0.3), 1, "#ffffff"));\n' +
+    '  for (let s: gfx.Shape of bob(state)) { shapes.push(s); }')
+  assert.notEqual(handed, clock)
+  const both = appMovingPart(compileVeraSource(handed).vbc2, '')
+  assert.deepEqual([both.pivotX, both.pivotY, both.moving, both.still], [50, 18, [4, 5], [0, 1, 2]], 'the pendulum, not the hand')
+
+  // The wheel sits still until it is spun: the touch on its picture sets it going, and its slices, a group, turn round its centre.
+  const wheel = fs.readFileSync(path.join(__dirname, 'examples/widget-wheel.vera'), 'utf8')
+  const spun = appMovingPart(compileVeraSource(wheel).vbc2, '')
+  assert.deepEqual([spun.draw, spun.style, spun.pivotX, spun.pivotY, spun.anchorKind, spun.anchorPoint], ['wheel', 'spin', 50, 52, 'group', 0],
+    'the wheel turns round the origin of its group')
+  const naive = wheel.replace('"wheelCard", "", "onTouch"', '"wheel", "", "onTouch"')
+  assert.match(validateWidgetRefinement(withoutWidget(naive), naive, compileVeraSource(naive).vbc2),
+    /these shapes turn round about the point 50, 52 of the widget's picture: the gfx\.group in #f87171, #fbbf24, #34d399; and these stay where they are: the gfx\.circle in white and the gfx\.polygon in #1f2937\. On the card nothing in the picture moves\.[\s\S]*gfx\.moving\("spin", 0, 50, 52,/)
+  // A rocket that rises is not a turn: nothing is asked of its widget.
+  const rocket = fs.readFileSync(path.join(__dirname, 'examples/widget-countdown-rocket.vera'), 'utf8')
+  assert.equal(appMovingPart(compileVeraSource(rocket).vbc2, ''), null, 'a rise is not a turn')
+  // A part is not guessed from too little: one look, or nothing that stays.
+  assert.equal(partFromLooks([[]], 100, 100), null)
 }
 
 // Many of the same is one gfx.repeat: the prompt says so beside the card's shape limit, and the bubble wrap example's widget passes.
