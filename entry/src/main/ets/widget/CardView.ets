@@ -4,7 +4,7 @@
  * the painter, never the VM. What happens on a touch is the host's: this reports it through onTap and onPoint.
  */
 
-import { CardNode, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_TIMERS, CARD_PADDING, cardSize, TimerFace, timerFace, TOUCH_ACTION, pictureCovers, pictureBare } from './CardModel'
+import { CardNode, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_TIMERS, CARD_MAX_DRIFT_SLICES, CARD_PADDING, cardSize, TimerFace, timerFace, TOUCH_ACTION, pictureCovers, pictureBare } from './CardModel'
 import { paintGfx, decodeGfxOps, gfxFit, gfxToSurface } from '../vera/GfxPaint'
 import { resolveTheme } from '../vera/VeraTheme'
 import { motionStages, motionPivot, pivotPercent } from '../vera/VeraMotion'
@@ -62,7 +62,44 @@ export struct CardView {
     return this.contexts[node.pic >= 0 && node.pic < this.contexts.length ? node.pic : 0]
   }
   /** A cover picture is the whole card, its padding included; any other is as wide as the frame sized it. */
-  private covering(node: CardNode): boolean { return this.fill && pictureCovers(node.style) }
+  private covering(node: CardNode): boolean { return this.fill && (pictureCovers(node.style) || node.cover === true) }
+
+  /**
+   * gfx.drift: a strip that never stops, played by the platform's Swiper (a card's script stops soon after a redraw; the Swiper does not).
+   * The strip is cut into node.value slices, all on view, each its own canvas painting its slice of the picture; the Swiper moves one slice a
+   * page and loops, so the picture slides on and on. Right is the same strip laid right to left; down is the upward strip turned over, each
+   * slice painted upside down so it reads the right way up.
+   */
+  private driftContexts: CanvasRenderingContext2D[] = contexts(CARD_MAX_DRIFT_SLICES)
+  private driftBase(node: CardNode): number { return node.pic >= 0 ? node.pic * 16 : 0 }
+  private sliceContext(node: CardNode, k: number): CanvasRenderingContext2D {
+    let index = this.driftBase(node) + k
+    return this.driftContexts[index >= 0 && index < this.driftContexts.length ? index : 0]
+  }
+  /** The slices on view at once: the strip is cut into this many. */
+  private sliceCount(node: CardNode): number { return Math.max(1, Math.min(8, node.value)) }
+  /**
+   * The Swiper's items: the strip twice over. A Swiper with no more items than it shows has nothing to bring in and does not play
+   * (found on the phone: a drift of eight slices all on view stood still), so the second copy is what slides in.
+   */
+  private sliceList(node: CardNode): number[] {
+    let out: number[] = []
+    for (let k = 0; k < 2 * this.sliceCount(node); k++) { out.push(k) }
+    return out
+  }
+  private across(node: CardNode): boolean { return node.style === 'left' || node.style === 'right' }
+  private sliceW(node: CardNode): number { return this.across(node) ? this.pictureW(node) / this.sliceCount(node) : this.pictureW(node) }
+  private sliceH(node: CardNode): number { return this.across(node) ? this.pictureH(node) : this.pictureH(node) / this.sliceCount(node) }
+  private paintSlice(node: CardNode, item: number): void {
+    let n = this.sliceCount(node)
+    let k = item % n
+    // The strip's own slice for the k-th place: laid right to left (right) or turned over (down), the places run the other way.
+    let slice = node.style === 'right' || node.style === 'down' ? n - 1 - k : k
+    let shiftX = this.across(node) ? -slice * this.sliceW(node) : 0
+    let shiftY = this.across(node) ? 0 : -slice * this.sliceH(node)
+    paintGfx(this.sliceContext(node, item), decodeGfxOps(node.ops), resolveTheme(this.preset, this.primary, false),
+      this.pictureW(node), this.pictureH(node), node.w, node.h, vp2px(1), true, this.covering(node), [], -1, shiftX, shiftY, node.style === 'down')
+  }
   private pictureW(node: CardNode): number {
     if (this.covering(node)) { return cardSize(this.dimension).width + 2 * CARD_PADDING }
     return node.size > 0 ? node.size : PICTURE_WIDTH
@@ -233,7 +270,21 @@ export struct CardView {
 
   @Builder
   leaf(node: CardNode) {
-    if (node.kind === 'button') {
+    if (node.kind === 'drift') {
+      Swiper() {
+        ForEach(this.sliceList(node), (k: number) => {
+          Canvas(this.sliceContext(node, k)).width(this.sliceW(node)).height(this.sliceH(node))
+            .onReady(() => { this.paintSlice(node, k) })
+        }, (k: number) => node.key + '.' + k.toString())
+      }
+      .width(this.pictureW(node)).height(this.pictureH(node))
+      .displayCount(this.sliceCount(node))
+      .vertical(!this.across(node))
+      .direction(node.style === 'right' ? Direction.Rtl : Direction.Ltr)
+      .rotate({ angle: node.style === 'down' ? 180 : 0 })
+      .autoPlay(true).interval(0).loop(true).indicator(false).disableSwipe(true).curve(Curve.Linear)
+      .hitTestBehavior(HitTestMode.Transparent)
+    } else if (node.kind === 'button') {
       Button(node.text).type(ButtonType.Normal).borderRadius(this.radiusOf(node, 10)).height(40)
         .backgroundColor(node.fill).fontColor(node.color).fontSize(14)
         .enabled(node.enabled).onClick(() => {

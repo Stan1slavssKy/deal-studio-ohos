@@ -20,8 +20,8 @@
 
 import { RuntimeValue, VeraNumberValue, VeraStringValue, VeraBooleanValue, VeraArrayValue, VeraObjectValue,
   RuntimeTrap } from './VeraInterpreter'
-import { GfxOp, GFX_ROLES, isGfxColor, gfxColor, hex2 } from './GfxPaint'
-export { GfxOp, GfxFit, GFX_ROLES, isGfxColor, gfxColor, gfxFit, gfxToSurface, gfxNaturalHeight, encodeGfxOps, decodeGfxOps, paintGfx } from './GfxPaint'
+import { GfxOp, GFX_ROLES, isGfxColor, gfxColor, hex2, DRIFT_DIRECTIONS, DRIFT_SPEEDS } from './GfxPaint'
+export { GfxOp, GfxFit, GFX_ROLES, isGfxColor, gfxColor, gfxFit, gfxToSurface, gfxNaturalHeight, encodeGfxOps, decodeGfxOps, paintGfx, DRIFT_DIRECTIONS, DRIFT_SPEEDS } from './GfxPaint'
 
 /** Class identities of the module's two types, as the compiler names them. */
 export const GFX_SHAPE: string = 'std/gfx:Shape'
@@ -101,6 +101,11 @@ export const GFX_FUNCTIONS: GfxFunction[] = [
     '(a ui.Motion style) about pivotX, pivotY, where the part is fixed or turns (the top of a pendulum, the wheel\'s centre), while the rest ' +
     'of the picture stays still; a touch on the picture plays every part, and so does a change of trigger (0, or a number the state really ' +
     'changes with). Only among the shapes the draw function returns, not inside a group or an effect; at most 3 in a picture'),
+  new GfxFunction('drift', [new GfxParam('direction', 'string'), new GfxParam('speed', 'string'), new GfxParam('shapes', 'shapes')], 'shape',
+    'shapes that keep moving and never stop -- clouds drifting, fish swimming, rain or snow falling, stars streaming: they are a tile the size ' +
+    'of the picture that slides on and on towards direction ("left", "right", "up", "down") at speed ("slow", "medium", "fast") and comes back ' +
+    'in from the other side, so spread them over the whole picture; on a home-screen card it is the one thing that moves without a touch. ' +
+    'Only among the shapes the draw function returns, at most 2 in a picture'),
   new GfxFunction('rgb', [num('red'), num('green'), num('blue'), new GfxParam('alpha', 'number', true)], 'string',
     'a colour from 0..255 channels and an optional 0..1 alpha, for colours computed at run time'),
   new GfxFunction('distance', [num('x1'), num('y1'), num('x2'), num('y2')], 'number',
@@ -302,6 +307,14 @@ export function invokeStdGfx(name: string, args: RuntimeValue[]): RuntimeValue {
       let o = op('moving', '')
       o.fx = asStr(args, 0); o.sweep = asNum(args, 1); o.x = asNum(args, 2); o.y = asNum(args, 3)
       return holding(o, args.length > 4 ? shapesIn(args[4]) : [])
+    }
+    case 'drift': {
+      let o = op('drift', '')
+      let direction = asStr(args, 0)
+      let speed = asStr(args, 1)
+      o.fx = DRIFT_DIRECTIONS.indexOf(direction) >= 0 ? direction : 'left'
+      o.text = DRIFT_SPEEDS.indexOf(speed) >= 0 ? speed : 'slow'
+      return holding(o, args.length > 2 ? shapesIn(args[2]) : [])
     }
     case 'glow': {
       let o = op('fx', asStr(args, 1))

@@ -104,13 +104,26 @@ export function gfxPaintStyle(ctx: CanvasRenderingContext2D, t: ResolvedTheme, c
   return g
 }
 
+/** gfx.drift's directions and speeds. */
+export const DRIFT_DIRECTIONS: string[] = ['left', 'right', 'up', 'down']
+export const DRIFT_SPEEDS: string[] = ['slow', 'medium', 'fast']
+
+/**
+ * How a drift moves: a card plays it with the platform's own Swiper (its script stops a couple of seconds after a redraw, the Swiper does
+ * not), which moves one page of the strip per DRIFT_PAGE_MS, so the strip is cut into this many slices and the speed is a picture's
+ * width (or height) per this many pages. The app moves it at the same speed. Measured on the phone: about 1.05 s a page.
+ */
+export const DRIFT_PAGE_MS: number = 1050
+export function driftSlices(speed: string): number { return speed === 'fast' ? 2 : speed === 'medium' ? 4 : 8 }
+
 /** One thing to draw, as the program asked for it. Plain data: built by the host functions, read by paintGfx. */
 export class GfxOp {
-  /** rect | roundRect | circle | arc | line | polyline | polygon | path | strokePath | text | group | fx | moving */
+  /** rect | roundRect | circle | arc | line | polyline | polygon | path | strokePath | text | group | fx | moving | drift */
   kind: string = ''
   /**
    * An fx's effect: glow | shadow | blur | add | screen | multiply ('' draws its shapes plain). Its blur is lineWidth, a shadow's offset w, h.
    * A moving part's Motion preset (gfx.moving): its pivot is x, y and its trigger sweep.
+   * A drift's direction (gfx.drift: left | right | up | down); its speed is text (slow | medium | fast).
    */
   fx: string = ''
   x: number = 0
@@ -253,10 +266,18 @@ const RAD: number = Math.PI / 180
  */
 export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: ResolvedTheme,
     boxW: number, boxH: number, w: number, h: number, pathScale: number = 1, bare: boolean = false, cover: boolean = false,
-    poses: MotionPose[] = []): void {
+    poses: MotionPose[] = [], clock: number = -1, shiftX: number = 0, shiftY: number = 0, flip: boolean = false): void {
   let fit = gfxFit(boxW, boxH, w, h, cover)
   ctx.save()
-  ctx.clearRect(0, 0, boxW, boxH)
+  ctx.clearRect(0, 0, ctx.width > 0 ? ctx.width : boxW, ctx.height > 0 ? ctx.height : boxH)
+  // A slice of a card's drift (CardView): the box drawn from (-shiftX, -shiftY), and turned over when the strip runs down.
+  if (flip) {
+    let sw = ctx.width > 0 ? ctx.width : boxW
+    let sh = ctx.height > 0 ? ctx.height : boxH
+    ctx.translate(sw, sh)
+    ctx.rotate(Math.PI)
+  }
+  if (shiftX !== 0 || shiftY !== 0) { ctx.translate(shiftX, shiftY) }
   ctx.globalAlpha = 1
   // A picture laid over another (ui.Surface style "clear") has no background of its own.
   if (!bare) {
@@ -276,12 +297,37 @@ export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: Resolve
   for (let o of ops) {
     if (o.kind === 'moving' && part < poses.length) {
       paintMoving(ctx, o, t, pathScale, fit.scale, poses[part])
+    } else if (o.kind === 'drift') {
+      paintDrift(ctx, o, t, pathScale, fit.scale, w, h, clock)
     } else {
       paintOp(ctx, o, t, pathScale, fit.scale)
     }
     if (o.kind === 'moving') { part++ }
   }
   ctx.restore()
+}
+
+/**
+ * A drift: its shapes are a tile the size of the surface, drawn where the clock has moved it (at rest with no clock) and again one
+ * tile behind, so what slides off one side comes in at the other.
+ */
+function paintDrift(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number, unit: number, w: number, h: number,
+    clock: number): void {
+  let across = o.fx === 'left' || o.fx === 'right'
+  let span = across ? w : h
+  let travel = 0
+  if (clock >= 0 && span > 0) {
+    let period = DRIFT_PAGE_MS * driftSlices(o.text)
+    travel = (clock % period) / period * span
+  }
+  let sign = o.fx === 'left' || o.fx === 'up' ? -1 : 1
+  for (let copy = -1; copy <= 1; copy++) {
+    let offset = sign * travel + copy * span
+    ctx.save()
+    ctx.translate(across ? offset : 0, across ? 0 : offset)
+    for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
+    ctx.restore()
+  }
 }
 
 /**
@@ -349,8 +395,8 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, path
     paintFx(ctx, o, t, pathScale, unit)
     return
   }
-  // A moving part at rest: its shapes as they are (paintMoving draws it in a pose).
-  if (o.kind === 'moving') {
+  // A moving part at rest: its shapes as they are (paintMoving draws it in a pose). A drift met inside a group is drawn where it is.
+  if (o.kind === 'moving' || o.kind === 'drift') {
     for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
     return
   }

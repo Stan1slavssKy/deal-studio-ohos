@@ -430,6 +430,34 @@ The prompt says a tap is finished by the app's frames for up to 10 s, and that a
 picture leaves its sides empty there and a square cover picture loses its top and bottom. Host checks: `live-widget-check.js` (the wheel lands from a button,
 from a touch and with a vibration on each tick; a slow one stays as the tap left it), `widget-refine-check.js` (the two reasons, the prompt).
 
+## Always moving: gfx.drift on the platform's Swiper
+
+A card's script stops a couple of seconds after a redraw, so nothing we animate can loop there; the platform's own animations keep going. Measured with a
+throwaway card (three strips of `Swiper` with `autoPlay`, `interval(0)`, `loop`, `curve(Linear)`): a strip of two identical pages slid at a steady
+~115 vp/s, about a page a second (the page change's duration cannot be set on a card), with no stop between pages; a strip cut into eight slices with four
+on view slid a quarter as fast; a vertical one turned over fell. All three were still moving 10 and 30 minutes later, the render service's CPU the same. The render service spent 1.13 s of CPU in 30 s with the three strips on screen
+(about 4 % of one core) and 0.04 s with the card on another page: off screen the strips stop. The screen was not switched off (the phone would lock).
+
+`gfx.drift(direction, speed, shapes)`: the shapes are a tile the size of the picture that slides on and on towards direction (`left`, `right`, `up`,
+`down`) at speed (`slow`, `medium`, `fast`: the picture's width or height in 8, 4 or 2 pages of 1.05 s, `DRIFT_PAGE_MS`, `driftSlices`) and comes back in
+from the other side; the painter draws the tile and a copy either side, so it joins up.
+
+- **On a card** the picture is split into layers as for moving parts, and a drift is a layer of kind `drift`: a `Swiper` of its slices, all on view, each a
+  canvas painting its slice of the picture (`paintGfx` with a shift), one slice a page, looping. Right is the strip laid right to left (`Direction.Rtl`),
+  down the upward strip turned over with each slice painted upside down. Its canvases come from a pool of their own (16: two drifts of up to eight slices).
+  A picture that starts with a drift gets an empty bottom layer for its touches; a drift layer lets touches through.
+- **In the app** `paintGfx` takes a clock and draws the tile moved by the share of its period that has passed; a surface with a drift is repainted on every
+  tick while it is on screen.
+- The Make widget prompt (ALWAYS MOVING) says what is drawn with it, and keeps it to one or two.
+- Measured on the phone (`examples/widget-sky.vera` as a cover picture on a card): the stars slid left and the clouds right while the moon stayed. A Swiper with no
+  more items than it shows stood still, so its items are the strip twice over. A `gfx.blur` inside a drift showed a thin seam where slices meet (each slice
+  blurs only what it holds), so the prompt keeps blur out of a drift. A touch through the drift layers reached the picture's handler.
+- Generated (three prompts): a fish tank used `gfx.drift("up")` for its bubbles and a `gfx.moving` fish, on a cover picture; a field of clouds and a night
+  sky did not use a drift (the clouds stood still), so the model reaches for it only some of the time.
+
+Host checks: `gfx-check.js` (the literals, the tile and its copies, the travel with a clock, the frame round trip), `live-widget-check.js`
+(`examples/widget-sky.vera`: the layers, the slices, cover, the bottom layer for touches, two at most).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

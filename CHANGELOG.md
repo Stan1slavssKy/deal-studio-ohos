@@ -1,5 +1,11 @@
 # Changelog
 
+## Always moving: gfx.drift
+
+- `gfx.drift(direction, speed, shapes)` is a tile the size of the picture that slides on and on and comes back in from the other side: clouds, fish, rain, snow, stars. On a home-screen card it is the one thing that moves without a touch, played by the platform's Swiper in slices (a card's own script stops a couple of seconds after a redraw); in the app it moves frame by frame.
+- Measured on the phone first: the Swiper kept going (see `docs/live-widget-proof.md`), about 4 % of a core while on screen, nothing off screen.
+- Host checks in `gfx-check.js` and `live-widget-check.js`; `examples/widget-sky.vera`.
+
 ## A widget tap finishes what it started
 
 - After a tap on a card, the app's own frame handlers run for up to 10 s until the state comes to rest, so a wheel stops on its prize and its Spin button comes back (what a frame asks of the phone, such as a vibration on each tick, is dropped); a state that does not come to rest (a game playing on) stays as the tap left it.

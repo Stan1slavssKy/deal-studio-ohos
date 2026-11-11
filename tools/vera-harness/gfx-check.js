@@ -41,7 +41,7 @@ const calls = G.GFX_FUNCTIONS.map(f => {
   const args = f.params.filter(p => !p.optional).map(p =>
     p.kind === 'number' ? '1' : p.kind === 'number[]' ? '[0, 0, 10, 10]' : p.kind === 'shapes' ? '[gfx.rect(0, 0, 1, 1, "ink")]'
       : p.kind === 'color' ? '"accent"' : p.kind === 'colors' ? '["white", "accent"]' : p.kind === 'boolean' ? 'true'
-      : p.name === 'align' ? '"center"' : p.name === 'mode' ? '"add"' : p.name === 'motion' ? '"swing"' : '"M0 0 L10 10 Z"')
+      : p.name === 'align' ? '"center"' : p.name === 'mode' ? '"add"' : p.name === 'motion' ? '"swing"' : p.name === 'direction' ? '"left"' : p.name === 'speed' ? '"slow"' : '"M0 0 L10 10 Z"')
   const call = 'gfx.' + f.name + '(' + args.join(', ') + ')'
   return f.result === 'shape' ? `shapes.push(${call});` : f.result === 'string' ? `let s${f.name}: string = ${call};`
     : f.result === 'number' ? `let n${f.name}: number = ${call};` : `let b${f.name}: boolean = ${call};`
@@ -267,6 +267,27 @@ fs.writeFileSync(path.join(__dirname, 'proofs/widget-rich.svg'), svgOf(richOps, 
   assert.ok(lifted.svg().includes('M110 150') && lifted.svg().includes('fill-opacity="0.5"'), 'a lift of 10 points on a box twice the size is 5 units, and it fades')
   const back = G.decodeGfxOps(G.encodeGfxOps([part.op]))[0]
   assert.deepEqual([back.kind, back.fx, back.x, back.y, back.children.length], ['moving', 'swing', 50, 20, 1], 'a part survives the card frame')
+}
+
+// A drift (gfx.drift) is a tile the size of the surface that slides on and on: drawn at rest, and one tile either side so it joins up; with a
+// clock it has moved by the share of its period that has passed (slow is 8 pages of 1.05 s for the whole width).
+{
+  for (const [body, why] of [['shapes.push(gfx.drift("sideways", "slow", [gfx.circle(5, 5, 5, "ink")]));', 'a direction outside the set'],
+      ['shapes.push(gfx.drift("left", "zippy", [gfx.circle(5, 5, 5, "ink")]));', 'a speed outside the set']]) {
+    assert.ok(codes(program(body)).some(c => c.startsWith('E2112') && c.includes('gfx.drift')), why + ' is refused')
+  }
+  const dot = G.invokeStdGfx('circle', nums([10, 50, 5]).concat([str('accent')]))
+  const strip = G.invokeStdGfx('drift', [str('left'), str('slow'), new VeraArrayValue([dot])])
+  assert.deepEqual([strip.op.kind, strip.op.fx, strip.op.text, strip.op.count], ['drift', 'left', 'slow', 2])
+  const still = createRecorder(100, 100); G.paintGfx(still.ctx, [strip.op], light, 100, 100, 100, 100)
+  for (const start of ['M-85 50', 'M15 50', 'M115 50']) assert.ok(still.svg().includes(start), 'the tile and its copies either side: ' + start)
+  const quarter = 8 * 1050 / 4
+  const moved = createRecorder(100, 100); G.paintGfx(moved.ctx, [strip.op], light, 100, 100, 100, 100, 1, false, false, [], quarter)
+  assert.ok(moved.svg().includes('M-10 50'), 'a quarter of its period on, a slow drift left has gone a quarter of the width')
+  const down = G.invokeStdGfx('drift', [str('down'), str('fast'), new VeraArrayValue([dot])])
+  const fallen = createRecorder(100, 100); G.paintGfx(fallen.ctx, [down.op], light, 100, 100, 100, 100, 1, false, false, [], 2 * 1050 / 2)
+  assert.ok(fallen.svg().includes('M15 0') || fallen.svg().includes('M15 100'), 'half its period on, a fast drift down has gone half the height')
+  assert.equal(G.decodeGfxOps(G.encodeGfxOps([strip.op]))[0].text, 'slow', 'a drift survives the card frame')
 }
 
 console.log('gfx-check ok')

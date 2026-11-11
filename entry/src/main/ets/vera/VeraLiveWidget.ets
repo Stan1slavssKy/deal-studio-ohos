@@ -8,6 +8,7 @@ import { MOTION_PRESETS } from './VeraMotion'
 import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
+import { driftSlices } from './GfxPaint'
 import { CardNode, LiveFrame, compactFrame, CardSize, cardSize, CARD_DIMENSIONS, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_SHAPES,
   CARD_MAX_TIMERS, TOUCH_ACTION, pictureCovers } from '../widget/CardModel'
 import { cardTextSize, cardTextFamily, cardLetterSpacing, cardGap, CARD_PANEL_PAD, cardPanelFill } from './CardStyle'
@@ -24,6 +25,8 @@ export const LIVE_MAX_MOTIONS: number = CARD_MAX_MOTIONS
 export const LIVE_MAX_SURFACES: number = CARD_MAX_PICTURES
 /** Moving parts (gfx.moving) in one card picture: each is a layer of its own, and a card has five pictures in all. */
 export const LIVE_MAX_PARTS: number = 3
+/** Drifts (gfx.drift) on a card: each is a Swiper of up to eight slices of its own (CardView). */
+export const LIVE_MAX_DRIFTS: number = 2
 /** After a tap the app's frame handlers run in steps of this many ms (a card has no frames of its own)... */
 export const SETTLE_STEP_MS: number = 33
 /** ...for at most this many steps (10 s: a wheel takes 4 or 5), and the state they reach is kept only once this many steps in a row change nothing. */
@@ -55,7 +58,7 @@ function nodeHeight(node: CardNode, pictureSide: number, width: number = LIVE_IN
   // A cover picture is the card's background (CardModel.splitCover): it takes no room from the rest.
   if (coverPicture(node)) { return 0 }
   if (node.kind === 'motion' && node.children.length === 1 && coverPicture(node.children[0])) { return 0 }
-  if (node.kind === 'surface') { return Math.min(pictureSide * 1.1, pictureSide * node.h / node.w) }
+  if (node.kind === 'surface' || node.kind === 'drift') { return Math.min(pictureSide * 1.1, pictureSide * node.h / node.w) }
   if (node.kind === 'path' || node.kind === 'icon') { return node.size }
   if (node.kind === 'iconbutton') { return node.size }
   if (node.kind === 'badge') { return 22 }
@@ -132,7 +135,7 @@ function coverPicture(node: CardNode): boolean {
 /** The pictures that share the card's room with the rest: a cover picture lies under it all instead. */
 function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
   for (let node of nodes) {
-    if (node.kind === 'surface' && !pictureCovers(node.style)) { out.push(node) }
+    if ((node.kind === 'surface' && !pictureCovers(node.style)) || (node.kind === 'drift' && node.cover !== true)) { out.push(node) }
     allPictures(node.children, out)
   }
   return out
@@ -144,6 +147,7 @@ function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
  */
 function picturesAcross(node: CardNode): number {
   if (node.kind === 'surface') { return pictureCovers(node.style) ? 0 : 1 }
+  if (node.kind === 'drift') { return node.cover === true ? 0 : 1 }
   let most = 0
   let sum = 0
   for (let child of node.children) {
@@ -333,6 +337,7 @@ export class WidgetSession {
     let count = 0
     let motions = 0
     let surfaces = 0
+    let drifts = 0
     let timers = 0
     // The nodes a component is expanded into (a Stat, a Sparkline) are made, counted and depth-checked like the ones the program wrote.
     let make = (kind: string, key: string, depth: number, slot: number): CardNode => {
@@ -424,6 +429,10 @@ export class WidgetSession {
      */
     let splitParts = (item: CardNode, ops: GfxOp[], depth: number, key: string): void => {
       let parts = ops.filter((o: GfxOp): boolean => o.kind === 'moving')
+      let strips = ops.filter((o: GfxOp): boolean => o.kind === 'drift')
+      if (drifts + strips.length > LIVE_MAX_DRIFTS) {
+        throw new Error('a widget has at most ' + LIVE_MAX_DRIFTS.toString() + ' gfx.drift')
+      }
       if (parts.length > LIVE_MAX_PARTS) {
         throw new Error('a card picture has at most ' + LIVE_MAX_PARTS.toString() + ' gfx.moving parts; this one has ' + parts.length.toString())
       }
@@ -466,7 +475,23 @@ export class WidgetSession {
         layers.push(picture(still, key + '.l' + layers.length.toString(), depth + 1, -1))
         still = []
       }
+      // A picture that starts with a drift still has a bottom layer, its background, to take its touches.
+      if (ops.length > 0 && ops[0].kind === 'drift') { layers.push(picture([], key + '.l0', depth + 1, -1)) }
       for (let o of ops) {
+        if (o.kind === 'drift') {
+          flush()
+          drifts += 1
+          let strip = make('drift', key + '.d' + layers.length.toString(), depth + 1, -1)
+          strip.style = o.fx
+          strip.value = driftSlices(o.text)
+          strip.ops = encodeGfxOps([o])
+          strip.w = w
+          strip.h = h
+          strip.pic = drifts - 1
+          if (cover) { strip.cover = true }
+          layers.push(strip)
+          continue
+        }
         if (o.kind !== 'moving') { still.push(o); continue }
         flush()
         if (CARD_MOTIONS.indexOf(o.fx) < 0) { throw new Error('gfx.moving style "' + o.fx + '" does not play on a card: use ' + CARD_MOTIONS.join(', ')) }
@@ -492,7 +517,7 @@ export class WidgetSession {
     let drawsParts = (node: VeraUiNode): boolean => {
       if (node.kind !== 'surface' || node.label.length === 0) { return false }
       try {
-        return decodeGfx(this.vm.execute(node.label, [this.state])).some((o: GfxOp): boolean => o.kind === 'moving')
+        return decodeGfx(this.vm.execute(node.label, [this.state])).some((o: GfxOp): boolean => o.kind === 'moving' || o.kind === 'drift')
       } catch (e) {
         return false
       }
@@ -542,9 +567,9 @@ export class WidgetSession {
           throw new Error('a card picture has at most ' + LIVE_MAX_SHAPES.toString() + ' shapes; this one has ' + shapes.toString())
         }
         let nested = (list: GfxOp[], top: boolean): boolean =>
-          list.some((o: GfxOp): boolean => (!top && o.kind === 'moving') || nested(o.children, false))
+          list.some((o: GfxOp): boolean => (!top && (o.kind === 'moving' || o.kind === 'drift')) || nested(o.children, false))
         if (nested(ops, true)) {
-          throw new Error('gfx.moving must be among the shapes the draw function returns, not inside a gfx.group, an effect or another gfx.moving')
+          throw new Error('gfx.moving and gfx.drift must be among the shapes the draw function returns, not inside a gfx.group, an effect or each other')
         }
         item.ops = encodeGfxOps(ops)
         item.w = node.minimum
@@ -552,7 +577,7 @@ export class WidgetSession {
         item.pointer = node.value
         item.pic = surfaces - 1
         item.style = node.style
-        if (ops.some((o: GfxOp): boolean => o.kind === 'moving')) { splitParts(item, ops, depth, key) }
+        if (ops.some((o: GfxOp): boolean => o.kind === 'moving' || o.kind === 'drift')) { splitParts(item, ops, depth, key) }
       }
       item.action = node.action
       item.value = node.eventValue

@@ -182,6 +182,8 @@ class SurfaceBox {
   partStarts: number[] = []
   touchedAt: number = 0
   touchSeen: number = 0
+  // It has a drift (gfx.drift): it moves on and on, so it is painted on every tick while it is on screen.
+  drifting: boolean = false
 }
 
 /**
@@ -1383,7 +1385,7 @@ export struct VeraPreview {
       let ops = decodeGfx(this.vm!.execute(node.label, [this.currentState!]))
       let paintAt = Date.now()
       paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum, this.getUIContext().vp2px(1), node.style === 'clear',
-        false, this.partPoses(box, ops, paintAt))
+        false, this.partPoses(box, ops, paintAt), paintAt)
       this.frameSplit[1] += paintAt - drawAt
       this.frameSplit[2] += Date.now() - paintAt
     } catch (e) {
@@ -1399,7 +1401,8 @@ export struct VeraPreview {
    */
   private partPoses(box: SurfaceBox, ops: GfxOp[], now: number): MotionPose[] {
     let poses: MotionPose[] = []
-    let playing = false
+    box.drifting = ops.some((o: GfxOp): boolean => o.kind === 'drift')
+    let playing = box.drifting
     let touched = box.touchedAt > box.touchSeen
     box.touchSeen = box.touchedAt
     let i = 0
@@ -1420,7 +1423,7 @@ export struct VeraPreview {
           let b = this.surfaces.get(node)
           if (b === undefined) { return true }
           let at = Date.now()
-          return b.partStarts.every((start: number): boolean => at - start >= MOTION_BUDGET_MS + 100)
+          return !(b.drifting && b.visible) && b.partStarts.every((start: number): boolean => at - start >= MOTION_BUDGET_MS + 100)
         })
         this.paintSurfaces()
         if (still && this.partsTimer >= 0) { clearInterval(this.partsTimer); this.partsTimer = -1 }

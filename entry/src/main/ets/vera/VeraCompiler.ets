@@ -2,7 +2,7 @@ import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter
 import { CATALOG, ComponentSpec, ChildRule, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
 import { iconPath, iconNames } from './VeraIcons'
 import { isValidSdkTarget } from './VeraSdkIndex'
-import { GFX_FUNCTIONS, GFX_POINTER_FIELDS, GFX_ROLES, GFX_BLEND_MODES, isGfxColor, gfxFunction } from './VeraGfx'
+import { GFX_FUNCTIONS, GFX_POINTER_FIELDS, GFX_ROLES, GFX_BLEND_MODES, DRIFT_DIRECTIONS, DRIFT_SPEEDS, isGfxColor, gfxFunction } from './VeraGfx'
 import { MOTION_PRESETS } from './VeraMotion'
 
 // ===== AST Nodes =====
@@ -2114,6 +2114,10 @@ class Analyzer {
       if (f.params[i].kind === 'color' && !isGfxColor(value)) {
         this.addError('E2112', 'unknown colour "' + value + '"; a colour is one of ' + GFX_ROLES.join(' ') +
           ', or "#rrggbb" / "#rrggbbaa", or gfx.rgb(red, green, blue), gfx.linear(...), gfx.radial(...)', arg.span)
+      } else if (f.name === 'drift' && f.params[i].name === 'direction' && DRIFT_DIRECTIONS.indexOf(value) < 0) {
+        this.addError('E2112', 'gfx.drift direction is ' + DRIFT_DIRECTIONS.map((d: string): string => '"' + d + '"').join(', ') + '; got "' + value + '"', arg.span)
+      } else if (f.name === 'drift' && f.params[i].name === 'speed' && DRIFT_SPEEDS.indexOf(value) < 0) {
+        this.addError('E2112', 'gfx.drift speed is ' + DRIFT_SPEEDS.map((d: string): string => '"' + d + '"').join(', ') + '; got "' + value + '"', arg.span)
       } else if (f.params[i].name === 'motion' && MOTION_PRESETS.indexOf(value) < 0) {
         this.addError('E2112', 'gfx.moving takes a ui.Motion style: ' + MOTION_PRESETS.join(', ') + '; got "' + value + '"', arg.span)
       } else if (f.name === 'blend' && f.params[i].name === 'mode' && GFX_BLEND_MODES.indexOf(value) < 0) {

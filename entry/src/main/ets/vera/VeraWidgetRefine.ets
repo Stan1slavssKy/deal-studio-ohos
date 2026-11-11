@@ -94,11 +94,17 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'move at once when each has its own ui.Motion around its own picture (at most ' + LIVE_MAX_MOTIONS.toString() + ' ui.Motion in all; ' +
     'put the pictures side by side, one above the other, or one over another in a ui.Layers, below). Do NOT add a counter to the state just for the movement ' +
     '(the state cannot grow). The second argument is 0, or a number the state really changes with, which then also plays it. A movement ' +
-    'lasts about a second and plays once: a card cannot loop, spin forever or repeat, there is no sound or vibration, and a drawing is a ' +
+    'lasts about a second and plays once: a ui.Motion or a gfx.moving cannot loop, spin forever or repeat (only a gfx.drift goes on, below), there is no sound or vibration, and a drawing is a ' +
     'picture of one moment, so draw the subject at its most recognisable, not a scene that needs motion to be understood. ' +
     'After a tap the card runs the app\'s own frame handlers for up to ' + Math.round(SETTLE_MAX_STEPS * SETTLE_STEP_MS / 1000).toString() + ' s, so what the tap ' +
     'set going comes to rest (a wheel stops on its prize, a die lands) and the card shows the result; what does not come to rest by then ' +
     'stays as the tap left it, so a button that waits for it would stay off -- give such a button a handler of its own that finishes at once. ' +
+    'ALWAYS MOVING. What in life never stops -- clouds drifting, fish swimming, rain or snow falling, stars streaming past -- is ' +
+    'gfx.drift(direction, speed, [shapes]) among the shapes the draw function returns: its shapes are a tile the size of the picture that slides ' +
+    'on and on towards direction ("left", "right", "up", "down") at speed ("slow" for clouds and stars, "medium", "fast" for rain) and comes back ' +
+    'in from the other side, so spread them across the whole picture. It is the one thing on a card that moves without a touch, so keep it ' +
+    'gentle and to one or two in a widget, behind or in front of what stays (a sky, the moon, a tank, the fish that is touched). No gfx.blur ' +
+    'inside a gfx.drift: the card draws a drift in slices, and a blur shows their seams. ' +
     'LAYERS. A subject made of parts that move differently -- something that hits and something that is hit, a sky with weather in front ' +
     'of it, a body with a part that swings -- is drawn as ui.Layers(style, width, height, [back, ..., front]): the children lie one over another, ' +
     'the first at the bottom, each in the middle, and each can be its own ui.Motion(style, 0, [ui.Surface(...)]) so the parts move ' +

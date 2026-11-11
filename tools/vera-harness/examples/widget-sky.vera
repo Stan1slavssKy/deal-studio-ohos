@@ -1,0 +1,48 @@
+@jsonable class AppState { wishes: number; }
+
+function init(): AppState { return {wishes: 0}; }
+
+function stars(): gfx.Shape[] {
+  let out: gfx.Shape[] = [];
+  let spots: number[] = [6, 12, 18, 30, 31, 8, 44, 22, 57, 14, 66, 34, 78, 9, 90, 26, 12, 44, 38, 48, 70, 50, 96, 42];
+  let i: number = 0;
+  while (i < spots.length()) {
+    out.push(gfx.circle(spots[i], spots[i + 1], 0.9 + (i % 3) * 0.4, "#fef9c3"));
+    i = i + 2;
+  }
+  return out;
+}
+
+function sky(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.rect(0, 0, 100, 100, gfx.linear(0, 0, 0, 100, ["#0b1026", "#1e1b4b", "#4c1d95"])));
+  shapes.push(gfx.drift("left", "slow", [gfx.glow(2, "#fde68a", stars())]));
+  shapes.push(gfx.glow(8, "#fde68a", [gfx.circle(74, 26, 10, gfx.radial(71, 23, 12, ["#fffbeb", "#fde68a"]))]));
+  shapes.push(gfx.drift("right", "medium", [
+    gfx.circle(14, 66, 7, "#c4b5fd44"), gfx.circle(22, 63, 9, "#c4b5fd44"), gfx.circle(31, 67, 6, "#c4b5fd44"),
+    gfx.circle(62, 74, 6, "#c4b5fd33"), gfx.circle(70, 71, 8, "#c4b5fd33"), gfx.circle(78, 75, 5, "#c4b5fd33")
+  ]));
+  shapes.push(gfx.rect(0, 84, 100, 16, gfx.linear(0, 84, 0, 100, ["#1e1b4b00", "#0b1026"])));
+  return shapes;
+}
+
+function onWish(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase !== "down") { return state; }
+  return {wishes: state.wishes + 1};
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Surface("default", 100, 100, "sky", "", "onWish"),
+    ui.Text("caption", ui.numberToString(state.wishes) + " wishes")
+  ]);
+}
+
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("clean", "", [
+    ui.Column("center", [
+      ui.Surface("cover", 100, 100, "sky", "", "onWish"),
+      ui.Text("caption", ui.numberToString(state.wishes) + " wishes")
+    ])
+  ]);
+}

@@ -613,4 +613,32 @@ assert.match(view, /node.key \+ this.frameKey/)
     '\nfunction buzzed(state: AppState, answer: string): AppState { return state; }\n'
   assert(texts(spinOf(buzzing).frame('p1', 'Wheel', '🎡').nodes).some(t => /^Won/.test(t)), 'what a frame asks of the phone (a vibration on each tick) is dropped and the wheel still lands')
 }
-console.log('PASS live counter: settle after a tap, moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
+
+// Drifts (gfx.drift) on a card: each a layer the card plays with the platform's Swiper in slices (CardView), sized with the picture, cover
+// with it; a picture that starts with one still has a bottom layer for its touches; two at most, only among the shapes draw returns.
+{
+  const { splitCover, compactFrame } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const sky = fs.readFileSync(path.join(__dirname, 'examples/widget-sky.vera'), 'utf8')
+  const f = new WidgetSession(compileVeraSource(sky).vbc2, 'sky', '').frame('p1', 'Sky', '🌌')
+  assert(JSON.stringify(compactFrame(f)).length <= 8000, 'two drifts fit the frame budget')
+  const split = splitCover(f.nodes)
+  assert(split.cover !== null && split.cover.kind === 'layers', 'the sky is the card\'s background')
+  assert.deepEqual(split.cover.children.map(c => c.kind), ['surface', 'drift', 'surface', 'drift', 'surface'], 'sky, stars, moon, clouds, haze')
+  const [, stars, , clouds] = split.cover.children
+  assert.deepEqual([stars.style, stars.value, stars.cover, stars.pic], ['left', 8, true, 0], 'slow stars to the left: eight slices')
+  assert.deepEqual([clouds.style, clouds.value, clouds.pic], ['right', 4, 1], 'medium clouds to the right: four slices')
+  assert.equal(decodeGfxOps(stars.ops)[0].kind, 'drift', 'a drift layer carries the drift, so its painter joins it up')
+  assert.equal(split.cover.children[0].pointer, 'onWish', 'the bottom layer takes the touches')
+  // A picture that starts with a drift gets an empty bottom layer to hold its touches.
+  const first = sky.replace('  shapes.push(gfx.rect(0, 0, 100, 100, gfx.linear(0, 0, 0, 100, ["#0b1026", "#1e1b4b", "#4c1d95"])));\n', '')
+    .replace('ui.Surface("cover", 100, 100, "sky", "", "onWish")', 'ui.Surface("default", 100, 100, "sky", "", "onWish")')
+  const ff = new WidgetSession(compileVeraSource(first).vbc2, 'first', '').frame('p1', 'Sky', '🌌')
+  const scene = ff.nodes[0].children[0]
+  assert.equal(scene.children[0].kind, 'surface'); assert.equal(scene.children[0].pointer, 'onWish'); assert.equal(scene.children[1].kind, 'drift')
+  assert.equal(new Set(scene.children.map(c => c.size)).size, 1, 'drift layers are drawn at the picture\'s size')
+  const three = sky.replace('  return shapes;\n}\n\nfunction onWish', '  shapes.push(gfx.drift("up", "fast", [gfx.circle(5, 5, 1, "white")]));\n  return shapes;\n}\n\nfunction onWish')
+  assert.notEqual(three, sky)
+  assert.throws(() => new WidgetSession(compileVeraSource(three).vbc2, 'three', '').frame('p1', 'Sky', '🌌'), /at most 2 gfx.drift/)
+}
+console.log('PASS live counter: drifts, settle after a tap, moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

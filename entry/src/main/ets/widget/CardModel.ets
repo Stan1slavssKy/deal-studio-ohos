@@ -8,6 +8,8 @@
  * Motion slot for each (CardView). The prompts say them from here too.
  */
 export const CARD_MAX_MOTIONS: number = 5
+/** Slices of the drifts on a card (gfx.drift): each slice is a canvas of its own, the strip twice over of up to eight, two drifts. */
+export const CARD_MAX_DRIFT_SLICES: number = 32
 /** Pictures: ui.Surface and ui.Sparkline, each drawn once for the frame, of at most CARD_MAX_SHAPES shapes. */
 export const CARD_MAX_PICTURES: number = 5
 export const CARD_MAX_SHAPES: number = 60
@@ -123,6 +125,8 @@ export class CardNode {
   py?: number
   /** A ui.Layers made from one picture split at its moving parts, not written by the program (VeraLiveWidget). */
   parts?: boolean
+  /** A drift layer of a cover picture: its slices fill the card as the picture does. */
+  cover?: boolean
   children: CardNode[] = []
 }
 
@@ -188,6 +192,7 @@ export function compactNode(node: CardNode): Object {
   if (node.px !== undefined) { out['px'] = node.px }
   if (node.py !== undefined) { out['py'] = node.py }
   if (node.parts !== undefined) { out['parts'] = node.parts }
+  if (node.cover !== undefined) { out['cover'] = node.cover }
   if (node.children.length > 0) { out['children'] = node.children.map((child: CardNode): Object => compactNode(child)) }
   return out
 }
@@ -250,6 +255,7 @@ export function normalizeNodes(nodes: CardNode[]): CardNode[] {
     node.px = raw.px
     node.py = raw.py
     node.parts = raw.parts
+    node.cover = raw.cover
     if (raw.children !== undefined) { node.children = normalizeNodes(raw.children) }
     out.push(node)
   }

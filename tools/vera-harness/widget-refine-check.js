@@ -35,6 +35,7 @@ assert.equal(smokeRun(compiled),'')
   assert.match(validateWidgetRefinement(withoutWidget(dead), dead, compileVeraSource(dead).vbc2), /In the app a touch on the picture does something \(its handler "onTouch"\)/)
   assert.match(widgetRefinementPrompt(false), /After a tap the card runs the app's own frame handlers for up to 10 s/)
   assert.match(widgetRefinementPrompt(false), /for size 3, draws its picture wide/)
+  assert.match(widgetRefinementPrompt(false), /ALWAYS MOVING[\s\S]*gfx\.drift\(direction, speed/)
 }
 
 // A picture that paints its own background is a scene: Make widget asks for it as a cover picture, so it is not a square in the middle of the card.
