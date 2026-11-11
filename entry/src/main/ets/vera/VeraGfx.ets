@@ -67,6 +67,9 @@ export const GFX_FUNCTIONS: GfxFunction[] = [
     'a filled disc centred on x, y'),
   new GfxFunction('arc', [num('x'), num('y'), num('radius'), num('startDegrees'), num('sweepDegrees'), num('lineWidth'), color()],
     'shape', 'a stroked arc centred on x, y; 0 degrees is twelve o\'clock and angles run clockwise; sweep 360 is a ring'),
+  new GfxFunction('sector', [num('x'), num('y'), num('radius'), num('startDegrees'), num('sweepDegrees'), color()], 'shape',
+    'a filled pie slice from the centre x, y out to radius, angles as gfx.arc (0 is twelve o\'clock, clockwise): one slice of a wheel, ' +
+    'a pie chart or a pizza; a wheel of n slices is n sectors of sweep 360 / n, each starting where the last ended'),
   new GfxFunction('line', [num('x1'), num('y1'), num('x2'), num('y2'), num('lineWidth'), color()], 'shape',
     'a straight line with round ends'),
   new GfxFunction('polyline', [new GfxParam('points', 'number[]'), num('lineWidth'), color()], 'shape',
@@ -252,6 +255,12 @@ export function invokeStdGfx(name: string, args: RuntimeValue[]): RuntimeValue {
       let o = op('arc', asStr(args, 6))
       o.x = asNum(args, 0); o.y = asNum(args, 1); o.r = asNum(args, 2)
       o.start = asNum(args, 3); o.sweep = asNum(args, 4); o.lineWidth = asNum(args, 5)
+      return shape(o)
+    }
+    case 'sector': {
+      let o = op('sector', asStr(args, 5))
+      o.x = asNum(args, 0); o.y = asNum(args, 1); o.r = asNum(args, 2)
+      o.start = asNum(args, 3); o.sweep = asNum(args, 4)
       return shape(o)
     }
     case 'line': {

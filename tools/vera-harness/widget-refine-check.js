@@ -42,6 +42,31 @@ assert.equal(smokeRun(compiled),'')
   assert.match(widgetRefinementPrompt(false), /ALWAYS MOVING[\s\S]*gfx\.drift\(direction, speed/)
 }
 
+// The prompt's worked example of moving parts (a clock whose pendulum swings, a wheel of gfx.sector slices that spins under a pointer that
+// stays) is real code: in a draw function it compiles, and a widget of it passes Make widget's checks.
+{
+  const text = widgetRefinementPrompt(false)
+  const at = text.indexOf('The pattern, in a clock and in a wheel:\n')
+  assert.ok(at > 0, 'the prompt has the worked example')
+  const lines = []
+  for (const line of text.slice(at).split('\n').slice(1)) { if (!line.startsWith('  ')) break; lines.push(line) }
+  assert.ok(lines.length >= 6 && lines.length <= 9, 'six to nine lines: ' + lines.length)
+  assert.ok(lines.some(l => l.includes('gfx.moving("swing"')) && lines.some(l => l.includes('gfx.sector(')) && lines.some(l => l.includes('gfx.moving("spin"')))
+  const app = `@jsonable class AppState { n: number; }
+function init(): AppState { return {n: 0}; }
+function draw(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+${lines.join('\n')}
+  return shapes;
+}
+function onTouch(state: AppState, p: gfx.Pointer): AppState { if (p.phase !== "down") { return state; } return {n: state.n + 1}; }
+function view(state: AppState): ui.View { return ui.AppTheme("soft", "", [ui.Surface("default", 100, 100, "draw", "", "onTouch")]); }
+`
+  const withWidget = app + 'function widget(state: AppState): ui.View { return ui.AppTheme("soft", "", [ui.Column("center", [ui.Surface("default", 100, 100, "draw", "", "onTouch"), ui.Text("caption", ui.numberToString(state.n))])]); }\n'
+  const built = compileVeraSource(withWidget)
+  assert.equal(validateWidgetRefinement(app, withWidget, built.vbc2), '', 'a widget of the example passes')
+}
+
 // A picture that takes a touch and shows nothing for it -- no movement, the same card after the tap -- is refused.
 {
   const rocket = fs.readFileSync(path.join(__dirname, 'examples/widget-countdown-rocket.vera'), 'utf8')

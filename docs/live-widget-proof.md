@@ -477,6 +477,23 @@ from the other side; the painter draws the tile and a copy either side, so it jo
 Host checks: `gfx-check.js` (the literals, the tile and its copies, the travel with a clock, the frame round trip), `live-widget-check.js`
 (`examples/widget-sky.vera`: the layers, the slices, cover, the bottom layer for touches, two at most).
 
+## Wheels of slices: gfx.sector, and the pattern of moving parts in the prompt
+
+Wheels came out as one slice: a wedge built from a stroked `gfx.arc` (round caps) or a hand-made `gfx.polygon` goes wrong. `gfx.sector(x, y, radius,
+startDegrees, sweepDegrees, color)` is a filled pie slice, angles as `gfx.arc` (0 at twelve o'clock, clockwise): the painter goes from the centre out
+along its start, round its rim and back (`GfxPaint.paintOp`), so the SVG proofs and the card draw it from the same code; it reuses the frame's fields
+(x, y, r, start, sweep). The Make widget prompt's MOVING PARTS now carries an eight-line worked example -- a clock case that stays and a rod and bob in
+`gfx.moving("swing", 0, 50, 15, ...)`, six sectors in `gfx.moving("spin", 0, 50, 52, ...)` under a pointer that stays -- and says it shows how parts
+move, not a drawing to copy. The game prompt says a wheel, a pie or a pizza is sectors.
+
+Measured on the phone (five short prompts, one widget each): the pizza's widget was eight `gfx.sector` wedges in two shades, drawn right on the card;
+but none of the five used `gfx.moving`. The pendulum clock swung whole in a `ui.Motion("swing")`, the windmill turned whole in a `ui.Motion("spin")`
+(sky and tower with it), the fortune wheel did not move at all (its tap landed it on a prize after the card's settling), and bubble wrap failed three
+times (97 shapes, then a handler with a vibration, then a background). The generated wheel apps still drew their slices as polygons in a group. As
+before, prose in the prompt moves the model only some of the time; the next steps put the guidance in checks. Host checks: `gfx-check.js` (a sector
+is a closed wedge at the right angles, a whole turn a disc, a negative sweep anticlockwise, the frame round trip, six slices that meet),
+`widget-refine-check.js` (the example in the prompt compiles in a draw function, and a widget of it passes Make widget's checks).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

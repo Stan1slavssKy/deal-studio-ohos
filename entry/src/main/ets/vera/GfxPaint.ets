@@ -118,7 +118,7 @@ export function driftSlices(speed: string): number { return speed === 'fast' ? 2
 
 /** One thing to draw, as the program asked for it. Plain data: built by the host functions, read by paintGfx. */
 export class GfxOp {
-  /** rect | roundRect | circle | arc | line | polyline | polygon | path | strokePath | text | group | fx | moving | drift */
+  /** rect | roundRect | circle | arc | sector | line | polyline | polygon | path | strokePath | text | group | fx | moving | drift */
   kind: string = ''
   /**
    * An fx's effect: glow | shadow | blur | add | screen | multiply ('' draws its shapes plain). Its blur is lineWidth, a shadow's offset w, h.
@@ -435,6 +435,17 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, path
     ctx.strokeStyle = c
     ctx.lineWidth = o.lineWidth
     ctx.stroke()
+  } else if (o.kind === 'sector') {
+    // A pie slice: from the centre out along its start, round its rim, and back.
+    if (o.r <= 0 || o.sweep === 0) { return }
+    let sweep = Math.max(-360, Math.min(360, o.sweep))
+    let from = (o.start - 90) * RAD
+    ctx.beginPath()
+    ctx.moveTo(o.x, o.y)
+    ctx.arc(o.x, o.y, o.r, from, from + sweep * RAD, sweep < 0)
+    ctx.closePath()
+    ctx.fillStyle = c
+    ctx.fill()
   } else if (o.kind === 'line') {
     if (o.lineWidth <= 0) { return }
     ctx.beginPath()

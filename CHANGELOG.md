@@ -1,5 +1,11 @@
 # Changelog
 
+## Wheels of slices: gfx.sector
+
+- `gfx.sector(x, y, radius, start, sweep, colour)` draws a filled pie slice (angles as `gfx.arc`): a wheel of fortune, a pie chart or a pizza is sectors, not stroked arcs or polygons.
+- The Make widget prompt shows the pattern of moving parts in eight lines (a pendulum's rod and bob swinging from the top, a wheel of sectors spinning under a pointer that stays); the game prompt says a wheel is sectors.
+- On the phone, 1 of 5 toy widgets used sectors (a pizza, drawn right on the card) and none used `gfx.moving`; see `docs/live-widget-proof.md`. Host checks in `gfx-check.js` and `widget-refine-check.js`.
+
 ## Always moving: gfx.drift
 
 - `gfx.drift(direction, speed, shapes)` is a tile the size of the picture that slides on and on and comes back in from the other side: clouds, fish, rain, snow, stars. On a home-screen card it is the one thing that moves without a touch, played by the platform's Swiper in slices (a card's own script stops a couple of seconds after a redraw); in the app it moves frame by frame.

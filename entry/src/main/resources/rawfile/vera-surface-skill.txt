@@ -69,7 +69,9 @@ Drawing:
 - "Pixel", "retro" or "8-bit": draw sprites and walls from squares on a grid (a pixel of 3 or 4 units), a palette of a few
   flat colours, a dark plain background; no rounded rects, no glow, no gradients.
 - Shapes computed at run time: a star, a gear or an asteroid is a polygon whose points come from a loop with
-  math.cos and math.sin.
+  math.cos and math.sin. A wheel of fortune, a pie chart or a pizza is slices of gfx.sector(x, y, radius, start, sweep,
+  colour), each starting where the last ended (n slices of sweep 360 / n), in a gfx.group turned by the wheel's angle;
+  not polygons or thick arcs.
 - Depth and light: a ball, a planet or a bubble is a circle filled with gfx.radial, a light colour first, centred a little
   up and left of the middle, the darkest last; the sky, the sea or a metal bar is gfx.linear; a thing standing on the
   ground has a soft gfx.shadow under it ("#00000055"); a lamp, a star or a spark is in a gfx.glow; overlapping lights are

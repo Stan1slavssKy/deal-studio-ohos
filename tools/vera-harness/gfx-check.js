@@ -290,4 +290,26 @@ fs.writeFileSync(path.join(__dirname, 'proofs/widget-rich.svg'), svgOf(richOps, 
   assert.equal(G.decodeGfxOps(G.encodeGfxOps([strip.op]))[0].text, 'slow', 'a drift survives the card frame')
 }
 
+// A sector (gfx.sector) is a filled wedge: from the centre out along its start, round its rim clockwise, and closed. Start 90 is three
+// o'clock, so a quarter from there ends at six; a whole turn is a disc.
+{
+  const wedge = G.invokeStdGfx('sector', nums([50, 50, 40, 90, 90]).concat([str('accent')]))
+  assert.deepEqual([wedge.op.kind, wedge.op.r, wedge.op.start, wedge.op.sweep, wedge.op.count], ['sector', 40, 90, 90, 1])
+  const svg = svgOf([wedge.op])
+  assert.match(svg, /d="M50 50 L90 50 A40 40 0 0 1 50 90 Z" fill="#/, 'a quarter from three o\'clock is a closed wedge to six: ' + svg.slice(0, 500))
+  const back = G.decodeGfxOps(G.encodeGfxOps([wedge.op]))[0]
+  assert.deepEqual([back.kind, back.x, back.y, back.r, back.start, back.sweep, back.color], ['sector', 50, 50, 40, 90, 90, 'accent'], 'a sector survives the card frame')
+  const whole = svgOf([G.invokeStdGfx('sector', nums([50, 50, 40, 0, 360]).concat([str('accent')])).op])
+  assert.match(whole, /d="M50 50 L50 10 A40 40 0 0 1 50 90 A40 40 0 0 1 50 10 Z"/, 'a whole turn is a disc, drawn in two halves')
+  const back2 = svgOf([G.invokeStdGfx('sector', nums([50, 50, 40, 0, -90]).concat([str('accent')])).op])
+  assert.match(back2, /d="M50 50 L50 10 A40 40 0 0 0 10 50 Z"/, 'a negative sweep runs anticlockwise')
+  assert.ok(!svgOf([G.invokeStdGfx('sector', nums([50, 50, 0, 0, 90]).concat([str('accent')])).op]).includes('M50 50 L'), 'a sector of no radius is not drawn')
+  // The wheel of the Make widget prompt's example: six slices that meet, turned about the centre by gfx.moving.
+  const slices = []
+  for (let i = 0; i < 6; i++) slices.push(G.invokeStdGfx('sector', nums([50, 52, 40, i * 60, 60]).concat([str('accent')])))
+  const wheelSvg = svgOf(slices.map(v => v.op))
+  assert.equal((wheelSvg.match(/d="M50 52 L[^"]* Z"/g) || []).length, 6, 'six slices, each a closed wedge')
+  assert.ok(wheelSvg.includes('L50 12 A40 40 0 0 1 84.64 32 Z') && wheelSvg.includes('L84.64 32 A40 40 0 0 1 84.64 72 Z'), 'each starting where the last ended')
+}
+
 console.log('gfx-check ok')

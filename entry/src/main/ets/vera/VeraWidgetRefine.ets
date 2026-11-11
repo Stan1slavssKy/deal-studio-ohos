@@ -64,7 +64,7 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'symbol (up to ' + LIVE_MAX_COMMANDS.toString() + ' characters of path data, M L C Q A Z in a 100x100 box). ' +
     'ui.Surface(style, width, height, "draw", "", "touch") draws a picture of several shapes of several colours. width and height ' +
     'are the picture\'s own units (100 by 100 is usual); draw is a function you write, (state: the init return type): ' +
-    'gfx.Shape[], that returns its shapes back to front (gfx.circle, gfx.rect, gfx.roundRect, gfx.arc, gfx.polygon, gfx.path ...: ' +
+    'gfx.Shape[], that returns its shapes back to front (gfx.circle, gfx.rect, gfx.roundRect, gfx.arc, gfx.sector, gfx.polygon, gfx.path ...: ' +
     'the faces of an animal are circles; give each part its own colour, "#rrggbb" or a role like "accent"); touch is a function ' +
     '(state: the init return type, p: gfx.Pointer): the init return type that runs when the picture is touched (p.phase is ' +
     '"down", then "up"), or "" for a picture that is only looked at. The third argument must be "": a card has no frames, the picture ' +
@@ -78,7 +78,16 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'wrap just that part\'s shapes in gfx.moving(style, 0, pivotX, pivotY, [shapes]) among the shapes the draw function returns, with the pivot ' +
     'where the part hangs, turns or stands (the pendulum\'s top, the wheel\'s centre, the frog\'s feet), and leave the rest -- the background, ' +
     'the frame, the pointer, the hook -- outside it. A touch anywhere on the picture plays every part; up to three parts in a picture. A picture ' +
-    'with gfx.moving is not also wrapped in a ui.Motion. ' +
+    'with gfx.moving is not also wrapped in a ui.Motion. A wheel, a pie or a pizza is slices of gfx.sector, each starting where the last ended. ' +
+    'The pattern, in a clock and in a wheel:\n' +
+    '  shapes.push(gfx.roundRect(25, 5, 50, 90, 8, "#7c4a2d"));  // the clock case stays\n' +
+    '  shapes.push(gfx.moving("swing", 0, 50, 15, [gfx.line(50, 15, 50, 62, 2, "#d4a64a"), gfx.circle(50, 68, 8, "#e0b34a")]));  // rod and bob swing from the top\n' +
+    '  let colours: string[] = ["#f87171", "#fbbf24", "#34d399", "#60a5fa", "#a78bfa", "#f472b6"];\n' +
+    '  let slices: gfx.Shape[] = [];\n' +
+    '  let i: number = 0;\n' +
+    '  while (i < 6) { slices.push(gfx.sector(50, 52, 40, i * 60, 60, colours[i])); i = i + 1; }\n' +
+    '  shapes.push(gfx.moving("spin", 0, 50, 52, slices));  // the slices turn about the wheel\'s centre\n' +
+    '  shapes.push(gfx.polygon([44, 4, 56, 4, 50, 16], "#1f2937"));  // the pointer stays\n' +
     'MOVEMENT. A thing that is drawn should DO what that thing does, once, when it is touched (or when the state changes): in a picture with ' +
     'other things around it, gfx.moving (above); a picture that is only the thing itself, with nothing that should stay, a figure or an icon: ' +
     'ui.Motion(style, 0, [the picture]). Every touch on the picture plays the movement by itself, whether or not the handler ' +
@@ -110,7 +119,7 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'the first at the bottom, each in the middle, and each can be its own ui.Motion(style, 0, [ui.Surface(...)]) so the parts move ' +
     'separately. Give every ui.Surface in one ui.Layers the same width and height as the ui.Layers and draw each part where it belongs ' +
     'in that box (its own function, only its part), so they line up; every ui.Surface above the first has the style "clear" (no background of its own: without it it hides the layers under it). A touch anywhere on the scene plays all its movements. A tap runs the pointer handler of the topmost layer that has one under the finger, and a layer whose pointer is \"\" lets the touch through, so a scene needs one layer with a handler, not one in each. ' +
-    'Draw exactly the subject the person asked for; do not reuse a shape from these instructions. ' +
+    'Draw exactly the subject the person asked for: the example above shows how parts move, it is not a drawing to copy for another subject. ' +
     'MAKE IT LOOK GOOD. Give things depth and light, as a painter would: a ball, a face, a fruit, a planet is a circle filled with ' +
     'gfx.radial (a light colour first, centred a little up and left of the middle, the darkest last); a sky, the sea or a wall is gfx.linear; ' +
     'something standing or floating has a soft gfx.shadow under it ("#00000055"); a lamp, a star, a magic spark is in a gfx.glow; ' +
