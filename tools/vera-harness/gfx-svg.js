@@ -24,12 +24,22 @@ function paint(colour) {
 
 const n = v => Number.isFinite(v) ? Math.round(v * 100) / 100 : 0
 
+// A canvas gradient as paintGfx makes one: its geometry in the units of the transform in force when it is used, its stops in order.
+class Gradient {
+  constructor(kind, coords) { this.kind = kind; this.coords = coords; this.stops = [] }
+  addColorStop(offset, colour) { this.stops.push([offset, colour]) }
+}
+
+const BLENDS = {lighter: 'plus-lighter', screen: 'screen', multiply: 'multiply'}
+
 function createRecorder(width, height) {
   const body = []
   const defs = []
   let clipCount = 0
   let state = {m: [1, 0, 0, 1, 0, 0], alpha: 1, fillStyle: '#000', strokeStyle: '#000', lineWidth: 1, lineCap: 'butt',
-    lineJoin: 'miter', font: '14vp sans-serif', textAlign: 'left', textBaseline: 'alphabetic', opened: 0}
+    lineJoin: 'miter', font: '14vp sans-serif', textAlign: 'left', textBaseline: 'alphabetic', opened: 0,
+    shadowBlur: 0, shadowColor: 'rgba(0,0,0,0)', shadowOffsetX: 0, shadowOffsetY: 0, filter: 'none', composite: 'source-over'}
+  let defCount = 0
   const stack = []
   let path = ''
   let cursor = null
@@ -39,11 +49,45 @@ function createRecorder(width, height) {
   const matrix = () => 'matrix(' + state.m.map(n).join(' ') + ')'
   const mul = (a, b) => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3],
     a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]]
-  const fillAttrs = () => { const [c, a] = paint(state.fillStyle); return `fill="${esc(c)}" fill-opacity="${n(a * state.alpha)}"` }
+  // A gradient becomes a def in user space, carried by the transform it is used under (as a canvas reads it); a colour is a colour.
+  const ink = style => {
+    if (!(style instanceof Gradient)) return paint(style)
+    const id = 'g' + (++defCount)
+    const stops = style.stops.map(([o, c]) => { const [h, a] = paint(c); return `<stop offset="${n(o)}" stop-color="${esc(h)}" stop-opacity="${n(a)}"/>` }).join('')
+    const k = style.coords.map(n)
+    defs.push(style.kind === 'linear'
+      ? `<linearGradient id="${id}" gradientUnits="userSpaceOnUse" gradientTransform="${matrix()}" x1="${k[0]}" y1="${k[1]}" x2="${k[2]}" y2="${k[3]}">${stops}</linearGradient>`
+      : `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" gradientTransform="${matrix()}" cx="${k[0]}" cy="${k[1]}" r="${k[2]}">${stops}</radialGradient>`)
+    return [`url(#${id})`, 1]
+  }
+  // The shadow, filter and composite in force, as attributes of the element drawn under them.
+  const effects = () => {
+    const parts = []
+    const blur = /blur\(\s*([\d.]+)px\s*\)/.exec(state.filter || '')
+    const [sc, sa] = paint(state.shadowColor)
+    const shadowed = sa > 0 && (state.shadowBlur > 0 || state.shadowOffsetX !== 0 || state.shadowOffsetY !== 0)
+    if (shadowed || blur) {
+      const id = 'f' + (++defCount)
+      // SVG 1.1 primitives (not feDropShadow), so every viewer of a proof draws the shadow.
+      let inner = blur ? `<feGaussianBlur in="SourceGraphic" stdDeviation="${n(Number(blur[1]) / 2)}" result="shape"/>` : ''
+      const shape = blur ? 'shape' : 'SourceGraphic'
+      if (shadowed) {
+        inner += `<feGaussianBlur in="${shape}" stdDeviation="${n(state.shadowBlur / 2)}"/>` +
+          `<feOffset dx="${n(state.shadowOffsetX)}" dy="${n(state.shadowOffsetY)}" result="moved"/>` +
+          `<feFlood flood-color="${esc(sc)}" flood-opacity="${n(sa)}"/><feComposite in2="moved" operator="in"/>` +
+          `<feMerge><feMergeNode/><feMergeNode in="${shape}"/></feMerge>`
+      }
+      defs.push(`<filter id="${id}" x="-50%" y="-50%" width="200%" height="200%" filterUnits="objectBoundingBox">${inner}</filter>`)
+      parts.push(`filter="url(#${id})"`)
+    }
+    if (BLENDS[state.composite]) parts.push(`style="mix-blend-mode:${BLENDS[state.composite]}"`)
+    return parts.length ? ' ' + parts.join(' ') : ''
+  }
+  const fillAttrs = () => { const [c, a] = ink(state.fillStyle); return `fill="${esc(c)}" fill-opacity="${n(a * state.alpha)}"` + effects() }
   const strokeAttrs = width => {
-    const [c, a] = paint(state.strokeStyle)
+    const [c, a] = ink(state.strokeStyle)
     return `fill="none" stroke="${esc(c)}" stroke-opacity="${n(a * state.alpha)}" stroke-width="${n(width)}" ` +
-      `stroke-linecap="${state.lineCap}" stroke-linejoin="${state.lineJoin}"`
+      `stroke-linecap="${state.lineCap}" stroke-linejoin="${state.lineJoin}"` + effects()
   }
   const lineTo = (x, y) => {
     const [px, py] = apply(x, y)
@@ -61,6 +105,14 @@ function createRecorder(width, height) {
     get font() { return state.font }, set font(v) { state.font = v },
     get textAlign() { return state.textAlign }, set textAlign(v) { state.textAlign = v },
     get textBaseline() { return state.textBaseline }, set textBaseline(v) { state.textBaseline = v },
+    get shadowBlur() { return state.shadowBlur }, set shadowBlur(v) { state.shadowBlur = v },
+    get shadowColor() { return state.shadowColor }, set shadowColor(v) { state.shadowColor = v },
+    get shadowOffsetX() { return state.shadowOffsetX }, set shadowOffsetX(v) { state.shadowOffsetX = v },
+    get shadowOffsetY() { return state.shadowOffsetY }, set shadowOffsetY(v) { state.shadowOffsetY = v },
+    get filter() { return state.filter }, set filter(v) { state.filter = v },
+    get globalCompositeOperation() { return state.composite }, set globalCompositeOperation(v) { state.composite = v },
+    createLinearGradient(x1, y1, x2, y2) { return new Gradient('linear', [x1, y1, x2, y2]) },
+    createRadialGradient(x0, y0, r0, x1, y1, r1) { return new Gradient('radial', [x1, y1, r1]) },
     save() { stack.push(state); state = {...state, m: state.m.slice(), opened: 0} },
     restore() {
       for (let i = 0; i < state.opened; i++) body.push('</g>')
@@ -134,4 +186,4 @@ function createRecorder(width, height) {
 // paintGfx calls `new Path2D(...)` as the ArkUI global; the host has none.
 globalThis.Path2D = globalThis.Path2D || Path2D
 
-module.exports = {createRecorder, Path2D}
+module.exports = {createRecorder, Path2D, Gradient}

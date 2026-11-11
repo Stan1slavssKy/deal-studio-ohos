@@ -1401,7 +1401,7 @@ export struct VeraPreview {
   private surfaceHeight(node: LiveNode): number {
     let width = this.viewportWidth > 0 ? this.viewportWidth : 360
     let natural = gfxNaturalHeight(width, node.minimum, node.maximum)
-    if (node.style === 'fill' && !this.embedded && node.layoutHeight > 0) { return node.layoutHeight }
+    if ((node.style === 'fill' || node.style === 'cover') && !this.embedded && node.layoutHeight > 0) { return node.layoutHeight }
     return natural > 0 ? natural : width
   }
 
@@ -1409,7 +1409,7 @@ export struct VeraPreview {
     let box = this.surfaceBox(node)
     box.width = Number(now.width)
     box.height = Number(now.height)
-    if (node.style === 'fill' && !this.embedded && this.rootHeight > 0) {
+    if ((node.style === 'fill' || node.style === 'cover') && !this.embedded && this.rootHeight > 0) {
       let want = Math.max(160, this.rootTop + this.rootHeight - this.snackSpace - Number(now.globalPosition.y))
       // A whole vp, for the same reason viewportWidth is guarded: a re-layout a fraction different would write again.
       if (Math.abs(want - node.layoutHeight) >= 1) { node.layoutHeight = want }

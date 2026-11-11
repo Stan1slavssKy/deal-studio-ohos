@@ -4,7 +4,7 @@
  * the painter, never the VM. What happens on a touch is the host's: this reports it through onTap and onPoint.
  */
 
-import { CardNode, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_TIMERS, cardSize, TimerFace, timerFace, TOUCH_ACTION } from './CardModel'
+import { CardNode, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_TIMERS, CARD_PADDING, cardSize, TimerFace, timerFace, TOUCH_ACTION } from './CardModel'
 import { paintGfx, decodeGfxOps, gfxFit, gfxToSurface } from '../vera/GfxPaint'
 import { resolveTheme } from '../vera/VeraTheme'
 import { motionStages, motionPivot, pivotPercent } from '../vera/VeraMotion'
@@ -38,6 +38,9 @@ export struct CardView {
   /** The widget's theme: a picture's colours by role follow it. */
   @Prop preset: string = 'clean'
   @Prop primary: string = ''
+  /** The card's size (FormDimension), and whether these nodes are its cover picture (splitCover), drawn under everything to its edges. */
+  @Prop dimension: number = 2
+  @Prop fill: boolean = false
   /** A button, or a shape with an action, was tapped: the handler's name and its number. */
   onTap: (action: string, value: number) => void = (action: string, value: number): void => {}
   /** A toggle or a checkbox was tapped: its handler's name and whether it is now on. */
@@ -58,14 +61,22 @@ export struct CardView {
   private contextOf(node: CardNode): CanvasRenderingContext2D {
     return this.contexts[node.pic >= 0 && node.pic < this.contexts.length ? node.pic : 0]
   }
-  private pictureW(node: CardNode): number { return node.size > 0 ? node.size : PICTURE_WIDTH }
-  private pictureH(node: CardNode): number { return Math.min(this.pictureW(node) * 1.1, this.pictureW(node) * node.h / node.w) }
+  /** A cover picture is the whole card, its padding included; any other is as wide as the frame sized it. */
+  private covering(node: CardNode): boolean { return this.fill && node.style === 'cover' }
+  private pictureW(node: CardNode): number {
+    if (this.covering(node)) { return cardSize(this.dimension).width + 2 * CARD_PADDING }
+    return node.size > 0 ? node.size : PICTURE_WIDTH
+  }
+  private pictureH(node: CardNode): number {
+    if (this.covering(node)) { return cardSize(this.dimension).height + 2 * CARD_PADDING }
+    return Math.min(this.pictureW(node) * 1.1, this.pictureW(node) * node.h / node.w)
+  }
   private paintPicture(node: CardNode): void {
     paintGfx(this.contextOf(node), decodeGfxOps(node.ops), resolveTheme(this.preset, this.primary, false),
-      this.pictureW(node), this.pictureH(node), node.w, node.h, vp2px(1), node.style === 'clear')
+      this.pictureW(node), this.pictureH(node), node.w, node.h, vp2px(1), node.style === 'clear', node.style === 'cover')
   }
   private pictureAt(node: CardNode, event: ClickEvent): number[] {
-    return gfxToSurface(gfxFit(this.pictureW(node), this.pictureH(node), node.w, node.h), event.x, event.y)
+    return gfxToSurface(gfxFit(this.pictureW(node), this.pictureH(node), node.w, node.h, node.style === 'cover'), event.x, event.y)
   }
 
   /**

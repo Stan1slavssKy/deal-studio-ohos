@@ -346,6 +346,40 @@ attempt, a sky, sun, clouds and rain/snow as separate layers chosen from the liv
 moved them all. With the earlier limit of 3 pictures the model had to drop a layer (found when the clouds vanished), hence 5.
 A widget can only be live when the program already has the source (Vera.Source); Make widget does not add one.
 
+## Light and depth: gradients, effects and the cover picture
+
+A run of 15 short toy prompts (a frog that jumps, a drum, a fortune wheel, a night sky...) gave widgets that worked and looked flat: `std/gfx` had
+only flat fills, and most pictures were a model-drawn dark square in the middle of the card. What the card can draw was measured first, on the phone,
+with a throwaway block in `LiveCard` for one test project: a Canvas linear and radial gradient, `shadowBlur` (a glow), `globalCompositeOperation
+'lighter'`, `ctx.filter = 'blur()'`, a dash and a bezier, and on components `radialGradient`, `shadow` and `blur()` all drew on the card. The SDK's
+`@form` tags (`ohos_sdk/26/ets/dynamic/component/*.d.ts`) are a fast first check of what a card may use: not a conic gradient, `saveLayer`,
+`Particle`, `transition`, `iterations` or `delay`. A card's script stops about 2 s after a redraw (an `onFinish` chain stopped after 3 steps even
+with another animation running beside it), but native animations keep going: `Swiper` with `autoPlay` and `loop` turned its pages for over 3
+minutes, a symbol's `HierarchicalSymbolEffect` for over a minute; `ImageAnimator` played once.
+
+What a program draws with now (one painter, `GfxPaint.paintGfx`, for the app's Canvas, the card and the host's SVG proofs):
+
+- `gfx.linear(x1, y1, x2, y2, colors)` and `gfx.radial(x, y, radius, colors)` are colours: a short string (`lin:...`, `rad:...`) any shape takes in
+  place of a colour, so the frame's format did not change. The painter makes a canvas gradient of it in the units the shape is drawn in, so one inside
+  a `gfx.group` moves with it. One that does not read is drawn in its first colour.
+- `gfx.glow(blur, color, shapes)`, `gfx.shadow(dx, dy, blur, color, shapes)`, `gfx.blur(radius, shapes)` and `gfx.blend("add" | "screen" |
+  "multiply", shapes)` hold shapes like a group (`GfxOp` kind `fx`, packed key `f`). A canvas does not scale a shadow or a filter with its
+  transform, so their sizes are turned from surface units by the scale in force: a glow is as wide relative to the picture on a 4x4 card as on a 2x2.
+  ArkUI reads a filter's `px` in the canvas's own unit, not in pixels (with the density factor a blur of 3 units spread over 130 px and vanished; found
+  on the phone), unlike a path string.
+- `ui.Surface("cover", ...)` is the card's background: the picture fills the whole card to its edges, past its padding (`gfxFit(..., cover)`), and
+  the rest of the widget lies over its bottom on a veil of the card's colour (`CardModel.splitCover`, `coverScrim`; `LiveCard` and `WidgetPreview`).
+  It takes no room from the rest (`nodeHeight`, `pictureRoom`); one per widget, not in a row or a `ui.Layers` (`coverError`). In the app it is
+  drawn as `fill`.
+- The Make widget prompt (MAKE IT LOOK GOOD) and the game prompt (`vera-surface-skill.txt`) say how: a ball is a circle in a radial colour lit from
+  the top left, a sky a linear one, a thing standing has a soft shadow, a lamp a glow, a scene with a background is a cover picture.
+
+Measured on the phone (`examples/widget-rich.vera` as a cover picture in a test project with a card): a sky in a gradient, a glowing moon, two lights
+added, a lit ball with its shadow and a glowing ring, edge to edge on the card, "0 taps" over the veil; a touch counted and played `pop`; the same in the
+widget screen at 2x2, 2x4 (the cover cut at the top and bottom) and 4x4, and in the app's full-screen run. Host checks: `gfx-check.js` (the functions,
+their checks, the SVG of each effect, the scale, the frame round trip, the example within 60 shapes; `proofs/widget-rich.svg`), `live-widget-check.js`
+(the cover in the frame, within the 8000-character budget, split from the tree with its Motion, one only, not in a row).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

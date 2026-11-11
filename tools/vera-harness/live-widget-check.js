@@ -494,4 +494,33 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.equal(charts.length, 2)
   for (const c of charts) assert(c.size <= Math.floor((126 - 8) / 2), 'two charts in a row fit the 2x2 card: ' + c.size)
 }
-console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
+
+// A cover picture (ui.Surface style "cover") is the card's background: it takes no room from the rest, the effects of its shapes ride in the
+// frame, the card takes it out of the tree with its Motion (splitCover), and only one, outside rows and layers, is allowed.
+{
+  const { splitCover, coverScrim, compactFrame } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const rich = fs.readFileSync(path.join(__dirname, 'examples/widget-rich.vera'), 'utf8')
+  const coverSource = rich.replace('ui.Motion("pop", 0, [ui.Surface("default", 100, 100, "scene", "", "onTouch")]),',
+    'ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "scene", "", "onTouch")]),')
+  assert.notEqual(coverSource, rich)
+  const f = new WidgetSession(compileVeraSource(coverSource).vbc2, 'cover', '').frame('p1', 'Cover', '🌄')
+  assert(JSON.stringify(compactFrame(f)).length <= 8000, 'a picture with gradients and effects fits the frame budget')
+  const pictures = []; const walk = n => { if (n.kind === 'surface') pictures.push(n); n.children.forEach(walk) }; f.nodes.forEach(walk)
+  assert.equal(pictures.length, 1); assert.equal(pictures[0].style, 'cover')
+  assert(decodeGfxOps(pictures[0].ops).some(o => o.kind === 'fx' && o.fx === 'shadow'), 'the effects of the picture reach the card')
+  const split = splitCover(f.nodes)
+  assert(split.cover !== null && split.cover.kind === 'motion', 'the cover picture leaves the tree with its Motion')
+  assert.deepEqual(texts(split.rest).filter(Boolean), ['0 taps'], 'the rest is what lies over it')
+  assert.equal(pictures.length, 1); { const again = []; const w2 = n => { if (n.kind === 'surface') again.push(n); n.children.forEach(w2) }; f.nodes.forEach(w2); assert.equal(again.length, 1, 'splitCover leaves the frame itself as it was') }
+  assert.equal(splitCover([]).cover, null)
+  assert.deepEqual(coverScrim('#F8FAFC', false).map(c => c[0]), ['#00F8FAFC', '#00F8FAFC'], 'no veil without a text over the picture')
+  assert.equal(coverScrim('#F8FAFC', true).slice(-1)[0][0], '#F2F8FAFC', 'a veil of the card colour under a text')
+  const twoCovers = coverSource.replace(/(function widget[\s\S]*?ui\.Column\("center", \[)/, '$1\n      ui.Surface("cover", 100, 100, "scene", "", ""),')
+  assert.throws(() => new WidgetSession(compileVeraSource(twoCovers).vbc2, 'two', '').frame('p1', 'Two', '🌄'), /at most one ui.Surface of style "cover"/)
+  const inRow = coverSource.replace(/(function widget[\s\S]*?)ui\.Motion\("pop", 0, \[ui\.Surface\("cover", 100, 100, "scene", "", "onTouch"\)\]\),/,
+    '$1ui.Row("default", [ui.Surface("cover", 100, 100, "scene", "", "onTouch")]),')
+  assert.notEqual(inRow, coverSource)
+  assert.throws(() => new WidgetSession(compileVeraSource(inRow).vbc2, 'row', '').frame('p1', 'Row', '🌄'), /not in a row or a ui.Layers/)
+}
+console.log('PASS live counter: cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

@@ -40,7 +40,8 @@ function view(state: AppState): ui.View { return ui.AppTheme("clean", "", [${sur
 const calls = G.GFX_FUNCTIONS.map(f => {
   const args = f.params.filter(p => !p.optional).map(p =>
     p.kind === 'number' ? '1' : p.kind === 'number[]' ? '[0, 0, 10, 10]' : p.kind === 'shapes' ? '[gfx.rect(0, 0, 1, 1, "ink")]'
-      : p.kind === 'color' ? '"accent"' : p.kind === 'boolean' ? 'true' : p.name === 'align' ? '"center"' : '"M0 0 L10 10 Z"')
+      : p.kind === 'color' ? '"accent"' : p.kind === 'colors' ? '["white", "accent"]' : p.kind === 'boolean' ? 'true'
+      : p.name === 'align' ? '"center"' : p.name === 'mode' ? '"add"' : '"M0 0 L10 10 Z"')
   const call = 'gfx.' + f.name + '(' + args.join(', ') + ')'
   return f.result === 'shape' ? `shapes.push(${call});` : f.result === 'string' ? `let s${f.name}: string = ${call};`
     : f.result === 'number' ? `let n${f.name}: number = ${call};` : `let b${f.name}: boolean = ${call};`
@@ -186,5 +187,65 @@ assert.match(playSurface(compileVeraSource(drawBuzz)), /sdk\.call may only be ca
 const breathing = buzzing.replace('if (state.n === 30) { sdk.call("com.example.buzz/entry/EntryAbility/Buzz", [], "onBuzzed"); }', '')
   .replace('return [gfx.circle(10 + state.n % 60, 50, 10, "accent")];', 'return [gfx.circle(50, 50, 10 + state.n % 30, "accent")];')
 assert.equal(playSurface(compileVeraSource(breathing)), '', 'a circle that only changes its size counts as moving')
+
+// Gradients are colours: gfx.linear / gfx.radial write a short string a shape takes in place of a colour, and the painter
+// turns it into a canvas gradient in the units the shape is drawn in.
+const {VeraStringValue} = loadVera('VeraInterpreter')
+const str = s => new VeraStringValue(s)
+const nums = list => list.map(v => new VeraNumberValue(v))
+const colours = list => new VeraArrayValue(list.map(str))
+const sky = G.invokeStdGfx('linear', nums([0, 0, 0, 100]).concat([colours(['white', '#0f172a'])])).value
+assert.equal(sky, 'lin:0,0,0,100:white|#0f172a', 'gfx.linear writes its points and colours')
+assert.equal(G.invokeStdGfx('radial', nums([40.004, 40, 30]).concat([colours(['white', 'accent'])])).value, 'rad:40,40,30:white|accent',
+  'gfx.radial rounds its numbers so a card frame stays short')
+for (const [body, why] of [
+  ['shapes.push(gfx.circle(5, 5, 5, gfx.linear(0, 0, 1, 1, ["white", "red"])));', 'an unknown colour in a gradient'],
+  ['shapes.push(gfx.circle(5, 5, 5, gfx.radial(0, 0, 1, ["white"])));', 'a gradient of one colour'],
+  ['shapes.push(gfx.blend("lighten", [gfx.circle(5, 5, 5, "ink")]));', 'a blend mode outside the set'],
+]) {
+  assert.ok(codes(program(body)).some(c => c.startsWith('E2112')), why + ' is refused')
+}
+const ball = G.invokeStdGfx('circle', nums([50, 50, 20]).concat([str(G.invokeStdGfx('radial', nums([44, 44, 26]).concat([colours(['white', 'accent'])])).value)]))
+const ballRec = createRecorder(100, 100)
+G.paintGfx(ballRec.ctx, [ball.op], light, 100, 100, 100, 100)
+assert.match(ballRec.svg(), /<radialGradient id="g\d+" gradientUnits="userSpaceOnUse"[^>]* cx="44" cy="44" r="26">/, 'a radial colour is a radial gradient')
+assert.match(ballRec.svg(), /fill="url\(#g\d+\)"/, 'the shape is filled with it')
+const broken = G.invokeStdGfx('circle', nums([50, 50, 20]).concat([str('lin:1,2:white|accent')]))
+const brokenRec = createRecorder(100, 100)
+G.paintGfx(brokenRec.ctx, [broken.op], light, 100, 100, 100, 100)
+assert.ok(brokenRec.svg().includes('fill="#ffffff"') && !brokenRec.svg().includes('Gradient'), 'a gradient that does not read is drawn in its first colour')
+
+// Effects hold shapes like a group: a glow or shadow is a drop shadow, a blur a gaussian blur, a blend the element's mix mode.
+// Their sizes are in surface units, so a glow inside a group scaled twice is twice as wide.
+const disc = () => G.invokeStdGfx('circle', nums([10, 10, 5]).concat([str('accent')]))
+const fx = (name, args) => G.invokeStdGfx(name, args)
+const svgOf = (ops, scale = 1) => { const r = createRecorder(100 * scale, 100 * scale); G.paintGfx(r.ctx, ops, light, 100 * scale, 100 * scale, 100, 100); return r.svg() }
+const glow = fx('glow', nums([4]).concat([str('#22d3ee'), new VeraArrayValue([disc()])]))
+assert.match(svgOf([glow.op]), /stdDeviation="2"\/><feOffset dx="0" dy="0" result="moved"\/><feFlood flood-color="#22d3ee"/, 'a glow is a soft shadow with no offset')
+assert.match(svgOf([glow.op], 2), /stdDeviation="4"/, 'and is as wide relative to the picture on a box twice the size')
+const grouped = G.invokeStdGfx('group', nums([0, 0, 0, 2, 1]).concat([new VeraArrayValue([glow])]))
+assert.match(svgOf([grouped.op]), /stdDeviation="4"/, 'a glow in a group scaled by 2 is twice as wide')
+const shadow = fx('shadow', nums([1, 3, 2]).concat([str('#00000066'), new VeraArrayValue([disc()])]))
+assert.match(svgOf([shadow.op]), /stdDeviation="1"\/><feOffset dx="1" dy="3" result="moved"\/><feFlood flood-color="#000000" flood-opacity="0.4"/, 'a shadow is moved and soft')
+assert.match(svgOf([fx('blur', nums([3]).concat([new VeraArrayValue([disc()])])).op]), /<feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="shape"\/>/, 'a blur blurs')
+assert.match(svgOf([fx('blend', [str('add'), new VeraArrayValue([disc()])]).op]), /mix-blend-mode:plus-lighter/, 'add is a lighter blend')
+const plain = svgOf([fx('blend', [str('nonsense'), new VeraArrayValue([disc()])]).op])
+assert.ok(!plain.includes('mix-blend-mode') && plain.includes('fill="#'), 'an unknown mode draws its shapes plain')
+const back = G.decodeGfxOps(G.encodeGfxOps([shadow.op]))
+assert.equal(back[0].kind, 'fx'); assert.equal(back[0].fx, 'shadow'); assert.equal(back[0].children.length, 1)
+assert.equal(back[0].w, 1); assert.equal(back[0].h, 3); assert.equal(back[0].lineWidth, 2)
+assert.equal(shadow.op.count, 2, 'an effect counts itself and its shapes against the frame limit')
+
+// The example of all of them (examples/widget-rich.vera) compiles and paints them, in under a card's shape limit.
+const rich = compileVeraSource(fs.readFileSync(path.join(__dirname, 'examples/widget-rich.vera'), 'utf8'))
+const richVm = new VirtualMachine(deserializeVbc2(rich.vbc2), new UiHostEnvironment())
+const richOps = G.decodeGfx(richVm.execute('scene', [richVm.execute('init')]))
+const richSvg = svgOf(richOps)
+for (const part of ['<linearGradient', '<radialGradient', '<feOffset', '<feGaussianBlur', 'mix-blend-mode:plus-lighter']) {
+  assert.ok(richSvg.includes(part), 'the rich example draws ' + part)
+}
+assert.ok(richOps.reduce((sum, o) => sum + o.count, 0) <= 60, 'within a card picture\'s 60 shapes')
+fs.mkdirSync(path.join(__dirname, 'proofs'), {recursive: true})
+fs.writeFileSync(path.join(__dirname, 'proofs/widget-rich.svg'), svgOf(richOps, 3))
 
 console.log('gfx-check ok')

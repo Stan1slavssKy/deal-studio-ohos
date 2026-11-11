@@ -1,5 +1,6 @@
 import { CATALOG, describeComponents } from './VeraUiCatalog'
 import { widgetRefinementError } from './VeraCompiler'
+import { decodeGfxOps } from './GfxPaint'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
 import { decodeVeraUi, UiHostEnvironment } from './VeraUi'
 import { WidgetSession, CardNode, LiveFrame, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, CARD_DIMENSIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
@@ -91,7 +92,13 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'the first at the bottom, each in the middle, and each can be its own ui.Motion(style, 0, [ui.Surface(...)]) so the parts move ' +
     'separately. Give every ui.Surface in one ui.Layers the same width and height as the ui.Layers and draw each part where it belongs ' +
     'in that box (its own function, only its part), so they line up; every ui.Surface above the first has the style "clear" (no background of its own: without it it hides the layers under it). A touch anywhere on the scene plays all its movements. A tap runs the pointer handler of the topmost layer that has one under the finger, and a layer whose pointer is \"\" lets the touch through, so a scene needs one layer with a handler, not one in each. ' +
-    'Draw exactly the subject the person asked for; do not reuse a shape from these instructions. '+
+    'Draw exactly the subject the person asked for; do not reuse a shape from these instructions. ' +
+    'MAKE IT LOOK GOOD. Give things depth and light, as a painter would: a ball, a face, a fruit, a planet is a circle filled with ' +
+    'gfx.radial (a light colour first, centred a little up and left of the middle, the darkest last); a sky, the sea or a wall is gfx.linear; ' +
+    'something standing or floating has a soft gfx.shadow under it ("#00000055"); a lamp, a star, a magic spark is in a gfx.glow; ' +
+    'lights that overlap are in gfx.blend("add", ...). A scene with its own background (a sky, a room, a sea) is ui.Surface("cover", ...): it ' +
+    'fills the whole card edge to edge, under everything else, with the one short line of text over its bottom -- never a dark square ' +
+    'in the middle of the card. A single object (a ball, a drum, a pet) is a "default" picture on the card\'s own colour, with no rect behind it. ' +
     'STYLES. A text style is drawn as the app draws it, with the theme\'s weight, font and colour: display, title, heading, body, caption ' +
     '(small), eyebrow (a small spaced label above something), metric (a big figure), muted (quiet), success, warning, danger (toned). ' +
     'A column\'s style: default or center (centred), end (to the right), compact or spacious (the gap between its children), surface or ' +
@@ -213,7 +220,36 @@ function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
     let problem = glanceError(frame)
     if (problem.length > 0) { return problem }
   }
-  return ''
+  return glance ? backgroundError(frames[0].nodes) : ''
+}
+
+/**
+ * A picture that paints its own background (its first shape a rect over nearly all of it) is a scene: on a card it is a cover picture,
+ * edge to edge under the rest. Drawn as a default picture it comes out a dark square in the middle of the card -- what 4 of 14 widgets
+ * did in a run of toy prompts even with the prompt saying so, hence a check whose reason goes back to the model. Pictures in a row or a
+ * ui.Layers share the card and are left as they are.
+ */
+function backgroundError(nodes: CardNode[]): string {
+  let found = ''
+  let walk = (list: CardNode[]): void => {
+    for (let node of list) {
+      if (found.length > 0 || node.kind === 'row' || node.kind === 'layers') { continue }
+      if (node.kind === 'surface' && node.style !== 'cover' && node.style !== 'clear') {
+        let ops = decodeGfxOps(node.ops)
+        let first = ops.length > 0 ? ops[0] : null
+        if (first !== null && (first.kind === 'rect' || first.kind === 'roundRect') && first.x <= node.w * 0.05 && first.y <= node.h * 0.05 &&
+          first.x + first.w >= node.w * 0.95 && first.y + first.h >= node.h * 0.95) {
+          found = 'A picture of the widget paints its own background (its first shape fills it), so on the card it would be a ' +
+            'square of that colour in the middle. A scene with a background is ui.Surface("cover", ' + node.w.toString() + ', ' + node.h.toString() +
+            ', ...): it fills the whole card to its edges, under the rest of the widget. Make it "cover" (keep at most one short line of text ' +
+            'beside it), or, for a single object, leave the background rect out.'
+        }
+      }
+      walk(node.children)
+    }
+  }
+  walk(nodes)
+  return found
 }
 
 /** The nodes, at any depth, that `pick` takes. */

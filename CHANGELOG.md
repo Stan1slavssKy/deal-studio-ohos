@@ -1,5 +1,12 @@
 # Changelog
 
+## Light and depth in pictures: gradients, glow, shadow, blur, blend; a cover picture on the card
+
+- `std/gfx` draws more than flat fills: `gfx.linear` and `gfx.radial` are colours any shape takes (a lit ball, a sky), and `gfx.glow`, `gfx.shadow`, `gfx.blur` and `gfx.blend` hold shapes like a group. One painter draws them in the app, on the home-screen card and in the host's SVG proofs; their sizes follow the picture's scale. The compiler checks a gradient's literal colours and the blend modes.
+- `ui.Surface("cover", ...)` on a card is its background, edge to edge, with the rest of the widget over its bottom on a veil of the card's colour; in the app it draws as `fill`. One per widget, not in a row or a ui.Layers.
+- Make widget's prompt and the game prompt say how to give a picture depth and light, and when to use a cover picture.
+- Measured on the phone first (what a card draws, what it may use, what keeps moving after its script stops): `docs/live-widget-proof.md`. Host checks in `gfx-check.js` and `live-widget-check.js`; `tools/vera-harness/examples/widget-rich.vera`.
+
 ## Remove widget
 
 - The project page's widget block has Remove behind a swipe to the left, as a version's Delete (the block is the first row of the versions list, its buttons in one row like a version's Run / Refine / Code): the latest version is saved again without its widget, its refresh and what only they use (`WidgetRemove.ets`, on `withoutWidget`), with the app's state carried over and the widget's requests left out of its history. Earlier versions keep theirs.

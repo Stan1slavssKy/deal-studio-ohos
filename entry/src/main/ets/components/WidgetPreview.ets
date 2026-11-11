@@ -2,6 +2,7 @@ import { WidgetSession, LiveFrame, CardNode, SourceRequest } from '../vera/VeraL
 import { app } from './AppStyle'
 import { sourceFetch } from '../vera/VeraSource'
 import { CardView } from '../widget/CardView'
+import { CARD_PADDING, splitCover, coverScrim } from '../widget/CardModel'
 
 /** A 2x2 home-screen card on this phone, in vp: the size the widget is written for (measured: 524 px wide at 3.5 px per vp). */
 const CARD_SIDE: number = 150
@@ -129,26 +130,51 @@ export struct WidgetPreview {
     }
   }
 
+  /** As LiveCard: the cover picture under everything, to the card's edges (splitCover), and the rest over it. */
+  private coverNodes(): CardNode[] {
+    let cover = splitCover(this.frame.nodes).cover
+    return this.frame.live && cover !== null ? [cover] : []
+  }
+  private restNodes(): CardNode[] { return splitCover(this.frame.nodes).rest }
+  private overCover(): boolean { return this.coverNodes().length > 0 && this.restNodes().length > 0 }
+
   @Builder
   card() {
     // As LiveCard: the widget has the whole card, with no title strip.
-    Column({ space: 6 }) {
-      if (this.frame.live) {
+    Stack() {
+      if (this.coverNodes().length > 0) {
         CardView({
-          nodes: this.frame.nodes,
+          nodes: this.coverNodes(),
+          fill: true,
+          dimension: this.dimension,
           frameKey: this.frame.token + this.dimension.toString() + this.seq.toString(),
           preset: this.frame.preset,
           primary: this.frame.primary,
           onTap: (action: string, value: number): void => { this.tap(action, value) },
-          onSwitch: (handler: string, on: boolean): void => { this.tapSwitch(handler, on) },
           onPoint: (handler: string, x: number, y: number): void => { this.tapPicture(handler, x, y) }
         })
       }
+      Column({ space: 6 }) {
+        if (this.frame.live) {
+          CardView({
+            nodes: this.restNodes(),
+            dimension: this.dimension,
+            frameKey: this.frame.token + this.dimension.toString() + this.seq.toString(),
+            preset: this.frame.preset,
+            primary: this.frame.primary,
+            onTap: (action: string, value: number): void => { this.tap(action, value) },
+            onSwitch: (handler: string, on: boolean): void => { this.tapSwitch(handler, on) },
+            onPoint: (handler: string, x: number, y: number): void => { this.tapPicture(handler, x, y) }
+          })
+        }
+      }
+      .width('100%').height('100%').padding(CARD_PADDING)
+      .justifyContent(this.overCover() ? FlexAlign.End : FlexAlign.Center)
+      .linearGradient({ angle: 180, colors: coverScrim(this.frame.background, this.overCover()) })
+      .hitTestBehavior(this.coverNodes().length > 0 ? HitTestMode.Transparent : HitTestMode.Default)
     }
     .width(this.dimension === 2 ? CARD_SIDE : CARD_WIDE_WIDTH)
     .height(this.dimension === 2 ? CARD_SIDE : this.dimension === 3 ? CARD_WIDE_HEIGHT : CARD_BIG_HEIGHT)
-    .padding(12)
-    .justifyContent(FlexAlign.Center)
     .backgroundColor(this.frame.background)
     .borderRadius(20)
     .clip(true)

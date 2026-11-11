@@ -82,10 +82,33 @@ export function gfxColor(t: ResolvedTheme, c: string): string {
   return themeColor(t.ink)
 }
 
+/**
+ * What a shape is filled or stroked with: a colour (gfxColor), or a gradient gfx.linear / gfx.radial wrote as
+ * "lin:x1,y1,x2,y2:c1|c2|..." or "rad:x,y,r:c1|c2|...". The gradient's points are in the units the shape is drawn in, under the
+ * transform in force, so one inside a group moves with it. A gradient that does not read is drawn in its first colour, or in ink.
+ */
+export function gfxPaintStyle(ctx: CanvasRenderingContext2D, t: ResolvedTheme, c: string): string | CanvasGradient {
+  let linear = c.startsWith('lin:')
+  if (!linear && !c.startsWith('rad:')) { return gfxColor(t, c) }
+  let parts = c.split(':')
+  let colours = parts.length > 2 ? parts[2].split('|').filter((s: string): boolean => s.length > 0) : []
+  let numbers = parts.length > 1 ? parts[1].split(',').map((s: string): number => Number(s)) : []
+  let wanted = linear ? 4 : 3
+  let usable = numbers.length === wanted && numbers.every((n: number): boolean => isFinite(n)) && (linear || numbers[2] > 0)
+  if (colours.length === 0) { return gfxColor(t, '') }
+  if (!usable || colours.length === 1) { return gfxColor(t, colours[0]) }
+  let g = linear ? ctx.createLinearGradient(numbers[0], numbers[1], numbers[2], numbers[3]) :
+    ctx.createRadialGradient(numbers[0], numbers[1], 0, numbers[0], numbers[1], numbers[2])
+  for (let i = 0; i < colours.length; i++) { g.addColorStop(i / (colours.length - 1), gfxColor(t, colours[i])) }
+  return g
+}
+
 /** One thing to draw, as the program asked for it. Plain data: built by the host functions, read by paintGfx. */
 export class GfxOp {
-  /** rect | roundRect | circle | arc | line | polyline | polygon | path | strokePath | text | group */
+  /** rect | roundRect | circle | arc | line | polyline | polygon | path | strokePath | text | group | fx */
   kind: string = ''
+  /** An fx's effect: glow | shadow | blur | add | screen | multiply ('' draws its shapes plain). Its blur is lineWidth, a shadow's offset w, h. */
+  fx: string = ''
   x: number = 0
   y: number = 0
   /** width, or x2 for a line */
@@ -128,6 +151,7 @@ function packGfxOp(o: GfxOp): Object {
   if (o.align !== 'left') { r['n'] = o.align }
   if (o.bold) { r['b'] = true }
   if (o.points.length > 0) { r['p'] = o.points }
+  if (o.fx.length > 0) { r['f'] = o.fx }
   if (o.children.length > 0) { r['o'] = o.children.map((c: GfxOp): Object => packGfxOp(c)) }
   return r
 }
@@ -143,6 +167,7 @@ function unpackGfxOp(item: Object): GfxOp {
   o.text = typeof r['t'] === 'string' ? r['t'] as string : ''
   o.align = typeof r['n'] === 'string' ? r['n'] as string : 'left'
   o.bold = r['b'] === true
+  o.fx = typeof r['f'] === 'string' ? r['f'] as string : ''
   if (Array.isArray(r['p'])) {
     o.points = (r['p'] as Object[]).map((v: Object): number => typeof v === 'number' ? v as number : 0)
   }
@@ -181,10 +206,11 @@ export class GfxFit {
   offsetY: number = 0
 }
 
-export function gfxFit(boxW: number, boxH: number, w: number, h: number): GfxFit {
+export function gfxFit(boxW: number, boxH: number, w: number, h: number, cover: boolean = false): GfxFit {
   let fit = new GfxFit()
   if (!(w > 0) || !(h > 0) || !(boxW > 0) || !(boxH > 0)) { return fit }
-  fit.scale = Math.min(boxW / w, boxH / h)
+  // cover (ui.Surface style "cover", a card's background): the whole box is filled and what is past its edges is cut off.
+  fit.scale = cover ? Math.max(boxW / w, boxH / h) : Math.min(boxW / w, boxH / h)
   fit.offsetX = (boxW - w * fit.scale) / 2
   fit.offsetY = (boxH - h * fit.scale) / 2
   return fit
@@ -210,7 +236,8 @@ const RAD: number = Math.PI / 180
 
 /**
  * Draw one frame of a surface into a box of boxW x boxH vp. The box is filled with the theme's background, the
- * surface's w x h units are fitted into it (gfxFit), and the shapes are drawn back to front, clipped to the surface.
+ * surface's w x h units are fitted into it (gfxFit; with `cover` they fill it and run past its edges), and the shapes are
+ * drawn back to front, clipped to the surface.
  *
  * `pathScale` is the pixels in a vp on the screen drawn to: ArkUI reads a path string (gfx.path, gfx.strokePath) in
  * pixels whatever the canvas's own unit, so a path is drawn under that much more scale -- without it a signature pad's
@@ -220,8 +247,8 @@ const RAD: number = Math.PI / 180
  * otherwise leave the canvas in a state the rest of the frame inherits.
  */
 export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: ResolvedTheme,
-    boxW: number, boxH: number, w: number, h: number, pathScale: number = 1, bare: boolean = false): void {
-  let fit = gfxFit(boxW, boxH, w, h)
+    boxW: number, boxH: number, w: number, h: number, pathScale: number = 1, bare: boolean = false, cover: boolean = false): void {
+  let fit = gfxFit(boxW, boxH, w, h, cover)
   ctx.save()
   ctx.clearRect(0, 0, boxW, boxH)
   ctx.globalAlpha = 1
@@ -239,11 +266,39 @@ export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: Resolve
   ctx.clip()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  for (let o of ops) { paintOp(ctx, o, t, pathScale) }
+  for (let o of ops) { paintOp(ctx, o, t, pathScale, fit.scale) }
   ctx.restore()
 }
 
-function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number): void {
+/** The canvas's composite operation for a gfx.blend mode, '' for none. */
+function blendOperation(mode: string): string {
+  return mode === 'add' ? 'lighter' : mode === 'screen' ? 'screen' : mode === 'multiply' ? 'multiply' : ''
+}
+
+/**
+ * One gfx.glow / shadow / blur / blend around its shapes. A canvas does not scale a shadow or a filter with its transform, so
+ * their sizes are turned from surface units into the canvas's by `unit` (the scale in force): a glow is as wide on a big card as
+ * on a small one, relative to the picture. ArkUI reads a filter's 'px' in the canvas's own unit (measured on the phone: blur(2px)
+ * on a card blurred about 2 vp), unlike a path string, so it takes no `pathScale`.
+ */
+function paintFx(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number, unit: number): void {
+  ctx.save()
+  if (o.fx === 'glow' || o.fx === 'shadow') {
+    ctx.shadowColor = gfxColor(t, o.color)
+    ctx.shadowBlur = Math.max(0, o.lineWidth * unit)
+    ctx.shadowOffsetX = o.fx === 'shadow' ? o.w * unit : 0
+    ctx.shadowOffsetY = o.fx === 'shadow' ? o.h * unit : 0
+  } else if (o.fx === 'blur') {
+    if (o.lineWidth > 0) { ctx.filter = 'blur(' + (Math.round(o.lineWidth * unit * 10) / 10).toString() + 'px)' }
+  } else {
+    let operation = blendOperation(o.fx)
+    if (operation.length > 0) { ctx.globalCompositeOperation = operation }
+  }
+  for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
+  ctx.restore()
+}
+
+function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number, unit: number): void {
   if (!finite(o)) { return }
   if (o.kind === 'group') {
     ctx.save()
@@ -251,11 +306,15 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, path
     if (o.start !== 0) { ctx.rotate(o.start * RAD) }
     if (o.r !== 1) { ctx.scale(o.r, o.r) }
     ctx.globalAlpha = ctx.globalAlpha * o.size
-    for (let c of o.children) { paintOp(ctx, c, t, pathScale) }
+    for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit * Math.abs(o.r)) }
     ctx.restore()
     return
   }
-  let c = gfxColor(t, o.color)
+  if (o.kind === 'fx') {
+    paintFx(ctx, o, t, pathScale, unit)
+    return
+  }
+  let c = gfxPaintStyle(ctx, t, o.color)
   if (o.kind === 'rect') {
     ctx.fillStyle = c
     ctx.fillRect(o.x, o.y, o.w, o.h)

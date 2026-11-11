@@ -31,6 +31,9 @@ export class CardSize {
   pictureMax: number = 80
 }
 
+/** The padding a card keeps round what is on it, in vp: a cover picture (splitCover) runs under it to the card's edges. */
+export const CARD_PADDING: number = 12
+
 /** The sizes a card can be, in the system's numbering. */
 export const CARD_DIMENSIONS: number[] = [2, 3, 4]
 
@@ -240,4 +243,57 @@ export function normalizeNodes(nodes: CardNode[]): CardNode[] {
     out.push(node)
   }
   return out
+}
+
+/** A frame's nodes with its cover picture taken out: the picture is drawn as the card's background, the rest over it. */
+export class CoverSplit {
+  /** The ui.Surface of style "cover" (inside its ui.Motion when one holds only it), or null for a widget without one. */
+  cover: CardNode | null = null
+  rest: CardNode[] = []
+}
+
+function isCover(node: CardNode): boolean {
+  return node.kind === 'surface' && node.style === 'cover'
+}
+
+/** A Motion around only the cover picture goes with it, so a touch on the background still plays the movement. */
+function coverHolder(node: CardNode): boolean {
+  return isCover(node) || (node.kind === 'motion' && node.children.length === 1 && isCover(node.children[0]))
+}
+
+/**
+ * The first cover picture of a frame, out of the tree: a column left with nothing in it goes too. Copies the nodes it changes,
+ * so the frame itself is left as it was. The frame builder (VeraLiveWidget) refuses a cover inside a row or a ui.Layers.
+ */
+export function splitCover(nodes: CardNode[]): CoverSplit {
+  let split = new CoverSplit()
+  let take = (list: CardNode[]): CardNode[] => {
+    let out: CardNode[] = []
+    for (let node of list) {
+      if (split.cover === null && coverHolder(node)) { split.cover = node; continue }
+      if (split.cover === null && node.kind === 'column' && node.children.length > 0) {
+        let children = take(node.children)
+        if (children.length === node.children.length) { out.push(node); continue }
+        if (children.length === 0) { continue }
+        let copy = normalizeNodes([node])[0]
+        copy.children = children
+        out.push(copy)
+        continue
+      }
+      out.push(node)
+    }
+    return out
+  }
+  split.rest = take(nodes)
+  return split
+}
+
+/**
+ * The veil under what lies over a cover picture: clear at the top, the card's colour at the bottom, so a text over a busy picture
+ * reads. Clear throughout when there is nothing over a picture. `background` is the card's #rrggbb.
+ */
+export function coverScrim(background: string, over: boolean): Array<[ResourceColor, number]> {
+  let rgb = background.length === 7 && background.charAt(0) === '#' ? background.substring(1) : 'FFFFFF'
+  if (!over) { return [['#00' + rgb, 0], ['#00' + rgb, 1]] }
+  return [['#00' + rgb, 0], ['#00' + rgb, 0.45], ['#D9' + rgb, 0.8], ['#F2' + rgb, 1]]
 }

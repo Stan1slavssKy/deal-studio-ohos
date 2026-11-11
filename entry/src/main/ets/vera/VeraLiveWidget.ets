@@ -45,6 +45,9 @@ const LIVE_ROW_SPACE: number = 8
  * draws it; about 0.55 em a character), a row shares its width among its children. What is left of the card for a picture is what these leave.
  */
 function nodeHeight(node: CardNode, pictureSide: number, width: number = LIVE_INNER_WIDTH): number {
+  // A cover picture is the card's background (CardModel.splitCover): it takes no room from the rest.
+  if (node.kind === 'surface' && node.style === 'cover') { return 0 }
+  if (node.kind === 'motion' && node.children.length === 1 && node.children[0].kind === 'surface' && node.children[0].style === 'cover') { return 0 }
   if (node.kind === 'surface') { return Math.min(pictureSide * 1.1, pictureSide * node.h / node.w) }
   if (node.kind === 'path' || node.kind === 'icon') { return node.size }
   if (node.kind === 'iconbutton') { return node.size }
@@ -80,6 +83,30 @@ function stackHeight(nodes: CardNode[], pictureSide: number, gap: number = LIVE_
   return total + Math.max(0, nodes.length - 1) * gap
 }
 
+/**
+ * '' when the widget's cover pictures (ui.Surface style "cover") can be drawn as the card's background: at most one, and not in a row or a
+ * ui.Layers, where it would have to share the card. Else why not, said for the model.
+ */
+export function coverError(nodes: CardNode[]): string {
+  let covers = 0
+  let misplaced = false
+  let walk = (list: CardNode[], shared: boolean): void => {
+    for (let node of list) {
+      if (node.kind === 'surface' && node.style === 'cover') {
+        covers++
+        if (shared) { misplaced = true }
+      }
+      walk(node.children, shared || node.kind === 'row' || node.kind === 'layers')
+    }
+  }
+  walk(nodes, false)
+  if (covers > 1) { return 'a widget has at most one ui.Surface of style "cover": it is the whole card\'s background' }
+  if (misplaced) {
+    return 'a ui.Surface of style "cover" is the whole card\'s background: put it in the widget\'s column (or alone in a ui.Motion), not in a row or a ui.Layers'
+  }
+  return ''
+}
+
 /** About how tall the widget draws on the card, in vp (its picture, if it has one, at the side it was given). */
 export function widgetHeight(frame: LiveFrame): number {
   let side = 0
@@ -88,9 +115,10 @@ export function widgetHeight(frame: LiveFrame): number {
   return stackHeight(frame.nodes, side, LIVE_ROW_GAP, cardSize(frame.dimension).width)
 }
 
+/** The pictures that share the card's room with the rest: a cover picture lies under it all instead. */
 function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
   for (let node of nodes) {
-    if (node.kind === 'surface') { out.push(node) }
+    if (node.kind === 'surface' && node.style !== 'cover') { out.push(node) }
     allPictures(node.children, out)
   }
   return out
@@ -101,7 +129,7 @@ function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
  * Sparkline (one under another) takes the most of any child.
  */
 function picturesAcross(node: CardNode): number {
-  if (node.kind === 'surface') { return 1 }
+  if (node.kind === 'surface') { return node.style === 'cover' ? 0 : 1 }
   let most = 0
   let sum = 0
   for (let child of node.children) {
@@ -485,6 +513,8 @@ export class WidgetSession {
     // The theme wrapper consumes no layout level but is still validated and counted.
     let tree = project(root, root.kind === 'apptheme' ? 0 : 1, '0', -1)
     frame.nodes = root.kind === 'apptheme' ? tree.children : [tree]
+    let coverProblem = coverError(frame.nodes)
+    if (coverProblem.length > 0) { throw new Error(coverProblem) }
     let side = pictureRoom(frame)
     for (let picture of allPictures(frame.nodes, [])) { picture.size = Math.max(PICTURE_SIDE_MIN, Math.min(size.pictureMax, side)) }
     // Rejects taps from an older frame or state. A digest, not the state itself: the token is in the card's data, which has

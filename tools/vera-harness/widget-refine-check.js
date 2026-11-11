@@ -19,6 +19,19 @@ for (const [from,to,name] of [['count: number','count: string','AppState'],['cou
 assert.match(widgetRefinementError(base,base),/add function widget/)
 assert.equal(validateWidgetRefinement(base,candidate,compiled.vbc2), '')
 assert.equal(smokeRun(compiled),'')
+
+// A picture that paints its own background is a scene: Make widget asks for it as a cover picture, so it is not a square in the middle of the card.
+{
+  const rich = fs.readFileSync(path.join(__dirname, 'examples/widget-rich.vera'), 'utf8')
+  const richBase = withoutWidget(rich)
+  assert.notEqual(richBase, rich)
+  assert.match(validateWidgetRefinement(richBase, rich, compileVeraSource(rich).vbc2), /paints its own background[\s\S]*ui\.Surface\("cover", 100, 100/)
+  const covered = rich.replace('ui.Motion("pop", 0, [ui.Surface("default", 100, 100, "scene", "", "onTouch")]),', 'ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "scene", "", "onTouch")]),')
+  assert.equal(validateWidgetRefinement(richBase, covered, compileVeraSource(covered).vbc2), '', 'as a cover picture it passes')
+  const object = rich.replace('shapes.push(gfx.rect(0, 0, 100, 100, gfx.linear(0, 0, 0, 100, ["#1e1b4b", "#7c3aed", "#f472b6"])));', '')
+  assert.equal(validateWidgetRefinement(withoutWidget(object), object, compileVeraSource(object).vbc2), '', 'a single object with no background rect passes')
+  assert.match(widgetRefinementPrompt(false), /MAKE IT LOOK GOOD[\s\S]*gfx\.radial[\s\S]*ui\.Surface\("cover"/)
+}
 for (const altered of [candidate.replace('function widget(state: AppState)', 'async function widget(state: AppState)'),candidate.replace('function widget(state: AppState)', 'function widget(state: number)'),candidate.replace('function widget(state: AppState): ui.View', 'function widget(state: AppState): AppState')]) {
   assert.throws(()=>compileVeraSource(altered),/E2115/)
 }
