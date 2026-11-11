@@ -380,6 +380,33 @@ widget screen at 2x2, 2x4 (the cover cut at the top and bottom) and 4x4, and in 
 their checks, the SVG of each effect, the scale, the frame round trip, the example within 60 shapes; `proofs/widget-rich.svg`), `live-widget-check.js`
 (the cover in the frame, within the 8000-character budget, split from the tree with its Motion, one only, not in a row).
 
+## Moving parts: what moves in life moves, about its own pivot
+
+`ui.Motion` moves a whole picture, so in the toy run the clock case swung with its pendulum, the pointer spun with the wheel and the sky jumped with the
+rocket. `gfx.moving(style, trigger, pivotX, pivotY, shapes)` marks the part of a drawing that moves: its shapes play a Motion preset about the part's own
+pivot (in surface units: the top of the rod, the centre of the wheel), and the rest of the drawing stays. A touch anywhere on the picture plays every part,
+and so does a change of trigger.
+
+- **On a card** the extension cannot move a part of one canvas, so `WidgetSession.frame` splits the picture where its parts are into layers of the same box
+  (a `ui.Layers` with `parts`): what is still under the parts, each part in a Motion of its own, what is still over them. Each layer is a picture (five on a
+  card), at most three parts; the picture's pointer goes on the bottom layer and the scene's links play every part. The Motion carries the pivot as shares
+  of its box (`CardNode.px`, `py`), which `CardView` gives `rotate` and `scale` as their centre. A part must be among the shapes the draw function returns
+  (not in a group or an effect); a picture with parts must sit directly in the widget's column, since its layers take two levels. A `ui.Motion` around it is
+  dropped, since the parts move by themselves (the model kept adding one).
+- **In the app** `paintGfx` takes the parts' poses: each part plays from when its trigger changed or the picture was touched (`SurfaceBox.partStarts`,
+  `partPoses` in `VeraPreview`), sampled from the same preset table, turned and scaled about its pivot, its offset turned from points into surface units.
+  A surface with no frame loop gets a short repaint timer while a part plays. The host and the SVG proofs draw parts at rest.
+- Two presets for things that leave and come back: `launch` (up out of sight, unseen back below, up into place) and `roll` (away to the side, turning, and back).
+- Make widget refuses a `ui.Motion` around a scene (a cover picture or one that paints its own background): its background would move too. The reason asks for
+  the thing to be a `gfx.moving` part, and for a cover picture in the same answer when it is not one yet, so one retry fixes both.
+
+Measured on the phone: `examples/widget-pendulum.vera` in a test project with a card -- the case stayed and the rod and bob swung about the top, right, left,
+right and still, and the count rose by one; the same in the app's full-screen run. Generated (six toy prompts, twice): with the checks, the rocket launched out of a
+night sky that stayed, the frog hopped off a lily pad that stayed, the punching bag swung from a hook that stayed. The wheel and the pendulum were still written
+without parts (the wheel spun whole, the pendulum did not move): the model reaches for gfx.moving only when a check says so. Host checks: `gfx-check.js` (the part
+at rest and posed about its pivot, the preset check), `live-widget-check.js` (the layers, pivot, pointer, links, cover, the limits and the dropped Motion),
+`widget-refine-check.js` (the scene check), `motion-check.js` (the two presets).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

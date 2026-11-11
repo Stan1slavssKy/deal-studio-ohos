@@ -11,10 +11,12 @@ function scene(state: AppState): gfx.Shape[] {
     gfx.circle(34, 30, 9, gfx.radial(34, 30, 9, ["#f43f5e", "#f43f5e00"]))
   ]));
   shapes.push(gfx.blur(3, [gfx.roundRect(8, 70, 40, 8, 4, "#ffffff55")]));
-  shapes.push(gfx.shadow(0, 4, 6, "#00000066", [
-    gfx.circle(56, 64, 20, gfx.radial(49, 56, 26, ["#ffffff", "#fde047", "#c2410c"]))
+  shapes.push(gfx.moving("pop", state.taps, 56, 64, [
+    gfx.shadow(0, 4, 6, "#00000066", [
+      gfx.circle(56, 64, 20, gfx.radial(49, 56, 26, ["#ffffff", "#fde047", "#c2410c"]))
+    ]),
+    gfx.glow(4, "#22d3ee", [gfx.arc(56, 64, 27, 0, 360, 1.5, "#a5f3fc")])
   ]));
-  shapes.push(gfx.glow(4, "#22d3ee", [gfx.arc(56, 64, 27, 0, 360, 1.5, "#a5f3fc")]));
   return shapes;
 }
 
@@ -33,7 +35,7 @@ function view(state: AppState): ui.View {
 function widget(state: AppState): ui.View {
   return ui.AppTheme("playful", "", [
     ui.Column("center", [
-      ui.Motion("pop", 0, [ui.Surface("default", 100, 100, "scene", "", "onTouch")]),
+      ui.Surface("default", 100, 100, "scene", "", "onTouch"),
       ui.Text("caption", ui.numberToString(state.taps) + " taps")
     ])
   ]);

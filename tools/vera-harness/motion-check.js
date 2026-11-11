@@ -10,6 +10,15 @@ const {UiHostEnvironment, decodeVeraUi} = loadVera('VeraUi')
 const {stylesFor} = loadVera('VeraUiCatalog')
 
 assert.deepEqual(MOTION_PRESETS, stylesFor('motion'), 'the catalogue lists exactly the presets the renderer can play')
+// launch leaves on purpose (a rocket goes out of sight and comes back from below): only it may go past the usual bounds, and it is unseen
+// while it jumps from above to below.
+{
+  const {motionStages} = loadVera('VeraMotion')
+  const stages = motionStages('launch')
+  const jump = stages.findIndex((row, i) => i > 0 && row[2] > 0 && stages[i - 1][2] < 0)
+  assert.ok(jump > 0 && stages[jump][6] === 0, 'launch is invisible while it moves from above to below')
+  assert.ok(Math.min(...stages.map(r => r[2])) <= -150, 'launch goes out of sight')
+}
 const identity = JSON.stringify(new MotionPose())
 for (const preset of MOTION_PRESETS) {
   assert.ok(motionDuration(preset) > 0 && motionDuration(preset) <= MOTION_BUDGET_MS, preset + ' has a short, fixed duration within the card budget')
@@ -19,7 +28,7 @@ for (const preset of MOTION_PRESETS) {
   for (let i = 0; i < 20; i++) {
     const p = motionPose(preset, i / 20)
     for (const k of Object.keys(p)) assert.ok(Number.isFinite(p[k]), preset + ' ' + k + ' is finite at ' + i)
-    assert.ok(p.scale * p.scaleX > 0.01 && p.scale * p.scaleX < 1.6 && p.scale * p.scaleY > 0.01 && p.scale * p.scaleY < 1.6 && p.opacity >= 0 && p.opacity <= 1 && Math.abs(p.dx) <= 70 && Math.abs(p.dy) <= 75, preset + ' stays in bounds')
+    assert.ok(p.scale * p.scaleX > 0.01 && p.scale * p.scaleX < 1.6 && p.scale * p.scaleY > 0.01 && p.scale * p.scaleY < 1.6 && p.opacity >= 0 && p.opacity <= 1 && Math.abs(p.dx) <= 70 && Math.abs(p.dy) <= (preset === 'launch' ? 180 : 75), preset + ' stays in bounds')
     if (JSON.stringify(p) !== identity) moved = true
   }
   assert.ok(moved, preset + ' really moves')
@@ -41,7 +50,7 @@ for (const preset of MOTION_PRESETS) {
   assert.deepEqual([last[1], last[2], last[3], last[4], last[5] % 360, last[6]], [0, 0, 1, 1, 0, 1], preset + ' rests where it started from at the end')
   const key = JSON.stringify(st); assert.ok(!seen.has(key), preset + ' is not a copy of another'); seen.add(key)
 }
-assert.equal(MOTION_PRESETS.length, 25); assert.deepEqual(motionStages('nonsense'), [])
+assert.equal(MOTION_PRESETS.length, 27); assert.deepEqual(motionStages('nonsense'), [])
 assert.equal(JSON.stringify(motionPose('tumble', NaN)), JSON.stringify(motionPose('tumble', 0)), 'a NaN progress is the start')
 assert.ok(motionPose('tumble', 0).angle > 360, 'a tumble starts well away from rest')
 

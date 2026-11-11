@@ -501,26 +501,87 @@ assert.match(view, /node.key \+ this.frameKey/)
   const { splitCover, coverScrim, compactFrame } = loadVera('../widget/CardModel')
   const { decodeGfxOps } = loadVera('GfxPaint')
   const rich = fs.readFileSync(path.join(__dirname, 'examples/widget-rich.vera'), 'utf8')
-  const coverSource = rich.replace('ui.Motion("pop", 0, [ui.Surface("default", 100, 100, "scene", "", "onTouch")]),',
-    'ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "scene", "", "onTouch")]),')
+  const widgetPicture = 'ui.Surface("default", 100, 100, "scene", "", "onTouch"),\n      ui.Text'
+  const coverSource = rich.replace(widgetPicture, 'ui.Surface("cover", 100, 100, "scene", "", "onTouch"),\n      ui.Text')
   assert.notEqual(coverSource, rich)
   const f = new WidgetSession(compileVeraSource(coverSource).vbc2, 'cover', '').frame('p1', 'Cover', '🌄')
-  assert(JSON.stringify(compactFrame(f)).length <= 8000, 'a picture with gradients and effects fits the frame budget')
-  const pictures = []; const walk = n => { if (n.kind === 'surface') pictures.push(n); n.children.forEach(walk) }; f.nodes.forEach(walk)
-  assert.equal(pictures.length, 1); assert.equal(pictures[0].style, 'cover')
-  assert(decodeGfxOps(pictures[0].ops).some(o => o.kind === 'fx' && o.fx === 'shadow'), 'the effects of the picture reach the card')
+  assert(JSON.stringify(compactFrame(f)).length <= 8000, 'a picture with gradients, effects and a moving part fits the frame budget')
+  const surfacesOf = nodes => { const out = []; const walk = n => { if (n.kind === 'surface') out.push(n); n.children.forEach(walk) }; nodes.forEach(walk); return out }
+  const pictures = surfacesOf(f.nodes)
+  assert.deepEqual(pictures.map(p => p.style), ['cover', 'cover clear'], 'the cover picture and the layer of its moving part')
+  assert(pictures.some(p => decodeGfxOps(p.ops).some(o => o.kind === 'fx' && o.fx === 'shadow')), 'the effects of the picture reach the card')
   const split = splitCover(f.nodes)
-  assert(split.cover !== null && split.cover.kind === 'motion', 'the cover picture leaves the tree with its Motion')
+  assert(split.cover !== null && split.cover.kind === 'layers', 'the cover picture leaves the tree whole, its layers with it')
   assert.deepEqual(texts(split.rest).filter(Boolean), ['0 taps'], 'the rest is what lies over it')
-  assert.equal(pictures.length, 1); { const again = []; const w2 = n => { if (n.kind === 'surface') again.push(n); n.children.forEach(w2) }; f.nodes.forEach(w2); assert.equal(again.length, 1, 'splitCover leaves the frame itself as it was') }
+  assert.equal(surfacesOf(f.nodes).length, 2, 'splitCover leaves the frame itself as it was')
   assert.equal(splitCover([]).cover, null)
+  // A cover picture with no parts can still sit in a ui.Motion of its own: the card takes the Motion out with it.
+  const plain = '@jsonable class AppState { n: number; }\nfunction init(): AppState { return {n: 0}; }\n' +
+    'function sky(state: AppState): gfx.Shape[] { return [gfx.rect(0, 0, 100, 100, "#123456"), gfx.circle(50, 50, 10, "accent")]; }\n' +
+    'function view(state: AppState): ui.View { return ui.Text("body", "x"); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Column("center", [ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "sky", "", "")]), ui.Text("caption", "hi")]); }\n'
+  const held = splitCover(new WidgetSession(compileVeraSource(plain).vbc2, 'plain', '').frame('p1', 'Plain', '🌄').nodes)
+  assert(held.cover !== null && held.cover.kind === 'motion', 'a cover picture leaves the tree with its Motion')
   assert.deepEqual(coverScrim('#F8FAFC', false).map(c => c[0]), ['#00F8FAFC', '#00F8FAFC'], 'no veil without a text over the picture')
   assert.equal(coverScrim('#F8FAFC', true).slice(-1)[0][0], '#F2F8FAFC', 'a veil of the card colour under a text')
   const twoCovers = coverSource.replace(/(function widget[\s\S]*?ui\.Column\("center", \[)/, '$1\n      ui.Surface("cover", 100, 100, "scene", "", ""),')
   assert.throws(() => new WidgetSession(compileVeraSource(twoCovers).vbc2, 'two', '').frame('p1', 'Two', '🌄'), /at most one ui.Surface of style "cover"/)
-  const inRow = coverSource.replace(/(function widget[\s\S]*?)ui\.Motion\("pop", 0, \[ui\.Surface\("cover", 100, 100, "scene", "", "onTouch"\)\]\),/,
-    '$1ui.Row("default", [ui.Surface("cover", 100, 100, "scene", "", "onTouch")]),')
-  assert.notEqual(inRow, coverSource)
+  const inRow = plain.replace('ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "sky", "", "")])', 'ui.Row("default", [ui.Surface("cover", 100, 100, "sky", "", "")])')
+  assert.notEqual(inRow, plain)
   assert.throws(() => new WidgetSession(compileVeraSource(inRow).vbc2, 'row', '').frame('p1', 'Row', '🌄'), /not in a row or a ui.Layers/)
 }
-console.log('PASS live counter: cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
+
+// Moving parts (gfx.moving): the card cannot move a part of one canvas, so the picture becomes layers of the same box -- what is still under
+// the part, the part in a Motion that turns about its pivot, what is still over it -- with the pointer on the bottom layer and every part
+// played by a touch anywhere on it.
+{
+  const { splitCover } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const pendulum = fs.readFileSync(path.join(__dirname, 'examples/widget-pendulum.vera'), 'utf8')
+  const session = new WidgetSession(compileVeraSource(pendulum).vbc2, 'pendulum', '')
+  const f = session.frame('p1', 'Pendulum', '🕰')
+  const scene = f.nodes[0].children[0]
+  assert.equal(scene.kind, 'layers'); assert.equal(scene.parts, true)
+  assert.deepEqual(scene.children.map(c => c.kind), ['surface', 'motion', 'surface'], 'still under, the part, still over')
+  const [under, motion, over] = scene.children
+  assert.equal(under.pointer, 'onTouch', 'the bottom layer takes the picture\'s touches')
+  assert.equal(under.style, 'default'); assert.equal(over.style, 'clear'); assert.equal(motion.children[0].style, 'clear')
+  assert.equal(motion.style, 'swing'); assert.equal(motion.px, 0.5); assert.equal(motion.py, 0.16, 'the part turns about its own pivot')
+  assert.equal(motion.trigger, 0)
+  assert.deepEqual(decodeGfxOps(motion.children[0].ops).map(o => o.kind), ['line', 'circle'], 'the part\'s layer holds only its shapes')
+  assert.equal(decodeGfxOps(under.ops).length, 3); assert.equal(decodeGfxOps(over.ops).length, 1)
+  assert.deepEqual(scene.links, [motion.slot], 'a touch plays the part'); assert.deepEqual(under.links, [motion.slot])
+  assert.deepEqual([under.pic, motion.children[0].pic, over.pic], [0, 1, 2], 'each layer is a picture of its own')
+  assert(new Set([under.size, motion.children[0].size, over.size]).size === 1, 'the layers are drawn at one size, so they line up')
+  // The trigger is the state's: a touch counts a swing, and the next frame carries it.
+  const before = session.frame('p1', 'Pendulum', '🕰')
+  session.tapSurface(before, before.token, 'onTouch', 50, 50)
+  assert.equal(session.frame('p1', 'Pendulum', '🕰').nodes[0].children[0].children[1].trigger, 1)
+  // As a cover picture the layers are the card's background: taken out whole, counted as one cover.
+  const covered = pendulum.replace(/ui\.Column\("center", \[\n      ui\.Surface\("default"/, 'ui.Column("center", [\n      ui.Surface("cover"')
+  assert.notEqual(covered, pendulum)
+  const cf = new WidgetSession(compileVeraSource(covered).vbc2, 'pc', '').frame('p1', 'Pendulum', '🕰')
+  const split = splitCover(cf.nodes)
+  assert(split.cover !== null && split.cover.kind === 'layers' && split.cover.style === 'cover', 'the split cover picture is the background')
+  assert.deepEqual(split.cover.children.map(c => c.kind === 'motion' ? c.children[0].style : c.style), ['cover', 'cover clear', 'cover clear'])
+  // What the card cannot play is said so the model can fix it.
+  const bad = (from, to, why, re) => {
+    const src = pendulum.replace(from, to)
+    assert.notEqual(src, pendulum, why)
+    assert.throws(() => new WidgetSession(compileVeraSource(src).vbc2, 'bad', '').frame('p1', 'P', '🕰'), re, why)
+  }
+  const grouped = pendulum.replace('shapes.push(gfx.moving("swing", state.swings, 50, 16, [', 'shapes.push(gfx.group(0, 0, 0, 1, 1, [gfx.moving("swing", state.swings, 50, 16, [')
+    .replace('["#fff3c4", "#e0b34a", "#8a5a14"]))\n  ]));', '["#fff3c4", "#e0b34a", "#8a5a14"]))\n  ])]));')
+  assert.throws(() => new WidgetSession(compileVeraSource(grouped).vbc2, 'bad', '').frame('p1', 'P', '🕰'), /among the shapes the draw function returns/, 'a part inside a group')
+  const four = 'shapes.push(gfx.moving("pop", 0, 1, 1, [gfx.circle(1, 1, 1, "ink")]));'
+  bad('shapes.push(gfx.roundRect(28, 82, 44, 6, 3, "#00000033"));', four + four + four, 'four parts', /at most 3 gfx.moving parts/)
+  // A ui.Motion around a picture with parts is dropped: the parts move by themselves, and the levels it took are the layers'.
+  const wrapped = pendulum.replace('ui.Surface("default", 100, 100, "clock", "", "onTouch"),\n      ui.Text', 'ui.Motion("pop", 0, [ui.Surface("default", 100, 100, "clock", "", "onTouch")]),\n      ui.Text')
+  assert.notEqual(wrapped, pendulum)
+  const unwrapped = new WidgetSession(compileVeraSource(wrapped).vbc2, 'wrapped', '').frame('p1', 'P', '🕰').nodes[0].children[0]
+  assert.equal(unwrapped.kind, 'layers'); assert.equal(unwrapped.parts, true)
+  const deep = pendulum.replace('ui.Surface("default", 100, 100, "clock", "", "onTouch"),\n      ui.Text', 'ui.Column("default", [ui.Surface("default", 100, 100, "clock", "", "onTouch")]),\n      ui.Text')
+  assert.notEqual(deep, pendulum)
+  assert.throws(() => new WidgetSession(compileVeraSource(deep).vbc2, 'deep', '').frame('p1', 'P', '🕰'), /directly in the widget's column/)
+}
+console.log('PASS live counter: moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

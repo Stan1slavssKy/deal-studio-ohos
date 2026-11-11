@@ -41,7 +41,7 @@ const calls = G.GFX_FUNCTIONS.map(f => {
   const args = f.params.filter(p => !p.optional).map(p =>
     p.kind === 'number' ? '1' : p.kind === 'number[]' ? '[0, 0, 10, 10]' : p.kind === 'shapes' ? '[gfx.rect(0, 0, 1, 1, "ink")]'
       : p.kind === 'color' ? '"accent"' : p.kind === 'colors' ? '["white", "accent"]' : p.kind === 'boolean' ? 'true'
-      : p.name === 'align' ? '"center"' : p.name === 'mode' ? '"add"' : '"M0 0 L10 10 Z"')
+      : p.name === 'align' ? '"center"' : p.name === 'mode' ? '"add"' : p.name === 'motion' ? '"swing"' : '"M0 0 L10 10 Z"')
   const call = 'gfx.' + f.name + '(' + args.join(', ') + ')'
   return f.result === 'shape' ? `shapes.push(${call});` : f.result === 'string' ? `let s${f.name}: string = ${call};`
     : f.result === 'number' ? `let n${f.name}: number = ${call};` : `let b${f.name}: boolean = ${call};`
@@ -247,5 +247,26 @@ for (const part of ['<linearGradient', '<radialGradient', '<feOffset', '<feGauss
 assert.ok(richOps.reduce((sum, o) => sum + o.count, 0) <= 60, 'within a card picture\'s 60 shapes')
 fs.mkdirSync(path.join(__dirname, 'proofs'), {recursive: true})
 fs.writeFileSync(path.join(__dirname, 'proofs/widget-rich.svg'), svgOf(richOps, 3))
+
+// A moving part (gfx.moving) is drawn at rest as its shapes are, and in a pose of its preset about its own pivot: a ball hanging 60 below
+// a pivot at 50, 20, turned a quarter clockwise, is 60 to the left of it.
+{
+  const {MotionPose} = loadVera('VeraMotion')
+  assert.ok(codes(program('shapes.push(gfx.moving("wiggle", 0, 50, 20, [gfx.circle(50, 80, 5, "ink")]));')).some(c => c.startsWith('E2112') && c.includes('ui.Motion style')),
+    'a moving part takes a Motion preset')
+  const ballOnRod = G.invokeStdGfx('circle', nums([50, 80, 5]).concat([str('accent')]))
+  const part = G.invokeStdGfx('moving', [str('swing'), new VeraNumberValue(0), new VeraNumberValue(50), new VeraNumberValue(20), new VeraArrayValue([ballOnRod])])
+  assert.equal(part.op.kind, 'moving'); assert.equal(part.op.fx, 'swing'); assert.equal(part.op.x, 50); assert.equal(part.op.y, 20); assert.equal(part.op.count, 2)
+  const atRest = createRecorder(100, 100); G.paintGfx(atRest.ctx, [part.op], light, 100, 100, 100, 100)
+  assert.ok(atRest.svg().includes('M55 80'), 'at rest the part is where it was drawn')
+  const turned = new MotionPose(); turned.angle = 90
+  const posed = createRecorder(100, 100); G.paintGfx(posed.ctx, [part.op], light, 100, 100, 100, 100, 1, false, false, [turned])
+  assert.ok(posed.svg().includes('M-10 25'), 'turned a quarter about its pivot: ' + posed.svg().slice(0, 400))
+  const moved = new MotionPose(); moved.dy = -10; moved.opacity = 0.5
+  const lifted = createRecorder(100, 100); G.paintGfx(lifted.ctx, [part.op], light, 200, 200, 100, 100, 1, false, false, [moved])
+  assert.ok(lifted.svg().includes('M110 150') && lifted.svg().includes('fill-opacity="0.5"'), 'a lift of 10 points on a box twice the size is 5 units, and it fades')
+  const back = G.decodeGfxOps(G.encodeGfxOps([part.op]))[0]
+  assert.deepEqual([back.kind, back.fx, back.x, back.y, back.children.length], ['moving', 'swing', 50, 20, 1], 'a part survives the card frame')
+}
 
 console.log('gfx-check ok')

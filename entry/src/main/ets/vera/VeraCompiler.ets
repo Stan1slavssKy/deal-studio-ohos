@@ -3,6 +3,7 @@ import { CATALOG, ComponentSpec, ChildRule, payloadKindFor, childRuleFor, listWo
 import { iconPath, iconNames } from './VeraIcons'
 import { isValidSdkTarget } from './VeraSdkIndex'
 import { GFX_FUNCTIONS, GFX_POINTER_FIELDS, GFX_ROLES, GFX_BLEND_MODES, isGfxColor, gfxFunction } from './VeraGfx'
+import { MOTION_PRESETS } from './VeraMotion'
 
 // ===== AST Nodes =====
 
@@ -2113,6 +2114,8 @@ class Analyzer {
       if (f.params[i].kind === 'color' && !isGfxColor(value)) {
         this.addError('E2112', 'unknown colour "' + value + '"; a colour is one of ' + GFX_ROLES.join(' ') +
           ', or "#rrggbb" / "#rrggbbaa", or gfx.rgb(red, green, blue), gfx.linear(...), gfx.radial(...)', arg.span)
+      } else if (f.params[i].name === 'motion' && MOTION_PRESETS.indexOf(value) < 0) {
+        this.addError('E2112', 'gfx.moving takes a ui.Motion style: ' + MOTION_PRESETS.join(', ') + '; got "' + value + '"', arg.span)
       } else if (f.name === 'blend' && f.params[i].name === 'mode' && GFX_BLEND_MODES.indexOf(value) < 0) {
         this.addError('E2112', 'gfx.blend mode is ' + GFX_BLEND_MODES.map((m: string): string => '"' + m + '"').join(', ') + '; got "' + value + '"', arg.span)
       } else if (f.params[i].name === 'align' && ['left', 'center', 'right'].indexOf(value) < 0) {

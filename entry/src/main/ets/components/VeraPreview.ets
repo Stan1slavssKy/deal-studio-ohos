@@ -29,9 +29,9 @@ import { consent } from '../vera/VeraConsentStore'
 import { LiveNode, toLive, reconcile, armReveal, markIconRoom } from './VeraLiveTree'
 import { carryState } from '../vera/VeraStateCarry'
 import { MotionPose, motionPose, motionDuration, pivotPercent, poseMatrix, poseFromArray, multiplyMatrices, identityMatrix, perspectiveMatrix,
-  columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks } from '../vera/VeraMotion'
+  columnMajor, poseToPixels, facesViewer, samePose, animatedPose, stageDistance, faceShade, depthRanks, MOTION_BUDGET_MS } from '../vera/VeraMotion'
 import { displaySync } from '@kit.ArkGraphics2D'
-import { decodeGfx, paintGfx, pointerValue, gfxFit, gfxToSurface, gfxNaturalHeight } from '../vera/VeraGfx'
+import { decodeGfx, paintGfx, pointerValue, gfxFit, gfxToSurface, gfxNaturalHeight, GfxOp } from '../vera/VeraGfx'
 import { TimerFace, timerFace } from '../widget/CardModel'
 
 /**
@@ -176,6 +176,12 @@ class SurfaceBox {
   height: number = 0
   // Some of it is on screen. One scrolled away keeps its frame handler running but is neither drawn nor painted.
   visible: boolean = true
+  // Its moving parts (gfx.moving), by their order in the drawing: the trigger each was last drawn with and when each began to play (ms;
+  // never, for one that has not). A touch on the picture plays them all: touchedAt, and the touch they last began on.
+  partTriggers: number[] = []
+  partStarts: number[] = []
+  touchedAt: number = 0
+  touchSeen: number = 0
 }
 
 /**
@@ -533,6 +539,8 @@ export struct VeraPreview {
   private liveSurfaces: LiveNode[] = []
   private surfaceSync: displaySync.DisplaySync | null = null
   private surfaceTimer: number = -1
+  // Repaints the surfaces while a moving part plays on one with no frame loop of its own (a picture that only answers a touch).
+  private partsTimer: number = -1
   private lastFrameAt: number = 0
   private lastViewAt: number = 0
   private lastSurfaceSave: number = 0
@@ -1016,6 +1024,7 @@ export struct VeraPreview {
     if (this.spinTimer >= 0) { clearInterval(this.spinTimer); this.spinTimer = -1 }
     this.spinPeriod = 0
     if (this.motionTimer >= 0) { clearInterval(this.motionTimer); this.motionTimer = -1 }
+    if (this.partsTimer >= 0) { clearInterval(this.partsTimer); this.partsTimer = -1 }
     this.motionTriggers.clear()
     this.poseAnims.clear()
     this.sceneFrames.clear()
@@ -1373,7 +1382,8 @@ export struct VeraPreview {
       let drawAt = Date.now()
       let ops = decodeGfx(this.vm!.execute(node.label, [this.currentState!]))
       let paintAt = Date.now()
-      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum, this.getUIContext().vp2px(1), node.style === 'clear')
+      paintGfx(box.ctx, ops, this.t(), box.width, box.height, node.minimum, node.maximum, this.getUIContext().vp2px(1), node.style === 'clear',
+        false, this.partPoses(box, ops, paintAt))
       this.frameSplit[1] += paintAt - drawAt
       this.frameSplit[2] += Date.now() - paintAt
     } catch (e) {
@@ -1381,6 +1391,42 @@ export struct VeraPreview {
       this.error = 'Draw error: ' + (e as Error).message
       this.stopAllTimers()
     }
+  }
+
+  /**
+   * Where each moving part of a drawing is now (gfx.moving): a part plays its preset from when its trigger changed or the picture was last
+   * touched, as on a card. While any plays on a surface that has no frame loop, a short timer repaints until it is over.
+   */
+  private partPoses(box: SurfaceBox, ops: GfxOp[], now: number): MotionPose[] {
+    let poses: MotionPose[] = []
+    let playing = false
+    let touched = box.touchedAt > box.touchSeen
+    box.touchSeen = box.touchedAt
+    let i = 0
+    for (let o of ops) {
+      if (o.kind !== 'moving') { continue }
+      if (box.partStarts.length <= i) { box.partStarts.push(-1e15); box.partTriggers.push(o.sweep) }
+      if (box.partTriggers[i] !== o.sweep || touched) { box.partStarts[i] = touched ? box.touchedAt : now }
+      box.partTriggers[i] = o.sweep
+      let length = motionDuration(o.fx)
+      let progress = length > 0 ? (now - box.partStarts[i]) / length : 1
+      if (progress < 1) { playing = true }
+      poses.push(motionPose(o.fx, progress))
+      i++
+    }
+    if (playing && this.partsTimer < 0 && this.surfaceSync === null && this.surfaceTimer < 0) {
+      this.partsTimer = setInterval(() => {
+        let still = this.liveSurfaces.every((node: LiveNode): boolean => {
+          let b = this.surfaces.get(node)
+          if (b === undefined) { return true }
+          let at = Date.now()
+          return b.partStarts.every((start: number): boolean => at - start >= MOTION_BUDGET_MS + 100)
+        })
+        this.paintSurfaces()
+        if (still && this.partsTimer >= 0) { clearInterval(this.partsTimer); this.partsTimer = -1 }
+      }, 16)
+    }
+    return poses
   }
 
   /** The canvas of a surface node, made the first time the node is drawn. */
@@ -1423,6 +1469,14 @@ export struct VeraPreview {
    * repaints; the tree catches up on the frame loop's schedule, and the state is saved when the finger lifts.
    */
   private surfaceTouch(node: LiveNode, event: TouchEvent): void {
+    // A finger down plays the picture's moving parts, whether or not it has a handler (as on a card); the next paint starts them.
+    if (event.type === TouchType.Down && !this.disposed) {
+      let touchedBox = this.surfaces.get(node)
+      if (touchedBox !== undefined) {
+        touchedBox.touchedAt = Date.now()
+        if (node.value.length === 0 || this.previewOnly) { this.paintSurface(node) }
+      }
+    }
     if (this.disposed || this.previewOnly || node.value.length === 0) { return }
     let down = new SurfaceInput(node, this.effectGeneration)
     let phase = event.type === TouchType.Down ? 'down' : event.type === TouchType.Move ? 'move'

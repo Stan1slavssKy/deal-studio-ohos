@@ -1,6 +1,7 @@
 import { CATALOG, describeComponents } from './VeraUiCatalog'
 import { widgetRefinementError } from './VeraCompiler'
 import { decodeGfxOps } from './GfxPaint'
+import { pictureCovers, pictureBare } from '../widget/CardModel'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
 import { decodeVeraUi, UiHostEnvironment } from './VeraUi'
 import { WidgetSession, CardNode, LiveFrame, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, CARD_DIMENSIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
@@ -72,14 +73,22 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     ' pictures (ui.Surface or ui.Sparkline) in all. A picture or shape that takes a touch counts as one of the ' + counted(SMALL.maxButtons) + ' buttons. A handler the card runs must not make phone calls ' +
     '(no sdk.call): when the app\'s own handler vibrates, plays a sound or the like, write a new handler that only changes the ' +
     'state -- or returns it as it is. ' +
-    'MOVEMENT. A thing that is drawn should DO what that thing does, once, when it is touched (or when the state changes): wrap it in ' +
-    'ui.Motion(style, 0, [the picture]) and every touch on the picture inside plays the movement by itself, whether or not the handler ' +
+    'MOVING PARTS. Only what moves in life moves: a pendulum\'s bob swings and its clock stays, a wheel spins under a pointer that stays, a ' +
+    'punching bag swings from a hook that stays, a frog jumps and its pond stays, a rocket launches and the sky stays. In such a picture ' +
+    'wrap just that part\'s shapes in gfx.moving(style, 0, pivotX, pivotY, [shapes]) among the shapes the draw function returns, with the pivot ' +
+    'where the part hangs, turns or stands (the pendulum\'s top, the wheel\'s centre, the frog\'s feet), and leave the rest -- the background, ' +
+    'the frame, the pointer, the hook -- outside it. A touch anywhere on the picture plays every part; up to three parts in a picture. A picture ' +
+    'with gfx.moving is not also wrapped in a ui.Motion. ' +
+    'MOVEMENT. A thing that is drawn should DO what that thing does, once, when it is touched (or when the state changes): in a picture with ' +
+    'other things around it, gfx.moving (above); a picture that is only the thing itself, with nothing that should stay, a figure or an icon: ' +
+    'ui.Motion(style, 0, [the picture]). Every touch on the picture plays the movement by itself, whether or not the handler ' +
     'changed the state. The style is chosen by the movement the thing makes, never by its looks: ' + CARD_MOTIONS.join(', ') + '. By meaning -- ' +
     'emphasis (stays in place): pop swells, pulse beats twice, jelly squashes and wobbles, press dips like a pushed button, flash blinks, breathe ' +
     'swells slowly; reaction: shake sideways, nod up and down, wobble rocks on its base, swing hangs from its top edge like a pendulum, ' +
     'recoil is a sharp kick; gravity: bounce drops in and settles, hop jumps once, jump crouches then leaps and lands, fall drops in from above; ' +
     'turning: spin turns twice and slows (a wheel, a dial, a fan), turn one quick whole turn, tumble spins and hops, flip turns into view; ' +
-    'arrival: fade, rise, zoom, slide; ambient: float, drift (slow, gentle). Ask what the thing does when touched and take the movement ' +
+    'arrival: fade, rise, zoom, slide; ambient: float, drift (slow, gentle); leaving: launch flies up out of sight and comes back from below ' +
+    '(a rocket, a bird taking off), roll rolls away to the side and back (a ball, a wheel on the ground). Ask what the thing does when touched and take the movement ' +
     'for that: something hit shakes or recoils, something turned spins, something alive hops or jumps, something hanging swings, ' +
     'something pushed presses. A touch that does nothing visible is a defect: every picture the person can touch moves. Several things ' +
     'move at once when each has its own ui.Motion around its own picture (at most ' + LIVE_MAX_MOTIONS.toString() + ' ui.Motion in all; ' +
@@ -220,7 +229,35 @@ function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
     let problem = glanceError(frame)
     if (problem.length > 0) { return problem }
   }
-  return glance ? backgroundError(frames[0].nodes) : ''
+  return glance ? (movingSceneError(frames[0].nodes) || backgroundError(frames[0].nodes)) : ''
+}
+
+/** The first shape of a picture fills it: the picture paints its own background. */
+function paintsBackground(node: CardNode): boolean {
+  let ops = decodeGfxOps(node.ops)
+  let first = ops.length > 0 ? ops[0] : null
+  return first !== null && (first.kind === 'rect' || first.kind === 'roundRect') && first.x <= node.w * 0.05 && first.y <= node.h * 0.05 &&
+    first.x + first.w >= node.w * 0.95 && first.y + first.h >= node.h * 0.95
+}
+
+/**
+ * A ui.Motion around a scene -- a cover picture, or one with its own background -- moves the sky with the rocket and the pond with the
+ * frog: the whole card jumps. What moves is the thing in it, as a gfx.moving part (5 of 6 toy widgets wrapped the whole scene even with the
+ * prompt saying so), so the reason goes back to the model.
+ */
+function movingSceneError(nodes: CardNode[]): string {
+  // A Motion made for a gfx.moving part (it has a pivot of its own) moves only that part, over a layer that stays.
+  for (let node of collectNodes(nodes, (n: CardNode): boolean => n.kind === 'motion' && n.px === undefined)) {
+    let scene = node.children.find((c: CardNode): boolean => c.kind === 'surface' && (pictureCovers(c.style) || paintsBackground(c)))
+    if (scene !== undefined) {
+      return 'The ui.Motion("' + node.style + '") moves the whole scene, its background too: on the card the sky moves with the rocket, the ' +
+        'pond with the frog. Take the ui.Motion away and, in the draw function, wrap only the shapes of the thing that moves in ' +
+        'gfx.moving("' + node.style + '", 0, pivotX, pivotY, [those shapes]), with the pivot where it hangs, turns or stands; the background stays.' +
+        (pictureCovers(scene.style) ? '' : ' Make the picture ui.Surface("cover", ' + scene.w.toString() + ', ' + scene.h.toString() +
+          ', ...) too: a scene with a background fills the whole card.')
+    }
+  }
+  return ''
 }
 
 /**
@@ -233,12 +270,17 @@ function backgroundError(nodes: CardNode[]): string {
   let found = ''
   let walk = (list: CardNode[]): void => {
     for (let node of list) {
-      if (found.length > 0 || node.kind === 'row' || node.kind === 'layers') { continue }
-      if (node.kind === 'surface' && node.style !== 'cover' && node.style !== 'clear') {
-        let ops = decodeGfxOps(node.ops)
-        let first = ops.length > 0 ? ops[0] : null
-        if (first !== null && (first.kind === 'rect' || first.kind === 'roundRect') && first.x <= node.w * 0.05 && first.y <= node.h * 0.05 &&
-          first.x + first.w >= node.w * 0.95 && first.y + first.h >= node.h * 0.95) {
+      if (found.length > 0 || node.kind === 'row') { continue }
+      // A picture split at its moving parts is still one picture: its bottom layer holds its background.
+      if (node.kind === 'layers') {
+        if (node.parts === true && !pictureCovers(node.style) && node.children.length > 0) {
+          let bottom = node.children[0].kind === 'motion' ? node.children[0].children : [node.children[0]]
+          walk(bottom)
+        }
+        continue
+      }
+      if (node.kind === 'surface' && !pictureCovers(node.style) && !pictureBare(node.style)) {
+        if (paintsBackground(node)) {
           found = 'A picture of the widget paints its own background (its first shape fills it), so on the card it would be a ' +
             'square of that colour in the middle. A scene with a background is ui.Surface("cover", ' + node.w.toString() + ', ' + node.h.toString() +
             ', ...): it fills the whole card to its edges, under the rest of the widget. Make it "cover" (keep at most one short line of text ' +

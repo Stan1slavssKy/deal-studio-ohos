@@ -26,8 +26,19 @@ assert.equal(smokeRun(compiled),'')
   const richBase = withoutWidget(rich)
   assert.notEqual(richBase, rich)
   assert.match(validateWidgetRefinement(richBase, rich, compileVeraSource(rich).vbc2), /paints its own background[\s\S]*ui\.Surface\("cover", 100, 100/)
-  const covered = rich.replace('ui.Motion("pop", 0, [ui.Surface("default", 100, 100, "scene", "", "onTouch")]),', 'ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "scene", "", "onTouch")]),')
+  const widgetPicture = 'ui.Surface("default", 100, 100, "scene", "", "onTouch"),\n      ui.Text'
+  const covered = rich.replace(widgetPicture, 'ui.Surface("cover", 100, 100, "scene", "", "onTouch"),\n      ui.Text')
+  assert.notEqual(covered, rich)
   assert.equal(validateWidgetRefinement(richBase, covered, compileVeraSource(covered).vbc2), '', 'as a cover picture it passes')
+  // A ui.Motion around a scene moves its background too: the reason asks for the thing to move as a gfx.moving part instead.
+  const sky = '@jsonable class AppState { n: number; }\nfunction init(): AppState { return {n: 0}; }\n' +
+    'function sky(state: AppState): gfx.Shape[] { return [gfx.rect(0, 0, 100, 100, "#123456"), gfx.circle(50, 50, 10, "accent")]; }\n' +
+    'function view(state: AppState): ui.View { return ui.Text("body", "x"); }\n'
+  const skyWidget = style => sky + 'function widget(state: AppState): ui.View { return ui.Column("center", [ui.Motion("launch", 0, [ui.Surface("' + style + '", 100, 100, "sky", "", "")]), ui.Text("caption", "hi")]); }\n'
+  assert.match(validateWidgetRefinement(sky, skyWidget('cover'), compileVeraSource(skyWidget('cover')).vbc2),
+    /ui\.Motion\("launch"\) moves the whole scene[\s\S]*gfx\.moving\("launch", 0, pivotX, pivotY/)
+  const both = validateWidgetRefinement(sky, skyWidget('default'), compileVeraSource(skyWidget('default')).vbc2)
+  assert.match(both, /moves the whole scene[\s\S]*Make the picture ui\.Surface\("cover", 100, 100/, 'one reason for both, so one retry fixes both: ' + both)
   const object = rich.replace('shapes.push(gfx.rect(0, 0, 100, 100, gfx.linear(0, 0, 0, 100, ["#1e1b4b", "#7c3aed", "#f472b6"])));', '')
   assert.equal(validateWidgetRefinement(withoutWidget(object), object, compileVeraSource(object).vbc2), '', 'a single object with no background rect passes')
   assert.match(widgetRefinementPrompt(false), /MAKE IT LOOK GOOD[\s\S]*gfx\.radial[\s\S]*ui\.Surface\("cover"/)
@@ -190,7 +201,8 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   assert.match(widgetRefinementPrompt(), /ui\.Motion\(style, 0, \[the picture\]\)/)
   assert.match(widgetRefinementPrompt(), /NEVER a ui\.Path/, 'a drawing of several colours is a Surface, not a Path')
   assert.match(widgetRefinementPrompt(), /should DO what that thing does/)
-  assert.match(widgetRefinementPrompt(), /every touch on the picture inside plays the movement by itself/)
+  assert.match(widgetRefinementPrompt(), /Every touch on the picture plays the movement by itself/)
+  assert.match(widgetRefinementPrompt(), /MOVING PARTS[\s\S]*gfx\.moving\(style, 0, pivotX, pivotY/)
   assert.match(widgetRefinementPrompt(), /Do NOT add a counter to the state/)
   for (const preset of require('./source-loader').loadVera('VeraMotion').MOTION_PRESETS) assert.ok(widgetRefinementPrompt().includes(preset), 'the prompt names ' + preset)
   assert.match(widgetRefinementPrompt(), /cannot loop/)

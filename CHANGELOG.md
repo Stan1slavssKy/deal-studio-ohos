@@ -1,5 +1,13 @@
 # Changelog
 
+## Moving parts: gfx.moving, about the part's own pivot
+
+- `gfx.moving(style, trigger, pivotX, pivotY, shapes)` marks the part of a drawing that moves (a pendulum's bob, a wheel, a frog): it plays a ui.Motion preset about its own pivot while the rest of the picture stays. A touch on the picture plays every part.
+- On a card the picture is split at its parts into layers of the same box, each part in a Motion that turns and scales about its pivot; in the app the parts are posed frame by frame from the same preset table.
+- New presets `launch` (out of sight and back from below) and `roll` (away and back).
+- Make widget refuses a ui.Motion around a scene with a background and asks for the moving thing as a part; a ui.Motion around a picture with parts is dropped.
+- Host checks in `gfx-check.js`, `live-widget-check.js`, `widget-refine-check.js`, `motion-check.js`; `examples/widget-pendulum.vera`.
+
 ## Light and depth in pictures: gradients, glow, shadow, blur, blend; a cover picture on the card
 
 - `std/gfx` draws more than flat fills: `gfx.linear` and `gfx.radial` are colours any shape takes (a lit ball, a sky), and `gfx.glow`, `gfx.shadow`, `gfx.blur` and `gfx.blend` hold shapes like a group. One painter draws them in the app, on the home-screen card and in the host's SVG proofs; their sizes follow the picture's scale. The compiler checks a gradient's literal colours and the blend modes.

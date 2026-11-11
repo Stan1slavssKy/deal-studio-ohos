@@ -1,0 +1,39 @@
+@jsonable class AppState { swings: number; }
+
+function init(): AppState { return {swings: 0}; }
+
+function clock(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.shadow(0, 3, 6, "#00000044", [
+    gfx.roundRect(22, 6, 56, 88, 10, gfx.linear(22, 0, 78, 0, ["#7c4a2d", "#a86b40", "#6b3d22"]))
+  ]));
+  shapes.push(gfx.roundRect(28, 12, 44, 76, 6, gfx.linear(0, 12, 0, 88, ["#2a1a12", "#3d271b"])));
+  shapes.push(gfx.circle(50, 16, 2.5, "#d4a64a"));
+  shapes.push(gfx.moving("swing", state.swings, 50, 16, [
+    gfx.line(50, 16, 50, 66, 1.5, "#d4a64a"),
+    gfx.circle(50, 70, 8, gfx.radial(47, 67, 10, ["#fff3c4", "#e0b34a", "#8a5a14"]))
+  ]));
+  shapes.push(gfx.roundRect(28, 82, 44, 6, 3, "#00000033"));
+  return shapes;
+}
+
+function onTouch(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase !== "down") { return state; }
+  return {swings: state.swings + 1};
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Surface("default", 100, 100, "clock", "", "onTouch"),
+    ui.Text("caption", ui.numberToString(state.swings) + " swings")
+  ]);
+}
+
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Column("center", [
+      ui.Surface("default", 100, 100, "clock", "", "onTouch"),
+      ui.Text("caption", ui.numberToString(state.swings) + " swings")
+    ])
+  ]);
+}

@@ -9,7 +9,7 @@ import { veraStateStamp, stateDigest } from './VeraStateStamp'
 import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
 import { CardNode, LiveFrame, compactFrame, CardSize, cardSize, CARD_DIMENSIONS, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_SHAPES,
-  CARD_MAX_TIMERS, TOUCH_ACTION } from '../widget/CardModel'
+  CARD_MAX_TIMERS, TOUCH_ACTION, pictureCovers } from '../widget/CardModel'
 import { cardTextSize, cardTextFamily, cardLetterSpacing, cardGap, CARD_PANEL_PAD, cardPanelFill } from './CardStyle'
 export { CardNode, LiveFrame, compactFrame, compactNode, normalizeNodes, CardSize, cardSize, CARD_DIMENSIONS, TOUCH_ACTION } from '../widget/CardModel'
 
@@ -22,6 +22,8 @@ export const CARD_MOTIONS: string[] = MOTION_PRESETS
 export const LIVE_MAX_MOTIONS: number = CARD_MAX_MOTIONS
 /** Pictures on a card (ui.Surface or ui.Sparkline, drawn once for the frame), of a few dozen shapes each; the frame's own size budget counts the rest. */
 export const LIVE_MAX_SURFACES: number = CARD_MAX_PICTURES
+/** Moving parts (gfx.moving) in one card picture: each is a layer of its own, and a card has five pictures in all. */
+export const LIVE_MAX_PARTS: number = 3
 export const LIVE_MAX_SHAPES: number = CARD_MAX_SHAPES
 /** Timers a card runs (ui.Timer, the platform's own TextTimer). */
 export const LIVE_MAX_TIMERS: number = CARD_MAX_TIMERS
@@ -46,8 +48,8 @@ const LIVE_ROW_SPACE: number = 8
  */
 function nodeHeight(node: CardNode, pictureSide: number, width: number = LIVE_INNER_WIDTH): number {
   // A cover picture is the card's background (CardModel.splitCover): it takes no room from the rest.
-  if (node.kind === 'surface' && node.style === 'cover') { return 0 }
-  if (node.kind === 'motion' && node.children.length === 1 && node.children[0].kind === 'surface' && node.children[0].style === 'cover') { return 0 }
+  if (coverPicture(node)) { return 0 }
+  if (node.kind === 'motion' && node.children.length === 1 && coverPicture(node.children[0])) { return 0 }
   if (node.kind === 'surface') { return Math.min(pictureSide * 1.1, pictureSide * node.h / node.w) }
   if (node.kind === 'path' || node.kind === 'icon') { return node.size }
   if (node.kind === 'iconbutton') { return node.size }
@@ -92,9 +94,11 @@ export function coverError(nodes: CardNode[]): string {
   let misplaced = false
   let walk = (list: CardNode[], shared: boolean): void => {
     for (let node of list) {
-      if (node.kind === 'surface' && node.style === 'cover') {
+      if (coverPicture(node)) {
         covers++
         if (shared) { misplaced = true }
+        // The layers of one cover picture split at its moving parts are that one picture.
+        if (node.kind === 'layers') { continue }
       }
       walk(node.children, shared || node.kind === 'row' || node.kind === 'layers')
     }
@@ -115,10 +119,15 @@ export function widgetHeight(frame: LiveFrame): number {
   return stackHeight(frame.nodes, side, LIVE_ROW_GAP, cardSize(frame.dimension).width)
 }
 
+/** A cover picture, or the layers it was split into at its moving parts: the card's background. */
+function coverPicture(node: CardNode): boolean {
+  return (node.kind === 'surface' || (node.kind === 'layers' && node.parts === true)) && pictureCovers(node.style)
+}
+
 /** The pictures that share the card's room with the rest: a cover picture lies under it all instead. */
 function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
   for (let node of nodes) {
-    if (node.kind === 'surface' && node.style !== 'cover') { out.push(node) }
+    if (node.kind === 'surface' && !pictureCovers(node.style)) { out.push(node) }
     allPictures(node.children, out)
   }
   return out
@@ -129,7 +138,7 @@ function allPictures(nodes: CardNode[], out: CardNode[]): CardNode[] {
  * Sparkline (one under another) takes the most of any child.
  */
 function picturesAcross(node: CardNode): number {
-  if (node.kind === 'surface') { return node.style === 'cover' ? 0 : 1 }
+  if (node.kind === 'surface') { return pictureCovers(node.style) ? 0 : 1 }
   let most = 0
   let sum = 0
   for (let child of node.children) {
@@ -329,7 +338,109 @@ export class WidgetSession {
       }
       item.children = kids
     }
+    // A touch on any part of a scene plays all its movements: the slots of its Motions, on it and on everything in it (CardView).
+    let linkScene = (item: CardNode): void => {
+      let slots: number[] = []
+      let gather = (nodes: CardNode[]): void => {
+        for (let child of nodes) {
+          if (child.kind === 'motion' && child.slot >= 0) { slots.push(child.slot) }
+          gather(child.children)
+        }
+      }
+      gather(item.children)
+      let link = (nodes: CardNode[]): void => {
+        for (let child of nodes) {
+          child.links = slots
+          link(child.children)
+        }
+      }
+      if (slots.length > 0) { item.links = slots; link(item.children) }
+    }
+    /**
+     * A picture with moving parts (gfx.moving) as a scene: the card cannot move a part of one canvas, so the picture is split where its
+     * parts are into layers of the same box, one over another -- what is still under them, each part in a Motion of its own that turns
+     * about the part's pivot, and what is still over them -- and the card plays each layer by itself. The layers are pictures, counted
+     * against the card's five; the picture's pointer goes on the bottom one, and a touch anywhere plays every part.
+     */
+    let splitParts = (item: CardNode, ops: GfxOp[], depth: number, key: string): void => {
+      let parts = ops.filter((o: GfxOp): boolean => o.kind === 'moving')
+      if (parts.length > LIVE_MAX_PARTS) {
+        throw new Error('a card picture has at most ' + LIVE_MAX_PARTS.toString() + ' gfx.moving parts; this one has ' + parts.length.toString())
+      }
+      if (item.slot >= 0) {
+        throw new Error('a picture with gfx.moving parts moves them itself: do not put it in a ui.Motion (its parts would move twice)')
+      }
+      if (depth + 2 > LIVE_MAX_DEPTH) {
+        throw new Error('a picture with gfx.moving parts is drawn as layers, two levels deeper than the picture: put it directly in the ' +
+          'widget\'s column, not in a row or column inside it')
+      }
+      let cover = pictureCovers(item.style)
+      let w = item.w
+      let h = item.h
+      let pointer = item.pointer
+      surfaces -= 1
+      item.kind = 'layers'
+      item.parts = true
+      item.ops = ''
+      item.pointer = ''
+      item.pic = -1
+      let layers: CardNode[] = []
+      let picture = (shapes: GfxOp[], layerKey: string, layerDepth: number, slot: number): CardNode => {
+        surfaces += 1
+        if (surfaces > LIVE_MAX_SURFACES) {
+          throw new Error('a widget has at most ' + LIVE_MAX_SURFACES.toString() + ' pictures, and a picture with moving parts is one for what is ' +
+            'still under them, one for each part and one for what is over them: use fewer parts or pictures')
+        }
+        let layer = make('surface', layerKey, layerDepth, slot)
+        layer.ops = encodeGfxOps(shapes)
+        layer.w = w
+        layer.h = h
+        layer.pic = surfaces - 1
+        layer.style = layers.length === 0 ? (cover ? 'cover' : 'default') : (cover ? 'cover clear' : 'clear')
+        if (layers.length === 0) { layer.pointer = pointer }
+        return layer
+      }
+      let still: GfxOp[] = []
+      let flush = (): void => {
+        if (still.length === 0) { return }
+        layers.push(picture(still, key + '.l' + layers.length.toString(), depth + 1, -1))
+        still = []
+      }
+      for (let o of ops) {
+        if (o.kind !== 'moving') { still.push(o); continue }
+        flush()
+        if (CARD_MOTIONS.indexOf(o.fx) < 0) { throw new Error('gfx.moving style "' + o.fx + '" does not play on a card: use ' + CARD_MOTIONS.join(', ')) }
+        motions += 1
+        if (motions > LIVE_MAX_MOTIONS) { throw new Error('a widget has at most ' + LIVE_MAX_MOTIONS.toString() + ' movements (ui.Motion and gfx.moving)') }
+        let motion = make('motion', key + '.m' + layers.length.toString(), depth + 1, motions - 1)
+        motion.style = o.fx
+        motion.trigger = o.sweep
+        motion.px = Math.round(1000 * o.x / w) / 1000
+        motion.py = Math.round(1000 * o.y / h) / 1000
+        // The first layer is the bottom one: it takes the picture's pointer whether it is still or moving.
+        let first = layers.length === 0
+        motion.children = [picture(o.children, key + '.p' + layers.length.toString(), depth + 2, motions - 1)]
+        if (first) { motion.children[0].pointer = pointer }
+        layers.push(motion)
+      }
+      flush()
+      item.children = layers
+      linkScene(item)
+    }
+    // Whether a ui.Surface's drawing has moving parts: then a ui.Motion around it is dropped (project), since the parts move by themselves
+    // and the two levels it takes are the ones the parts' layers need.
+    let drawsParts = (node: VeraUiNode): boolean => {
+      if (node.kind !== 'surface' || node.label.length === 0) { return false }
+      try {
+        return decodeGfx(this.vm.execute(node.label, [this.state])).some((o: GfxOp): boolean => o.kind === 'moving')
+      } catch (e) {
+        return false
+      }
+    }
     let project = (node: VeraUiNode, depth: number, key: string, motionSlot: number): CardNode => {
+      if (node.kind === 'motion' && node.children.length === 1 && drawsParts(node.children[0])) {
+        return project(node.children[0], depth, key, motionSlot)
+      }
       count += 1
       if (count > size.maxNodes) { throw new Error('widget exceeds ' + size.maxNodes.toString() + ' nodes') }
       if (depth > LIVE_MAX_DEPTH) { throw new Error('widget exceeds depth 4') }
@@ -370,12 +481,18 @@ export class WidgetSession {
         if (shapes > LIVE_MAX_SHAPES) {
           throw new Error('a card picture has at most ' + LIVE_MAX_SHAPES.toString() + ' shapes; this one has ' + shapes.toString())
         }
+        let nested = (list: GfxOp[], top: boolean): boolean =>
+          list.some((o: GfxOp): boolean => (!top && o.kind === 'moving') || nested(o.children, false))
+        if (nested(ops, true)) {
+          throw new Error('gfx.moving must be among the shapes the draw function returns, not inside a gfx.group, an effect or another gfx.moving')
+        }
         item.ops = encodeGfxOps(ops)
         item.w = node.minimum
         item.h = node.maximum
         item.pointer = node.value
         item.pic = surfaces - 1
         item.style = node.style
+        if (ops.some((o: GfxOp): boolean => o.kind === 'moving')) { splitParts(item, ops, depth, key) }
       }
       item.action = node.action
       item.value = node.eventValue
@@ -486,28 +603,11 @@ export class WidgetSession {
         kids.push(chart)
         item.children = kids
       }
-      if (node.kind !== 'stat' && node.kind !== 'numberstat' && node.kind !== 'sparkline') {
+      if (node.kind !== 'stat' && node.kind !== 'numberstat' && node.kind !== 'sparkline' && !(item.parts === true)) {
         item.children = node.children.map((child: VeraUiNode, index: number): CardNode => project(child, depth + 1, key + '.' + index.toString(), item.slot))
       }
-      if (node.kind === 'layers') {
-        // A touch on any part of the scene plays all its movements: the stick swings and the drum answers.
-        let slots: number[] = []
-        let gather = (nodes: CardNode[]): void => {
-          for (let child of nodes) {
-            if (child.kind === 'motion' && child.slot >= 0) { slots.push(child.slot) }
-            gather(child.children)
-          }
-        }
-        gather(item.children)
-        let link = (nodes: CardNode[]): void => {
-          for (let child of nodes) {
-            child.links = slots
-            link(child.children)
-          }
-        }
-        // The scene itself carries them too: a touch on a part with no handler of its own lands on the scene (CardView).
-        if (slots.length > 0) { item.links = slots; link(item.children) }
-      }
+      // A touch on any part of the scene plays all its movements: the stick swings and the drum answers.
+      if (node.kind === 'layers') { linkScene(item) }
       return item
     }
     // The theme wrapper consumes no layout level but is still validated and counted.

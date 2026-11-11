@@ -118,6 +118,11 @@ export class CardNode {
   ink?: string
   /** The Motion slots a touch on this node plays: every Motion of the ui.Layers it is in (a touch moves the whole scene). */
   links?: number[]
+  /** A Motion made for a moving part of a picture (gfx.moving): where it turns and scales, as shares of its box (0..1) from the left and the top. */
+  px?: number
+  py?: number
+  /** A ui.Layers made from one picture split at its moving parts, not written by the program (VeraLiveWidget). */
+  parts?: boolean
   children: CardNode[] = []
 }
 
@@ -180,6 +185,9 @@ export function compactNode(node: CardNode): Object {
   if (node.sub !== undefined) { out['sub'] = node.sub }
   if (node.ink !== undefined) { out['ink'] = node.ink }
   if (node.links !== undefined) { out['links'] = node.links }
+  if (node.px !== undefined) { out['px'] = node.px }
+  if (node.py !== undefined) { out['py'] = node.py }
+  if (node.parts !== undefined) { out['parts'] = node.parts }
   if (node.children.length > 0) { out['children'] = node.children.map((child: CardNode): Object => compactNode(child)) }
   return out
 }
@@ -239,6 +247,9 @@ export function normalizeNodes(nodes: CardNode[]): CardNode[] {
     node.sub = raw.sub
     node.ink = raw.ink
     node.links = raw.links
+    node.px = raw.px
+    node.py = raw.py
+    node.parts = raw.parts
     if (raw.children !== undefined) { node.children = normalizeNodes(raw.children) }
     out.push(node)
   }
@@ -252,8 +263,15 @@ export class CoverSplit {
   rest: CardNode[] = []
 }
 
+/**
+ * A picture's style as words: 'cover' (the card's background), 'clear' (no background of its own, over another), or both for a layer of
+ * a cover picture split at its moving parts.
+ */
+export function pictureCovers(style: string): boolean { return style.split(' ').indexOf('cover') >= 0 }
+export function pictureBare(style: string): boolean { return style.split(' ').indexOf('clear') >= 0 }
+
 function isCover(node: CardNode): boolean {
-  return node.kind === 'surface' && node.style === 'cover'
+  return (node.kind === 'surface' && pictureCovers(node.style)) || (node.kind === 'layers' && node.parts === true && pictureCovers(node.style))
 }
 
 /** A Motion around only the cover picture goes with it, so a touch on the background still plays the movement. */

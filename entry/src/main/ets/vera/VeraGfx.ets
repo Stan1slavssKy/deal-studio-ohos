@@ -96,6 +96,11 @@ export const GFX_FUNCTIONS: GfxFunction[] = [
     'shapes blurred by radius units: mist, a soft cloud, light far away'),
   new GfxFunction('blend', [new GfxParam('mode', 'string'), new GfxParam('shapes', 'shapes')], 'shape',
     'shapes mixed with what is under them: "add" makes light (overlaps glow brighter), "screen" lightens, "multiply" darkens like ink'),
+  new GfxFunction('moving', [new GfxParam('motion', 'string'), num('trigger'), num('pivotX'), num('pivotY'), new GfxParam('shapes', 'shapes')], 'shape',
+    'the part of the picture that moves -- a pendulum\'s bob and rod, a wheel, a ball, the frog and not its pond: its shapes play the motion ' +
+    '(a ui.Motion style) about pivotX, pivotY, where the part is fixed or turns (the top of a pendulum, the wheel\'s centre), while the rest ' +
+    'of the picture stays still; a touch on the picture plays every part, and so does a change of trigger (0, or a number the state really ' +
+    'changes with). Only among the shapes the draw function returns, not inside a group or an effect; at most 3 in a picture'),
   new GfxFunction('rgb', [num('red'), num('green'), num('blue'), new GfxParam('alpha', 'number', true)], 'string',
     'a colour from 0..255 channels and an optional 0..1 alpha, for colours computed at run time'),
   new GfxFunction('distance', [num('x1'), num('y1'), num('x2'), num('y2')], 'number',
@@ -292,6 +297,11 @@ export function invokeStdGfx(name: string, args: RuntimeValue[]): RuntimeValue {
       for (let i = 0; i < n; i++) { numbers.push(gradientNumber(asNum(args, i))) }
       let colours = asStrings(args, n).map((c: string): string => c.replace(/[|:]/g, ''))
       return new VeraStringValue((name === 'linear' ? 'lin:' : 'rad:') + numbers.join(',') + ':' + colours.join('|'))
+    }
+    case 'moving': {
+      let o = op('moving', '')
+      o.fx = asStr(args, 0); o.sweep = asNum(args, 1); o.x = asNum(args, 2); o.y = asNum(args, 3)
+      return holding(o, args.length > 4 ? shapesIn(args[4]) : [])
     }
     case 'glow': {
       let o = op('fx', asStr(args, 1))

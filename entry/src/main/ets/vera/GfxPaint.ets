@@ -6,6 +6,7 @@
  */
 
 import { ResolvedTheme } from './VeraTheme'
+import { MotionPose } from './VeraMotion'
 
 /**
  * Colours a program names instead of writing one. The theme decides what each
@@ -105,9 +106,12 @@ export function gfxPaintStyle(ctx: CanvasRenderingContext2D, t: ResolvedTheme, c
 
 /** One thing to draw, as the program asked for it. Plain data: built by the host functions, read by paintGfx. */
 export class GfxOp {
-  /** rect | roundRect | circle | arc | line | polyline | polygon | path | strokePath | text | group | fx */
+  /** rect | roundRect | circle | arc | line | polyline | polygon | path | strokePath | text | group | fx | moving */
   kind: string = ''
-  /** An fx's effect: glow | shadow | blur | add | screen | multiply ('' draws its shapes plain). Its blur is lineWidth, a shadow's offset w, h. */
+  /**
+   * An fx's effect: glow | shadow | blur | add | screen | multiply ('' draws its shapes plain). Its blur is lineWidth, a shadow's offset w, h.
+   * A moving part's Motion preset (gfx.moving): its pivot is x, y and its trigger sweep.
+   */
   fx: string = ''
   x: number = 0
   y: number = 0
@@ -237,7 +241,8 @@ const RAD: number = Math.PI / 180
 /**
  * Draw one frame of a surface into a box of boxW x boxH vp. The box is filled with the theme's background, the
  * surface's w x h units are fitted into it (gfxFit; with `cover` they fill it and run past its edges), and the shapes are
- * drawn back to front, clipped to the surface.
+ * drawn back to front, clipped to the surface. `poses` are where the moving parts among `ops` are now (gfx.moving, in their order
+ * there; the app plays them): a part with no pose is drawn at rest.
  *
  * `pathScale` is the pixels in a vp on the screen drawn to: ArkUI reads a path string (gfx.path, gfx.strokePath) in
  * pixels whatever the canvas's own unit, so a path is drawn under that much more scale -- without it a signature pad's
@@ -247,7 +252,8 @@ const RAD: number = Math.PI / 180
  * otherwise leave the canvas in a state the rest of the frame inherits.
  */
 export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: ResolvedTheme,
-    boxW: number, boxH: number, w: number, h: number, pathScale: number = 1, bare: boolean = false, cover: boolean = false): void {
+    boxW: number, boxH: number, w: number, h: number, pathScale: number = 1, bare: boolean = false, cover: boolean = false,
+    poses: MotionPose[] = []): void {
   let fit = gfxFit(boxW, boxH, w, h, cover)
   ctx.save()
   ctx.clearRect(0, 0, boxW, boxH)
@@ -266,7 +272,36 @@ export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: Resolve
   ctx.clip()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  for (let o of ops) { paintOp(ctx, o, t, pathScale, fit.scale) }
+  let part = 0
+  for (let o of ops) {
+    if (o.kind === 'moving' && part < poses.length) {
+      paintMoving(ctx, o, t, pathScale, fit.scale, poses[part])
+    } else {
+      paintOp(ctx, o, t, pathScale, fit.scale)
+    }
+    if (o.kind === 'moving') { part++ }
+  }
+  ctx.restore()
+}
+
+/**
+ * A moving part in a pose of its preset: moved (the pose's dx, dy are points, as on a card, so they are turned into surface units),
+ * turned and scaled about its own pivot, and faded. A turn about another axis than the viewer's (tumble, flip) is drawn as the
+ * squeeze it makes seen from the front.
+ */
+function paintMoving(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number, unit: number, pose: MotionPose): void {
+  let flat = Math.abs(pose.axisX) < 1e-6 && Math.abs(pose.axisY) < 1e-6
+  let squeeze = flat ? 1 : Math.abs(Math.cos(pose.angle * RAD))
+  let sx = pose.scale * pose.scaleX * (flat || Math.abs(pose.axisY) < Math.abs(pose.axisX) ? 1 : squeeze)
+  let sy = pose.scale * pose.scaleY * (flat || Math.abs(pose.axisY) >= Math.abs(pose.axisX) ? 1 : squeeze)
+  if (!isFinite(sx) || !isFinite(sy) || !isFinite(pose.dx) || !isFinite(pose.dy)) { paintOp(ctx, o, t, pathScale, unit); return }
+  ctx.save()
+  ctx.translate(o.x + pose.dx / unit, o.y + pose.dy / unit)
+  if (flat && pose.angle !== 0) { ctx.rotate(pose.angle * RAD) }
+  ctx.scale(sx, sy)
+  ctx.translate(-o.x, -o.y)
+  ctx.globalAlpha = ctx.globalAlpha * Math.max(0, Math.min(1, pose.opacity))
+  for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
   ctx.restore()
 }
 
@@ -312,6 +347,11 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, path
   }
   if (o.kind === 'fx') {
     paintFx(ctx, o, t, pathScale, unit)
+    return
+  }
+  // A moving part at rest: its shapes as they are (paintMoving draws it in a pose).
+  if (o.kind === 'moving') {
+    for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
     return
   }
   let c = gfxPaintStyle(ctx, t, o.color)
