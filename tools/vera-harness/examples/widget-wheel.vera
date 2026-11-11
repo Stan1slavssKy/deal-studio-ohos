@@ -1,0 +1,72 @@
+@jsonable class AppState { angle: number; speed: number; prize: number; spins: number; }
+
+function init(): AppState { return {angle: 0, speed: 0, prize: -1, spins: 0}; }
+
+function prizes(): number[] { return [10, 50, 0, 100, 5, 20, 0, 200]; }
+
+function wheel(state: AppState): gfx.Shape[] {
+  let colours: string[] = ["#f87171", "#fbbf24", "#34d399", "#60a5fa", "#a78bfa", "#f472b6", "#2dd4bf", "#fb923c"];
+  let slices: gfx.Shape[] = [];
+  let i: number = 0;
+  while (i < 8) {
+    let points: number[] = [0, 0];
+    let k: number = 0;
+    while (k <= 3) {
+      let a: number = (i * 45 + k * 15 - 90) * math.pi() / 180;
+      points.push(40 * math.cos(a));
+      points.push(40 * math.sin(a));
+      k = k + 1;
+    }
+    slices.push(gfx.polygon(points, colours[i]));
+    i = i + 1;
+  }
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.group(50, 52, state.angle, 1, 1, slices));
+  shapes.push(gfx.circle(50, 52, 6, "white"));
+  shapes.push(gfx.polygon([44, 4, 56, 4, 50, 14], "#1f2937"));
+  return shapes;
+}
+
+function settleAngle(angle: number): number { return angle - 360 * math.floor(angle / 360); }
+
+function onFrame(state: AppState, ms: number): AppState {
+  if (state.speed <= 0) { return state; }
+  let angle: number = settleAngle(state.angle + state.speed * ms / 1000);
+  let speed: number = state.speed - 900 * ms / 1000;
+  if (speed > 0) { return {angle: angle, speed: speed, prize: state.prize, spins: state.spins}; }
+  let slice: number = math.floor(settleAngle(360 - angle) / 45);
+  return {angle: angle, speed: 0, prize: prizes()[slice], spins: state.spins};
+}
+
+function spin(state: AppState, value: number): AppState {
+  if (state.speed > 0) { return state; }
+  return {angle: state.angle, speed: 720, prize: -1, spins: state.spins + 1};
+}
+
+function onTouch(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase !== "down") { return state; }
+  return spin(state, 0);
+}
+
+function result(state: AppState): string {
+  if (state.speed > 0) { return "Spinning..."; }
+  if (state.prize < 0) { return "Tap to spin"; }
+  return "Won " + ui.numberToString(state.prize);
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("playful", "", [
+    ui.Surface("default", 100, 100, "wheel", "onFrame", "onTouch"),
+    ui.Text("body", result(state))
+  ]);
+}
+
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("playful", "", [
+    ui.Column("center", [
+      ui.Surface("default", 100, 100, "wheel", "", "onTouch"),
+      ui.Text("caption", result(state)),
+      ui.Button("primary", "Spin", "spin", 0, state.speed === 0)
+    ])
+  ]);
+}

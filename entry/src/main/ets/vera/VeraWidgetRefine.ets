@@ -3,8 +3,8 @@ import { widgetRefinementError } from './VeraCompiler'
 import { decodeGfxOps } from './GfxPaint'
 import { pictureCovers, pictureBare } from '../widget/CardModel'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
-import { decodeVeraUi, UiHostEnvironment } from './VeraUi'
-import { WidgetSession, CardNode, LiveFrame, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, CARD_DIMENSIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS } from './VeraLiveWidget'
+import { decodeVeraUi, UiHostEnvironment, VeraUiNode } from './VeraUi'
+import { WidgetSession, CardNode, LiveFrame, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, CARD_DIMENSIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS, SETTLE_MAX_STEPS, SETTLE_STEP_MS } from './VeraLiveWidget'
 
 /** The card a widget is written for first: a widget with one parameter is drawn at this size on every card. */
 const SMALL = cardSize(2)
@@ -96,6 +96,9 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     '(the state cannot grow). The second argument is 0, or a number the state really changes with, which then also plays it. A movement ' +
     'lasts about a second and plays once: a card cannot loop, spin forever or repeat, there is no sound or vibration, and a drawing is a ' +
     'picture of one moment, so draw the subject at its most recognisable, not a scene that needs motion to be understood. ' +
+    'After a tap the card runs the app\'s own frame handlers for up to ' + Math.round(SETTLE_MAX_STEPS * SETTLE_STEP_MS / 1000).toString() + ' s, so what the tap ' +
+    'set going comes to rest (a wheel stops on its prize, a die lands) and the card shows the result; what does not come to rest by then ' +
+    'stays as the tap left it, so a button that waits for it would stay off -- give such a button a handler of its own that finishes at once. ' +
     'LAYERS. A subject made of parts that move differently -- something that hits and something that is hit, a sky with weather in front ' +
     'of it, a body with a part that swings -- is drawn as ui.Layers(style, width, height, [back, ..., front]): the children lie one over another, ' +
     'the first at the bottom, each in the middle, and each can be its own ui.Motion(style, 0, [ui.Surface(...)]) so the parts move ' +
@@ -128,7 +131,9 @@ export function widgetRefinementPrompt(whole: boolean = true): string {
     'more -- ' + CARD_DIMENSIONS.filter((d: number): boolean => d !== SMALL.dimension).map((d: number): string => 'a ' + cardSize(d).label +
     ' has room for up to ' + cardSize(d).maxButtons.toString() + ' buttons and ' + cardSize(d).maxTexts.toString() + ' texts').join(', ') +
     ', and bigger pictures -- but only what the person asked for; ' +
-    'a widget with one parameter is drawn the same on every size, centred. The limits below are the ' + SMALL.label + ' card\'s.\n' +
+    'a widget with one parameter is drawn the same on every size, centred. A scene is the shape of its card: on a 2x4 card a square picture ' +
+    'leaves the sides empty, and a square cover picture loses its top and bottom, so a widget with a scene takes size and, for size 3, draws ' +
+    'its picture wide (say 220 by 100 units, the subject in the middle and more of its world at the sides). The limits below are the ' + SMALL.label + ' card\'s.\n' +
     'SWITCHES. ui.Toggle(style, label, checked, handler) and ui.Checkbox(style, label, checked, handler) are a tap that says on or off: the handler takes ' +
     '(state, value: boolean). Each counts as a button, and a handler is told only on or off, never which box it was: use one for a single setting, not one per item.\n' +
     'Limits: depth ' + LIVE_MAX_DEPTH.toString() + ' excluding root AppTheme, ' + SMALL.maxNodes.toString() +
@@ -229,7 +234,7 @@ function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
     let problem = glanceError(frame)
     if (problem.length > 0) { return problem }
   }
-  return glance ? (movingSceneError(frames[0].nodes) || backgroundError(frames[0].nodes)) : ''
+  return glance ? (movingSceneError(frames[0].nodes) || backgroundError(frames[0].nodes) || deadPicture(vbc2, state, frames[0].nodes)) : ''
 }
 
 /** The first shape of a picture fills it: the picture paints its own background. */
@@ -360,8 +365,62 @@ function checkTaps(vbc2: string, state: string, nodes: CardNode[], dimension: nu
     let problem = twice(button.action, (node: CardNode): boolean => isButton(node) && node.action === button.action && node.value === button.value,
       (branch: WidgetSession, current: LiveFrame, pass: number): SourceRequest[] => branch.tap(current, current.token, button.action, button.value))
     if (problem.length > 0) { return problem }
+    problem = stuckButton(vbc2, state, button, dimension)
+    if (problem.length > 0) { return problem }
   }
   return ''
+}
+
+/**
+ * A button that a tap leaves off for good: what it started only the app's frames finish, and they did not come to rest within the few
+ * seconds the card runs them after a tap (a wheel whose Spin waits for it to stop). On the card it would stay off.
+ */
+function stuckButton(vbc2: string, state: string, button: CardNode, dimension: number): string {
+  let branch = new WidgetSession(vbc2, 'validation', state)
+  let current = branch.frame('project', 'App', '', dimension)
+  try {
+    branch.tap(current, current.token, button.action, button.value)
+  } catch (e) {
+    return ''
+  }
+  let after = branch.frame('project', 'App', '', dimension)
+  let same = collectNodes(after.nodes, (node: CardNode): boolean =>
+    (node.kind === 'button' || node.kind === 'iconbutton') && node.action === button.action && node.value === button.value)
+  if (same.length > 0 && same.every((node: CardNode): boolean => !node.enabled)) {
+    return 'After a tap on "' + (button.text.length > 0 ? button.text : button.action) + '" that button stays off on the card for good: the tap ' +
+      'starts something only the app\'s frames finish, and the card runs them for ' + Math.round(SETTLE_MAX_STEPS * SETTLE_STEP_MS / 1000).toString() +
+      ' s after a tap, which is not enough for it to come to rest. Give the widget its own handler (a new name) that finishes at once -- ' +
+      'works out the result straight away (where the wheel stops, the die\'s face) and returns the state at rest -- and give the button that handler.'
+  }
+  return ''
+}
+
+/**
+ * A widget whose picture does nothing when touched although the app's does: the toy is dead on the card. In 8 of 14 toy widgets the
+ * picture had no handler (a die that tumbled and kept its face, a cat that could not be stroked).
+ */
+function deadPicture(vbc2: string, state: string, nodes: CardNode[]): string {
+  let pictures = collectNodes(nodes, (node: CardNode): boolean => node.kind === 'surface' && node.style.length > 0)
+  if (pictures.length === 0) { return '' }
+  if (collectNodes(nodes, (node: CardNode): boolean => node.pointer.length > 0 || node.action.length > 0).length > 0) { return '' }
+  let appHandler = ''
+  try {
+    let vm = new VirtualMachine(deserializeVbc2(vbc2), new UiHostEnvironment(), LIVE_MAX_STEPS)
+    let walk = (list: VeraUiNode[]): void => {
+      for (let node of list) {
+        if (appHandler.length === 0 && node.kind === 'surface' && node.value.length > 0) { appHandler = node.value }
+        walk(node.children)
+      }
+    }
+    walk(decodeVeraUi(vm.execute('view', [decodeRuntimeValue(JSON.parse(state) as Object)])))
+  } catch (e) {
+    return ''
+  }
+  if (appHandler.length === 0) { return '' }
+  return 'In the app a touch on the picture does something (its handler "' + appHandler + '"), but on the widget the picture has no handler, ' +
+    'so a touch only plays a movement and nothing happens: give the widget\'s ui.Surface a pointer handler as its last argument that does ' +
+    'what a tap does in the app -- "' + appHandler + '" itself if it makes no phone call, else a new one that changes the state the same way ' +
+    'without it. A card gets a tap (down, then up), not a drag.'
 }
 
 /**

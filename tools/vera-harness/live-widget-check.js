@@ -584,4 +584,33 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.notEqual(deep, pendulum)
   assert.throws(() => new WidgetSession(compileVeraSource(deep).vbc2, 'deep', '').frame('p1', 'P', '🕰'), /directly in the widget's column/)
 }
-console.log('PASS live counter: moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
+
+// A tap finishes what it started: the card has no frames, so after a tap the app's frame handlers run until the state comes to rest -- a wheel
+// stops on its prize and Spin comes back on, even when each tick asks for a vibration. A state that does not come to rest in 10 s stays as the tap left it.
+{
+  const wheel = fs.readFileSync(path.join(__dirname, 'examples/widget-wheel.vera'), 'utf8')
+  const spinOf = src => {
+    const s = new WidgetSession(compileVeraSource(src).vbc2, 'wheel', '')
+    const f = s.frame('p1', 'Wheel', '🎡')
+    s.tap(f, f.token, 'spin', 0)
+    return s
+  }
+  const landed = spinOf(wheel)
+  const after = landed.frame('p1', 'Wheel', '🎡')
+  assert(texts(after.nodes).some(t => /^Won \d+$/.test(t)), 'the wheel stopped on a prize: ' + texts(after.nodes))
+  const buttonsOf = nodes => { const out = []; const walk = n => { if (n.kind === 'button') out.push(n); n.children.forEach(walk) }; nodes.forEach(walk); return out }
+  assert(buttonsOf(after.nodes)[0].enabled, 'and Spin is on again')
+  // A tap on the picture finishes the same way.
+  const touched = new WidgetSession(compileVeraSource(wheel).vbc2, 'wheel', '')
+  const tf = touched.frame('p1', 'Wheel', '🎡')
+  touched.tapSurface(tf, tf.token, 'onTouch', 50, 50)
+  assert(texts(touched.frame('p1', 'Wheel', '🎡').nodes).some(t => /^Won/.test(t)), 'a touch on the wheel lands it too')
+  // One that would take longer than 3 s is left spinning: the card does not play on for the person.
+  const slow = spinOf(wheel.replace('let speed: number = state.speed - 900 * ms / 1000;', 'let speed: number = state.speed - 60 * ms / 1000;'))
+  assert(texts(slow.frame('p1', 'Wheel', '🎡').nodes).includes('Spinning...'), 'a spin that does not stop in 10 s stays as the tap left it')
+  // A frame that asks for the phone does not count either.
+  const buzzing = 'import * as sdk from "std/sdk"\n' + wheel.replace('  if (state.speed <= 0) { return state; }', '  if (state.speed <= 0) { return state; }\n  sdk.call("fixture/phone/Ability/buzz", [], "buzzed", "foreground");') +
+    '\nfunction buzzed(state: AppState, answer: string): AppState { return state; }\n'
+  assert(texts(spinOf(buzzing).frame('p1', 'Wheel', '🎡').nodes).some(t => /^Won/.test(t)), 'what a frame asks of the phone (a vibration on each tick) is dropped and the wheel still lands')
+}
+console.log('PASS live counter: settle after a tap, moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

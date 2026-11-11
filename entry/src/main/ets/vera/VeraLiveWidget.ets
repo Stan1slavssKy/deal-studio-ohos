@@ -24,6 +24,11 @@ export const LIVE_MAX_MOTIONS: number = CARD_MAX_MOTIONS
 export const LIVE_MAX_SURFACES: number = CARD_MAX_PICTURES
 /** Moving parts (gfx.moving) in one card picture: each is a layer of its own, and a card has five pictures in all. */
 export const LIVE_MAX_PARTS: number = 3
+/** After a tap the app's frame handlers run in steps of this many ms (a card has no frames of its own)... */
+export const SETTLE_STEP_MS: number = 33
+/** ...for at most this many steps (10 s: a wheel takes 4 or 5), and the state they reach is kept only once this many steps in a row change nothing. */
+export const SETTLE_MAX_STEPS: number = 300
+export const SETTLE_CALM_STEPS: number = 3
 export const LIVE_MAX_SHAPES: number = CARD_MAX_SHAPES
 /** Timers a card runs (ui.Timer, the platform's own TextTimer). */
 export const LIVE_MAX_TIMERS: number = CARD_MAX_TIMERS
@@ -251,6 +256,61 @@ export class WidgetSession {
   }
 
   encodedState(): string { return JSON.stringify(encodeRuntimeValue(this.state)) }
+
+  /** The frame handlers of the app's own view: the ui.Surface frame functions the app runs about 60 times a second. */
+  private frameHandlers(): string[] {
+    let names: string[] = []
+    try {
+      let walk = (nodes: VeraUiNode[]): void => {
+        for (let node of nodes) {
+          if (node.kind === 'surface' && node.action.length > 0 && names.indexOf(node.action) < 0) { names.push(node.action) }
+          walk(node.children)
+        }
+      }
+      walk(decodeVeraUi(this.vm.execute('view', [this.state])))
+    } catch (e) {
+      return []
+    }
+    return names
+  }
+
+  /**
+   * What a tap started, finished: a card has no frames, so a wheel set spinning by a tap would spin for ever and its Spin button stay off
+   * (found on the phone). The app's frame handlers run on the state in SETTLE_STEP_MS steps, as the app would run them, and the state they
+   * reach is kept once it stops changing. What a frame asks of the phone (a tick's vibration, a sound) is dropped, as the card can do none of
+   * it, and never answered. A state that does not come to rest within SETTLE_MAX_STEPS -- a game that plays on, a clock that counts -- is left
+   * as the tap left it, so the card never plays a game on for the person; so is one whose frame traps.
+   */
+  private settle(): void {
+    let handlers = this.frameHandlers()
+    if (handlers.length === 0) { return }
+    let started = Date.now()
+    let current = this.state
+    let last = JSON.stringify(encodeRuntimeValue(current))
+    let calm = 0
+    let step = 0
+    let rested = false
+    this.host.effectsAllowed = true
+    try {
+      for (; step < SETTLE_MAX_STEPS && !rested; step++) {
+        for (let handler of handlers) {
+          this.host.pendingEffects = []
+          current = this.vm.execute(handler, [current, new VeraNumberValue(SETTLE_STEP_MS)])
+        }
+        let encoded = JSON.stringify(encodeRuntimeValue(current))
+        calm = encoded === last ? calm + 1 : 0
+        last = encoded
+        rested = calm >= SETTLE_CALM_STEPS
+      }
+      if (rested) { this.state = current }
+    } catch (e) {
+      // A frame that traps does not count: the state stays as the tap left it.
+    } finally {
+      this.host.effectsAllowed = false
+      this.host.pendingEffects = []
+    }
+    console.info('VERA-WIDGET settle ' + (rested ? 'rested' : 'left as tapped') + ' steps=' + step.toString() + ' ms=' + (Date.now() - started).toString())
+  }
 
   frame(projectId: string, title: string, icon: string, dimension: number = 2): LiveFrame {
     let size = cardSize(dimension)
@@ -684,6 +744,7 @@ export class WidgetSession {
       let next = this.vm.execute(action, [this.state, new VeraNumberValue(value)])
       let requests = this.sourceRequests('Open app to continue: phone action required')
       this.state = next
+      this.settleAfter(requests)
       return requests
     } finally {
       this.host.effectsAllowed = false
@@ -706,6 +767,7 @@ export class WidgetSession {
       let next = this.vm.execute(handler, [this.state, new VeraBooleanValue(on)])
       let requests = this.sourceRequests('Open app to continue: phone action required')
       this.state = next
+      this.settleAfter(requests)
       return requests
     } finally {
       this.host.effectsAllowed = false
@@ -729,11 +791,17 @@ export class WidgetSession {
       let up = this.vm.execute(handler, [down, pointerValue('up', 0, x, y)])
       let requests = this.sourceRequests('Open app to continue: phone action required')
       this.state = up
+      this.settleAfter(requests)
       return requests
     } finally {
       this.host.effectsAllowed = false
       this.host.pendingEffects = []
     }
+  }
+
+  /** settle, unless the tap is waiting for its live source: its answer, not the frames, finishes it. */
+  private settleAfter(requests: SourceRequest[]): void {
+    if (requests.length === 0) { this.settle() }
   }
 
   /** The effects collected, when every one is a call to the program's live source; else `refused` is thrown. */

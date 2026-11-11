@@ -1,5 +1,12 @@
 # Changelog
 
+## A widget tap finishes what it started
+
+- After a tap on a card, the app's own frame handlers run for up to 10 s until the state comes to rest, so a wheel stops on its prize and its Spin button comes back (what a frame asks of the phone, such as a vibration on each tick, is dropped); a state that does not come to rest (a game playing on) stays as the tap left it.
+- Make widget refuses a button a tap leaves off for good and a picture that does nothing on the card although the app's does, with the reason for the model.
+- The prompt says a scene on a 2x4 card is drawn wide.
+- Host checks in `live-widget-check.js` and `widget-refine-check.js`; `examples/widget-wheel.vera`.
+
 ## Moving parts: gfx.moving, about the part's own pivot
 
 - `gfx.moving(style, trigger, pivotX, pivotY, shapes)` marks the part of a drawing that moves (a pendulum's bob, a wheel, a frog): it plays a ui.Motion preset about its own pivot while the rest of the picture stays. A touch on the picture plays every part.

@@ -407,6 +407,29 @@ without parts (the wheel spun whole, the pendulum did not move): the model reach
 at rest and posed about its pivot, the preset check), `live-widget-check.js` (the layers, pivot, pointer, links, cover, the limits and the dropped Motion),
 `widget-refine-check.js` (the scene check), `motion-check.js` (the two presets).
 
+## A tap finishes what it started; a picture that does nothing is refused
+
+A card has no frames, so a widget whose tap only starts something (a wheel set spinning, a die thrown) never finished it: on the phone the user's
+Roulette card read "Spinning..." with its Spin button off for good, and the toy run's wheel the same. Now, after a tap (a button, a switch, a picture),
+`WidgetSession` runs the app's own frame handlers (the `ui.Surface` frame functions of `view`) on the state in steps of 33 ms (`SETTLE_STEP_MS`), as the app
+would, and keeps the state they reach once 3 steps in a row change nothing (`settle`). What a frame asks of the phone (most generated wheels
+vibrate on each tick) is dropped and never answered: the card can do none of it, and refusing it left the wheel spinning. A state that does not come to
+rest within 300 steps (10 s; a generated wheel took 3.5 s) -- a game that plays on, a clock that counts -- is left as the tap left it, so the card never plays
+on for the person; so is one whose frame traps, and one waiting for its live source. Measured on the phone: `examples/widget-wheel.vera` on a card -- Spin, and
+the next frame read "Won 5" with Spin on again; a generated Fortune Wheel (a vibration on each tick) in the widget screen -- a touch, "Won 5", `VERA-WIDGET
+settle rested steps=106 ms=8`. On the host 300 steps of a game that never rests took 5 ms.
+
+Make widget holds two more things to the card:
+
+- a button a tap leaves off for good (what it started does not come to rest in the card's 10 s): the reason asks for a handler of the widget's own that works
+  out the result at once (`stuckButton`);
+- a picture with no handler and no button, when the app's picture takes a touch: on the card it would only play a movement (8 of 14 toy widgets: a die that
+  tumbled and kept its face, a cat that could not be stroked). The reason names the app's handler (`deadPicture`).
+
+The prompt says a tap is finished by the app's frames for up to 10 s, and that a scene on a 2x4 card is drawn wide (with `widget(state, size)`), since a square
+picture leaves its sides empty there and a square cover picture loses its top and bottom. Host checks: `live-widget-check.js` (the wheel lands from a button,
+from a touch and with a vibration on each tick; a slow one stays as the tap left it), `widget-refine-check.js` (the two reasons, the prompt).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.
