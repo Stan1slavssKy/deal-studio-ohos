@@ -22,12 +22,24 @@ struct LiveCard {
   @LocalStorageProp('nodes') nodes: CardNode[] = []
   @LocalStorageProp('dimension') dimension: number = 2
 
-  /** The cover picture, drawn to the card's edges under the rest (CardModel.splitCover), and what goes over it. */
-  private coverNodes(): CardNode[] {
-    let cover = splitCover(normalizeNodes(this.nodes)).cover
-    return this.live && cover !== null ? [cover] : []
+  /**
+   * The cover picture, drawn to the card's edges under the rest (CardModel.splitCover), and what goes over it. Split once for each frame
+   * the extension sends (a new nodes array), not on every call build makes: each split copies the whole tree.
+   */
+  private splitOf: CardNode[] | null = null
+  private splitLive: boolean = false
+  private cover: CardNode[] = []
+  private rest: CardNode[] = []
+  private split(): void {
+    if (this.splitOf === this.nodes && this.splitLive === this.live) { return }
+    let split = splitCover(normalizeNodes(this.nodes))
+    this.cover = this.live && split.cover !== null ? [split.cover] : []
+    this.rest = split.rest
+    this.splitOf = this.nodes
+    this.splitLive = this.live
   }
-  private restNodes(): CardNode[] { return splitCover(normalizeNodes(this.nodes)).rest }
+  private coverNodes(): CardNode[] { this.split(); return this.cover }
+  private restNodes(): CardNode[] { this.split(); return this.rest }
   private overCover(): boolean { return this.coverNodes().length > 0 && this.restNodes().length > 0 }
 
   build() {

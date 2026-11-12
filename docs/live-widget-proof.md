@@ -442,7 +442,9 @@ pendulum still swings whole and one wheel was drawn as a single slice by the mod
 Make widget holds two more things to the card:
 
 - a picture that takes a touch and shows nothing for it: no ui.Motion or gfx.moving around it and the same card after the tap and the settling (`unseenTouch`;
-  a generated countdown rocket stood on its pad: its tap started a countdown on a `ui.Ticker`, which the card did not run then);
+  a generated countdown rocket stood on its pad: its tap started a countdown on a `ui.Ticker`, which the card did not run then). Only the pictures are
+  compared (`drawnPictures`): a generated rocket flew up and back to its pad in the app's frames, so the card drew the pad again with its launch count
+  one higher, and the count passed for the touch showing (`examples/widget-return-rocket.vera`);
 - a button a tap leaves off for good (what it started does not come to rest in the card's 20 s): the reason asks for a handler of the widget's own that works
   out the result at once (`stuckButton`);
 - a picture with no handler and no button, when the app's picture takes a touch: on the card it would only play a movement (8 of 14 toy widgets: a die that

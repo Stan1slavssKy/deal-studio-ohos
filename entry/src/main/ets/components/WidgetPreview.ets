@@ -131,11 +131,20 @@ export struct WidgetPreview {
   }
 
   /** As LiveCard: the cover picture under everything, to the card's edges (splitCover), and the rest over it. */
-  private coverNodes(): CardNode[] {
-    let cover = splitCover(this.frame.nodes).cover
-    return this.frame.live && cover !== null ? [cover] : []
+  private splitOf: CardNode[] | null = null
+  private splitLive: boolean = false
+  private cover: CardNode[] = []
+  private rest: CardNode[] = []
+  private split(): void {
+    if (this.splitOf === this.frame.nodes && this.splitLive === this.frame.live) { return }
+    let split = splitCover(this.frame.nodes)
+    this.cover = this.frame.live && split.cover !== null ? [split.cover] : []
+    this.rest = split.rest
+    this.splitOf = this.frame.nodes
+    this.splitLive = this.frame.live
   }
-  private restNodes(): CardNode[] { return splitCover(this.frame.nodes).rest }
+  private coverNodes(): CardNode[] { this.split(); return this.cover }
+  private restNodes(): CardNode[] { this.split(); return this.rest }
   private overCover(): boolean { return this.coverNodes().length > 0 && this.restNodes().length > 0 }
 
   @Builder

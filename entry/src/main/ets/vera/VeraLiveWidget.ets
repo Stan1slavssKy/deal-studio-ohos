@@ -47,6 +47,13 @@ export const SETTLE_CLOCK_CALM_STEPS: number = 30
 export const SETTLE_CLOCK_EARLY_STEPS: number = 300
 /** How often, in steps, the view is asked again what runs (a tap may have started a ticker that the next tick stops). */
 export const SETTLE_REASK_STEPS: number = 5
+/**
+ * The most wall-clock time settling may take, in ms, whatever the steps: a tap runs in the form extension, which the system stops when it is
+ * busy for long. A state not at rest by then is left as the tap left it. A tap on a never-resting scene took 365 ms on the phone.
+ */
+export const SETTLE_MAX_MS: number = 2000
+/** A ticker runs at most this often, in ms, as the app runs it (VeraPreview.startTimer): an interval of 1 is not a thousand ticks a second. */
+export const SETTLE_MIN_TICK_MS: number = 16
 export const LIVE_MAX_SHAPES: number = CARD_MAX_SHAPES
 /**
  * What one card picture paints, every copy of a gfx.repeat counted: its 60 shapes are what the frame carries, and a repeat is carried once, so
@@ -114,24 +121,25 @@ function stackHeight(nodes: CardNode[], pictureSide: number, gap: number = LIVE_
 }
 
 /**
- * '' when the widget's cover pictures (ui.Surface style "cover") can be drawn as the card's background: at most one, and not in a row or a
- * ui.Layers, where it would have to share the card. Else why not, said for the model.
+ * '' when the widget's cover pictures (ui.Surface style "cover") can be drawn as the card's background: at most one, and only where
+ * CardModel.splitCover takes it out of the tree -- in the widget's columns, or alone in a ui.Motion there -- not in a row, a ui.Layers or a
+ * ui.Motion with more in it, where it would have to share the card. Else why not, said for the model.
  */
 export function coverError(nodes: CardNode[]): string {
   let covers = 0
   let misplaced = false
-  let walk = (list: CardNode[], shared: boolean): void => {
+  let walk = (list: CardNode[], placed: boolean): void => {
     for (let node of list) {
       if (coverPicture(node)) {
         covers++
-        if (shared) { misplaced = true }
+        if (!placed) { misplaced = true }
         // The layers of one cover picture split at its moving parts are that one picture.
         if (node.kind === 'layers') { continue }
       }
-      walk(node.children, shared || node.kind === 'row' || node.kind === 'layers')
+      walk(node.children, placed && (node.kind === 'column' || (node.kind === 'motion' && node.children.length === 1)))
     }
   }
-  walk(nodes, false)
+  walk(nodes, true)
   if (covers > 1) { return 'a widget has at most one ui.Surface of style "cover": it is the whole card\'s background' }
   if (misplaced) {
     return 'a ui.Surface of style "cover" is the whole card\'s background: put it in the widget\'s column (or alone in a ui.Motion), not in a row or a ui.Layers'
@@ -195,6 +203,7 @@ function widthLimit(nodes: CardNode[], size: CardSize): number {
   }
   return limit
 }
+
 
 /**
  * The side the pictures are drawn at, in vp: the largest, up to the size's pictureMax and what their rows' width allows, with which everything
@@ -339,6 +348,12 @@ export class WidgetSession {
 
   encodedState(): string { return JSON.stringify(encodeRuntimeValue(this.state)) }
 
+  /** Puts the session where a tap from the same state got to before, settling included (VeraWidgetRefine's TapMemo), as if it had just run. */
+  restoreTap(encoded: string, rested: boolean): void {
+    this.state = decodeRuntimeValue(JSON.parse(encoded) as Object)
+    this.lastTapRested = rested
+  }
+
   /**
    * What moves the app's state on with the time, as its view now asks: the ui.Surface frame functions (about 60 a second) and the ui.Ticker
    * handlers that are running, with their intervals. Asked again as the state goes on, since a tap often starts a ticker (a countdown).
@@ -350,7 +365,7 @@ export class WidgetSession {
         for (let node of nodes) {
           if (node.kind === 'surface' && node.action.length > 0) { drivers.push(new ClockDriver(node.action, 0)) }
           if (node.kind === 'ticker' && node.checked && node.action.length > 0 && node.minimum > 0) {
-            drivers.push(new ClockDriver(node.action, node.minimum))
+            drivers.push(new ClockDriver(node.action, Math.max(SETTLE_MIN_TICK_MS, node.minimum)))
           }
           walk(node.children)
         }
@@ -368,7 +383,7 @@ export class WidgetSession {
    * run on the state in SETTLE_STEP_MS steps of its clock, as the app would run them (a ticker of 200 ms every sixth step or so), and the state
    * they reach is kept once it stops changing. What they ask of the phone (a tick's vibration, a sound) is dropped, as the card can do none of
    * it, and never answered. A state that does not come to rest within SETTLE_MAX_STEPS -- a game that plays on, a clock that counts -- is left
-   * as the tap left it, so the card never plays a game on for the person; so is one whose step traps.
+   * as the tap left it, so the card never plays a game on for the person; so is one whose step traps, and one not at rest after SETTLE_MAX_MS.
    */
   private settle(): void {
     let started = Date.now()
@@ -386,7 +401,7 @@ export class WidgetSession {
     let rested = false
     this.host.effectsAllowed = true
     try {
-      for (; step < SETTLE_MAX_STEPS && !rested; step++) {
+      for (; step < SETTLE_MAX_STEPS && !rested && Date.now() - started < SETTLE_MAX_MS; step++) {
         // What runs may change with the state: a ticker started or stopped. Asked again every few steps, not every one (a view is not free).
         if (step > 0 && step % SETTLE_REASK_STEPS === 0) { drivers = this.clockDrivers(current) }
         for (let driver of drivers) {
@@ -585,8 +600,9 @@ export class WidgetSession {
         layers.push(picture(still, key + '.l' + layers.length.toString(), depth + 1, -1))
         still = []
       }
-      // A picture that starts with a drift still has a bottom layer, its background, to take its touches.
-      if (ops.length > 0 && ops[0].kind === 'drift') { layers.push(picture([], key + '.l0', depth + 1, -1)) }
+      // A picture that starts with a drift or a moving part still has a still bottom layer, its background, to take its touches: else
+      // the part would carry the picture's background and turn it with itself.
+      if (ops.length > 0 && (ops[0].kind === 'drift' || ops[0].kind === 'moving')) { layers.push(picture([], key + '.l0', depth + 1, -1)) }
       for (let o of ops) {
         if (o.kind === 'drift') {
           flush()
@@ -605,6 +621,7 @@ export class WidgetSession {
         if (o.kind !== 'moving') { still.push(o); continue }
         flush()
         if (CARD_MOTIONS.indexOf(o.fx) < 0) { throw new Error('gfx.moving style "' + o.fx + '" does not play on a card: use ' + CARD_MOTIONS.join(', ')) }
+        if (!Number.isFinite(o.sweep)) { throw new Error('gfx.moving trigger must be a number (this one is not: a square root of a negative number?)') }
         motions += 1
         if (motions > LIVE_MAX_MOTIONS) { throw new Error('a widget has at most ' + LIVE_MAX_MOTIONS.toString() + ' movements (ui.Motion and gfx.moving)') }
         let motion = make('motion', key + '.m' + layers.length.toString(), depth + 1, motions - 1)
@@ -612,10 +629,7 @@ export class WidgetSession {
         motion.trigger = o.sweep
         motion.px = Math.round(1000 * o.x / w) / 1000
         motion.py = Math.round(1000 * o.y / h) / 1000
-        // The first layer is the bottom one: it takes the picture's pointer whether it is still or moving.
-        let first = layers.length === 0
         motion.children = [picture(o.children, key + '.p' + layers.length.toString(), depth + 2, motions - 1)]
-        if (first) { motion.children[0].pointer = pointer }
         layers.push(motion)
       }
       flush()

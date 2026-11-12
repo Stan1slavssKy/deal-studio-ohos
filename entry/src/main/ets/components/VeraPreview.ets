@@ -168,6 +168,11 @@ const SLOW_TICK_MS: number = 500
 /** The longest a frame says has passed, in ms, so a pause -- the app in the background, a slow frame -- is not a leap. */
 const SURFACE_MAX_ELAPSED_MS: number = 100
 
+/** Whether a moving part's trigger is the one it last had: NaN (a trigger worked out as math.sqrt of a negative number) is the same as NaN, or it would restart every paint. */
+function sameTrigger(a: number, b: number): boolean {
+  return a === b || (Number.isNaN(a) && Number.isNaN(b))
+}
+
 /** One ui.Surface on screen: the canvas it paints into and the box it was given, in vp. */
 class SurfaceBox {
   ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true))
@@ -957,6 +962,8 @@ export struct VeraPreview {
       if (!this.pageHidden) {
         this.pageHidden = true
         this.stopSurfaceLoop()
+        // The parts' repaint stops too; showing the page again repaints, which starts it again if anything still plays.
+        this.stopPartsTimer()
       }
     } else {
       if (this.pageHidden) {
@@ -1026,7 +1033,7 @@ export struct VeraPreview {
     if (this.spinTimer >= 0) { clearInterval(this.spinTimer); this.spinTimer = -1 }
     this.spinPeriod = 0
     if (this.motionTimer >= 0) { clearInterval(this.motionTimer); this.motionTimer = -1 }
-    if (this.partsTimer >= 0) { clearInterval(this.partsTimer); this.partsTimer = -1 }
+    this.stopPartsTimer()
     this.motionTriggers.clear()
     this.poseAnims.clear()
     this.sceneFrames.clear()
@@ -1257,6 +1264,8 @@ export struct VeraPreview {
    */
   private startSurfaceLoop(): void {
     if (this.surfaceSync !== null || this.surfaceTimer >= 0) { return }
+    // The frame loop paints every surface each frame: the parts' own repaint would paint them a second time.
+    this.stopPartsTimer()
     this.lastFrameAt = 0
     this.lastSurfaceSave = Date.now()
     console.info('VERA-SURFACE loop start')
@@ -1409,7 +1418,7 @@ export struct VeraPreview {
     for (let o of ops) {
       if (o.kind !== 'moving') { continue }
       if (box.partStarts.length <= i) { box.partStarts.push(-1e15); box.partTriggers.push(o.sweep) }
-      if (box.partTriggers[i] !== o.sweep || touched) { box.partStarts[i] = touched ? box.touchedAt : now }
+      if (!sameTrigger(box.partTriggers[i], o.sweep) || touched) { box.partStarts[i] = touched ? box.touchedAt : now }
       box.partTriggers[i] = o.sweep
       let length = motionDuration(o.fx)
       let progress = length > 0 ? (now - box.partStarts[i]) / length : 1
@@ -1417,8 +1426,9 @@ export struct VeraPreview {
       poses.push(motionPose(o.fx, progress))
       i++
     }
-    if (playing && this.partsTimer < 0 && this.surfaceSync === null && this.surfaceTimer < 0) {
+    if (playing && this.partsTimer < 0 && this.surfaceSync === null && this.surfaceTimer < 0 && !this.pageHidden && !this.disposed) {
       this.partsTimer = setInterval(() => {
+        if (this.pageHidden || this.disposed) { this.stopPartsTimer(); return }
         let still = this.liveSurfaces.every((node: LiveNode): boolean => {
           let b = this.surfaces.get(node)
           if (b === undefined) { return true }
@@ -1426,10 +1436,14 @@ export struct VeraPreview {
           return !(b.drifting && b.visible) && b.partStarts.every((start: number): boolean => at - start >= MOTION_BUDGET_MS + 100)
         })
         this.paintSurfaces()
-        if (still && this.partsTimer >= 0) { clearInterval(this.partsTimer); this.partsTimer = -1 }
+        if (still) { this.stopPartsTimer() }
       }, 16)
     }
     return poses
+  }
+
+  private stopPartsTimer(): void {
+    if (this.partsTimer >= 0) { clearInterval(this.partsTimer); this.partsTimer = -1 }
   }
 
   /** The canvas of a surface node, made the first time the node is drawn. */

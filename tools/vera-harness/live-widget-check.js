@@ -163,8 +163,10 @@ assert.match(view, /node.key \+ this.frameKey/)
   })
   assert.deepEqual((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error), [])
   const Curve = { Linear: 0, EaseOut: 1, EaseIn: 2, EaseInOut: 3 }
-  const MotionProbe = new Function('SLOTS', 'motionStages', 'motionPivot', 'pivotPercent', 'Curve',
-    compiled.outputText + '\nreturn MotionProbe;')(CARD_MAX_MOTIONS, motionStages, motionPivot, pivotPercent, Curve)
+  const { gfxFit } = loadVera('GfxPaint')
+  const { pictureCovers } = loadSource(path.join(sourceRoot, 'widget/CardModel.ets'))
+  const MotionProbe = new Function('SLOTS', 'motionStages', 'motionPivot', 'pivotPercent', 'Curve', 'gfxFit', 'pictureCovers',
+    compiled.outputText + '\nreturn MotionProbe;')(CARD_MAX_MOTIONS, motionStages, motionPivot, pivotPercent, Curve, gfxFit, pictureCovers)
   const stateFields = [...motion.matchAll(/@State (\w+):/g)].map(m => m[1])
   const pose = (probe, node) => [1, 2, 3, 4, 5, 6].map(i => probe.poseOf(node, i))
   const finish = (probe, node) => {
@@ -252,6 +254,21 @@ assert.match(view, /node.key \+ this.frameKey/)
   stale.onFinish()
   assert.equal(probe.phase[node.slot], 1, 'an older frame completion cannot advance the new chain')
   scene.children.forEach(node => finish(probe, node))
+  // A moving part's pivot is where its picture is drawn in the box, not a share of the box: a square cover picture on a 2x4 card
+  // (324 x 148 vp) is scaled by 3.24 and cut top and bottom, so a pivot at 15 of 100 units is 39.4 vp above the box (-26.62%).
+  const pivotProbe = new MotionProbe()
+  const part = (style, w, h, px, py) => ({ kind: 'motion', style: 'swing', px, py, children: [{ kind: 'surface', style, w, h }] })
+  pivotProbe.pictureW = () => 324; pivotProbe.pictureH = () => 148
+  const swing = part('cover clear', 100, 100, 0.5, 0.15)
+  assert.equal(pivotProbe.pivotXOf(swing), '50%')
+  assert.equal(pivotProbe.pivotOf(swing), '-26.62%', 'the pivot under cover-fit')
+  // A tall picture is letterboxed sideways: 100 x 200 units in a 132 x 145.2 box is 72.6 vp wide, from 29.7 vp.
+  pivotProbe.pictureW = () => 132; pivotProbe.pictureH = () => 145.2
+  const tall = part('clear', 100, 200, 0.25, 0.5)
+  assert.equal(pivotProbe.pivotXOf(tall), '36.25%', 'the pivot in a letterboxed picture')
+  assert.equal(pivotProbe.pivotOf(tall), '50%')
+  // A Motion around more than a picture keeps the share as it is.
+  assert.equal(pivotProbe.pivotXOf({ kind: 'motion', style: 'swing', px: 0.25, children: [] }), '25%')
 }
 // A picture on the card: ui.Surface drawn once for the state, its shapes carried in the frame (a few hundred characters), a tap on it
 // calling the pointer handler with the finger down and up at that point. No frame loop, one picture, a few dozen shapes.
@@ -676,5 +693,49 @@ assert.match(view, /node.key \+ this.frameKey/)
   const heavy = bubbles.replace('gfx.repeat(12, 12, 10, 10, [', 'gfx.repeat(20, 20, 6, 6, [')
   assert.throws(() => new WidgetSession(compileVeraSource(heavy).vbc2, 'heavy', '').frame('p1', 'Bubbles', '🫧'),
     /paints at most 400 shapes, every copy of a gfx\.repeat counted; this one paints 807/)
+}
+// Review fixes on the rich pictures (PR #53).
+{
+  const { splitCover } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const base = (draw, widgetBody, extra = '') => 'import * as ui from "std/ui"\nimport * as gfx from "std/gfx"\n' +
+    '@jsonable class AppState { n: number; z: number; ticks: number; on: boolean; }\n' +
+    'function init(): AppState { return {n: 0, z: 0, ticks: 0, on: false}; }\n' +
+    'function draw(state: AppState): gfx.Shape[] { return [' + draw + ']; }\n' +
+    'function onTouch(state: AppState, p: gfx.Pointer): AppState { return state; }\n' + extra +
+    'function view(state: AppState): ui.View { return ui.Text("body", "x"); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Column("center", [' + widgetBody + ']); }\n'
+  const frameOf = src => new WidgetSession(compileVeraSource(src).vbc2, 'fix', '').frame('p1', 'Fix', '🔧')
+  // A drawing that starts with a moving part keeps a still bottom layer: the part does not carry the background round with it.
+  const wheel = 'gfx.moving("spin", state.n, 50, 50, [gfx.sector(50, 50, 40, 0, 90, "accent")]), gfx.polygon([48, 2, 52, 2, 50, 12], "ink")'
+  const first = frameOf(base(wheel, 'ui.Surface("default", 100, 100, "draw", "", "onTouch")')).nodes[0].children[0]
+  assert.equal(first.kind, 'layers')
+  assert.deepEqual(first.children.map(c => c.kind), ['surface', 'motion', 'surface'], 'background, the part, what is over it')
+  assert.equal(first.children[0].style, 'default'); assert.equal(decodeGfxOps(first.children[0].ops).length, 0)
+  assert.equal(first.children[0].pointer, 'onTouch', 'the still bottom layer takes the touches')
+  assert.equal(first.children[1].children[0].style, 'clear', 'the moving layer is see-through')
+  assert.equal(first.children[1].children[0].pointer, '', 'and takes no touches of its own')
+  // A trigger that is not a number (the square root of a negative) would play the part on every redraw: it is refused with a reason.
+  assert.throws(() => frameOf('import * as math from "std/math"\n' + base(wheel.replace('state.n', 'math.sqrt(state.n - 1)'), 'ui.Surface("default", 100, 100, "draw", "", "onTouch")')),
+    /gfx.moving trigger must be a number/)
+  // A cover picture in a ui.Motion with more in it is not lifted out as the background, so it is refused like one in a row.
+  const sky = 'gfx.rect(0, 0, 100, 100, "#123456"), gfx.circle(50, 50, 10, "accent")'
+  assert.throws(() => frameOf(base(sky, 'ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "draw", "", ""), ui.Text("caption", "hi")])')),
+    /alone in a ui.Motion/)
+  const alone = frameOf(base(sky, 'ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "draw", "", "")]), ui.Text("caption", "hi")'))
+  assert(splitCover(alone.nodes).cover !== null, 'alone in its Motion it is still the background')
+  // A ticker runs at most every 16 ms in settle, as in the app: an interval of 0.01 is not 3300 ticks a step.
+  const fast = 'import * as ui from "std/ui"\n@jsonable class AppState { n: number; ticks: number; on: boolean; }\n' +
+    'function init(): AppState { return {n: 0, ticks: 0, on: false}; }\n' +
+    'function go(state: AppState, value: number): AppState { return {n: 0, ticks: 0, on: true}; }\n' +
+    'function tick(state: AppState, ms: number): AppState { if (state.ticks >= 100) { return {n: state.n, ticks: state.ticks, on: false}; } ' +
+    'return {n: state.n + ms, ticks: state.ticks + 1, on: true}; }\n' +
+    'function view(state: AppState): ui.View { return ui.Column("default", [ui.Ticker("default", "t", 0.01, state.on, "tick"), ui.Text("body", "x")]); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Column("center", [ui.NumberText("metric", state.n, "", " ms", 0), ui.Button("primary", "Go", "go", 0, true)]); }\n'
+  const ts = new WidgetSession(compileVeraSource(fast).vbc2, 'fast', '')
+  const tf = ts.frame('p1', 'Fast', '⏱')
+  ts.tap(tf, tf.token, 'go', 0)
+  assert(ts.lastTapRested, 'the hundred ticks came to rest')
+  assert.deepEqual(texts(ts.frame('p1', 'Fast', '⏱').nodes).filter(t => / ms$/.test(t)), ['1600 ms'], 'each tick was told 16 ms')
 }
 console.log('PASS live counter: tickers in settle, drifts, settle after a tap, moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

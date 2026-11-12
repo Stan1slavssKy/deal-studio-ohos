@@ -14,6 +14,28 @@ const PICTURE_WIDTH: number = cardSize(2).pictureMax
 /** Motions a card carries, each with a slot of its own below. */
 const SLOTS: number = CARD_MAX_MOTIONS
 
+/** Where a ui.Motion (or a gfx.moving part) stands now, and the animation that takes it there: one value, so its modifiers are written once. */
+class MotionPose {
+  dx: number = 0
+  dy: number = 0
+  scaleX: number = 1
+  scaleY: number = 1
+  angle: number = 0
+  opacity: number = 1
+  centerX: string = '50%'
+  centerY: string = '50%'
+  animation: AnimateParam = {}
+}
+
+@Extend(Column)
+function posed(pose: MotionPose) {
+  .scale({ x: pose.scaleX, y: pose.scaleY, centerX: pose.centerX, centerY: pose.centerY })
+  .rotate({ angle: pose.angle, centerX: pose.centerX, centerY: pose.centerY })
+  .translate({ x: pose.dx, y: pose.dy })
+  .opacity(pose.opacity)
+  .animation(pose.animation)
+}
+
 function filled(count: number, value: number): number[] {
   let out: number[] = []
   for (let i = 0; i < count; i++) { out.push(value) }
@@ -183,8 +205,36 @@ export struct CardView {
     return stages[at >= 1 ? Math.min(at, last) : last][index]
   }
   /** Where a Motion turns and scales: a moving part's own pivot (gfx.moving), else the preset's (a swing from the top). */
-  private pivotXOf(node: CardNode): string { return node.px !== undefined ? pivotPercent(node.px) : '50%' }
-  private pivotOf(node: CardNode): string { return node.py !== undefined ? pivotPercent(node.py) : pivotPercent(motionPivot(node.style)) }
+  private pivotXOf(node: CardNode): string { return node.px !== undefined ? this.partPivot(node, node.px, true) : '50%' }
+  private pivotOf(node: CardNode): string {
+    return node.py !== undefined ? this.partPivot(node, node.py, false) : pivotPercent(motionPivot(node.style))
+  }
+  /**
+   * A moving part's pivot, given as a share of its picture's units, as a share of the box its picture is drawn in: the picture is fitted
+   * into that box (letterboxed when it is taller than the card allows, cut by cover-fit when it is the card's background), so the two differ.
+   */
+  private partPivot(node: CardNode, share: number, across: boolean): string {
+    let picture = node.children.length === 1 && node.children[0].kind === 'surface' ? node.children[0] : null
+    if (picture === null || !(picture.w > 0) || !(picture.h > 0)) { return pivotPercent(share) }
+    let boxW = this.pictureW(picture)
+    let boxH = this.pictureH(picture)
+    let fit = gfxFit(boxW, boxH, picture.w, picture.h, pictureCovers(picture.style))
+    let at = across ? fit.offsetX + share * picture.w * fit.scale : fit.offsetY + share * picture.h * fit.scale
+    return (Math.round(10000 * at / (across ? boxW : boxH)) / 100).toString() + '%'
+  }
+  private motionPose(node: CardNode): MotionPose {
+    let pose = new MotionPose()
+    pose.dx = this.poseOf(node, 1)
+    pose.dy = this.poseOf(node, 2)
+    pose.scaleX = this.poseOf(node, 3)
+    pose.scaleY = this.poseOf(node, 4)
+    pose.angle = this.poseOf(node, 5)
+    pose.opacity = this.poseOf(node, 6)
+    pose.centerX = this.pivotXOf(node)
+    pose.centerY = this.pivotOf(node)
+    pose.animation = this.motionAnimation(node)
+    return pose
+  }
   /** The platform animation to the stage the Motion is at: its time and curve, and what to do when it ends (go on to the next stage). */
   private motionAnimation(node: CardNode): AnimateParam {
     let stages = this.stagesOf(node)
@@ -485,11 +535,7 @@ export struct CardView {
           ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
         }
         .layoutWeight(inRow ? 1 : 0)
-        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .rotate({ angle: this.poseOf(node, 5), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
-        .opacity(this.poseOf(node, 6))
-        .animation(this.motionAnimation(node))
+        .posed(this.motionPose(node))
         .onAppear(() => { this.begin(node) })
         .onClick(() => { this.touched(node); this.onTap(TOUCH_ACTION, 0) })
       } else {
@@ -497,11 +543,7 @@ export struct CardView {
           ForEach(node.children, (child: CardNode) => { this.level2(child, false) }, (child: CardNode) => child.key)
         }
         .layoutWeight(inRow ? 1 : 0)
-        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .rotate({ angle: this.poseOf(node, 5), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
-        .opacity(this.poseOf(node, 6))
-        .animation(this.motionAnimation(node))
+        .posed(this.motionPose(node))
         .onAppear(() => { this.begin(node) })
       }
     } else {
@@ -545,11 +587,7 @@ export struct CardView {
           ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
         }
         .layoutWeight(inRow ? 1 : 0)
-        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .rotate({ angle: this.poseOf(node, 5), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
-        .opacity(this.poseOf(node, 6))
-        .animation(this.motionAnimation(node))
+        .posed(this.motionPose(node))
         .onAppear(() => { this.begin(node) })
         .onClick(() => { this.touched(node); this.onTap(TOUCH_ACTION, 0) })
       } else {
@@ -557,11 +595,7 @@ export struct CardView {
           ForEach(node.children, (child: CardNode) => { this.level3(child, false) }, (child: CardNode) => child.key)
         }
         .layoutWeight(inRow ? 1 : 0)
-        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .rotate({ angle: this.poseOf(node, 5), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
-        .opacity(this.poseOf(node, 6))
-        .animation(this.motionAnimation(node))
+        .posed(this.motionPose(node))
         .onAppear(() => { this.begin(node) })
       }
     } else {
@@ -605,11 +639,7 @@ export struct CardView {
           ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
         }
         .layoutWeight(inRow ? 1 : 0)
-        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .rotate({ angle: this.poseOf(node, 5), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
-        .opacity(this.poseOf(node, 6))
-        .animation(this.motionAnimation(node))
+        .posed(this.motionPose(node))
         .onAppear(() => { this.begin(node) })
         .onClick(() => { this.touched(node); this.onTap(TOUCH_ACTION, 0) })
       } else {
@@ -617,11 +647,7 @@ export struct CardView {
           ForEach(node.children, (child: CardNode) => { this.level4(child, false) }, (child: CardNode) => child.key)
         }
         .layoutWeight(inRow ? 1 : 0)
-        .scale({ x: this.poseOf(node, 3), y: this.poseOf(node, 4), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .rotate({ angle: this.poseOf(node, 5), centerX: this.pivotXOf(node), centerY: this.pivotOf(node) })
-        .translate({ x: this.poseOf(node, 1), y: this.poseOf(node, 2) })
-        .opacity(this.poseOf(node, 6))
-        .animation(this.motionAnimation(node))
+        .posed(this.motionPose(node))
         .onAppear(() => { this.begin(node) })
       }
     } else {

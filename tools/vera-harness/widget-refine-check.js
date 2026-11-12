@@ -154,6 +154,20 @@ function widget(`).replace('ui.Surface("default", 100, 100, "clockCard", "", "")
   const inert = rocket.replace('if (p.phase !== "up" || state.launching) { return state; }', 'return state;')
   assert.notEqual(inert, rocket)
   assert.match(validateWidgetRefinement(withoutWidget(inert), inert, compileVeraSource(inert).vbc2), /A touch on the picture changes nothing you can see/)
+  // A rocket that flies up and lands back on its pad in the app's frames is drawn on its pad again; a launch count beside it that rose is not
+  // the picture answering. Wrapped in gfx.moving("launch") it moves on the card.
+  const back = fs.readFileSync(path.join(__dirname, 'examples/widget-return-rocket.vera'), 'utf8')
+  assert.match(validateWidgetRefinement(withoutWidget(back), back, compileVeraSource(back).vbc2), /A touch on the picture changes nothing you can see[\s\S]*comes back is drawn where it started/)
+  const rocketShapes = 'shapes.push(gfx.polygon([rx - 6, ry + 7, rx - 11, ry + 14, rx - 6, ry + 12], "#e0453f"));'
+  const moving = back.replace(rocketShapes, 'let body: gfx.Shape[] = [];\n  ' + rocketShapes.replace('shapes.push', 'body.push'))
+    .replace('shapes.push(gfx.polygon([rx + 6, ry + 7', 'body.push(gfx.polygon([rx + 6, ry + 7')
+    .replace('shapes.push(gfx.roundRect(rx - 6, ry - 7', 'body.push(gfx.roundRect(rx - 6, ry - 7')
+    .replace('shapes.push(gfx.polygon([rx - 6, ry - 6', 'body.push(gfx.polygon([rx - 6, ry - 6')
+    .replace('shapes.push(gfx.circle(rx, ry - 1, 3,', 'body.push(gfx.circle(rx, ry - 1, 3,')
+    .replace('shapes.push(gfx.circle(rx, ry - 1, 1.5, "#bfe6ff"));\n  return shapes;',
+      'body.push(gfx.circle(rx, ry - 1, 1.5, "#bfe6ff"));\n  shapes.push(gfx.moving("launch", state.c_launches, 50, 80, body));\n  return shapes;')
+  assert.notEqual(moving, back)
+  assert.equal(validateWidgetRefinement(withoutWidget(moving), moving, compileVeraSource(moving).vbc2), '', 'the rocket as a gfx.moving part passes')
 }
 
 // A picture that paints its own background is a scene: Make widget asks for it as a cover picture, so it is not a square in the middle of the card.

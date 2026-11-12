@@ -236,6 +236,7 @@ export function checkWidget(vbc2: string, saved: string = ''): string {
  */
 function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
   let session = new WidgetSession(vbc2, 'validation', saved)
+  let memo = new TapMemo()
   // Every size the widget draws differently is a card of its own (2x2 first): what can be tapped on it is tapped there.
   let frames = session.dimensions().map((dimension: number): LiveFrame => session.frame('project', 'App', '', dimension))
   if (!frames[0].live) { return 'Missing function widget(state): ui.View' }
@@ -243,7 +244,7 @@ function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
   let refreshError = checkRefresh(vbc2, state)
   if (refreshError.length > 0) { return refreshError }
   for (let frame of frames) {
-    let problem = checkTaps(vbc2, state, frame.nodes, frame.dimension)
+    let problem = checkTaps(vbc2, state, frame.nodes, frame.dimension, memo)
     if (problem.length > 0) { return problem }
   }
   // A widget that asks for the card's size is held to the limits of each size it will be drawn on.
@@ -253,7 +254,7 @@ function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
   }
   return glance ? (movingSceneError(frames[0].nodes) || movingPartError(vbc2, state, frames[0].nodes) || backgroundError(frames[0].nodes) ||
     deadPicture(vbc2, state, frames[0].nodes) ||
-    unseenTouch(vbc2, state, frames[0])) : ''
+    unseenTouch(vbc2, state, frames[0], memo)) : ''
 }
 
 /** The first shape of a picture fills it: the picture paints its own background. */
@@ -405,11 +406,44 @@ function isButton(node: CardNode): boolean {
   return (node.kind === 'button' || node.kind === 'path' || node.kind === 'iconbutton') && node.enabled && node.action.length > 0
 }
 
+/** Where a first tap from the saved state got to: the state after it and its settling, whether it came to rest, and what it asked of its source. */
+class TappedFrom {
+  state: string
+  rested: boolean
+  requests: SourceRequest[]
+  constructor(state: string, rested: boolean, requests: SourceRequest[]) { this.state = state; this.rested = rested; this.requests = requests }
+}
+
+/**
+ * First taps from the saved state, done once: every card size taps the same controls from the same state, stuckButton taps each button
+ * again, and unseenTouch touches the middle of each picture again. A tap's handler sees only the state, not the card's size, so the
+ * answer is the same each time, and settling it (up to 600 steps of the app's clock) is what a tap costs.
+ */
+class TapMemo {
+  private done: Map<string, TappedFrom> = new Map<string, TappedFrom>()
+
+  /** `run` the tap on `branch` (at the saved state), or put `branch` where the same tap got to before. */
+  tap(key: string, branch: WidgetSession, run: () => SourceRequest[]): SourceRequest[] {
+    let before = this.done.get(key)
+    if (before !== undefined) {
+      branch.restoreTap(before.state, before.rested)
+      return before.requests
+    }
+    let requests = run()
+    this.done.set(key, new TappedFrom(branch.encodedState(), branch.lastTapRested, requests))
+    return requests
+  }
+}
+
 /**
  * Everything on a card of this size a finger can work, each twice from the saved state: a switch turned on and off, a picture touched in
  * the middle, a button pressed. Its handler must run without a phone call, and the state it leaves must still draw on that card and in the app.
  */
-function checkTaps(vbc2: string, state: string, nodes: CardNode[], dimension: number): string {
+function switchKey(handler: string): string { return 'switch ' + handler }
+function touchKey(handler: string, x: number, y: number): string { return 'touch ' + handler + ' ' + x.toString() + ' ' + y.toString() }
+function buttonKey(action: string, value: number): string { return 'button ' + action + ' ' + value.toString() }
+
+function checkTaps(vbc2: string, state: string, nodes: CardNode[], dimension: number, memo: TapMemo): string {
   let drawsInApp = (branch: WidgetSession): void => {
     branch.frame('project', 'App', '', dimension)
     let vm = new VirtualMachine(deserializeVbc2(vbc2), new UiHostEnvironment(), LIVE_MAX_STEPS)
@@ -431,34 +465,36 @@ function checkTaps(vbc2: string, state: string, nodes: CardNode[], dimension: nu
   }
   // Each control twice, from the saved state. The first tap may take it away (a Start that becomes Stop, a box shown only while a
   // task is open): then there is no second.
-  let twice = (handler: string, still: (node: CardNode) => boolean,
+  // The first tap is the same from every card size (TapMemo): `key` names it.
+  let twice = (key: string, handler: string, still: (node: CardNode) => boolean,
       run: (branch: WidgetSession, current: LiveFrame, pass: number) => SourceRequest[]): string => {
     let branch = new WidgetSession(vbc2, 'validation', state)
     for (let pass = 0; pass < 2; pass++) {
       let current = branch.frame('project', 'App', '', dimension)
       if (collectNodes(current.nodes, still).length === 0) { break }
-      let problem = tapped(handler, (): SourceRequest[] => run(branch, current, pass), branch)
+      let problem = tapped(handler, (): SourceRequest[] => pass === 0 ?
+        memo.tap(key, branch, (): SourceRequest[] => run(branch, current, pass)) : run(branch, current, pass), branch)
       if (problem.length > 0) { return problem }
     }
     return ''
   }
   let isSwitch = (node: CardNode): boolean => (node.kind === 'toggle' || node.kind === 'checkbox') && node.enabled && node.action.length > 0
   for (let item of collectNodes(nodes, isSwitch)) {
-    let problem = twice(item.action, (node: CardNode): boolean => isSwitch(node) && node.action === item.action,
+    let problem = twice(switchKey(item.action), item.action, (node: CardNode): boolean => isSwitch(node) && node.action === item.action,
       (branch: WidgetSession, current: LiveFrame, pass: number): SourceRequest[] => branch.tapSwitch(current, current.token, item.action, pass === 0))
     if (problem.length > 0) { return problem }
   }
   for (let picture of collectNodes(nodes, (node: CardNode): boolean => node.kind === 'surface' && node.pointer.length > 0)) {
-    let problem = twice(picture.pointer, (node: CardNode): boolean => node.kind === 'surface' && node.pointer === picture.pointer,
+    let problem = twice(touchKey(picture.pointer, picture.w / 2, picture.h / 2), picture.pointer, (node: CardNode): boolean => node.kind === 'surface' && node.pointer === picture.pointer,
       (branch: WidgetSession, current: LiveFrame, pass: number): SourceRequest[] =>
         branch.tapSurface(current, current.token, picture.pointer, picture.w / 2, picture.h / 2))
     if (problem.length > 0) { return problem }
   }
   for (let button of collectNodes(nodes, isButton)) {
-    let problem = twice(button.action, (node: CardNode): boolean => isButton(node) && node.action === button.action && node.value === button.value,
+    let problem = twice(buttonKey(button.action, button.value), button.action, (node: CardNode): boolean => isButton(node) && node.action === button.action && node.value === button.value,
       (branch: WidgetSession, current: LiveFrame, pass: number): SourceRequest[] => branch.tap(current, current.token, button.action, button.value))
     if (problem.length > 0) { return problem }
-    problem = stuckButton(vbc2, state, button, dimension)
+    problem = stuckButton(vbc2, state, button, dimension, memo)
     if (problem.length > 0) { return problem }
   }
   return ''
@@ -469,11 +505,11 @@ function checkTaps(vbc2: string, state: string, nodes: CardNode[], dimension: nu
  * card runs it after a tap (a wheel whose Spin waits for it to stop). On the card it would stay off. A button off after a tap whose work came
  * to rest is the app's own rule (a generated countdown's Start waits for Reset) and passes.
  */
-function stuckButton(vbc2: string, state: string, button: CardNode, dimension: number): string {
+function stuckButton(vbc2: string, state: string, button: CardNode, dimension: number, memo: TapMemo): string {
   let branch = new WidgetSession(vbc2, 'validation', state)
   let current = branch.frame('project', 'App', '', dimension)
   try {
-    branch.tap(current, current.token, button.action, button.value)
+    memo.tap(buttonKey(button.action, button.value), branch, (): SourceRequest[] => branch.tap(current, current.token, button.action, button.value))
   } catch (e) {
     return ''
   }
@@ -495,31 +531,49 @@ function stuckButton(vbc2: string, state: string, button: CardNode, dimension: n
 const TOUCH_POINTS: number[][] = [[0.5, 0.5], [0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7], [0.43, 0.57]]
 
 /**
- * A picture that takes a touch and shows nothing for it: no movement around it (a ui.Motion, gfx.moving parts) and, after the tap and what
- * the card runs after it, the same card as before. The rocket of a generated countdown app was such a widget: its tap started a countdown
- * the card could not finish, and nothing on the card moved.
+ * What the card's pictures draw, and nothing else: a count beside a picture that changes is not the picture answering the touch. A generated
+ * rocket flew up and came back to its pad in the app's frames, so the card, which shows only where they come to rest, drew it on the pad
+ * again with its launch count one higher, and the touch passed for one that shows.
  */
-function unseenTouch(vbc2: string, state: string, frame: LiveFrame): string {
+function drawnPictures(nodes: CardNode[]): string {
+  return collectNodes(nodes, (node: CardNode): boolean => node.kind === 'surface' || node.kind === 'drift')
+    .map((node: CardNode): string => node.ops).join('\n')
+}
+
+/**
+ * A picture that takes a touch and shows nothing for it: no movement around it (a ui.Motion, gfx.moving parts) and, after the tap and what
+ * the card runs after it, the same pictures as before (drawnPictures). The rocket of a generated countdown app was such a widget: its tap
+ * started a countdown the card could not finish, and nothing on the card moved.
+ */
+function unseenTouch(vbc2: string, state: string, frame: LiveFrame, memo: TapMemo): string {
   let still = collectNodes(frame.nodes, (node: CardNode): boolean =>
     node.kind === 'surface' && node.pointer.length > 0 && node.slot < 0 && node.links === undefined)
+  if (still.length === 0) { return '' }
+  // Every touch is made from the saved state, so what the card drew before is the same for all of them. The middle of each picture was
+  // touched already by checkTaps (TapMemo).
+  let drawnBefore = drawnPictures(new WidgetSession(vbc2, 'validation', state).frame('project', 'App', '', frame.dimension).nodes)
   for (let picture of still) {
     // Not only the middle: in a grid (bubble wrap) the middle may fall between two things a touch acts on.
     let shows = false
     for (let at of TOUCH_POINTS) {
       let branch = new WidgetSession(vbc2, 'validation', state)
       let before = branch.frame('project', 'App', '', frame.dimension)
+      let x = picture.w * at[0]
+      let y = picture.h * at[1]
       try {
-        branch.tapSurface(before, before.token, picture.pointer, picture.w * at[0], picture.h * at[1])
+        memo.tap(touchKey(picture.pointer, x, y), branch,
+          (): SourceRequest[] => branch.tapSurface(before, before.token, picture.pointer, x, y))
       } catch (e) {
         shows = true
         break
       }
       let after = branch.frame('project', 'App', '', frame.dimension)
-      if (JSON.stringify(after.nodes) !== JSON.stringify(before.nodes)) { shows = true; break }
+      if (drawnPictures(after.nodes) !== drawnBefore) { shows = true; break }
     }
     if (!shows) {
       return 'A touch on the picture changes nothing you can see on the card: nothing in it moves and it is drawn the same after the tap ' +
-        '(what the tap starts in the app may need its timers, which the card does not run for long). Make the touched thing move: wrap its ' +
+        '(the card shows only where what the tap starts comes to rest, so a thing that flies off and comes back is drawn where it started; ' +
+        'and what the tap starts in the app may need its timers, which the card does not run for long). Make the touched thing move: wrap its ' +
         'shapes in gfx.moving(style, 0, pivotX, pivotY, [shapes]) with the movement it makes (a rocket launches, a frog hops), or the whole ' +
         'picture in ui.Motion when it is only that thing; or give it a handler of its own that changes what is drawn at once.'
     }
