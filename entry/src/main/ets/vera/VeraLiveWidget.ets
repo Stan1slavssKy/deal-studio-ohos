@@ -147,12 +147,37 @@ export function coverError(nodes: CardNode[]): string {
   return ''
 }
 
+/**
+ * Why a widget nests too deep, said so the model can fix it: a bare "exceeds depth 4" came back three times in nine failed answers
+ * of a run of toy widgets, and the next answer nested as deep. The levels are counted from the widget's root below its ui.AppTheme.
+ */
+function depthMessage(kind: string): string {
+  return 'widget exceeds depth ' + LIVE_MAX_DEPTH.toString() + ' (' + kind + ' nested more than ' + LIVE_MAX_DEPTH.toString() +
+    ' levels below the widget\'s root, its ui.AppTheme not counted): the root column is level 1, a row or column in it level 2, ' +
+    'what is in that row level 3. Flatten it: put texts, figures and buttons straight in the root column or in one row, drop columns ' +
+    'that only wrap one thing, and do not put a ui.Motion around a row'
+}
+
 /** About how tall the widget draws on the card, in vp (its picture, if it has one, at the side it was given). */
 export function widgetHeight(frame: LiveFrame): number {
   let side = 0
   let pictures = allPictures(frame.nodes, [])
   if (pictures.length > 0) { side = pictures[0].size }
   return stackHeight(frame.nodes, side, LIVE_ROW_GAP, cardSize(frame.dimension).width) + openStripRoom(frame.nodes)
+}
+
+/**
+ * Over a cover picture, the share of the card's height, from its bottom, that the rest of the widget and the strip that opens the app
+ * take (LiveCard lays them out at the bottom): the veil under them (CardModel.coverScrim). 0 without a cover picture or with nothing over it.
+ */
+function veilShare(frame: LiveFrame): number {
+  let split = splitCover(frame.nodes)
+  if (split.cover === null || split.rest.length === 0) { return 0 }
+  let card = cardSize(frame.dimension)
+  let pictures = allPictures(split.rest, [])
+  let rest = stackHeight(split.rest, pictures.length > 0 ? pictures[0].size : 0, LIVE_ROW_GAP, card.width)
+  let share = (rest + LIVE_ROW_GAP + OPEN_STRIP) / (card.height + 2 * CARD_PADDING)
+  return Math.round(100 * Math.min(1, share)) / 100
 }
 
 /** Over a cover picture the strip that opens the app takes the card's bottom padding and a little more (CardModel.OPEN_STRIP). */
@@ -468,7 +493,7 @@ export class WidgetSession {
     let make = (kind: string, key: string, depth: number, slot: number): CardNode => {
       count += 1
       if (count > size.maxNodes) { throw new Error('widget exceeds ' + size.maxNodes.toString() + ' nodes') }
-      if (depth > LIVE_MAX_DEPTH) { throw new Error('widget exceeds depth 4') }
+      if (depth > LIVE_MAX_DEPTH) { throw new Error(depthMessage(kind)) }
       let made = new CardNode()
       made.kind = kind
       made.key = key
@@ -484,8 +509,10 @@ export class WidgetSession {
       item.kind = 'column'
       item.gap = 2
       let kids: CardNode[] = []
-      if (node.icon.length > 0) {
-        // With an icon the caption sits beside it in a row (one level deeper); without, it is a text of the column's own.
+      // With an icon the caption sits beside it in a row (one level deeper); without, it is a text of the column's own. A Stat
+      // in a row of the widget's column has no level left for that row: there it is drawn without its icon rather than refused,
+      // since the model cannot see the levels a Stat takes (a fish tank's two NumberStats in a row failed every answer on it).
+      if (node.icon.length > 0 && depth + 2 <= LIVE_MAX_DEPTH) {
         let head = make('row', key + '.h', depth + 1, slot)
         head.gap = 4
         head.align = 'joined'
@@ -652,7 +679,7 @@ export class WidgetSession {
       }
       count += 1
       if (count > size.maxNodes) { throw new Error('widget exceeds ' + size.maxNodes.toString() + ' nodes') }
-      if (depth > LIVE_MAX_DEPTH) { throw new Error('widget exceeds depth 4') }
+      if (depth > LIVE_MAX_DEPTH) { throw new Error(depthMessage(node.kind)) }
       let spec = CATALOG.find((entry): boolean => entry.nodeKind === node.kind)
       if (spec === undefined || !spec.card) { throw new Error('Not card-safe: ' + node.kind) }
       if (node.kind === 'apptheme' && key !== '0') { throw new Error('AppTheme must be the widget root') }
@@ -833,6 +860,7 @@ export class WidgetSession {
     if (coverProblem.length > 0) { throw new Error(coverProblem) }
     let side = pictureRoom(frame)
     for (let picture of allPictures(frame.nodes, [])) { picture.size = Math.max(PICTURE_SIDE_MIN, Math.min(size.pictureMax, side)) }
+    frame.veil = veilShare(frame)
     // Rejects taps from an older frame or state. A digest, not the state itself: the token is in the card's data, which has
     // a size budget, and in every key of its layout, so it must not grow with the app's data.
     frame.token = this.versionId + ':' + veraStateStamp(this.bytecode) + ':' + stateDigest(this.encodedState())

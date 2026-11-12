@@ -21,6 +21,7 @@ struct LiveCard {
   @LocalStorageProp('primary') primary: string = ''
   @LocalStorageProp('nodes') nodes: CardNode[] = []
   @LocalStorageProp('dimension') dimension: number = 2
+  @LocalStorageProp('veil') veil: number = 0
 
   /**
    * The cover picture, drawn to the card's edges under the rest (CardModel.splitCover), and what goes over it. Split once for each frame
@@ -103,7 +104,7 @@ struct LiveCard {
       // Over a cover picture the rest sits at the bottom, on a veil of the card's colour so it reads; the picture takes the touches
       // that land on no part of it (ArkUI: a handler-less layer on top must be Transparent, not None, or it keeps them).
       .justifyContent(this.coverNodes().length > 0 ? FlexAlign.End : FlexAlign.Center)
-      .linearGradient({ angle: 180, colors: coverScrim(this.cardBackground, this.overCover()) })
+      .linearGradient({ angle: 180, colors: coverScrim(this.cardBackground, this.overCover() ? this.veil : 0) })
       .hitTestBehavior(this.coverNodes().length > 0 ? HitTestMode.Transparent : HitTestMode.Default)
     }
     .width('100%').height('100%').backgroundColor(this.cardBackground)

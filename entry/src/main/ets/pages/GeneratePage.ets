@@ -14,7 +14,7 @@ import { veraStateStamp } from '../vera/VeraStateStamp'
 import { WidgetPreview } from '../components/WidgetPreview'
 import { hasWidgetFunction } from '../vera/WidgetStatus'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
-import { compileVeraSource, CompileError, spliceWidget, appUsesWidgetError, carryWidget, withoutWidget } from '../vera/VeraCompiler'
+import { compileVeraSource, CompileError, spliceWidget, appUsesWidgetError, carryWidget, withoutWidget, widgetRefinementError } from '../vera/VeraCompiler'
 import { applyRepair, repairPrompt } from '../vera/VeraRepair'
 import { smokeRun } from '../vera/VeraSmoke'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
@@ -43,6 +43,7 @@ import { AgentRequest, AgentResult } from '../vera/agent/VeraAgent'
 import { appAgentHost } from '../vera/agent/AgentAppHost'
 import { drawsSurface, editSurfaceProgram, SurfaceEdit } from '../vera/agent/AgentSurfaceEdit'
 import { writeWidget, WidgetWrite, WIDGET_ASK } from '../vera/agent/AgentWidget'
+import { validateWidgetOffMain } from '../vera/agent/WidgetCheckTask'
 import { WidgetSuggestion, firstSuggestions, changeSuggestions } from '../vera/agent/WidgetSuggest'
 import { sameCard } from '../vera/VeraLiveWidget'
 import { surfaceRouteEnabled } from '../vera/agent/AgentSurface'
@@ -342,6 +343,11 @@ export struct GeneratePage {
   private previewController: VeraPreviewController = new VeraPreviewController()
   /** What the next compiled program starts from (VeraPreview.seedState): the state at the moment a refine was asked for. */
   @State carriedState: string = ''
+  /**
+   * The widget's bytecode and the saved state its card checks last passed with ('' for none). Save checks the widget again over
+   * the state saved by then; when that is the same, the run that plays its taps (seconds for a game) is not made twice.
+   */
+  private widgetPassed: string = ''
   /** The run's own line ("Ready in 8.3 s") over a new app just opened full screen, for a few seconds. */
   @State readyNote: boolean = false
   /**
@@ -1377,7 +1383,7 @@ export struct GeneratePage {
           this.generatedSource = decoded.source
           let local = compileVeraSource(decoded.source)
           let validation = smokeRun(local)
-          if (validation.length === 0) { validation = validateWidgetRefinement(this.widgetBase, decoded.source, local.vbc2) }
+          if (validation.length === 0) { validation = await validateWidgetOffMain(this.widgetBase, decoded.source, local.vbc2) }
           if (validation.length > 0) { throw new Error(validation) }
           decoded.bytecode = local.vbc2
         }
@@ -1599,7 +1605,7 @@ export struct GeneratePage {
       let smokeStart = Date.now()
       errors = smokeRun(result)
       if (errors.length === 0 && this.makeWidget) {
-        errors = validateWidgetRefinement(this.widgetBase, this.generatedSource.trim(), result.vbc2)
+        errors = await validateWidgetOffMain(this.widgetBase, this.generatedSource.trim(), result.vbc2)
       }
       logStep('smoke', smokeStart, 'src=generate attempt=' + this.attempt.toString() + ' ok=' + (errors.length === 0).toString())
       vbc2 = errors.length === 0 ? result.vbc2 : ''
@@ -2171,6 +2177,7 @@ export struct GeneratePage {
     this.generatedSource = made.source
     this.compiledSource = made.source
     this.compiledVbc2 = made.vbc2
+    this.widgetPassed = made.vbc2 + '\u0000' + this.carriedState
     this.compositionJson = ''
     this.modelWrote = true
     this.acceptRequest()
@@ -2358,7 +2365,12 @@ export struct GeneratePage {
       }
       // Read at Save, not at Generate: widget/app taps during generation must not be lost.
       preserved = store.loadState(this.projectId, base.id, veraStateStamp(base.vbc2))
-      let validation = validateWidgetRefinement(this.widgetBase, this.compiledSource, this.compiledVbc2, preserved)
+      // What the card's checks found when the widget was made holds while the bytecode and the saved state are the same: only
+      // that the app around the widget was kept is checked again (cheap); else everything, here on the UI thread.
+      let preservation = widgetRefinementError(this.widgetBase, this.compiledSource)
+      let validation = preservation.length > 0 ? preservation :
+        (this.widgetPassed === this.compiledVbc2 + '\u0000' + preserved ? '' :
+          validateWidgetRefinement(this.widgetBase, this.compiledSource, this.compiledVbc2, preserved))
       if (validation.length > 0) { this.compileErrors = validation; this.status = 'Widget not saved'; return false }
     }
     let widgetLost = !this.makeWidget && this.keepWidget()

@@ -187,7 +187,7 @@ export struct WidgetPreview {
       .width('100%').height('100%')
       .padding(this.coverNodes().length > 0 ? { left: CARD_PADDING, right: CARD_PADDING, top: CARD_PADDING, bottom: 0 } : CARD_PADDING)
       .justifyContent(this.coverNodes().length > 0 ? FlexAlign.End : FlexAlign.Center)
-      .linearGradient({ angle: 180, colors: coverScrim(this.frame.background, this.overCover()) })
+      .linearGradient({ angle: 180, colors: coverScrim(this.frame.background, this.overCover() ? this.frame.veil : 0) })
       .hitTestBehavior(this.coverNodes().length > 0 ? HitTestMode.Transparent : HitTestMode.Default)
     }
     .width(this.dimension === 2 ? CARD_SIDE : CARD_WIDE_WIDTH)

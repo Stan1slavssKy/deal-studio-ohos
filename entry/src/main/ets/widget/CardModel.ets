@@ -156,6 +156,8 @@ export class LiveFrame {
   preset: string = 'clean'
   primary: string = ''
   nodes: CardNode[] = []
+  /** Over a cover picture: the share of the card's height, from its bottom, that the rest takes, under which the veil lies (coverScrim); 0 for none. */
+  veil: number = 0
 }
 
 
@@ -220,6 +222,7 @@ export function compactFrame(frame: LiveFrame): Object {
   out['dimension'] = frame.dimension
   out['preset'] = frame.preset
   out['primary'] = frame.primary
+  out['veil'] = frame.veil
   out['nodes'] = frame.nodes.map((node: CardNode): Object => compactNode(node))
   return out
 }
@@ -321,11 +324,19 @@ export function splitCover(nodes: CardNode[]): CoverSplit {
 }
 
 /**
- * The veil under what lies over a cover picture: clear at the top, the card's colour at the bottom, so a text over a busy picture
- * reads. Clear throughout when there is nothing over a picture. `background` is the card's #rrggbb.
+ * The veil under what lies over a cover picture: the card's colour under the text, so it reads over a busy picture, and clear above
+ * it. `veil` is the share of the card's height, from the bottom, the text takes (LiveFrame.veil); 0 is no veil. Only that and a soft
+ * edge above it: a veil over the bottom half whitened the ground a scene stands on, and the rocket on its pad with it (found on the
+ * phone). `background` is the card's #rrggbb.
  */
-export function coverScrim(background: string, over: boolean): Array<[ResourceColor, number]> {
+export function coverScrim(background: string, veil: number): Array<[ResourceColor, number]> {
   let rgb = background.length === 7 && background.charAt(0) === '#' ? background.substring(1) : 'FFFFFF'
-  if (!over) { return [['#00' + rgb, 0], ['#00' + rgb, 1]] }
-  return [['#00' + rgb, 0], ['#00' + rgb, 0.45], ['#D9' + rgb, 0.8], ['#F2' + rgb, 1]]
+  if (!(veil > 0)) { return [['#00' + rgb, 0], ['#00' + rgb, 1]] }
+  let under = Math.max(0.1, 1 - Math.min(1, veil))
+  let edge = Math.max(0, under - VEIL_EDGE)
+  // Fading in over a fifth of the card and still thin where the text begins: a short ramp read as a grey band with a hard top edge.
+  return [['#00' + rgb, 0], ['#00' + rgb, edge], ['#99' + rgb, under], ['#CC' + rgb, (under + 1) / 2], ['#D9' + rgb, 1]]
 }
+
+/** How far above the text the veil fades in, as a share of the card's height. */
+const VEIL_EDGE: number = 0.22

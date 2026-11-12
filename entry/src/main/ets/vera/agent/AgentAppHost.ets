@@ -6,6 +6,7 @@ import { deepseek, discoveryToolResult } from '../DeepSeekEngine'
 import { settings } from '../SettingsStore'
 import { trace } from '../VeraTiming'
 import { OperationCancellation } from '../OperationCancellation'
+import { checkWidgetProgramOffMain } from './WidgetCheckTask'
 
 export function appAgentHost(status: (text: string) => void, preview: (vbc2: string) => void,
     cancelled: () => boolean = (): boolean => false, language: string = '', surfaceGuide: string = '',
@@ -41,6 +42,8 @@ export function appAgentHost(status: (text: string) => void, preview: (vbc2: str
     }
   }
   host.language = language
+  // Make widget plays the app's clock to check the card: off the UI thread, or a game that never rests freezes the app.
+  host.checkWidget = checkWidgetProgramOffMain
   host.surfaceGuide = surfaceGuide
   host.askCode = async (system: string, user: string, budget: number, think: boolean): Promise<string | null> => {
     checkAgent(host)

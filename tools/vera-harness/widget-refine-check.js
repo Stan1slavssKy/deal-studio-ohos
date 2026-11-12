@@ -170,6 +170,22 @@ function widget(`).replace('ui.Surface("default", 100, 100, "clockCard", "", "")
   assert.equal(validateWidgetRefinement(withoutWidget(moving), moving, compileVeraSource(moving).vbc2), '', 'the rocket as a gfx.moving part passes')
 }
 
+// A text drawn in a cover picture where a wide card cuts it off (a frog's score at the bottom of its pond, gone on 2x4) is sent back
+// with the part that is seen; the same text in the middle band passes.
+{
+  const pond = (y) => 'import * as ui from "std/ui"\nimport * as gfx from "std/gfx"\n@jsonable class AppState { n: number; }\n' +
+    'function init(): AppState { return {n: 3}; }\n' +
+    'function pond(state: AppState): gfx.Shape[] { return [gfx.rect(0, 0, 100, 100, "#2a9d8f"), gfx.circle(50, 50, 20, "#8ee06a"), ' +
+    'gfx.text(8, ' + y + ', 10, "left", "#0d3b32", "Pads " + ui.numberToString(state.n), true)]; }\n' +
+    'function view(state: AppState): ui.View { return ui.Surface("cover", 100, 100, "pond", "", ""); }\n' +
+    'function widget(state: AppState): ui.View { return ui.AppTheme("playful", "", [ui.Surface("cover", 100, 100, "pond", "", "")]); }\n'
+  const low = pond(92)
+  assert.match(validateWidgetRefinement(withoutWidget(low), low, compileVeraSource(low).vbc2),
+    /The text "Pads 3" drawn in the cover picture is cut off on a 2x4 card[\s\S]*y 27\.2 to 72\.8[\s\S]*ui\.Text/)
+  const middle = pond(60)
+  assert.equal(validateWidgetRefinement(withoutWidget(middle), middle, compileVeraSource(middle).vbc2), '', 'a text in the middle band is seen on every card')
+}
+
 // A picture that paints its own background is a scene: Make widget asks for it as a cover picture, so it is not a square in the middle of the card.
 {
   const rich = fs.readFileSync(path.join(__dirname, 'examples/widget-rich.vera'), 'utf8')
@@ -294,6 +310,25 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   none.askCode = async () => 'function helper(): number { return 1; }'
   const refused = await W.writeWidget(base, 'x', 'a counter', '', none)
   assert.equal(refused.source, ''); assert.equal(refused.attempts, 3); assert.match(refused.failed, /no function widget/)
+  // The last answer thinks, and its reasoning counts in the same limit: it gets a larger one. An answer the limit cut off is said to be one.
+  assert(asked.length === 2 && !asked[1].think)
+  const thinking = new AgentHost(); thinking.language = host.language
+  const budgets = []
+  thinking.askCode = async (system, user, budget, think) => {
+    budgets.push([budget, think]); thinking.lastCodeFinish = 'length'
+    return 'function widget(state: AppState): ui.View { return ui.Column("default", [ui.Text("body", "x")'
+  }
+  const cutOff = await W.writeWidget(base, 'x', 'a counter', '', thinking)
+  assert.deepEqual(budgets, [[W.WIDGET_TOKENS, false], [W.WIDGET_TOKENS, false], [W.WIDGET_THINKING_TOKENS, true]])
+  assert(W.WIDGET_THINKING_TOKENS >= 4 * W.WIDGET_TOKENS)
+  assert.match(cutOff.failed, /cut off at the length limit/)
+  // The host's checker is used when it has one (the app's runs off the UI thread).
+  const checked = new AgentHost(); checked.language = host.language
+  checked.askCode = async () => 'function widget(state: AppState): ui.View { return compact(state); }'
+  const seen = []
+  checked.checkWidget = async (b, program, saved) => { seen.push(saved); return '' }
+  const viaHost = await W.writeWidget(base, 'x', 'a counter', 'SAVED', checked)
+  assert.equal(viaHost.failed, ''); assert.deepEqual(seen, ['SAVED'])
   console.log('PASS widget written alone: card kinds only, spliced into the program, failure fed back, three answers at most')
 })().catch(e => { console.error(e); process.exit(1) })
 
@@ -496,6 +531,8 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
     }
     const dependencies = {
       store, appUsesWidgetError, withoutWidget, hasWidgetFunction, veraStateStamp, validateWidgetRefinement,
+      widgetRefinementError: loadVera('VeraCompiler').widgetRefinementError,
+      validateWidgetOffMain: async (...args) => validateWidgetRefinement(...args),
       compileVeraSource, spliceWidget, smokeRun, widgetRefinementPrompt, Curve: {EaseInOut: 'ease-in-out'},
       serverUrl: () => 'http://fixture.invalid', http: {RequestMethod: {POST: 'POST'}, createHttp: () => ({
         async request(url, options) { serverRequests.push({url, ...options}); assert(serverResponse); return serverResponse },

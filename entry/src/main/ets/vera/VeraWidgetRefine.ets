@@ -2,7 +2,7 @@ import { CATALOG, describeComponents } from './VeraUiCatalog'
 import { widgetRefinementError } from './VeraCompiler'
 import { decodeGfxOps, GfxOp } from './GfxPaint'
 import { appMovingPart, coloursOf, pointsOf, IDENTITY, MovingPart } from './VeraMovingPart'
-import { pictureCovers, pictureBare } from '../widget/CardModel'
+import { pictureCovers, pictureBare, CARD_PADDING } from '../widget/CardModel'
 import { VirtualMachine, deserializeVbc2, decodeRuntimeValue } from './VeraInterpreter'
 import { decodeVeraUi, UiHostEnvironment, VeraUiNode } from './VeraUi'
 import { WidgetSession, CardNode, LiveFrame, SourceRequest, LIVE_MAX_DEPTH, LIVE_MAX_TEXT, LIVE_MAX_COMMANDS, CARD_MOTIONS, CARD_DIMENSIONS, LIVE_MAX_MOTIONS, LIVE_MAX_SURFACES, LIVE_MAX_SHAPES, PICTURE_SIDE_MIN, pictureRoom, widgetHeight, cardSize, LIVE_MAX_JSON, LIVE_MAX_STEPS, SETTLE_MAX_STEPS, SETTLE_STEP_MS } from './VeraLiveWidget'
@@ -253,8 +253,60 @@ function widgetProblem(vbc2: string, saved: string, glance: boolean): string {
     if (problem.length > 0) { return problem }
   }
   return glance ? (movingSceneError(frames[0].nodes) || movingPartError(vbc2, state, frames[0].nodes) || backgroundError(frames[0].nodes) ||
+    coverTextError(frames, session.takesSize()) ||
     deadPicture(vbc2, state, frames[0].nodes) ||
     unseenTouch(vbc2, state, frames[0], memo)) : ''
+}
+
+/** The card sizes as their dimension numbers, in the order a reason names them. */
+const COVER_CHECK_SIZES: number[] = [2, 3, 4]
+
+/**
+ * A text drawn in a cover picture that the card cuts off: a cover picture fills the card, so a square one shows only its middle band on
+ * a wide 2x4 card (y 27 to 73 of 100) and its middle on a 4x4. A generated frog drew its score at the bottom of its pond (y 92), and on a
+ * 2x4 card the score was gone. Each size the widget is drawn at is looked at: its own frame when it takes the size, else the one frame
+ * on every size. Only text is held to it; a scene's edges may well be cut.
+ */
+function coverTextError(frames: LiveFrame[], sized: boolean): string {
+  for (let frame of frames) {
+    let sizes = sized ? [frame.dimension] : COVER_CHECK_SIZES
+    let covers = collectNodes(frame.nodes, (node: CardNode): boolean => node.kind === 'surface' && pictureCovers(node.style))
+    for (let picture of covers) {
+      let texts: GfxOp[] = []
+      let walk = (ops: GfxOp[]): void => {
+        for (let o of ops) {
+          if (o.kind === 'text' && o.text.length > 0 && o.size > 0) { texts.push(o) }
+          // Children drawn where they are written; a group moves and turns them, a repeat copies them: not followed.
+          if (o.kind === 'fx' || o.kind === 'moving') { walk(o.children) }
+        }
+      }
+      walk(decodeGfxOps(picture.ops))
+      for (let dimension of sizes) {
+        let card = cardSize(dimension)
+        let boxW = card.width + 2 * CARD_PADDING
+        let boxH = card.height + 2 * CARD_PADDING
+        let scale = Math.max(boxW / picture.w, boxH / picture.h)
+        let x0 = (picture.w - boxW / scale) / 2
+        let y0 = (picture.h - boxH / scale) / 2
+        let slack = 0.02 * Math.max(picture.w, picture.h)
+        for (let t of texts) {
+          let wide = t.text.length * t.size * (t.bold ? 0.6 : 0.55)
+          let left = t.align === 'center' ? t.x - wide / 2 : t.align === 'right' ? t.x - wide : t.x
+          let cut = left < x0 - slack || left + wide > picture.w - x0 + slack || t.y - t.size / 2 < y0 - slack ||
+            t.y + t.size / 2 > picture.h - y0 + slack
+          if (cut) {
+            let round = (v: number): string => (Math.round(10 * v) / 10).toString()
+            return 'The text "' + t.text + '" drawn in the cover picture is cut off on a ' + card.label + ' card: a cover picture fills the ' +
+              'card, so of its ' + round(picture.w) + ' x ' + round(picture.h) + ' units only x ' + round(Math.max(0, x0)) + ' to ' +
+              round(picture.w - Math.max(0, x0)) + ', y ' + round(Math.max(0, y0)) + ' to ' + round(picture.h - Math.max(0, y0)) +
+              ' are seen there. Show it as a ui.Text in the widget\'s column instead (it is drawn over the bottom of the picture, where it ' +
+              'reads), or draw it within that part; with widget(state, size) a wide card can have a wide picture of its own.'
+          }
+        }
+      }
+    }
+  }
+  return ''
 }
 
 /** The first shape of a picture fills it: the picture paints its own background. */

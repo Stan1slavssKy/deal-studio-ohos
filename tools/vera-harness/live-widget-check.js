@@ -539,8 +539,14 @@ assert.match(view, /node.key \+ this.frameKey/)
     'function widget(state: AppState): ui.View { return ui.Column("center", [ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "sky", "", "")]), ui.Text("caption", "hi")]); }\n'
   const held = splitCover(new WidgetSession(compileVeraSource(plain).vbc2, 'plain', '').frame('p1', 'Plain', '🌄').nodes)
   assert(held.cover !== null && held.cover.kind === 'motion', 'a cover picture leaves the tree with its Motion')
-  assert.deepEqual(coverScrim('#F8FAFC', false).map(c => c[0]), ['#00F8FAFC', '#00F8FAFC'], 'no veil without a text over the picture')
-  assert.equal(coverScrim('#F8FAFC', true).slice(-1)[0][0], '#F2F8FAFC', 'a veil of the card colour under a text')
+  assert.deepEqual(coverScrim('#F8FAFC', 0).map(c => c[0]), ['#00F8FAFC', '#00F8FAFC'], 'no veil without a text over the picture')
+  assert.equal(coverScrim('#F8FAFC', 0.3).slice(-1)[0][0], '#D9F8FAFC', 'a veil of the card colour under a text')
+  // The veil lies under the text only, with a short edge above it: one over the bottom half whitened the ground a scene stands on.
+  assert(f.veil > 0.1 && f.veil < 0.45, 'one line of text over the picture takes a small share of the card: ' + f.veil)
+  const clearTo = coverScrim('#F8FAFC', f.veil)[1][1]
+  assert(clearTo >= 0.4, 'the picture is clear down to ' + clearTo + ' of the card')
+  assert.equal(held.cover !== null ? new WidgetSession(compileVeraSource(plain.replace(', ui.Text("caption", "hi")', '')).vbc2, 'bare', '').frame('p1', 'Bare', '🌄').veil : -1, 0,
+    'no veil with nothing over the picture')
   const twoCovers = coverSource.replace(/(function widget[\s\S]*?ui\.Column\("center", \[)/, '$1\n      ui.Surface("cover", 100, 100, "scene", "", ""),')
   assert.throws(() => new WidgetSession(compileVeraSource(twoCovers).vbc2, 'two', '').frame('p1', 'Two', '🌄'), /at most one ui.Surface of style "cover"/)
   const inRow = plain.replace('ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "sky", "", "")])', 'ui.Row("default", [ui.Surface("cover", 100, 100, "sky", "", "")])')
@@ -695,6 +701,27 @@ assert.match(view, /node.key \+ this.frameKey/)
     /paints at most 400 shapes, every copy of a gfx\.repeat counted; this one paints 807/)
 }
 // Review fixes on the rich pictures (PR #53).
+{
+  // Nesting too deep is said with what to flatten, not as a bare limit.
+  const deep = 'import * as ui from "std/ui"\n@jsonable class AppState { n: number; }\nfunction init(): AppState { return {n: 0}; }\n' +
+    'function view(state: AppState): ui.View { return ui.Text("body", "x"); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Column("default", [ui.Row("default", [ui.Column("default", [ui.Row("default", ' +
+    '[ui.Column("default", [ui.Text("body", "deep")])])])])]); }\n'
+  assert.throws(() => new WidgetSession(compileVeraSource(deep).vbc2, 'deep', '').frame('p1', 'Deep', '🔧'),
+    /widget exceeds depth 4 \((column|text) nested more than 4 levels[\s\S]*Flatten it/)
+  // Two NumberStats with icons in a row of the widget's column (a fish tank's widget, refused on every answer): drawn, the icon left out.
+  const stats = deep.replace(/function widget[\s\S]*$/, 'function widget(state: AppState): ui.View { return ui.AppTheme("soft", "", [ui.Column("default", [' +
+    'ui.Row("split", [ui.NumberStat("accent", "Coins", state.n, "", "", 1, "", "star"), ui.NumberStat("default", "Fish", 2, "", "", 1, "", "")])])]); }\n')
+  const sf = new WidgetSession(compileVeraSource(stats).vbc2, 'stats', '').frame('p1', 'Stats', '🔧')
+  const kinds = []; const walk = n => { kinds.push(n.kind); n.children.forEach(walk) }; sf.nodes.forEach(walk)
+  assert(!kinds.includes('icon') && texts(sf.nodes).includes('Coins'), 'the Stat keeps its caption without the icon: ' + kinds)
+  // At the widget's top level it keeps its icon.
+  const top = stats.replace('ui.Row("split", [', '').replace('"", 1, "", "")])])]); }', '"", 1, "", "")])]); }')
+  assert.notEqual(top, stats)
+  const tk = []; const walk2 = n => { tk.push(n.kind); n.children.forEach(walk2) }
+  new WidgetSession(compileVeraSource(top).vbc2, 'top', '').frame('p1', 'Top', '🔧').nodes.forEach(walk2)
+  assert(tk.includes('icon'), 'a Stat in the column keeps its icon')
+}
 {
   const { splitCover } = loadVera('../widget/CardModel')
   const { decodeGfxOps } = loadVera('GfxPaint')
