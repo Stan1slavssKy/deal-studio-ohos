@@ -267,6 +267,15 @@ fs.writeFileSync(path.join(__dirname, 'proofs/widget-rich.svg'), svgOf(richOps, 
   assert.ok(lifted.svg().includes('M110 150') && lifted.svg().includes('fill-opacity="0.5"'), 'a lift of 10 points on a box twice the size is 5 units, and it fades')
   const back = G.decodeGfxOps(G.encodeGfxOps([part.op]))[0]
   assert.deepEqual([back.kind, back.fx, back.x, back.y, back.children.length], ['moving', 'swing', 50, 20, 1], 'a part survives the card frame')
+  // A trigger that is not a number keeps the part still; it does not take it out of the picture, at rest, inside a group or in a pose.
+  const nanPart = G.invokeStdGfx('moving', [str('swing'), new VeraNumberValue(NaN), new VeraNumberValue(50), new VeraNumberValue(20), new VeraArrayValue([ballOnRod])])
+  const nanRest = createRecorder(100, 100); G.paintGfx(nanRest.ctx, [nanPart.op], light, 100, 100, 100, 100)
+  assert.ok(nanRest.svg().includes('M55 80'), 'a part whose trigger is NaN is drawn at rest')
+  const grouped = G.invokeStdGfx('group', nums([0, 0, 0, 1, 1]).concat([new VeraArrayValue([nanPart])]))
+  const nanGroup = createRecorder(100, 100); G.paintGfx(nanGroup.ctx, [grouped.op], light, 100, 100, 100, 100)
+  assert.ok(nanGroup.svg().includes('M55 80'), 'and inside a group')
+  const nanPosed = createRecorder(100, 100); G.paintGfx(nanPosed.ctx, [nanPart.op], light, 100, 100, 100, 100, 1, false, false, [turned])
+  assert.ok(nanPosed.svg().includes('M-10 25'), 'and in a pose')
 }
 
 // A drift (gfx.drift) is a tile the size of the surface that slides on and on: drawn at rest, and one tile either side so it joins up; with a

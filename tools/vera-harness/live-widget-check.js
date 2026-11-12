@@ -552,6 +552,12 @@ assert.match(view, /node.key \+ this.frameKey/)
   const inRow = plain.replace('ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "sky", "", "")])', 'ui.Row("default", [ui.Surface("cover", 100, 100, "sky", "", "")])')
   assert.notEqual(inRow, plain)
   assert.throws(() => new WidgetSession(compileVeraSource(inRow).vbc2, 'row', '').frame('p1', 'Row', '🌄'), /not in a row or a ui.Layers/)
+  // A ui.Motion goes out with the cover only when the cover is all it holds: one around a column that holds it would leave the cover in
+  // the tree, drawn in the column at a picture's size and not under the card, so it is refused.
+  const motionColumn = plain.replace('ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "sky", "", "")])',
+    'ui.Motion("pop", 0, [ui.Column("default", [ui.Surface("cover", 100, 100, "sky", "", ""), ui.Text("body", "x")])])')
+  assert.notEqual(motionColumn, plain)
+  assert.throws(() => new WidgetSession(compileVeraSource(motionColumn).vbc2, 'mc', '').frame('p1', 'MC', '🌄'), /alone in a ui.Motion/)
 }
 
 // Moving parts (gfx.moving): the card cannot move a part of one canvas, so the picture becomes layers of the same box -- what is still under
@@ -635,6 +641,41 @@ assert.match(view, /node.key \+ this.frameKey/)
   const buzzing = 'import * as sdk from "std/sdk"\n' + wheel.replace('  if (state.speed <= 0) { return state; }', '  if (state.speed <= 0) { return state; }\n  sdk.call("fixture/phone/Ability/buzz", [], "buzzed", "foreground");') +
     '\nfunction buzzed(state: AppState, answer: string): AppState { return state; }\n'
   assert(texts(spinOf(buzzing).frame('p1', 'Wheel', '🎡').nodes).some(t => /^Won/.test(t)), 'what a frame asks of the phone (a vibration on each tick) is dropped and the wheel still lands')
+  // The app's widget preview plays a tap the same way, in a worker (runPreviewTap): made again from the program and the state, the wheel lands.
+  {
+    const { runPreviewTap, PreviewTapRequest } = loadVera('VeraLiveWidget')
+    const code = compileVeraSource(wheel).vbc2
+    const shown = new WidgetSession(code, 'preview', '').frame('', 'Wheel', '')
+    const request = Object.assign(new PreviewTapRequest(), {vbc2: code, state: '', title: 'Wheel', kind: 'button', token: shown.token, handler: 'spin', value: 0})
+    const result = runPreviewTap(request)
+    assert.equal(result.error, ''); assert.equal(result.rested, true)
+    assert(texts(new WidgetSession(code, 'preview', result.state).frame('', 'Wheel', '').nodes).some(t => /^Won/.test(t)), 'the preview\'s tap lands the wheel')
+    assert.match(runPreviewTap(Object.assign(new PreviewTapRequest(), request, {token: 'old'})).error, /changed/, 'a tap on an older frame is refused')
+  }
+  // Whether a tap comes to rest does not hang on the clock on the wall: a device so busy that every step takes a second still lands the
+  // wheel, as the check in a worker saw it (a wall-clock limit left it spinning on a busy form extension).
+  {
+    const realNow = Date.now
+    let fake = realNow()
+    Date.now = () => (fake += 1000)
+    try {
+      assert(texts(spinOf(wheel).frame('p1', 'Wheel', '🎡').nodes).some(t => /^Won/.test(t)), 'a slow device lands the wheel too')
+    } finally { Date.now = realNow }
+    // And what settling may do is bounded by work, not time: a scene that never rests and is heavy to run stops at SETTLE_MAX_WORK.
+    const { SETTLE_MAX_WORK } = loadVera('VeraLiveWidget')
+    const heavy = wheel.replace('let speed: number = state.speed - 900 * ms / 1000;',
+      'let k: number = 0; let junk: number = 0; while (k < 5000) { junk = junk + k; k = k + 1; }\n  let speed: number = state.speed - 0 * ms / 1000 + junk * 0;')
+    assert.notEqual(heavy, wheel)
+    const logs = []; const info = console.info; console.info = m => logs.push(String(m))
+    let s
+    try { s = spinOf(heavy) } finally { console.info = info }
+    const line = logs.find(m => m.includes('VERA-WIDGET settle')) || ''
+    const work = Number((/work=(\d+)/.exec(line) || [])[1])
+    const steps = Number((/steps=(\d+)/.exec(line) || [])[1])
+    assert(/left as tapped/.test(line) && steps < 600, 'a heavy scene stops on its work before its steps: ' + line)
+    assert(work >= SETTLE_MAX_WORK && work < SETTLE_MAX_WORK * 1.2, 'within a step of the budget: ' + line)
+    assert.equal(s.lastTapRested, false)
+  }
 }
 
 // Drifts (gfx.drift) on a card: each a layer the card plays with the platform's Swiper in slices (CardView), sized with the picture, cover
@@ -660,6 +701,25 @@ assert.match(view, /node.key \+ this.frameKey/)
   const scene = ff.nodes[0].children[0]
   assert.equal(scene.children[0].kind, 'surface'); assert.equal(scene.children[0].pointer, 'onWish'); assert.equal(scene.children[1].kind, 'drift')
   assert.equal(new Set(scene.children.map(c => c.size)).size, 1, 'drift layers are drawn at the picture\'s size')
+  // A drift alone keeps the ui.Motion around its picture (only moving parts move by themselves), and takes one level below the picture,
+  // not two: in a row of the widget's column it fits.
+  const hopping = sky.replace('ui.Surface("cover", 100, 100, "sky", "", "onWish")', 'ui.Motion("pop", state.wishes, [ui.Surface("default", 100, 100, "sky", "", "onWish")])')
+  assert.notEqual(hopping, sky)
+  const hf = new WidgetSession(compileVeraSource(hopping).vbc2, 'hop', '').frame('p1', 'Sky', '🌌')
+  const hop = hf.nodes[0].children[0]
+  assert.deepEqual([hop.kind, hop.style, hop.children[0].kind], ['motion', 'pop', 'layers'], 'the Motion around a drifting picture stays')
+  const inRowSky = sky.replace('ui.Surface("cover", 100, 100, "sky", "", "onWish")', 'ui.Row("default", [ui.Surface("default", 100, 100, "sky", "", "onWish")])')
+  assert.notEqual(inRowSky, sky)
+  const rf = new WidgetSession(compileVeraSource(inRowSky).vbc2, 'row', '').frame('p1', 'Sky', '🌌')
+  assert.equal(rf.nodes[0].children[0].children[0].kind, 'layers', 'a drifting picture in a row is drawn')
+  // The draw function runs once a picture for each frame, not again to find out whether it has moving parts.
+  {
+    const s = new WidgetSession(compileVeraSource(hopping).vbc2, 'count', '')
+    const seen = []; const run = s.vm.execute.bind(s.vm)
+    s.vm.execute = (entry, args) => { if (entry === 'sky') seen.push(1); return run(entry, args) }
+    s.frame('p1', 'Sky', '🌌')
+    assert(seen.length <= 1, 'the draw function ran ' + seen.length + ' times for one frame')
+  }
   const three = sky.replace('  return shapes;\n}\n\nfunction onWish', '  shapes.push(gfx.drift("up", "fast", [gfx.circle(5, 5, 1, "white")]));\n  return shapes;\n}\n\nfunction onWish')
   assert.notEqual(three, sky)
   assert.throws(() => new WidgetSession(compileVeraSource(three).vbc2, 'three', '').frame('p1', 'Sky', '🌌'), /at most 2 gfx.drift/)

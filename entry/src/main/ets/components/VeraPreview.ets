@@ -1429,14 +1429,19 @@ export struct VeraPreview {
     if (playing && this.partsTimer < 0 && this.surfaceSync === null && this.surfaceTimer < 0 && !this.pageHidden && !this.disposed) {
       this.partsTimer = setInterval(() => {
         if (this.pageHidden || this.disposed) { this.stopPartsTimer(); return }
-        let still = this.liveSurfaces.every((node: LiveNode): boolean => {
+        // Only the pictures that move are drawn again: each repaint runs the program's draw function, and a page of still pictures
+        // with one drift ran every one of them 60 times a second. A part is painted a little past its budget, so it lands at rest.
+        let at = Date.now()
+        let moving = false
+        for (let node of this.liveSurfaces) {
           let b = this.surfaces.get(node)
-          if (b === undefined) { return true }
-          let at = Date.now()
-          return !(b.drifting && b.visible) && b.partStarts.every((start: number): boolean => at - start >= MOTION_BUDGET_MS + 100)
-        })
-        this.paintSurfaces()
-        if (still) { this.stopPartsTimer() }
+          if (b === undefined) { continue }
+          if ((b.drifting && b.visible) || b.partStarts.some((start: number): boolean => at - start < MOTION_BUDGET_MS + 100)) {
+            moving = true
+            this.paintSurface(node)
+          }
+        }
+        if (!moving) { this.stopPartsTimer() }
       }, 16)
     }
     return poses

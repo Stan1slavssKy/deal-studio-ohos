@@ -1,7 +1,7 @@
 // The launcher's live card. It draws what the form extension sends (the frame, widget/CardModel.ets) with the layout the app's Widget tab also uses
 // (widget/CardView.ets); it loads the theme and the painter, never the VM.
-import { CardNode, CARD_PADDING, OPEN_STRIP, OPEN_STRIP_MARK, normalizeNodes, splitCover, coverScrim } from '../CardModel'
-import { CardView } from '../CardView'
+import { CardNode, CARD_PADDING, CoverLayout, coverScrim } from '../CardModel'
+import { CardView, OpenStrip } from '../CardView'
 
 let liveStorage = new LocalStorage()
 
@@ -23,25 +23,11 @@ struct LiveCard {
   @LocalStorageProp('dimension') dimension: number = 2
   @LocalStorageProp('veil') veil: number = 0
 
-  /**
-   * The cover picture, drawn to the card's edges under the rest (CardModel.splitCover), and what goes over it. Split once for each frame
-   * the extension sends (a new nodes array), not on every call build makes: each split copies the whole tree.
-   */
-  private splitOf: CardNode[] | null = null
-  private splitLive: boolean = false
-  private cover: CardNode[] = []
-  private rest: CardNode[] = []
-  private split(): void {
-    if (this.splitOf === this.nodes && this.splitLive === this.live) { return }
-    let split = splitCover(normalizeNodes(this.nodes))
-    this.cover = this.live && split.cover !== null ? [split.cover] : []
-    this.rest = split.rest
-    this.splitOf = this.nodes
-    this.splitLive = this.live
-  }
-  private coverNodes(): CardNode[] { this.split(); return this.cover }
-  private restNodes(): CardNode[] { this.split(); return this.rest }
-  private overCover(): boolean { return this.coverNodes().length > 0 && this.restNodes().length > 0 }
+  /** The cover picture, drawn to the card's edges under the rest, and what goes over it (CardModel.CoverLayout). */
+  private layout: CoverLayout = new CoverLayout()
+  private coverNodes(): CardNode[] { return this.layout.cover(this.nodes, this.live) }
+  private restNodes(): CardNode[] { return this.layout.rest(this.nodes, this.live) }
+  private overCover(): boolean { return this.layout.over(this.nodes, this.live) }
 
   build() {
     // A live widget has the whole card: no title strip with the app's name. A tap anywhere but on a button opens the app
@@ -92,11 +78,7 @@ struct LiveCard {
         }
         // Over a cover picture, which takes every other touch, the card's bottom edge opens the app (CardModel.OPEN_STRIP).
         if (this.coverNodes().length > 0) {
-          Column() {
-            Column().width(24).height(3).borderRadius(1.5).backgroundColor(OPEN_STRIP_MARK)
-          }
-          .width('100%').height(OPEN_STRIP).margin({ top: -6 }).justifyContent(FlexAlign.Center)
-          .onClick(() => { this.openApp() })
+          OpenStrip({ onOpen: (): void => { this.openApp() } })
         }
       }
       .width('100%').height('100%')

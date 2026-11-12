@@ -48,10 +48,16 @@ export const SETTLE_CLOCK_EARLY_STEPS: number = 300
 /** How often, in steps, the view is asked again what runs (a tap may have started a ticker that the next tick stops). */
 export const SETTLE_REASK_STEPS: number = 5
 /**
- * The most wall-clock time settling may take, in ms, whatever the steps: a tap runs in the form extension, which the system stops when it is
- * busy for long. A state not at rest by then is left as the tap left it. A tap on a never-resting scene took 365 ms on the phone.
+ * The most work settling may do, whatever the steps: a tap runs in the form extension, which the system stops when it is busy for long.
+ * Counted, not timed, so a tap comes to rest or not the same on every device and at any load: the check in a TaskPool worker, the
+ * card in the form extension and the preview in the app agree (a wall-clock limit let a busy form extension leave a wheel spinning
+ * that the check had seen land). The work is the VM steps the handlers and the views run plus the characters of the state encoded
+ * each step (encoding was most of a step's cost on the phone: SETTLE_MAX_STEPS). A state not at rest by then is left as the tap left it.
+ * About 2 s on the phone at worst. Measured there (2026-11-12): a frame handler heavy on VM steps did 1000000 of this work in 309 ms on
+ * the card (form extension) and 291 ms in the app's TaskPool worker; a state of 5500 characters, where encoding is most of the work, did
+ * it in 22 ms, and a light wheel that never stops (600 steps, 110000) in 29 ms. A wheel that lands is about 5000.
  */
-export const SETTLE_MAX_MS: number = 2000
+export const SETTLE_MAX_WORK: number = 6000000
 /** A ticker runs at most this often, in ms, as the app runs it (VeraPreview.startTimer): an interval of 1 is not a thousand ticks a second. */
 export const SETTLE_MIN_TICK_MS: number = 16
 export const LIVE_MAX_SHAPES: number = CARD_MAX_SHAPES
@@ -136,7 +142,10 @@ export function coverError(nodes: CardNode[]): string {
         // The layers of one cover picture split at its moving parts are that one picture.
         if (node.kind === 'layers') { continue }
       }
-      walk(node.children, placed && (node.kind === 'column' || (node.kind === 'motion' && node.children.length === 1)))
+      // A ui.Motion goes with the cover only when the cover is all it holds (CardModel.coverHolder): one around a column that holds the
+      // cover is not taken out, and the cover would be drawn in the column instead of under the card.
+      walk(node.children, placed && (node.kind === 'column' ||
+        (node.kind === 'motion' && node.children.length === 1 && coverPicture(node.children[0]))))
     }
   }
   walk(nodes, true)
@@ -359,6 +368,8 @@ export class WidgetSession {
   private hasSize: boolean = false
   /** Whether what the last tap started came to rest on the card (settle); true when there was nothing to run. */
   lastTapRested: boolean = true
+  /** What the settle under way has done so far (SETTLE_MAX_WORK). */
+  private work: number = 0
 
   constructor(vbc2: string, versionId: string, saved: string) {
     this.bytecode = vbc2
@@ -385,6 +396,14 @@ export class WidgetSession {
    */
   private clockDrivers(state: RuntimeValue): ClockDriver[] {
     let drivers: ClockDriver[] = []
+    let view: RuntimeValue
+    try {
+      view = this.vm.execute('view', [state])
+    } catch (e) {
+      this.work += this.vm.stepsExecuted()
+      return []
+    }
+    this.work += this.vm.stepsExecuted()
     try {
       let walk = (nodes: VeraUiNode[]): void => {
         for (let node of nodes) {
@@ -395,7 +414,7 @@ export class WidgetSession {
           walk(node.children)
         }
       }
-      walk(decodeVeraUi(this.vm.execute('view', [state])))
+      walk(decodeVeraUi(view))
     } catch (e) {
       return []
     }
@@ -408,10 +427,11 @@ export class WidgetSession {
    * run on the state in SETTLE_STEP_MS steps of its clock, as the app would run them (a ticker of 200 ms every sixth step or so), and the state
    * they reach is kept once it stops changing. What they ask of the phone (a tick's vibration, a sound) is dropped, as the card can do none of
    * it, and never answered. A state that does not come to rest within SETTLE_MAX_STEPS -- a game that plays on, a clock that counts -- is left
-   * as the tap left it, so the card never plays a game on for the person; so is one whose step traps, and one not at rest after SETTLE_MAX_MS.
+   * as the tap left it, so the card never plays a game on for the person; so is one whose step traps, and one not at rest after SETTLE_MAX_WORK.
    */
   private settle(): void {
     let started = Date.now()
+    this.work = 0
     let current = this.state
     let drivers = this.clockDrivers(current)
     this.lastTapRested = true
@@ -426,18 +446,20 @@ export class WidgetSession {
     let rested = false
     this.host.effectsAllowed = true
     try {
-      for (; step < SETTLE_MAX_STEPS && !rested && Date.now() - started < SETTLE_MAX_MS; step++) {
+      for (; step < SETTLE_MAX_STEPS && !rested && this.work < SETTLE_MAX_WORK; step++) {
         // What runs may change with the state: a ticker started or stopped. Asked again every few steps, not every one (a view is not free).
         if (step > 0 && step % SETTLE_REASK_STEPS === 0) { drivers = this.clockDrivers(current) }
         for (let driver of drivers) {
           this.host.pendingEffects = []
           if (driver.interval === 0) {
             current = this.vm.execute(driver.handler, [current, new VeraNumberValue(SETTLE_STEP_MS)])
+            this.work += this.vm.stepsExecuted()
             continue
           }
           let due = (owed.has(driver.handler) ? owed.get(driver.handler)! : 0) + SETTLE_STEP_MS
           while (due >= driver.interval) {
             current = this.vm.execute(driver.handler, [current, new VeraNumberValue(driver.interval)])
+            this.work += this.vm.stepsExecuted()
             due -= driver.interval
           }
           owed.set(driver.handler, due)
@@ -445,6 +467,7 @@ export class WidgetSession {
         // One encoding a step serves both: the state as a whole, and its fields one by one (encoding is most of a step's cost).
         let tree = encodeRuntimeValue(current) as Object
         let encoded = JSON.stringify(tree)
+        this.work += encoded.length
         calm = encoded === last ? calm + 1 : 0
         last = encoded
         clockCalm = clocks.see(tree) ? clockCalm + 1 : 0
@@ -463,7 +486,7 @@ export class WidgetSession {
       this.host.effectsAllowed = false
       this.host.pendingEffects = []
     }
-    console.info('VERA-WIDGET settle ' + (rested ? 'rested' : 'left as tapped') + ' steps=' + step.toString() + ' ms=' + (Date.now() - started).toString())
+    console.info('VERA-WIDGET settle ' + (rested ? 'rested' : 'left as tapped') + ' steps=' + step.toString() + ' work=' + this.work.toString() + ' ms=' + (Date.now() - started).toString())
   }
 
   frame(projectId: string, title: string, icon: string, dimension: number = 2): LiveFrame {
@@ -588,10 +611,15 @@ export class WidgetSession {
       if (parts.length > LIVE_MAX_PARTS) {
         throw new Error('a card picture has at most ' + LIVE_MAX_PARTS.toString() + ' gfx.moving parts; this one has ' + parts.length.toString())
       }
-      if (item.slot >= 0) {
+      if (parts.length > 0 && item.slot >= 0) {
         throw new Error('a picture with gfx.moving parts moves them itself: do not put it in a ui.Motion (its parts would move twice)')
       }
-      if (depth + 2 > LIVE_MAX_DEPTH) {
+      // Its layers are a level below the picture, and a part's picture one more below its Motion; a drift's strip is a layer itself.
+      if (depth + (parts.length > 0 ? 2 : 1) > LIVE_MAX_DEPTH) {
+        if (parts.length === 0) {
+          throw new Error('a picture with gfx.drift is drawn as layers, a level deeper than the picture: put it in the widget\'s column ' +
+            'or in a row in it, not deeper')
+        }
         throw new Error('a picture with gfx.moving parts is drawn as layers, two levels deeper than the picture: put it directly in the ' +
           'widget\'s column, not in a row or column inside it')
       }
@@ -663,12 +691,22 @@ export class WidgetSession {
       item.children = layers
       linkScene(item)
     }
+    // What a ui.Surface's draw function returns for the state, run once per frame for each picture: drawsParts looks at it before
+    // project draws it. A failed run is not kept, so project runs it again and says why.
+    let drawings = new Map<VeraUiNode, GfxOp[]>()
+    let drawingOf = (node: VeraUiNode): GfxOp[] => {
+      let known = drawings.get(node)
+      if (known !== undefined) { return known }
+      let ops = decodeGfx(this.vm.execute(node.label, [this.state]))
+      drawings.set(node, ops)
+      return ops
+    }
     // Whether a ui.Surface's drawing has moving parts: then a ui.Motion around it is dropped (project), since the parts move by themselves
-    // and the two levels it takes are the ones the parts' layers need.
+    // and the two levels it takes are the ones the parts' layers need. A drift alone keeps its Motion: it slides, the Motion moves it all.
     let drawsParts = (node: VeraUiNode): boolean => {
       if (node.kind !== 'surface' || node.label.length === 0) { return false }
       try {
-        return decodeGfx(this.vm.execute(node.label, [this.state])).some((o: GfxOp): boolean => o.kind === 'moving' || o.kind === 'drift')
+        return drawingOf(node).some((o: GfxOp): boolean => o.kind === 'moving')
       } catch (e) {
         return false
       }
@@ -711,7 +749,7 @@ export class WidgetSession {
         }
         if (node.label.length === 0) { throw new Error('ui.Surface needs the name of its draw function') }
         if (!(node.minimum > 0) || !(node.maximum > 0)) { throw new Error('ui.Surface width and height must be above 0') }
-        let ops = decodeGfx(this.vm.execute(node.label, [this.state]))
+        let ops = drawingOf(node)
         let shapes = 0
         let drawn = 0
         for (let o of ops) { shapes += o.count; drawn += o.drawn }
@@ -997,6 +1035,57 @@ export class WidgetSession {
     }
     return requests
   }
+}
+
+/** A tap on the widget preview, as the card gets it: a button's (value), a switch's (on) or a picture's (x, y). */
+export class PreviewTapRequest {
+  vbc2: string = ''
+  state: string = ''
+  title: string = ''
+  dimension: number = 2
+  /** 'button', 'switch' or 'picture'. */
+  kind: string = 'button'
+  token: string = ''
+  handler: string = ''
+  value: number = 0
+  on: boolean = false
+  x: number = 0
+  y: number = 0
+}
+
+/** What the tap left: the state, whether it came to rest, and its live source call (handler and parameters), if it made one. */
+export class PreviewTapResult {
+  state: string = ''
+  rested: boolean = true
+  error: string = ''
+  handlers: string[] = []
+  params: string[][][] = []
+}
+
+/**
+ * A tap on the app's widget preview, run where it cannot hang the app (agent/WidgetCheckTask: a TaskPool worker): the session is made
+ * again from the program and the state, as the card makes it (LiveFormService), the tap played to rest, and what it left handed back.
+ */
+export function runPreviewTap(request: PreviewTapRequest): PreviewTapResult {
+  let result = new PreviewTapResult()
+  try {
+    let session = new WidgetSession(request.vbc2, 'preview', request.state)
+    let shown = session.frame('', request.title, '', request.dimension)
+    let requests: SourceRequest[] = request.kind === 'picture' ? session.tapSurface(shown, request.token, request.handler, request.x, request.y) :
+      request.kind === 'switch' ? session.tapSwitch(shown, request.token, request.handler, request.on) :
+      session.tap(shown, request.token, request.handler, request.value)
+    result.state = session.encodedState()
+    result.rested = session.lastTapRested
+    for (let call of requests) {
+      result.handlers.push(call.handler)
+      let pairs: string[][] = []
+      call.params.forEach((value: string, key: string): void => { pairs.push([key, value]) })
+      result.params.push(pairs)
+    }
+  } catch (e) {
+    result.error = (e as Error).message
+  }
+  return result
 }
 
 /**

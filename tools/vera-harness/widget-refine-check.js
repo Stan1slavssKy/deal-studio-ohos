@@ -495,7 +495,7 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
   const pageSource = fs.readFileSync(path.join(sourceRoot, 'pages/GeneratePage.ets'), 'utf8')
   const {OperationController, throwIfCancelled} = loadVera('OperationCancellation')
   const {GenerateRequest, GenerateResult} = loadVera('LlamaEngine')
-  const names = ['aboutToAppear', 'makeWidgetAlone', 'doServerGenerate', 'commitSave', 'hasResult', 'versionCount',
+  const names = ['aboutToAppear', 'makeWidgetAlone', 'doServerGenerate', 'commitSave', 'widgetSaveState', 'checkWidgetSave', 'hasResult', 'versionCount',
     'modelRequestHistory', 'prepareRequest', 'acceptRequest', 'doRefine', 'refineWithModel', 'startAttemptOne', 'runAttempt', 'callModel']
   const methods = names.map(name => {
     const match = pageSource.match(new RegExp('^  (?:private )?(?:async )?' + name + '\\([^\\{]*\\{[\\s\\S]*?^  \\}', 'm'))
@@ -584,6 +584,8 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
       failSave(value) { failSave = value }, failWrite(value) { failWrite = value },
       setLatest(value) { latest = value }, setState(value) { savedState = value }}
   }
+  // Save as the page makes it for a widget: the card's checks (in a worker, when what Generate found no longer holds), then the commit.
+  const saveWidget = async page => (await page.checkWidgetSave()) && page.commitSave()
   const oldPrograms = [
     base + '\nfunction oldFigure(state: AppState): number { return state.count; }\n' +
       'function widget(state: AppState): ui.View { return ui.NumberText("metric", oldFigure(state), "", "", 1); }',
@@ -616,25 +618,29 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
     const goodVbc2 = p.compiledVbc2
     p.compiledSource = good.replace('count: 0', 'count: 10')
     p.compiledVbc2 = compileVeraSource(p.compiledSource).vbc2
-    assert.equal(p.commitSave(), false)
+    assert.equal((await saveWidget(p)), false)
     assert.match(p.compileErrors, /preserve existing declaration init/)
     assert.equal(f.saves.length, 0)
     assert.equal(p.widgetBase, baseline, 'rejected app tampering must not advance the baseline')
     p.compiledSource = good
     p.compiledVbc2 = goodVbc2
     f.setLatest({id: 'other'})
-    assert.equal(p.commitSave(), false, 'a concurrent app change still rejects Save')
+    assert.equal((await saveWidget(p)), false, 'a concurrent app change still rejects Save')
     assert.equal(p.widgetBase, baseline)
     f.setLatest(f.initial)
     f.failSave(true)
-    assert.equal(p.commitSave(), false)
+    assert.equal((await saveWidget(p)), false)
     assert.match(p.status, /Save failed: disk full/)
     assert.equal(p.baseVersionId, f.initial.id)
     assert.equal(p.widgetBase, baseline, 'a failed persistence attempt must be retryable against the same baseline')
     f.failSave(false)
     const state = new WidgetSession(p.compiledVbc2, 'saved', '').encodedState()
     f.setState(state)
-    assert.equal(p.commitSave(), true, 'Redo must save after intentional widget helper/import removal')
+    // The state changed since the checks ran: commitSave alone refuses rather than run them on the UI thread.
+    assert.equal(p.commitSave(), false, 'commitSave never runs the card checks itself')
+    assert.match(p.status, /Save again/)
+    assert.equal(f.saves.length, 0)
+    assert.equal((await saveWidget(p)), true, 'Redo must save after intentional widget helper/import removal')
     assert.equal(f.saves.length, 1)
     assert.equal(f.saves[0][10], state, 'Save reads and preserves the latest stored app state')
     assert.equal(f.stateReads.at(-1).id, f.initial.id)
@@ -646,16 +652,16 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
     const next = p.compiledSource, nextVbc2 = p.compiledVbc2
     p.compiledSource = spliceWidget(baseline, 'function widget(state: AppState): ui.View { return compact(state); }')
     p.compiledVbc2 = compileVeraSource(p.compiledSource).vbc2
-    assert.equal(p.commitSave(), false, 'the next refinement must preserve helpers from the newly saved version')
+    assert.equal((await saveWidget(p)), false, 'the next refinement must preserve helpers from the newly saved version')
     assert.match(p.compileErrors, /preserve existing declaration newFigure/)
     p.compiledSource = next.replace('import * as math from "std/math"', '')
     p.compiledVbc2 = compileVeraSource(p.compiledSource).vbc2
-    assert.equal(p.commitSave(), false, 'the next refinement must preserve imports from the newly saved version')
+    assert.equal((await saveWidget(p)), false, 'the next refinement must preserve imports from the newly saved version')
     assert.match(p.compileErrors, /preserve existing imports/)
     assert.equal(p.widgetBase, good)
     p.compiledSource = next
     p.compiledVbc2 = nextVbc2
-    assert.equal(p.commitSave(), true)
+    assert.equal((await saveWidget(p)), true)
     assert.equal(f.saves.length, 2)
     assert.equal(f.saves[1][8], 'v2')
     assert.equal(f.stateReads.at(-1).id, 'v2')
@@ -716,7 +722,7 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
     assert.equal(p.acceptedRequest, ask)
     assert.equal(f.serverRequests.length, 4)
     assert.equal(f.saves.length, 0, 'server completion must not save implicitly')
-    assert.equal(p.commitSave(), true, 'a completed server Redo must be saveable against its stripped baseline')
+    assert.equal((await saveWidget(p)), true, 'a completed server Redo must be saveable against its stripped baseline')
     assert.equal(f.saves.length, 1)
     assert.equal(f.saves[0][1], good)
     assert.equal(f.saves[0][2], p.compiledVbc2)
@@ -741,7 +747,7 @@ console.log('PASS widget refinement: additive preservation, signature, catalogue
     assert.equal(p.widgetFresh, false)
     assert.doesNotMatch(p.requestHistory, /Old widget/)
     assert.equal(p.widgetBase, baseline)
-    assert.equal(p.commitSave(), true)
+    assert.equal((await saveWidget(p)), true)
     assert.equal(p.widgetBase, good)
     await submit(p, 'Refine local widget', 'Local')
     assert.equal(f.localRequests[2].previousSource, good, 'later refinements must see the replacement widget')

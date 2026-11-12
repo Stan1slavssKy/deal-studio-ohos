@@ -345,7 +345,10 @@ function paintMoving(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, 
   let squeeze = flat ? 1 : Math.abs(Math.cos(pose.angle * RAD))
   let sx = pose.scale * pose.scaleX * (flat || Math.abs(pose.axisY) < Math.abs(pose.axisX) ? 1 : squeeze)
   let sy = pose.scale * pose.scaleY * (flat || Math.abs(pose.axisY) >= Math.abs(pose.axisX) ? 1 : squeeze)
-  if (!isFinite(sx) || !isFinite(sy) || !isFinite(pose.dx) || !isFinite(pose.dy)) { paintOp(ctx, o, t, pathScale, unit); return }
+  if (!isFinite(sx) || !isFinite(sy) || !isFinite(pose.dx) || !isFinite(pose.dy) || !isFinite(o.x) || !isFinite(o.y)) {
+    paintOp(ctx, o, t, pathScale, unit)
+    return
+  }
   ctx.save()
   ctx.translate(o.x + pose.dx / unit, o.y + pose.dy / unit)
   if (flat && pose.angle !== 0) { ctx.rotate(pose.angle * RAD) }
@@ -385,6 +388,13 @@ function paintFx(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, path
 }
 
 function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number, unit: number): void {
+  // A moving part at rest: its shapes as they are (paintMoving draws it in a pose). A drift met inside a group is drawn where it is.
+  // Before the check of its numbers: a part's sweep is its trigger, and a trigger that is not a number (VeraPreview.sameTrigger) only
+  // keeps the part still, it does not take it out of the picture.
+  if (o.kind === 'moving' || o.kind === 'drift') {
+    for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
+    return
+  }
   if (!finite(o)) { return }
   if (o.kind === 'group') {
     ctx.save()
@@ -413,11 +423,6 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, path
         ctx.restore()
       }
     }
-    return
-  }
-  // A moving part at rest: its shapes as they are (paintMoving draws it in a pose). A drift met inside a group is drawn where it is.
-  if (o.kind === 'moving' || o.kind === 'drift') {
-    for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
     return
   }
   let c = gfxPaintStyle(ctx, t, o.color)

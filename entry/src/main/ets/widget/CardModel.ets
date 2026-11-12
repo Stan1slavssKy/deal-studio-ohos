@@ -324,6 +324,34 @@ export function splitCover(nodes: CardNode[]): CoverSplit {
 }
 
 /**
+ * The cover picture of a frame, to be drawn to the card's edges under the rest (splitCover), and what goes over it, for the launcher's
+ * card (LiveCard) and the app's preview of it (WidgetPreview) alike. Split once for each frame (a new nodes array), not on every call a
+ * build makes: each split copies the whole tree. The nodes are normalised first (normalizeNodes), as the card gets them compacted.
+ */
+export class CoverLayout {
+  private splitOf: CardNode[] | null = null
+  private splitLive: boolean = false
+  private coverNodes: CardNode[] = []
+  private restNodes: CardNode[] = []
+
+  private update(nodes: CardNode[], live: boolean): void {
+    if (this.splitOf === nodes && this.splitLive === live) { return }
+    let split = splitCover(normalizeNodes(nodes))
+    this.coverNodes = live && split.cover !== null ? [split.cover] : []
+    this.restNodes = split.rest
+    this.splitOf = nodes
+    this.splitLive = live
+  }
+
+  /** The cover picture alone, or nothing (a widget without one, or a frame that is not live). */
+  cover(nodes: CardNode[], live: boolean): CardNode[] { this.update(nodes, live); return this.coverNodes }
+  /** What lies over it: every node but the cover. */
+  rest(nodes: CardNode[], live: boolean): CardNode[] { this.update(nodes, live); return this.restNodes }
+  /** Something lies over a cover picture: then it has a veil under it (coverScrim). */
+  over(nodes: CardNode[], live: boolean): boolean { this.update(nodes, live); return this.coverNodes.length > 0 && this.restNodes.length > 0 }
+}
+
+/**
  * The veil under what lies over a cover picture: the card's colour under the text, so it reads over a busy picture, and clear above
  * it. `veil` is the share of the card's height, from the bottom, the text takes (LiveFrame.veil); 0 is no veil. Only that and a soft
  * edge above it: a veil over the bottom half whitened the ground a scene stands on, and the rocket on its pad with it (found on the

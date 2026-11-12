@@ -434,6 +434,13 @@ What settling costs: on a scene that never rests (a generated night sky whose st
 encoding the state, twice a step. Encoded once a step: 365 ms. Taking a state whose only changing fields are clocks at once from 10 s on
 (`SETTLE_CLOCK_EARLY_STEPS`) rather than at the end of the 20 s: 186 ms. A wheel that lands takes a few ms.
 
+Settling is bounded by work, not by the clock on the wall (`SETTLE_MAX_WORK`: the VM steps the handlers and views run plus the characters of
+the state encoded each step, about 2 s on the phone at worst: a frame handler heavy on VM steps did a million of it in 309 ms on the card,
+291 ms in the worker; a 5500-character state, mostly encoding, did a million in 22 ms). With a wall-clock limit the same tap could land in the check, which runs in a TaskPool
+worker, and be left spinning on a busy form extension, or the other way round; counted, it ends the same everywhere. Nothing that settles
+runs on the app's UI thread: Make widget's checks and Save's (when the state changed since Generate) run in a worker, and so do taps in the
+app's widget preview (`agent/WidgetCheckTask.ets`).
+
 The 15 toy prompts at the end of the day, on the phone, against the morning's run: 13 of 15 widgets made (bubble wrap still over the 60-shape picture limit;
 the fish tank's third answer did not come). The frog hops off a lily pad that fills the card, the cat fills the card and is stroked, the die tumbles and shows
 a new face, the rocket launches out of a sky that stays, the punching bag swings from its hook, the wheel lands on its result, the night sky's stars drift; the

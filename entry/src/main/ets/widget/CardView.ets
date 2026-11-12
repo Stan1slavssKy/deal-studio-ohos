@@ -4,7 +4,7 @@
  * the painter, never the VM. What happens on a touch is the host's: this reports it through onTap and onPoint.
  */
 
-import { CardNode, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_TIMERS, CARD_MAX_DRIFT_SLICES, CARD_PADDING, cardSize, TimerFace, timerFace, TOUCH_ACTION, pictureCovers, pictureBare } from './CardModel'
+import { CardNode, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_TIMERS, CARD_MAX_DRIFT_SLICES, CARD_PADDING, OPEN_STRIP, OPEN_STRIP_MARK, cardSize, TimerFace, timerFace, TOUCH_ACTION, pictureCovers, pictureBare } from './CardModel'
 import { paintGfx, decodeGfxOps, gfxFit, gfxToSurface } from '../vera/GfxPaint'
 import { resolveTheme } from '../vera/VeraTheme'
 import { motionStages, motionPivot, pivotPercent } from '../vera/VeraMotion'
@@ -50,6 +50,23 @@ function timerControllers(count: number): TextTimerController[] {
   let out: TextTimerController[] = []
   for (let i = 0; i < count; i++) { out.push(new TextTimerController()) }
   return out
+}
+
+/**
+ * The strip along a card's bottom over a cover picture (CardModel.OPEN_STRIP): the cover takes every other touch, so this is the way
+ * into the app on the home screen (LiveCard passes onOpen; the app's own preview, already in the app, does not).
+ */
+@Component
+export struct OpenStrip {
+  onOpen?: () => void
+
+  build() {
+    Column() {
+      Column().width(24).height(3).borderRadius(1.5).backgroundColor(OPEN_STRIP_MARK)
+    }
+    .width('100%').height(OPEN_STRIP).margin({ top: -6 }).justifyContent(FlexAlign.Center)
+    .onClick(() => { if (this.onOpen !== undefined) { this.onOpen() } })
+  }
 }
 
 @Component

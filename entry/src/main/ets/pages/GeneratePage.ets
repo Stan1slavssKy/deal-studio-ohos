@@ -9,7 +9,7 @@ import { AppRouteParams, returnToLibrary } from '../vera/AppNavigation'
 import { formBindings } from '../vera/FormBindings'
 import { publishLiveWidget, bindLiveForm, WIDGET_ADDED } from '../vera/LiveWidgetPublish'
 import { refreshForms } from '../vera/FormUpdater'
-import { widgetRefinementPrompt, validateWidgetRefinement, widgetRepairNote } from '../vera/VeraWidgetRefine'
+import { widgetRefinementPrompt, widgetRepairNote } from '../vera/VeraWidgetRefine'
 import { veraStateStamp } from '../vera/VeraStateStamp'
 import { WidgetPreview } from '../components/WidgetPreview'
 import { hasWidgetFunction } from '../vera/WidgetStatus'
@@ -453,6 +453,8 @@ export struct GeneratePage {
   private requestLabel: string = ''
   /** Adding the card: the system dialog may take a while, and a second tap must not add two. */
   @State widgetAdding: boolean = false
+  /** checkWidgetSave is running the card's checks in a worker: Save waits for them. */
+  @State widgetChecking: boolean = false
   /** What to do next when the card could not be added here (a launcher with no add dialog, an error). */
   @State widgetNote: string = ''
   /** Set once the card was put on the home screen from this page: the button then says so. */
@@ -2249,7 +2251,55 @@ export struct GeneratePage {
       this.naming = true
       return
     }
+    if (this.makeWidget) {
+      if (!this.widgetChecking) { void this.saveWidget() }
+      return
+    }
     if (this.commitSave()) { this.afterSave() } else { this.leaveAfterSave = false; this.widgetAfterSave = false }
+  }
+
+  /** Save for a widget: its checks first, off the UI thread when what they found at Generate no longer holds (checkWidgetSave). */
+  private async saveWidget(): Promise<void> {
+    if (await this.checkWidgetSave() && this.commitSave()) { this.afterSave() } else { this.leaveAfterSave = false; this.widgetAfterSave = false }
+  }
+
+  /**
+   * The state a widget is saved with: the base version's saved state, read at Save, not at Generate, so widget/app taps during
+   * generation are not lost. null when the app changed under the widget (status says so).
+   */
+  private widgetSaveState(): string | null {
+    let base = store.getVersion(this.projectId, this.baseVersionId)
+    let latest = store.getLatestVersion(this.projectId)
+    if (base === null || latest === null || latest.id !== base.id || this.compiledVbc2.length === 0) {
+      this.status = 'The app changed while this widget was being made. Make the widget again.'
+      return null
+    }
+    return store.loadState(this.projectId, base.id, veraStateStamp(base.vbc2))
+  }
+
+  /**
+   * Before a widget is saved: the card's checks for the state it is saved with, in a TaskPool worker (WidgetCheckTask) when the
+   * ones made at Generate were for another state -- a tap on the app or the card meanwhile. They play every tap to rest, which
+   * for a game that never rests froze the UI thread. What passes is remembered (widgetPassed), so commitSave finds it.
+   */
+  private async checkWidgetSave(): Promise<boolean> {
+    if (!this.makeWidget) { return true }
+    if (this.widgetChecking || this.disposed || this.generating || this.compiledSource.length === 0 || !this.hasResult()) { return false }
+    let preserved = this.widgetSaveState()
+    if (preserved === null) { return false }
+    let key = this.compiledVbc2 + '\u0000' + preserved
+    if (this.widgetPassed === key || widgetRefinementError(this.widgetBase, this.compiledSource).length > 0) { return true }
+    this.widgetChecking = true
+    this.status = 'Checking the widget...'
+    try {
+      let validation = await validateWidgetOffMain(this.widgetBase, this.compiledSource, this.compiledVbc2, preserved)
+      if (this.disposed) { return false }
+      if (validation.length > 0) { this.compileErrors = validation; this.status = 'Widget not saved'; return false }
+      this.widgetPassed = key
+      return true
+    } finally {
+      this.widgetChecking = false
+    }
   }
 
   /**
@@ -2357,21 +2407,17 @@ export struct GeneratePage {
     if (note.length > 100) { note = note.substring(0, 100) + '...' }
     let preserved = ''
     if (this.makeWidget) {
-      let base = store.getVersion(this.projectId, this.baseVersionId)
-      let latest = store.getLatestVersion(this.projectId)
-      if (base === null || latest === null || latest.id !== base.id || this.compiledVbc2.length === 0) {
-        this.status = 'The app changed while this widget was being made. Make the widget again.'
+      let state = this.widgetSaveState()
+      if (state === null) { return false }
+      preserved = state
+      // The card's checks ran for this bytecode and this state (checkWidgetSave, or at Generate): only that the app around the
+      // widget was kept is checked again (cheap). They are never run here: on the UI thread they froze the app.
+      let preservation = widgetRefinementError(this.widgetBase, this.compiledSource)
+      if (preservation.length > 0) { this.compileErrors = preservation; this.status = 'Widget not saved'; return false }
+      if (this.widgetPassed !== this.compiledVbc2 + '\u0000' + preserved) {
+        this.status = 'The app changed while the widget was checked. Save again.'
         return false
       }
-      // Read at Save, not at Generate: widget/app taps during generation must not be lost.
-      preserved = store.loadState(this.projectId, base.id, veraStateStamp(base.vbc2))
-      // What the card's checks found when the widget was made holds while the bytecode and the saved state are the same: only
-      // that the app around the widget was kept is checked again (cheap); else everything, here on the UI thread.
-      let preservation = widgetRefinementError(this.widgetBase, this.compiledSource)
-      let validation = preservation.length > 0 ? preservation :
-        (this.widgetPassed === this.compiledVbc2 + '\u0000' + preserved ? '' :
-          validateWidgetRefinement(this.widgetBase, this.compiledSource, this.compiledVbc2, preserved))
-      if (validation.length > 0) { this.compileErrors = validation; this.status = 'Widget not saved'; return false }
     }
     let widgetLost = !this.makeWidget && this.keepWidget()
     let saved: Version
@@ -3405,10 +3451,10 @@ export struct GeneratePage {
             .enabled(false)
           Text('Done').fontSize(14).fontColor(app.primaryInk).onClick(() => { this.finishWidget() })
         } else {
-          Button(this.widgetAdding ? 'Adding...' : this.widgetActionLabel())
+          Button(this.widgetChecking ? 'Checking...' : this.widgetAdding ? 'Adding...' : this.widgetActionLabel())
             .attributeModifier(new PrimaryButton())
             .width('100%')
-            .enabled(!this.widgetAdding)
+            .enabled(!this.widgetAdding && !this.widgetChecking)
             .onClick(() => { this.addToHomeScreen(false) })
           if (!this.isSaved() && this.widgetCards === 0 && this.bindFormId.length === 0) {
             Text('Save without adding').fontSize(13).fontColor(app.inkMuted).onClick(() => { this.doSave() })
@@ -3759,8 +3805,8 @@ export struct GeneratePage {
    * Cards already there draw the saved version on their own (commitSave refreshes them).
    */
   private async addToHomeScreen(leave: boolean): Promise<void> {
-    if (this.disposed || this.generating || this.widgetAdding) { return }
-    if (!this.isSaved() && !this.commitSave()) { return }
+    if (this.disposed || this.generating || this.widgetAdding || this.widgetChecking) { return }
+    if (!this.isSaved() && !(await this.checkWidgetSave() && this.commitSave())) { return }
     this.widgetAdding = true
     this.widgetNote = ''
     let placed = false
