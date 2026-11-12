@@ -1,5 +1,53 @@
 # Changelog
 
+## The moving part, learnt from the app's own animation
+
+- Make widget runs the app's own frames (as they are, else after a touch or a button), compares its drawing frame by frame, and finds the shapes that turn and the point they turn about (`VeraMovingPart`).
+- A widget that turns the whole picture in a `ui.Motion`, or moves nothing, is refused with those shapes and the pivot in the widget's own units, and asked for `gfx.moving`.
+- On the phone, five of six widgets made for pendulums, wheels, a windmill and a ferris wheel moved only their part. See `docs/live-widget-proof.md`.
+- `examples/widget-wheel.vera` now draws its card picture with a `gfx.moving` wheel. Host checks in `widget-refine-check.js`; `examples/widget-pendulum-frames.vera`.
+
+## Many of the same: gfx.repeat
+
+- `gfx.repeat(columns, rows, dx, dy, shapes)` draws shapes in a grid (bubble wrap, bricks, a grid of stars). It is written once: a card picture counts its shapes once, while the app's frame limit counts every copy. At most 400 copies in one repeat, and at most 400 shapes painted in a card picture.
+- The card's 60-shape refusal names gfx.repeat, and so does the prompt. On the phone, bubble wrap reached the card as a 10 x 10 sheet whose bubbles pop.
+- Make widget tries a touch at several points of a picture before it calls a touch unseen: the middle of a grid can fall between two bubbles. It also logs an attempt that got no answer from the model.
+- Host checks in `gfx-check.js`, `live-widget-check.js`, `widget-refine-check.js`; `examples/widget-bubbles.vera`.
+
+## Wheels of slices: gfx.sector
+
+- `gfx.sector(x, y, radius, start, sweep, colour)` draws a filled pie slice (angles as `gfx.arc`): a wheel of fortune, a pie chart or a pizza is sectors, not stroked arcs or polygons.
+- The Make widget prompt shows the pattern of moving parts in eight lines (a pendulum's rod and bob swinging from the top, a wheel of sectors spinning under a pointer that stays); the game prompt says a wheel is sectors.
+- On the phone, 1 of 5 toy widgets used sectors (a pizza, drawn right on the card) and none used `gfx.moving`; see `docs/live-widget-proof.md`. Host checks in `gfx-check.js` and `widget-refine-check.js`.
+
+## Always moving: gfx.drift
+
+- `gfx.drift(direction, speed, shapes)` is a tile the size of the picture that slides on and on and comes back in from the other side: clouds, fish, rain, snow, stars. On a home-screen card it is the one thing that moves without a touch, played by the platform's Swiper in slices (a card's own script stops a couple of seconds after a redraw); in the app it moves frame by frame.
+- Measured on the phone first: the Swiper kept going (see `docs/live-widget-proof.md`), about 4 % of a core while on screen, nothing off screen.
+- Host checks in `gfx-check.js` and `live-widget-check.js`; `examples/widget-sky.vera`.
+
+## A widget tap finishes what it started
+
+- After a tap on a card, the app's own clock (frame handlers and running tickers) runs for up to 20 s until the state comes to rest, so a wheel stops on its prize and its Spin button comes back (what a frame asks of the phone, such as a vibration on each tick, is dropped); a state that does not come to rest (a game playing on) stays as the tap left it.
+- Make widget refuses a button a tap leaves off for good, a picture that does nothing on the card although the app's does, and a picture whose touch shows nothing (no movement, the same card after it), with the reason for the model.
+- The prompt says a scene on a 2x4 card is drawn wide.
+- Host checks in `live-widget-check.js` and `widget-refine-check.js`; `examples/widget-wheel.vera`.
+
+## Moving parts: gfx.moving, about the part's own pivot
+
+- `gfx.moving(style, trigger, pivotX, pivotY, shapes)` marks the part of a drawing that moves (a pendulum's bob, a wheel, a frog): it plays a ui.Motion preset about its own pivot while the rest of the picture stays. A touch on the picture plays every part.
+- On a card the picture is split at its parts into layers of the same box, each part in a Motion that turns and scales about its pivot; in the app the parts are posed frame by frame from the same preset table.
+- New presets `launch` (out of sight and back from below) and `roll` (away and back).
+- Make widget refuses a ui.Motion around a scene with a background and asks for the moving thing as a part; a ui.Motion around a picture with parts is dropped.
+- Host checks in `gfx-check.js`, `live-widget-check.js`, `widget-refine-check.js`, `motion-check.js`; `examples/widget-pendulum.vera`.
+
+## Light and depth in pictures: gradients, glow, shadow, blur, blend; a cover picture on the card
+
+- `std/gfx` draws more than flat fills: `gfx.linear` and `gfx.radial` are colours any shape takes (a lit ball, a sky), and `gfx.glow`, `gfx.shadow`, `gfx.blur` and `gfx.blend` hold shapes like a group. One painter draws them in the app, on the home-screen card and in the host's SVG proofs; their sizes follow the picture's scale. The compiler checks a gradient's literal colours and the blend modes.
+- `ui.Surface("cover", ...)` on a card is its background, edge to edge, with the rest of the widget over its bottom on a veil of the card's colour; in the app it draws as `fill`. One per widget, not in a row or a ui.Layers.
+- Make widget's prompt and the game prompt say how to give a picture depth and light, and when to use a cover picture.
+- Measured on the phone first (what a card draws, what it may use, what keeps moving after its script stops): `docs/live-widget-proof.md`. Host checks in `gfx-check.js` and `live-widget-check.js`; `tools/vera-harness/examples/widget-rich.vera`.
+
 ## Remove widget
 
 - The project page's widget block has Remove behind a swipe to the left, as a version's Delete (the block is the first row of the versions list, its buttons in one row like a version's Run / Refine / Code): the latest version is saved again without its widget, its refresh and what only they use (`WidgetRemove.ets`, on `withoutWidget`), with the app's state carried over and the widget's requests left out of its history. Earlier versions keep theirs.

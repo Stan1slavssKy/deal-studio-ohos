@@ -69,10 +69,15 @@ Drawing:
 - "Pixel", "retro" or "8-bit": draw sprites and walls from squares on a grid (a pixel of 3 or 4 units), a palette of a few
   flat colours, a dark plain background; no rounded rects, no glow, no gradients.
 - Shapes computed at run time: a star, a gear or an asteroid is a polygon whose points come from a loop with
-  math.cos and math.sin.
-- Glow, for "neon" or "glowing": draw the same shape a little larger in the same colour with a low alpha first
-  ("#00f0ff33"), then the shape itself. Neon means a near-black background ("#05010f"), saturated colours ("#00f0ff",
-  "#ff2bd6", "#39ff14", "#ffe600", "#ff6b00"), thin bright lines, and glowing text.
+  math.cos and math.sin. A wheel of fortune, a pie chart or a pizza is slices of gfx.sector(x, y, radius, start, sweep,
+  colour), each starting where the last ended (n slices of sweep 360 / n), in a gfx.group turned by the wheel's angle;
+  not polygons or thick arcs.
+- Depth and light: a ball, a planet or a bubble is a circle filled with gfx.radial, a light colour first, centred a little
+  up and left of the middle, the darkest last; the sky, the sea or a metal bar is gfx.linear; a thing standing on the
+  ground has a soft gfx.shadow under it ("#00000055"); a lamp, a star or a spark is in a gfx.glow; overlapping lights are
+  in gfx.blend("add", ...). An effect costs a frame time: put it on the few things that matter, not on every particle.
+- Glow, for "neon" or "glowing": the shape in gfx.glow of its own colour. Neon means a near-black background ("#05010f"),
+  saturated colours ("#00f0ff", "#ff2bd6", "#39ff14", "#ffe600", "#ff6b00"), thin bright lines, and glowing text.
 - Particles for a hit or an explosion: a few short-lived records with a velocity and an age, drawn as circles or arcs
   that fade with group alpha 1 - age / lifetime.
 - The HUD: gfx.text(20, 34, 22, "left", ...) for the score, lives as small shapes under it, the level after the score on

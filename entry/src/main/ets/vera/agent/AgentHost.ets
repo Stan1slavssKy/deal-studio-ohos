@@ -62,6 +62,11 @@ export class AgentHost {
   /** Why the model stopped its last askCode reply: "length" at the token limit, "stop" when it ended it; "" when not known. */
   lastCodeFinish: string = ''
   /**
+   * Make widget's checks of a program with its widget (AgentWidget.checkWidgetProgram): '' when it passes, else why not. Null runs
+   * them where they are called; the app runs them off the UI thread (WidgetCheckTask), since they play the app's clock.
+   */
+  checkWidget: ((base: string, source: string, saved: string) => Promise<string>) | null = null
+  /**
    * The phone's functions for something the phone or another app is to do: what find_intent_function and find_sdk_function
    * answer for the need, as text with each result's call; '' when nothing can be looked up (then nothing is called).
    */

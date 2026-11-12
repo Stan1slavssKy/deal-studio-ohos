@@ -1,0 +1,52 @@
+// Bubble wrap on a card: a 12 x 12 sheet is one gfx.repeat of a lit bubble and its shine (3 shapes written, 289 painted), with the
+// popped ones drawn flat over it. A tap pops the bubble under the finger.
+// live-widget-check.js holds it to the card's limits; gfx-check.js draws it.
+
+@jsonable class AppState { popped: number[]; }
+
+function init(): AppState { return {popped: [5, 17, 40, 77, 100, 143]}; }
+
+function sheet(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.repeat(12, 12, 10, 10, [
+    gfx.circle(5, 5, 4.2, gfx.radial(4, 4, 5, ["#ffffff", "#93c5fd"])),
+    gfx.circle(3.6, 3.4, 1.1, "#ffffffcc")
+  ]));
+  for (let i: number of state.popped) {
+    let x: number = (i % 12) * 10 + 5;
+    let y: number = math.floor(i / 12) * 10 + 5;
+    shapes.push(gfx.circle(x, y, 4.2, "#c7d7ee"));
+  }
+  return shapes;
+}
+
+function pop(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase !== "down") { return state; }
+  let column: number = math.floor(p.x / 10);
+  let row: number = math.floor(p.y / 10);
+  if (column < 0 || column > 11 || row < 0 || row > 11) { return state; }
+  let at: number = row * 12 + column;
+  let next: number[] = [];
+  for (let i: number of state.popped) {
+    if (i === at) { return state; }
+    next.push(i);
+  }
+  next.push(at);
+  return {popped: next};
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Surface("default", 120, 120, "sheet", "", "pop"),
+    ui.Text("caption", ui.numberToString(state.popped.length()) + " popped")
+  ]);
+}
+
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Column("center", [
+      ui.Surface("default", 120, 120, "sheet", "", "pop"),
+      ui.Text("caption", ui.numberToString(state.popped.length()) + " popped")
+    ])
+  ]);
+}

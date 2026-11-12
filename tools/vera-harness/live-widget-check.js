@@ -163,8 +163,10 @@ assert.match(view, /node.key \+ this.frameKey/)
   })
   assert.deepEqual((compiled.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error), [])
   const Curve = { Linear: 0, EaseOut: 1, EaseIn: 2, EaseInOut: 3 }
-  const MotionProbe = new Function('SLOTS', 'motionStages', 'motionPivot', 'pivotPercent', 'Curve',
-    compiled.outputText + '\nreturn MotionProbe;')(CARD_MAX_MOTIONS, motionStages, motionPivot, pivotPercent, Curve)
+  const { gfxFit } = loadVera('GfxPaint')
+  const { pictureCovers } = loadSource(path.join(sourceRoot, 'widget/CardModel.ets'))
+  const MotionProbe = new Function('SLOTS', 'motionStages', 'motionPivot', 'pivotPercent', 'Curve', 'gfxFit', 'pictureCovers',
+    compiled.outputText + '\nreturn MotionProbe;')(CARD_MAX_MOTIONS, motionStages, motionPivot, pivotPercent, Curve, gfxFit, pictureCovers)
   const stateFields = [...motion.matchAll(/@State (\w+):/g)].map(m => m[1])
   const pose = (probe, node) => [1, 2, 3, 4, 5, 6].map(i => probe.poseOf(node, i))
   const finish = (probe, node) => {
@@ -252,6 +254,21 @@ assert.match(view, /node.key \+ this.frameKey/)
   stale.onFinish()
   assert.equal(probe.phase[node.slot], 1, 'an older frame completion cannot advance the new chain')
   scene.children.forEach(node => finish(probe, node))
+  // A moving part's pivot is where its picture is drawn in the box, not a share of the box: a square cover picture on a 2x4 card
+  // (324 x 148 vp) is scaled by 3.24 and cut top and bottom, so a pivot at 15 of 100 units is 39.4 vp above the box (-26.62%).
+  const pivotProbe = new MotionProbe()
+  const part = (style, w, h, px, py) => ({ kind: 'motion', style: 'swing', px, py, children: [{ kind: 'surface', style, w, h }] })
+  pivotProbe.pictureW = () => 324; pivotProbe.pictureH = () => 148
+  const swing = part('cover clear', 100, 100, 0.5, 0.15)
+  assert.equal(pivotProbe.pivotXOf(swing), '50%')
+  assert.equal(pivotProbe.pivotOf(swing), '-26.62%', 'the pivot under cover-fit')
+  // A tall picture is letterboxed sideways: 100 x 200 units in a 132 x 145.2 box is 72.6 vp wide, from 29.7 vp.
+  pivotProbe.pictureW = () => 132; pivotProbe.pictureH = () => 145.2
+  const tall = part('clear', 100, 200, 0.25, 0.5)
+  assert.equal(pivotProbe.pivotXOf(tall), '36.25%', 'the pivot in a letterboxed picture')
+  assert.equal(pivotProbe.pivotOf(tall), '50%')
+  // A Motion around more than a picture keeps the share as it is.
+  assert.equal(pivotProbe.pivotXOf({ kind: 'motion', style: 'swing', px: 0.25, children: [] }), '25%')
 }
 // A picture on the card: ui.Surface drawn once for the state, its shapes carried in the frame (a few hundred characters), a tap on it
 // calling the pointer handler with the finger down and up at that point. No frame loop, one picture, a few dozen shapes.
@@ -494,4 +511,318 @@ assert.match(view, /node.key \+ this.frameKey/)
   assert.equal(charts.length, 2)
   for (const c of charts) assert(c.size <= Math.floor((126 - 8) / 2), 'two charts in a row fit the 2x2 card: ' + c.size)
 }
-console.log('PASS live counter: +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')
+
+// A cover picture (ui.Surface style "cover") is the card's background: it takes no room from the rest, the effects of its shapes ride in the
+// frame, the card takes it out of the tree with its Motion (splitCover), and only one, outside rows and layers, is allowed.
+{
+  const { splitCover, coverScrim, compactFrame } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const rich = fs.readFileSync(path.join(__dirname, 'examples/widget-rich.vera'), 'utf8')
+  const widgetPicture = 'ui.Surface("default", 100, 100, "scene", "", "onTouch"),\n      ui.Text'
+  const coverSource = rich.replace(widgetPicture, 'ui.Surface("cover", 100, 100, "scene", "", "onTouch"),\n      ui.Text')
+  assert.notEqual(coverSource, rich)
+  const f = new WidgetSession(compileVeraSource(coverSource).vbc2, 'cover', '').frame('p1', 'Cover', '🌄')
+  assert(JSON.stringify(compactFrame(f)).length <= 8000, 'a picture with gradients, effects and a moving part fits the frame budget')
+  const surfacesOf = nodes => { const out = []; const walk = n => { if (n.kind === 'surface') out.push(n); n.children.forEach(walk) }; nodes.forEach(walk); return out }
+  const pictures = surfacesOf(f.nodes)
+  assert.deepEqual(pictures.map(p => p.style), ['cover', 'cover clear'], 'the cover picture and the layer of its moving part')
+  assert(pictures.some(p => decodeGfxOps(p.ops).some(o => o.kind === 'fx' && o.fx === 'shadow')), 'the effects of the picture reach the card')
+  const split = splitCover(f.nodes)
+  assert(split.cover !== null && split.cover.kind === 'layers', 'the cover picture leaves the tree whole, its layers with it')
+  assert.deepEqual(texts(split.rest).filter(Boolean), ['0 taps'], 'the rest is what lies over it')
+  assert.equal(surfacesOf(f.nodes).length, 2, 'splitCover leaves the frame itself as it was')
+  assert.equal(splitCover([]).cover, null)
+  // A cover picture with no parts can still sit in a ui.Motion of its own: the card takes the Motion out with it.
+  const plain = '@jsonable class AppState { n: number; }\nfunction init(): AppState { return {n: 0}; }\n' +
+    'function sky(state: AppState): gfx.Shape[] { return [gfx.rect(0, 0, 100, 100, "#123456"), gfx.circle(50, 50, 10, "accent")]; }\n' +
+    'function view(state: AppState): ui.View { return ui.Text("body", "x"); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Column("center", [ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "sky", "", "")]), ui.Text("caption", "hi")]); }\n'
+  const held = splitCover(new WidgetSession(compileVeraSource(plain).vbc2, 'plain', '').frame('p1', 'Plain', '🌄').nodes)
+  assert(held.cover !== null && held.cover.kind === 'motion', 'a cover picture leaves the tree with its Motion')
+  assert.deepEqual(coverScrim('#F8FAFC', 0).map(c => c[0]), ['#00F8FAFC', '#00F8FAFC'], 'no veil without a text over the picture')
+  assert.equal(coverScrim('#F8FAFC', 0.3).slice(-1)[0][0], '#D9F8FAFC', 'a veil of the card colour under a text')
+  // The veil lies under the text only, with a short edge above it: one over the bottom half whitened the ground a scene stands on.
+  assert(f.veil > 0.1 && f.veil < 0.45, 'one line of text over the picture takes a small share of the card: ' + f.veil)
+  const clearTo = coverScrim('#F8FAFC', f.veil)[1][1]
+  assert(clearTo >= 0.4, 'the picture is clear down to ' + clearTo + ' of the card')
+  assert.equal(held.cover !== null ? new WidgetSession(compileVeraSource(plain.replace(', ui.Text("caption", "hi")', '')).vbc2, 'bare', '').frame('p1', 'Bare', '🌄').veil : -1, 0,
+    'no veil with nothing over the picture')
+  const twoCovers = coverSource.replace(/(function widget[\s\S]*?ui\.Column\("center", \[)/, '$1\n      ui.Surface("cover", 100, 100, "scene", "", ""),')
+  assert.throws(() => new WidgetSession(compileVeraSource(twoCovers).vbc2, 'two', '').frame('p1', 'Two', '🌄'), /at most one ui.Surface of style "cover"/)
+  const inRow = plain.replace('ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "sky", "", "")])', 'ui.Row("default", [ui.Surface("cover", 100, 100, "sky", "", "")])')
+  assert.notEqual(inRow, plain)
+  assert.throws(() => new WidgetSession(compileVeraSource(inRow).vbc2, 'row', '').frame('p1', 'Row', '🌄'), /not in a row or a ui.Layers/)
+  // A ui.Motion goes out with the cover only when the cover is all it holds: one around a column that holds it would leave the cover in
+  // the tree, drawn in the column at a picture's size and not under the card, so it is refused.
+  const motionColumn = plain.replace('ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "sky", "", "")])',
+    'ui.Motion("pop", 0, [ui.Column("default", [ui.Surface("cover", 100, 100, "sky", "", ""), ui.Text("body", "x")])])')
+  assert.notEqual(motionColumn, plain)
+  assert.throws(() => new WidgetSession(compileVeraSource(motionColumn).vbc2, 'mc', '').frame('p1', 'MC', '🌄'), /alone in a ui.Motion/)
+}
+
+// Moving parts (gfx.moving): the card cannot move a part of one canvas, so the picture becomes layers of the same box -- what is still under
+// the part, the part in a Motion that turns about its pivot, what is still over it -- with the pointer on the bottom layer and every part
+// played by a touch anywhere on it.
+{
+  const { splitCover } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const pendulum = fs.readFileSync(path.join(__dirname, 'examples/widget-pendulum.vera'), 'utf8')
+  const session = new WidgetSession(compileVeraSource(pendulum).vbc2, 'pendulum', '')
+  const f = session.frame('p1', 'Pendulum', '🕰')
+  const scene = f.nodes[0].children[0]
+  assert.equal(scene.kind, 'layers'); assert.equal(scene.parts, true)
+  assert.deepEqual(scene.children.map(c => c.kind), ['surface', 'motion', 'surface'], 'still under, the part, still over')
+  const [under, motion, over] = scene.children
+  assert.equal(under.pointer, 'onTouch', 'the bottom layer takes the picture\'s touches')
+  assert.equal(under.style, 'default'); assert.equal(over.style, 'clear'); assert.equal(motion.children[0].style, 'clear')
+  assert.equal(motion.style, 'swing'); assert.equal(motion.px, 0.5); assert.equal(motion.py, 0.16, 'the part turns about its own pivot')
+  assert.equal(motion.trigger, 0)
+  assert.deepEqual(decodeGfxOps(motion.children[0].ops).map(o => o.kind), ['line', 'circle'], 'the part\'s layer holds only its shapes')
+  assert.equal(decodeGfxOps(under.ops).length, 3); assert.equal(decodeGfxOps(over.ops).length, 1)
+  assert.deepEqual(scene.links, [motion.slot], 'a touch plays the part'); assert.deepEqual(under.links, [motion.slot])
+  assert.deepEqual([under.pic, motion.children[0].pic, over.pic], [0, 1, 2], 'each layer is a picture of its own')
+  assert(new Set([under.size, motion.children[0].size, over.size]).size === 1, 'the layers are drawn at one size, so they line up')
+  // The trigger is the state's: a touch counts a swing, and the next frame carries it.
+  const before = session.frame('p1', 'Pendulum', '🕰')
+  session.tapSurface(before, before.token, 'onTouch', 50, 50)
+  assert.equal(session.frame('p1', 'Pendulum', '🕰').nodes[0].children[0].children[1].trigger, 1)
+  // As a cover picture the layers are the card's background: taken out whole, counted as one cover.
+  const covered = pendulum.replace(/ui\.Column\("center", \[\n      ui\.Surface\("default"/, 'ui.Column("center", [\n      ui.Surface("cover"')
+  assert.notEqual(covered, pendulum)
+  const cf = new WidgetSession(compileVeraSource(covered).vbc2, 'pc', '').frame('p1', 'Pendulum', '🕰')
+  const split = splitCover(cf.nodes)
+  assert(split.cover !== null && split.cover.kind === 'layers' && split.cover.style === 'cover', 'the split cover picture is the background')
+  assert.deepEqual(split.cover.children.map(c => c.kind === 'motion' ? c.children[0].style : c.style), ['cover', 'cover clear', 'cover clear'])
+  // What the card cannot play is said so the model can fix it.
+  const bad = (from, to, why, re) => {
+    const src = pendulum.replace(from, to)
+    assert.notEqual(src, pendulum, why)
+    assert.throws(() => new WidgetSession(compileVeraSource(src).vbc2, 'bad', '').frame('p1', 'P', '🕰'), re, why)
+  }
+  const grouped = pendulum.replace('shapes.push(gfx.moving("swing", state.swings, 50, 16, [', 'shapes.push(gfx.group(0, 0, 0, 1, 1, [gfx.moving("swing", state.swings, 50, 16, [')
+    .replace('["#fff3c4", "#e0b34a", "#8a5a14"]))\n  ]));', '["#fff3c4", "#e0b34a", "#8a5a14"]))\n  ])]));')
+  assert.throws(() => new WidgetSession(compileVeraSource(grouped).vbc2, 'bad', '').frame('p1', 'P', '🕰'), /among the shapes the draw function returns/, 'a part inside a group')
+  const four = 'shapes.push(gfx.moving("pop", 0, 1, 1, [gfx.circle(1, 1, 1, "ink")]));'
+  bad('shapes.push(gfx.roundRect(28, 82, 44, 6, 3, "#00000033"));', four + four + four, 'four parts', /at most 3 gfx.moving parts/)
+  // A ui.Motion around a picture with parts is dropped: the parts move by themselves, and the levels it took are the layers'.
+  const wrapped = pendulum.replace('ui.Surface("default", 100, 100, "clock", "", "onTouch"),\n      ui.Text', 'ui.Motion("pop", 0, [ui.Surface("default", 100, 100, "clock", "", "onTouch")]),\n      ui.Text')
+  assert.notEqual(wrapped, pendulum)
+  const unwrapped = new WidgetSession(compileVeraSource(wrapped).vbc2, 'wrapped', '').frame('p1', 'P', '🕰').nodes[0].children[0]
+  assert.equal(unwrapped.kind, 'layers'); assert.equal(unwrapped.parts, true)
+  const deep = pendulum.replace('ui.Surface("default", 100, 100, "clock", "", "onTouch"),\n      ui.Text', 'ui.Column("default", [ui.Surface("default", 100, 100, "clock", "", "onTouch")]),\n      ui.Text')
+  assert.notEqual(deep, pendulum)
+  assert.throws(() => new WidgetSession(compileVeraSource(deep).vbc2, 'deep', '').frame('p1', 'P', '🕰'), /directly in the widget's column/)
+}
+
+// A tap finishes what it started: the card has no frames, so after a tap the app's frame handlers run until the state comes to rest -- a wheel
+// stops on its prize and Spin comes back on, even when each tick asks for a vibration. A state that does not come to rest in 20 s stays as the tap left it.
+{
+  const wheel = fs.readFileSync(path.join(__dirname, 'examples/widget-wheel.vera'), 'utf8')
+  const spinOf = src => {
+    const s = new WidgetSession(compileVeraSource(src).vbc2, 'wheel', '')
+    const f = s.frame('p1', 'Wheel', '🎡')
+    s.tap(f, f.token, 'spin', 0)
+    return s
+  }
+  const landed = spinOf(wheel)
+  const after = landed.frame('p1', 'Wheel', '🎡')
+  assert(texts(after.nodes).some(t => /^Won \d+$/.test(t)), 'the wheel stopped on a prize: ' + texts(after.nodes))
+  const buttonsOf = nodes => { const out = []; const walk = n => { if (n.kind === 'button') out.push(n); n.children.forEach(walk) }; nodes.forEach(walk); return out }
+  assert(buttonsOf(after.nodes)[0].enabled, 'and Spin is on again')
+  // A tap on the picture finishes the same way.
+  const touched = new WidgetSession(compileVeraSource(wheel).vbc2, 'wheel', '')
+  const tf = touched.frame('p1', 'Wheel', '🎡')
+  touched.tapSurface(tf, tf.token, 'onTouch', 50, 50)
+  assert(texts(touched.frame('p1', 'Wheel', '🎡').nodes).some(t => /^Won/.test(t)), 'a touch on the wheel lands it too')
+  // One that would take longer than 3 s is left spinning: the card does not play on for the person.
+  const slow = spinOf(wheel.replace('let speed: number = state.speed - 900 * ms / 1000;', 'let speed: number = state.speed - 30 * ms / 1000;'))
+  assert(texts(slow.frame('p1', 'Wheel', '🎡').nodes).includes('Spinning...'), 'a spin that does not stop in 20 s stays as the tap left it')
+  // A frame that asks for the phone does not count either.
+  const buzzing = 'import * as sdk from "std/sdk"\n' + wheel.replace('  if (state.speed <= 0) { return state; }', '  if (state.speed <= 0) { return state; }\n  sdk.call("fixture/phone/Ability/buzz", [], "buzzed", "foreground");') +
+    '\nfunction buzzed(state: AppState, answer: string): AppState { return state; }\n'
+  assert(texts(spinOf(buzzing).frame('p1', 'Wheel', '🎡').nodes).some(t => /^Won/.test(t)), 'what a frame asks of the phone (a vibration on each tick) is dropped and the wheel still lands')
+  // The app's widget preview plays a tap the same way, in a worker (runPreviewTap): made again from the program and the state, the wheel lands.
+  {
+    const { runPreviewTap, PreviewTapRequest } = loadVera('VeraLiveWidget')
+    const code = compileVeraSource(wheel).vbc2
+    const shown = new WidgetSession(code, 'preview', '').frame('', 'Wheel', '')
+    const request = Object.assign(new PreviewTapRequest(), {vbc2: code, state: '', title: 'Wheel', kind: 'button', token: shown.token, handler: 'spin', value: 0})
+    const result = runPreviewTap(request)
+    assert.equal(result.error, ''); assert.equal(result.rested, true)
+    assert(texts(new WidgetSession(code, 'preview', result.state).frame('', 'Wheel', '').nodes).some(t => /^Won/.test(t)), 'the preview\'s tap lands the wheel')
+    assert.match(runPreviewTap(Object.assign(new PreviewTapRequest(), request, {token: 'old'})).error, /changed/, 'a tap on an older frame is refused')
+  }
+  // Whether a tap comes to rest does not hang on the clock on the wall: a device so busy that every step takes a second still lands the
+  // wheel, as the check in a worker saw it (a wall-clock limit left it spinning on a busy form extension).
+  {
+    const realNow = Date.now
+    let fake = realNow()
+    Date.now = () => (fake += 1000)
+    try {
+      assert(texts(spinOf(wheel).frame('p1', 'Wheel', '🎡').nodes).some(t => /^Won/.test(t)), 'a slow device lands the wheel too')
+    } finally { Date.now = realNow }
+    // And what settling may do is bounded by work, not time: a scene that never rests and is heavy to run stops at SETTLE_MAX_WORK.
+    const { SETTLE_MAX_WORK } = loadVera('VeraLiveWidget')
+    const heavy = wheel.replace('let speed: number = state.speed - 900 * ms / 1000;',
+      'let k: number = 0; let junk: number = 0; while (k < 5000) { junk = junk + k; k = k + 1; }\n  let speed: number = state.speed - 0 * ms / 1000 + junk * 0;')
+    assert.notEqual(heavy, wheel)
+    const logs = []; const info = console.info; console.info = m => logs.push(String(m))
+    let s
+    try { s = spinOf(heavy) } finally { console.info = info }
+    const line = logs.find(m => m.includes('VERA-WIDGET settle')) || ''
+    const work = Number((/work=(\d+)/.exec(line) || [])[1])
+    const steps = Number((/steps=(\d+)/.exec(line) || [])[1])
+    assert(/left as tapped/.test(line) && steps < 600, 'a heavy scene stops on its work before its steps: ' + line)
+    assert(work >= SETTLE_MAX_WORK && work < SETTLE_MAX_WORK * 1.2, 'within a step of the budget: ' + line)
+    assert.equal(s.lastTapRested, false)
+  }
+}
+
+// Drifts (gfx.drift) on a card: each a layer the card plays with the platform's Swiper in slices (CardView), sized with the picture, cover
+// with it; a picture that starts with one still has a bottom layer for its touches; two at most, only among the shapes draw returns.
+{
+  const { splitCover, compactFrame } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const sky = fs.readFileSync(path.join(__dirname, 'examples/widget-sky.vera'), 'utf8')
+  const f = new WidgetSession(compileVeraSource(sky).vbc2, 'sky', '').frame('p1', 'Sky', '🌌')
+  assert(JSON.stringify(compactFrame(f)).length <= 8000, 'two drifts fit the frame budget')
+  const split = splitCover(f.nodes)
+  assert(split.cover !== null && split.cover.kind === 'layers', 'the sky is the card\'s background')
+  assert.deepEqual(split.cover.children.map(c => c.kind), ['surface', 'drift', 'surface', 'drift', 'surface'], 'sky, stars, moon, clouds, haze')
+  const [, stars, , clouds] = split.cover.children
+  assert.deepEqual([stars.style, stars.value, stars.cover, stars.pic], ['left', 8, true, 0], 'slow stars to the left: eight slices')
+  assert.deepEqual([clouds.style, clouds.value, clouds.pic], ['right', 4, 1], 'medium clouds to the right: four slices')
+  assert.equal(decodeGfxOps(stars.ops)[0].kind, 'drift', 'a drift layer carries the drift, so its painter joins it up')
+  assert.equal(split.cover.children[0].pointer, 'onWish', 'the bottom layer takes the touches')
+  // A picture that starts with a drift gets an empty bottom layer to hold its touches.
+  const first = sky.replace('  shapes.push(gfx.rect(0, 0, 100, 100, gfx.linear(0, 0, 0, 100, ["#0b1026", "#1e1b4b", "#4c1d95"])));\n', '')
+    .replace('ui.Surface("cover", 100, 100, "sky", "", "onWish")', 'ui.Surface("default", 100, 100, "sky", "", "onWish")')
+  const ff = new WidgetSession(compileVeraSource(first).vbc2, 'first', '').frame('p1', 'Sky', '🌌')
+  const scene = ff.nodes[0].children[0]
+  assert.equal(scene.children[0].kind, 'surface'); assert.equal(scene.children[0].pointer, 'onWish'); assert.equal(scene.children[1].kind, 'drift')
+  assert.equal(new Set(scene.children.map(c => c.size)).size, 1, 'drift layers are drawn at the picture\'s size')
+  // A drift alone keeps the ui.Motion around its picture (only moving parts move by themselves), and takes one level below the picture,
+  // not two: in a row of the widget's column it fits.
+  const hopping = sky.replace('ui.Surface("cover", 100, 100, "sky", "", "onWish")', 'ui.Motion("pop", state.wishes, [ui.Surface("default", 100, 100, "sky", "", "onWish")])')
+  assert.notEqual(hopping, sky)
+  const hf = new WidgetSession(compileVeraSource(hopping).vbc2, 'hop', '').frame('p1', 'Sky', '🌌')
+  const hop = hf.nodes[0].children[0]
+  assert.deepEqual([hop.kind, hop.style, hop.children[0].kind], ['motion', 'pop', 'layers'], 'the Motion around a drifting picture stays')
+  const inRowSky = sky.replace('ui.Surface("cover", 100, 100, "sky", "", "onWish")', 'ui.Row("default", [ui.Surface("default", 100, 100, "sky", "", "onWish")])')
+  assert.notEqual(inRowSky, sky)
+  const rf = new WidgetSession(compileVeraSource(inRowSky).vbc2, 'row', '').frame('p1', 'Sky', '🌌')
+  assert.equal(rf.nodes[0].children[0].children[0].kind, 'layers', 'a drifting picture in a row is drawn')
+  // The draw function runs once a picture for each frame, not again to find out whether it has moving parts.
+  {
+    const s = new WidgetSession(compileVeraSource(hopping).vbc2, 'count', '')
+    const seen = []; const run = s.vm.execute.bind(s.vm)
+    s.vm.execute = (entry, args) => { if (entry === 'sky') seen.push(1); return run(entry, args) }
+    s.frame('p1', 'Sky', '🌌')
+    assert(seen.length <= 1, 'the draw function ran ' + seen.length + ' times for one frame')
+  }
+  const three = sky.replace('  return shapes;\n}\n\nfunction onWish', '  shapes.push(gfx.drift("up", "fast", [gfx.circle(5, 5, 1, "white")]));\n  return shapes;\n}\n\nfunction onWish')
+  assert.notEqual(three, sky)
+  assert.throws(() => new WidgetSession(compileVeraSource(three).vbc2, 'three', '').frame('p1', 'Sky', '🌌'), /at most 2 gfx.drift/)
+}
+
+// The app's tickers run too: a tap that starts a countdown (a ui.Ticker) whose end launches the rocket (frames) is finished on the card --
+// the rocket of a generated app stood on its pad because only frames ran.
+{
+  const rocket = fs.readFileSync(path.join(__dirname, 'examples/widget-countdown-rocket.vera'), 'utf8')
+  const s = new WidgetSession(compileVeraSource(rocket).vbc2, 'rocket', '')
+  const f = s.frame('p1', 'Rocket', '🚀')
+  s.tapSurface(f, f.token, 'onPad', 50, 50)
+  assert(texts(s.frame('p1', 'Rocket', '🚀').nodes).includes('Liftoff!'), 'the countdown ran out and the rocket left: ' + texts(s.frame('p1', 'Rocket', '🚀').nodes))
+}
+// Many of the same: a 12 x 12 sheet of bubble wrap is one gfx.repeat, within a card picture's 60 shapes and the frame's 8000 characters;
+// a tap pops the bubble under the finger. The same sheet as 144 shapes of its own is refused with a reason that names gfx.repeat, and a
+// repeat that paints more than the card's 400 shapes is refused.
+{
+  const { compactFrame } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const bubbles = fs.readFileSync(path.join(__dirname, 'examples/widget-bubbles.vera'), 'utf8')
+  const s = new WidgetSession(compileVeraSource(bubbles).vbc2, 'bubbles', '')
+  const f = s.frame('p1', 'Bubbles', '🫧')
+  const size = JSON.stringify(compactFrame(f)).length
+  assert(size <= 2000, 'the sheet is a small frame: ' + size)
+  const picture = f.nodes[0].children[0]
+  assert.equal(picture.kind, 'surface')
+  assert.equal(decodeGfxOps(picture.ops)[0].kind, 'repeat', 'the repeat rides in the frame as itself')
+  assert(texts(f.nodes).includes('6 popped'))
+  s.tapSurface(f, f.token, 'pop', 15, 15)
+  assert(texts(s.frame('p1', 'Bubbles', '🫧').nodes).includes('7 popped'), 'a tap pops a bubble')
+  const loose = bubbles.replace(/  shapes\.push\(gfx\.repeat\(12, 12, 10, 10, \[\n([\s\S]*?)\n  \]\)\);/,
+    '  let k: number = 0;\n  while (k < 144) { shapes.push(gfx.circle((k % 12) * 10 + 5, math.floor(k / 12) * 10 + 5, 4.2, "#93c5fd")); k = k + 1; }')
+  assert.notEqual(loose, bubbles)
+  assert.throws(() => new WidgetSession(compileVeraSource(loose).vbc2, 'loose', '').frame('p1', 'Bubbles', '🫧'),
+    /at most 60 shapes; this one has 150\. Many of the same .* is one gfx\.repeat\(columns, rows, dx, dy/)
+  const heavy = bubbles.replace('gfx.repeat(12, 12, 10, 10, [', 'gfx.repeat(20, 20, 6, 6, [')
+  assert.throws(() => new WidgetSession(compileVeraSource(heavy).vbc2, 'heavy', '').frame('p1', 'Bubbles', '🫧'),
+    /paints at most 400 shapes, every copy of a gfx\.repeat counted; this one paints 807/)
+}
+// Review fixes on the rich pictures (PR #53).
+{
+  // Nesting too deep is said with what to flatten, not as a bare limit.
+  const deep = 'import * as ui from "std/ui"\n@jsonable class AppState { n: number; }\nfunction init(): AppState { return {n: 0}; }\n' +
+    'function view(state: AppState): ui.View { return ui.Text("body", "x"); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Column("default", [ui.Row("default", [ui.Column("default", [ui.Row("default", ' +
+    '[ui.Column("default", [ui.Text("body", "deep")])])])])]); }\n'
+  assert.throws(() => new WidgetSession(compileVeraSource(deep).vbc2, 'deep', '').frame('p1', 'Deep', '🔧'),
+    /widget exceeds depth 4 \((column|text) nested more than 4 levels[\s\S]*Flatten it/)
+  // Two NumberStats with icons in a row of the widget's column (a fish tank's widget, refused on every answer): drawn, the icon left out.
+  const stats = deep.replace(/function widget[\s\S]*$/, 'function widget(state: AppState): ui.View { return ui.AppTheme("soft", "", [ui.Column("default", [' +
+    'ui.Row("split", [ui.NumberStat("accent", "Coins", state.n, "", "", 1, "", "star"), ui.NumberStat("default", "Fish", 2, "", "", 1, "", "")])])]); }\n')
+  const sf = new WidgetSession(compileVeraSource(stats).vbc2, 'stats', '').frame('p1', 'Stats', '🔧')
+  const kinds = []; const walk = n => { kinds.push(n.kind); n.children.forEach(walk) }; sf.nodes.forEach(walk)
+  assert(!kinds.includes('icon') && texts(sf.nodes).includes('Coins'), 'the Stat keeps its caption without the icon: ' + kinds)
+  // At the widget's top level it keeps its icon.
+  const top = stats.replace('ui.Row("split", [', '').replace('"", 1, "", "")])])]); }', '"", 1, "", "")])]); }')
+  assert.notEqual(top, stats)
+  const tk = []; const walk2 = n => { tk.push(n.kind); n.children.forEach(walk2) }
+  new WidgetSession(compileVeraSource(top).vbc2, 'top', '').frame('p1', 'Top', '🔧').nodes.forEach(walk2)
+  assert(tk.includes('icon'), 'a Stat in the column keeps its icon')
+}
+{
+  const { splitCover } = loadVera('../widget/CardModel')
+  const { decodeGfxOps } = loadVera('GfxPaint')
+  const base = (draw, widgetBody, extra = '') => 'import * as ui from "std/ui"\nimport * as gfx from "std/gfx"\n' +
+    '@jsonable class AppState { n: number; z: number; ticks: number; on: boolean; }\n' +
+    'function init(): AppState { return {n: 0, z: 0, ticks: 0, on: false}; }\n' +
+    'function draw(state: AppState): gfx.Shape[] { return [' + draw + ']; }\n' +
+    'function onTouch(state: AppState, p: gfx.Pointer): AppState { return state; }\n' + extra +
+    'function view(state: AppState): ui.View { return ui.Text("body", "x"); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Column("center", [' + widgetBody + ']); }\n'
+  const frameOf = src => new WidgetSession(compileVeraSource(src).vbc2, 'fix', '').frame('p1', 'Fix', '🔧')
+  // A drawing that starts with a moving part keeps a still bottom layer: the part does not carry the background round with it.
+  const wheel = 'gfx.moving("spin", state.n, 50, 50, [gfx.sector(50, 50, 40, 0, 90, "accent")]), gfx.polygon([48, 2, 52, 2, 50, 12], "ink")'
+  const first = frameOf(base(wheel, 'ui.Surface("default", 100, 100, "draw", "", "onTouch")')).nodes[0].children[0]
+  assert.equal(first.kind, 'layers')
+  assert.deepEqual(first.children.map(c => c.kind), ['surface', 'motion', 'surface'], 'background, the part, what is over it')
+  assert.equal(first.children[0].style, 'default'); assert.equal(decodeGfxOps(first.children[0].ops).length, 0)
+  assert.equal(first.children[0].pointer, 'onTouch', 'the still bottom layer takes the touches')
+  assert.equal(first.children[1].children[0].style, 'clear', 'the moving layer is see-through')
+  assert.equal(first.children[1].children[0].pointer, '', 'and takes no touches of its own')
+  // A trigger that is not a number (the square root of a negative) would play the part on every redraw: it is refused with a reason.
+  assert.throws(() => frameOf('import * as math from "std/math"\n' + base(wheel.replace('state.n', 'math.sqrt(state.n - 1)'), 'ui.Surface("default", 100, 100, "draw", "", "onTouch")')),
+    /gfx.moving trigger must be a number/)
+  // A cover picture in a ui.Motion with more in it is not lifted out as the background, so it is refused like one in a row.
+  const sky = 'gfx.rect(0, 0, 100, 100, "#123456"), gfx.circle(50, 50, 10, "accent")'
+  assert.throws(() => frameOf(base(sky, 'ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "draw", "", ""), ui.Text("caption", "hi")])')),
+    /alone in a ui.Motion/)
+  const alone = frameOf(base(sky, 'ui.Motion("pop", 0, [ui.Surface("cover", 100, 100, "draw", "", "")]), ui.Text("caption", "hi")'))
+  assert(splitCover(alone.nodes).cover !== null, 'alone in its Motion it is still the background')
+  // A ticker runs at most every 16 ms in settle, as in the app: an interval of 0.01 is not 3300 ticks a step.
+  const fast = 'import * as ui from "std/ui"\n@jsonable class AppState { n: number; ticks: number; on: boolean; }\n' +
+    'function init(): AppState { return {n: 0, ticks: 0, on: false}; }\n' +
+    'function go(state: AppState, value: number): AppState { return {n: 0, ticks: 0, on: true}; }\n' +
+    'function tick(state: AppState, ms: number): AppState { if (state.ticks >= 100) { return {n: state.n, ticks: state.ticks, on: false}; } ' +
+    'return {n: state.n + ms, ticks: state.ticks + 1, on: true}; }\n' +
+    'function view(state: AppState): ui.View { return ui.Column("default", [ui.Ticker("default", "t", 0.01, state.on, "tick"), ui.Text("body", "x")]); }\n' +
+    'function widget(state: AppState): ui.View { return ui.Column("center", [ui.NumberText("metric", state.n, "", " ms", 0), ui.Button("primary", "Go", "go", 0, true)]); }\n'
+  const ts = new WidgetSession(compileVeraSource(fast).vbc2, 'fast', '')
+  const tf = ts.frame('p1', 'Fast', '⏱')
+  ts.tap(tf, tf.token, 'go', 0)
+  assert(ts.lastTapRested, 'the hundred ticks came to rest')
+  assert.deepEqual(texts(ts.frame('p1', 'Fast', '⏱').nodes).filter(t => / ms$/.test(t)), ['1600 ms'], 'each tick was told 16 ms')
+}
+console.log('PASS live counter: tickers in settle, drifts, settle after a tap, moving parts, cover, +/−, restore, stale/forged taps, fallback, unsafe kinds, depth/node/text caps, effects, transport, redraw, stamp')

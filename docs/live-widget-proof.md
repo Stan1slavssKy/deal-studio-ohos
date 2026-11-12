@@ -346,6 +346,241 @@ attempt, a sky, sun, clouds and rain/snow as separate layers chosen from the liv
 moved them all. With the earlier limit of 3 pictures the model had to drop a layer (found when the clouds vanished), hence 5.
 A widget can only be live when the program already has the source (Vera.Source); Make widget does not add one.
 
+## Light and depth: gradients, effects and the cover picture
+
+A run of 15 short toy prompts (a frog that jumps, a drum, a fortune wheel, a night sky...) gave widgets that worked and looked flat: `std/gfx` had
+only flat fills, and most pictures were a model-drawn dark square in the middle of the card. What the card can draw was measured first, on the phone,
+with a throwaway block in `LiveCard` for one test project: a Canvas linear and radial gradient, `shadowBlur` (a glow), `globalCompositeOperation
+'lighter'`, `ctx.filter = 'blur()'`, a dash and a bezier, and on components `radialGradient`, `shadow` and `blur()` all drew on the card. The SDK's
+`@form` tags (`ohos_sdk/26/ets/dynamic/component/*.d.ts`) are a fast first check of what a card may use: not a conic gradient, `saveLayer`,
+`Particle`, `transition`, `iterations` or `delay`. A card's script stops about 2 s after a redraw (an `onFinish` chain stopped after 3 steps even
+with another animation running beside it), but native animations keep going: `Swiper` with `autoPlay` and `loop` turned its pages for over 3
+minutes, a symbol's `HierarchicalSymbolEffect` for over a minute; `ImageAnimator` played once.
+
+What a program draws with now (one painter, `GfxPaint.paintGfx`, for the app's Canvas, the card and the host's SVG proofs):
+
+- `gfx.linear(x1, y1, x2, y2, colors)` and `gfx.radial(x, y, radius, colors)` are colours: a short string (`lin:...`, `rad:...`) any shape takes in
+  place of a colour, so the frame's format did not change. The painter makes a canvas gradient of it in the units the shape is drawn in, so one inside
+  a `gfx.group` moves with it. One that does not read is drawn in its first colour.
+- `gfx.glow(blur, color, shapes)`, `gfx.shadow(dx, dy, blur, color, shapes)`, `gfx.blur(radius, shapes)` and `gfx.blend("add" | "screen" |
+  "multiply", shapes)` hold shapes like a group (`GfxOp` kind `fx`, packed key `f`). A canvas does not scale a shadow or a filter with its
+  transform, so their sizes are turned from surface units by the scale in force: a glow is as wide relative to the picture on a 4x4 card as on a 2x2.
+  ArkUI reads a filter's `px` in the canvas's own unit, not in pixels (with the density factor a blur of 3 units spread over 130 px and vanished; found
+  on the phone), unlike a path string.
+- `ui.Surface("cover", ...)` is the card's background: the picture fills the whole card to its edges, past its padding (`gfxFit(..., cover)`), and
+  the rest of the widget lies over its bottom on a veil of the card's colour (`CardModel.splitCover`, `coverScrim`; `LiveCard` and `WidgetPreview`).
+  It takes no room from the rest (`nodeHeight`, `pictureRoom`); one per widget, not in a row or a `ui.Layers` (`coverError`). In the app it is
+  drawn as `fill`.
+- A cover picture takes every touch that lands on no button, so one with a pointer handler (which `deadPicture` asks for when the app's picture
+  answers a touch) would leave no way into the app. Over a cover the card keeps a strip along its bottom, `CardModel.OPEN_STRIP` (18 vp) in place of
+  its bottom padding, with a small grey bar in the middle, that opens the app (`LiveCard.openApp`); the Widget tab draws it too, without the tap.
+  The 6 vp it takes beyond the padding are counted in `widgetHeight` and `pictureRoom` (`openStripRoom`).
+- The Make widget prompt (MAKE IT LOOK GOOD) and the game prompt (`vera-surface-skill.txt`) say how: a ball is a circle in a radial colour lit from
+  the top left, a sky a linear one, a thing standing has a soft shadow, a lamp a glow, a scene with a background is a cover picture.
+
+Measured on the phone (`examples/widget-rich.vera` as a cover picture in a test project with a card): a sky in a gradient, a glowing moon, two lights
+added, a lit ball with its shadow and a glowing ring, edge to edge on the card, "0 taps" over the veil; a touch counted and played `pop`; the same in the
+widget screen at 2x2, 2x4 (the cover cut at the top and bottom) and 4x4, and in the app's full-screen run. Host checks: `gfx-check.js` (the functions,
+their checks, the SVG of each effect, the scale, the frame round trip, the example within 60 shapes; `proofs/widget-rich.svg`), `live-widget-check.js`
+(the cover in the frame, within the 8000-character budget, split from the tree with its Motion, one only, not in a row).
+
+## Moving parts: what moves in life moves, about its own pivot
+
+`ui.Motion` moves a whole picture, so in the toy run the clock case swung with its pendulum, the pointer spun with the wheel and the sky jumped with the
+rocket. `gfx.moving(style, trigger, pivotX, pivotY, shapes)` marks the part of a drawing that moves: its shapes play a Motion preset about the part's own
+pivot (in surface units: the top of the rod, the centre of the wheel), and the rest of the drawing stays. A touch anywhere on the picture plays every part,
+and so does a change of trigger.
+
+- **On a card** the extension cannot move a part of one canvas, so `WidgetSession.frame` splits the picture where its parts are into layers of the same box
+  (a `ui.Layers` with `parts`): what is still under the parts, each part in a Motion of its own, what is still over them. Each layer is a picture (five on a
+  card), at most three parts; the picture's pointer goes on the bottom layer and the scene's links play every part. The Motion carries the pivot as shares
+  of its box (`CardNode.px`, `py`), which `CardView` gives `rotate` and `scale` as their centre. A part must be among the shapes the draw function returns
+  (not in a group or an effect); a picture with parts must sit directly in the widget's column, since its layers take two levels. A `ui.Motion` around it is
+  dropped, since the parts move by themselves (the model kept adding one).
+- **In the app** `paintGfx` takes the parts' poses: each part plays from when its trigger changed or the picture was touched (`SurfaceBox.partStarts`,
+  `partPoses` in `VeraPreview`), sampled from the same preset table, turned and scaled about its pivot, its offset turned from points into surface units.
+  A surface with no frame loop gets a short repaint timer while a part plays. The host and the SVG proofs draw parts at rest.
+- Two presets for things that leave and come back: `launch` (up out of sight, unseen back below, up into place) and `roll` (away to the side, turning, and back).
+- Make widget refuses a `ui.Motion` around a scene (a cover picture or one that paints its own background): its background would move too. The reason asks for
+  the thing to be a `gfx.moving` part, and for a cover picture in the same answer when it is not one yet, so one retry fixes both.
+
+Measured on the phone: `examples/widget-pendulum.vera` in a test project with a card -- the case stayed and the rod and bob swung about the top, right, left,
+right and still, and the count rose by one; the same in the app's full-screen run. Generated (six toy prompts, twice): with the checks, the rocket launched out of a
+night sky that stayed, the frog hopped off a lily pad that stayed, the punching bag swung from a hook that stayed. The wheel and the pendulum were still written
+without parts (the wheel spun whole, the pendulum did not move): the model reaches for gfx.moving only when a check says so. Host checks: `gfx-check.js` (the part
+at rest and posed about its pivot, the preset check), `live-widget-check.js` (the layers, pivot, pointer, links, cover, the limits and the dropped Motion),
+`widget-refine-check.js` (the scene check), `motion-check.js` (the two presets).
+
+## A tap finishes what it started; a picture that does nothing is refused
+
+A card has no frames, so a widget whose tap only starts something (a wheel set spinning, a die thrown) never finished it: on the phone the user's
+Roulette card read "Spinning..." with its Spin button off for good, and the toy run's wheel the same. Now, after a tap (a button, a switch, a picture),
+`WidgetSession` runs the app's own clock (the `ui.Surface` frame functions of `view` and its running `ui.Ticker` handlers at their intervals, asked again
+every 5 steps since a tap often starts a ticker) on the state in steps of 33 ms (`SETTLE_STEP_MS`), as the app
+would, and keeps the state they reach once 3 steps in a row change nothing (`settle`). What a frame asks of the phone (most generated wheels
+vibrate on each tick) is dropped and never answered: the card can do none of it, and refusing it left the wheel spinning. A state that does not come to
+rest within 600 steps (20 s; a generated wheel took 3.5 s, a generated rocket's 10 s countdown and launch 14 s) -- a game that plays on, a clock that counts -- is left as the tap left it, so the card never plays
+on for the person; so is one whose frame traps, and one waiting for its live source. Measured on the phone: `examples/widget-wheel.vera` on a card -- Spin, and
+the next frame read "Won 5" with Spin on again; a generated Fortune Wheel (a vibration on each tick) in the widget screen -- a touch, "Won 5", `VERA-WIDGET
+settle rested steps=106 ms=8`. On the host 300 steps of a game that never rests took 5 ms.
+
+A generated "Rocket launch" (a 10 s countdown on a `ui.Ticker`, then the rocket rises in the frames) showed two more gaps: only the frames ran, so the
+countdown never ended; and its state never came to rest, since a field counted the animation's time by the same amount every frame (for a flame's flicker).
+Now the running tickers run too, and a state whose only changing fields are such clocks for a second is at rest (`StateClocks`). On the phone two new
+generations of the prompt: a tap finished the countdown and the launch on the card ("Liftoff complete"), and one written with a `gfx.moving("launch")`
+rocket flew off its sky and came back. A button the app turns off once its work is over (a Start that waits for Reset) is no longer refused.
+
+What settling costs: on a scene that never rests (a generated night sky whose stars twinkle on a clock) a tap first took 657 ms on the phone; most of it was
+encoding the state, twice a step. Encoded once a step: 365 ms. Taking a state whose only changing fields are clocks at once from 10 s on
+(`SETTLE_CLOCK_EARLY_STEPS`) rather than at the end of the 20 s: 186 ms. A wheel that lands takes a few ms.
+
+Settling is bounded by work, not by the clock on the wall (`SETTLE_MAX_WORK`: the VM steps the handlers and views run plus the characters of
+the state encoded each step, about 2 s on the phone at worst: a frame handler heavy on VM steps did a million of it in 309 ms on the card,
+291 ms in the worker; a 5500-character state, mostly encoding, did a million in 22 ms). With a wall-clock limit the same tap could land in the check, which runs in a TaskPool
+worker, and be left spinning on a busy form extension, or the other way round; counted, it ends the same everywhere. Nothing that settles
+runs on the app's UI thread: Make widget's checks and Save's (when the state changed since Generate) run in a worker, and so do taps in the
+app's widget preview (`agent/WidgetCheckTask.ets`).
+
+The 15 toy prompts at the end of the day, on the phone, against the morning's run: 13 of 15 widgets made (bubble wrap still over the 60-shape picture limit;
+the fish tank's third answer did not come). The frog hops off a lily pad that fills the card, the cat fills the card and is stroked, the die tumbles and shows
+a new face, the rocket launches out of a sky that stays, the punching bag swings from its hook, the wheel lands on its result, the night sky's stars drift; the
+pendulum still swings whole and one wheel was drawn as a single slice by the model.
+
+Make widget holds two more things to the card:
+
+- a picture that takes a touch and shows nothing for it: no ui.Motion or gfx.moving around it and the same card after the tap and the settling (`unseenTouch`;
+  a generated countdown rocket stood on its pad: its tap started a countdown on a `ui.Ticker`, which the card did not run then). Only the pictures are
+  compared (`drawnPictures`): a generated rocket flew up and back to its pad in the app's frames, so the card drew the pad again with its launch count
+  one higher, and the count passed for the touch showing (`examples/widget-return-rocket.vera`);
+- a button a tap leaves off for good (what it started does not come to rest in the card's 20 s): the reason asks for a handler of the widget's own that works
+  out the result at once (`stuckButton`);
+- a picture with no handler and no button, when the app's picture takes a touch: on the card it would only play a movement (8 of 14 toy widgets: a die that
+  tumbled and kept its face, a cat that could not be stroked). The reason names the app's handler (`deadPicture`).
+
+The prompt says a tap is finished by the app's frames for up to 20 s, and that a scene on a 2x4 card is drawn wide (with `widget(state, size)`), since a square
+picture leaves its sides empty there and a square cover picture loses its top and bottom. Host checks: `live-widget-check.js` (the wheel lands from a button,
+from a touch and with a vibration on each tick; a slow one stays as the tap left it; `examples/widget-countdown-rocket.vera`: a ticker's countdown runs out
+and the rocket leaves), `widget-refine-check.js` (the two reasons, the prompt).
+
+## Always moving: gfx.drift on the platform's Swiper
+
+A card's script stops a couple of seconds after a redraw, so nothing we animate can loop there; the platform's own animations keep going. Measured with a
+throwaway card (three strips of `Swiper` with `autoPlay`, `interval(0)`, `loop`, `curve(Linear)`): a strip of two identical pages slid at a steady
+~115 vp/s, about a page a second (the page change's duration cannot be set on a card), with no stop between pages; a strip cut into eight slices with four
+on view slid a quarter as fast; a vertical one turned over fell. All three were still moving 10 and 30 minutes later, the render service's CPU the same. The render service spent 1.13 s of CPU in 30 s with the three strips on screen
+(about 4 % of one core) and 0.04 s with the card on another page: off screen the strips stop. The screen was not switched off (the phone would lock).
+
+`gfx.drift(direction, speed, shapes)`: the shapes are a tile the size of the picture that slides on and on towards direction (`left`, `right`, `up`,
+`down`) at speed (`slow`, `medium`, `fast`: the picture's width or height in 8, 4 or 2 pages of 1.05 s, `DRIFT_PAGE_MS`, `driftSlices`) and comes back in
+from the other side; the painter draws the tile and a copy either side, so it joins up.
+
+- **On a card** the picture is split into layers as for moving parts, and a drift is a layer of kind `drift`: a `Swiper` of its slices, all on view, each a
+  canvas painting its slice of the picture (`paintGfx` with a shift), one slice a page, looping. Right is the strip laid right to left (`Direction.Rtl`),
+  down the upward strip turned over with each slice painted upside down. Its canvases come from a pool of their own (16: two drifts of up to eight slices).
+  A picture that starts with a drift gets an empty bottom layer for its touches; a drift layer lets touches through.
+- **In the app** `paintGfx` takes a clock and draws the tile moved by the share of its period that has passed; a surface with a drift is repainted on every
+  tick while it is on screen.
+- The Make widget prompt (ALWAYS MOVING) says what is drawn with it, and keeps it to one or two.
+- Measured on the phone (`examples/widget-sky.vera` as a cover picture on a card): the stars slid left and the clouds right while the moon stayed. A Swiper with no
+  more items than it shows stood still, so its items are the strip twice over. A `gfx.blur` inside a drift showed a thin seam where slices meet (each slice
+  blurs only what it holds), so the prompt keeps blur out of a drift. A touch through the drift layers reached the picture's handler.
+- Generated (three prompts): a fish tank used `gfx.drift("up")` for its bubbles and a `gfx.moving` fish, on a cover picture; a field of clouds and a night
+  sky did not use a drift (the clouds stood still), so the model reaches for it only some of the time.
+
+Host checks: `gfx-check.js` (the literals, the tile and its copies, the travel with a clock, the frame round trip), `live-widget-check.js`
+(`examples/widget-sky.vera`: the layers, the slices, cover, the bottom layer for touches, two at most).
+
+## Wheels of slices: gfx.sector, and the pattern of moving parts in the prompt
+
+Wheels came out as one slice: a wedge built from a stroked `gfx.arc` (round caps) or a hand-made `gfx.polygon` goes wrong. `gfx.sector(x, y, radius,
+startDegrees, sweepDegrees, color)` is a filled pie slice, angles as `gfx.arc` (0 at twelve o'clock, clockwise): the painter goes from the centre out
+along its start, round its rim and back (`GfxPaint.paintOp`), so the SVG proofs and the card draw it from the same code; it reuses the frame's fields
+(x, y, r, start, sweep). The Make widget prompt's MOVING PARTS now carries an eight-line worked example -- a clock case that stays and a rod and bob in
+`gfx.moving("swing", 0, 50, 15, ...)`, six sectors in `gfx.moving("spin", 0, 50, 52, ...)` under a pointer that stays -- and says it shows how parts
+move, not a drawing to copy. The game prompt says a wheel, a pie or a pizza is sectors.
+
+Measured on the phone (five short prompts, one widget each): the pizza's widget was eight `gfx.sector` wedges in two shades, drawn right on the card;
+but none of the five used `gfx.moving`. The pendulum clock swung whole in a `ui.Motion("swing")`, the windmill turned whole in a `ui.Motion("spin")`
+(sky and tower with it), the fortune wheel did not move at all (its tap landed it on a prize after the card's settling), and bubble wrap failed three
+times (97 shapes, then a handler with a vibration, then a background). The generated wheel apps still drew their slices as polygons in a group. As
+before, prose in the prompt moves the model only some of the time; the next steps put the guidance in checks. Host checks: `gfx-check.js` (a sector
+is a closed wedge at the right angles, a whole turn a disc, a negative sweep anticlockwise, the frame round trip, six slices that meet),
+`widget-refine-check.js` (the example in the prompt compiles in a draw function, and a widget of it passes Make widget's checks).
+
+## Many of the same: gfx.repeat
+
+Bubble wrap could not be drawn on a card: about 145 circles against 60 shapes for each card picture and 8000 characters for the whole frame.
+`gfx.repeat(columns, rows, dx, dy, shapes)` draws its shapes `columns x rows` times. Each copy is `dx` further right and `dy` further down than the
+one before. It is one `GfxOp` of kind `repeat`: its children are written once, and the painter repeats them (`GfxPaint.paintOp`). That keeps a
+12 x 12 sheet short in the frame: `examples/widget-bubbles.vera` is under 2000 characters. Two counts are kept. `count` is the number of shapes
+written: a card picture may hold 60 of these, and a repeat counts its children once. `drawn` is the number of shapes painted: every copy counts.
+The app's 4000-shape frame limit (`MAX_GFX_SHAPES`) uses `drawn`. A card picture may paint at most 400 shapes (`LIVE_MAX_DRAWN`), and one repeat
+may make at most 400 copies (`MAX_GFX_REPEAT`). The painter applies the copy limit as well, so a frame from anywhere else cannot paint more. A touch on the picture goes to the picture's pointer handler, as before.
+
+The card's 60-shape refusal now says what to do: "Many of the same (bubbles, bricks, stars, dots in a grid) is one gfx.repeat(...), which counts
+its shapes once; draw only what differs from copy to copy (a popped bubble) over it". The prompt says the same beside the limit.
+
+One limit remains. Copies of a repeat cannot differ from one another, so whatever differs is drawn as shapes of its own. A sheet with more than about
+50 popped bubbles, each drawn separately, goes over the 60 shapes again. When that happens, the card refuses to draw it, just as it did before
+gfx.repeat existed.
+
+Measured on the phone (seven runs: bubble wrap four times, a brick wall twice, a box of chocolates once). Each time the 60-shape refusal named
+gfx.repeat, the model's next answer for bubble wrap used it (the answers are logged at debug level). One sheet of 10 x 10 lit bubbles became a cover
+picture on the card, and a tap there popped a bubble ("99 bubbles left"). A second answer with a repeat was refused by the touch check: that check
+touched only the middle of the picture, and on this sheet the middle falls between bubbles. It now tries six points (`TOUCH_POINTS`) before it calls a
+touch unseen. On the host the same answer is then served. Of the other runs, one bubble wrap app had a small sheet (48 bubbles) and needed no repeat.
+One run failed: a depth error, then no answer from the model. The two brick walls (66 and 68 shapes) failed on other checks, without a repeat. The
+box of chocolates fitted as it was. Make widget now logs `attempt N failed: no answer` when the model sends nothing back
+(`AgentWidget.writeWidget`). Host checks: `gfx-check.js` (copies at their offsets, written once and painted every time, whole columns, the 400-copy
+trap, the app's limit counting copies, a forged frame not painted, the bubble wrap example within 60 shapes, `proofs/widget-bubbles.svg`),
+`live-widget-check.js` (the sheet in a small frame, a tap pops a bubble, the same sheet as 144 shapes refused with the gfx.repeat reason, a
+repeat that paints 807 refused), `widget-refine-check.js` (the prompt, the example's widget passes, a touch between bubbles is not the only one tried).
+
+## The moving part, learnt from the app's own animation
+
+The prompt's example did not get the model to use moving parts (step above), but the generated apps already show which part moves: many of them
+animate their subject in the frame handler. `VeraMovingPart.appMovingPart` runs that handler from the saved state, in a VM of its own, with phone
+effects dropped. It first watches the state as it is. When nothing turns, it tries again after a touch in the middle of the picture, then after a
+press of each of the first three buttons, because a wheel is still until it is spun. Each try runs 90 frames of 33 ms and decodes the draw
+function every third frame. `partFromLooks` then compares those frames. Each shape is reduced to the points that say where it is (`pointsOf`: a
+centre, the ends of a line, a polygon's corners, a group's origin and what the group holds, through the group's transform). Shapes whose points
+move are candidates for the part.
+
+The point they turn about is found by least squares: for every moving point, `|P_t|^2 - |P_0|^2 = 2 c . (P_t - P_0)`. Two things may turn about
+different points, for example a dial's second hand and the pendulum under it (a generated clock had both, and a single fit over all points
+missed). So each point's own circle is a candidate centre, and the centre that the most points lie on wins. A point whose own circle has a
+different centre does not count for it. The centre is then fitted again on the points that lie on it. What turns must also turn whole: the
+distances between its points do not change, so seaweed that bends, a burst ring that grows, or sparks that fly apart are not a part. A part is
+also refused when its centre is far outside the picture (a slide or a rise, not a turn), when it turns less than 8 degrees, or when nothing
+stays. If a point of a moving shape stays put near the centre, the pivot is exactly that point (the top of the rod, a group's origin): otherwise
+the shine on a pendulum's bob, which moves with the bob but does not turn about the pivot, pulled the fit 2 units off. A turn of 200 degrees or
+more is a `spin`; anything less is a `swing`.
+
+Make widget uses this in `movingPartError`, which runs after the scene check. It finds the widget's picture of the part by colour, using the
+part's colours that no still shape also uses (a pin in the rod's brass is not the rod). It refuses two cases: a picture wrapped in a `ui.Motion`
+that turns (spin, turn, tumble, flip, swing, wobble, roll) while it also shows what should stay, and a picture in which nothing moves. The reason
+names both sets of shapes by kind and colour and asks for `gfx.moving(style, 0, x, y, [those shapes])`. The pivot is given in the widget
+picture's own units: the same point of the same shape when the widget draws its own version, otherwise in proportion to the app's picture. When
+the widget draws with the app's own draw function, the reason also says that function cannot be changed and the widget needs a draw function of
+its own. A `ui.Motion` around only the part (in a `ui.Layers` over the rest) passes, and so does a movement that does not turn (a sleepy cat that
+breathes). Nothing is rewritten automatically. Over the 63 apps saved from this and earlier runs, a part was found in 19: every wheel, pendulum,
+punching bag, windmill and ferris wheel, and an 8-ball whose window turns while it is shaken. No rocket, frog, die, fish tank or bubble wrap was
+taken for a turn. Each search took 15-80 ms on the host.
+
+Measured on the phone (nine runs: pendulum clock three times, fortune wheel, windmill, ferris wheel, bubble wrap twice). Six widgets were made,
+and five of them move only their part with `gfx.moving`. The wheel's first answer did not move at all; the check named its group and the pivot
+150, 150 -> 50, 50, and the second answer was a wheel of `gfx.sector` slices in `gfx.moving("spin")` under a pointer that stays. On the card the
+wheel turned and landed on a fortune. Without any check firing, the windmill turned its sails while the tower and sky stayed, the ferris wheel
+turned its spokes in a night sky, and two pendulum clocks swung their rod and bob while the face stayed. One pendulum clock was made on the build
+before the fit could tell the clock's second hand from the pendulum: its widget did not move, and that build's check found no part. That app, run
+on the host with the current fit, is refused with the pivot 150, 226. Three runs failed on other checks: bubble wrap twice (each used `gfx.repeat`
+after the shape refusal, then hit the room or background checks) and the ferris wheel's other run (a parse error). The morning's run of the same
+toys had the pendulum swinging whole and the wheel spinning whole or not at all. Host checks: `widget-refine-check.js`
+(`examples/widget-pendulum-frames.vera`: the part, pivot and swing found from the frames, the naive and still widgets refused with the shapes and
+the pivot, the pivot found in the widget's own smaller drawing, a Motion around only the bob passes, a breathing Motion passes, a dial's hand
+beside the pendulum is not the part; `examples/widget-wheel.vera`: the wheel found after a touch, its naive widget refused; the countdown rocket
+is not a turn).
+
 ## Deferred / known limits
 
 - Habit-list fixture, ListGroup/ListItem and remaining card-safe components.

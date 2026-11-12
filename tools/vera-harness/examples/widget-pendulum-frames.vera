@@ -1,0 +1,59 @@
+// A pendulum clock as generated apps draw one: the app swings the pendulum in its frame handler (the rod's end and the bob computed
+// from the angle each frame) in front of a case that stays. Its widget draws the same picture with the rod and bob in a gfx.moving part
+// about the top of the rod. widget-refine-check.js finds the moving part from the app's own frames (VeraMovingPart) and refuses a widget
+// that swings the whole clock in a ui.Motion, or moves nothing, naming the shapes and the pivot.
+
+@jsonable class AppState { t: number; ticks: number; }
+
+function init(): AppState { return {t: 0, ticks: 0}; }
+
+function angle(state: AppState): number { return 0.5 * math.sin(state.t * 2.4); }
+
+function caseShapes(): gfx.Shape[] {
+  return [
+    gfx.roundRect(20, 4, 60, 92, 10, gfx.linear(20, 0, 80, 0, ["#7c4a2d", "#a86b40", "#6b3d22"])),
+    gfx.roundRect(27, 10, 46, 80, 6, "#2a1a12"),
+    gfx.circle(50, 18, 2.5, "#d4a64a")
+  ];
+}
+
+function bob(state: AppState): gfx.Shape[] {
+  let x: number = 50 + 52 * math.sin(angle(state));
+  let y: number = 18 + 52 * math.cos(angle(state));
+  return [gfx.line(50, 18, x, y, 1.5, "#d4a64a"), gfx.circle(x, y, 7, gfx.radial(x - 2, y - 2, 9, ["#fff3c4", "#e0b34a", "#8a5a14"]))];
+}
+
+function clock(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = caseShapes();
+  for (let s: gfx.Shape of bob(state)) { shapes.push(s); }
+  return shapes;
+}
+
+function clockCard(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = caseShapes();
+  shapes.push(gfx.moving("swing", 0, 50, 18, bob(state)));
+  return shapes;
+}
+
+function onFrame(state: AppState, ms: number): AppState {
+  let t: number = state.t + ms / 1000;
+  let ticks: number = state.ticks;
+  if (math.floor(t * 2.4 / math.pi()) !== math.floor(state.t * 2.4 / math.pi())) { ticks = ticks + 1; }
+  return {t: t, ticks: ticks};
+}
+
+function view(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Surface("default", 100, 100, "clock", "onFrame", ""),
+    ui.Text("caption", ui.numberToString(state.ticks) + " ticks")
+  ]);
+}
+
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("soft", "", [
+    ui.Column("center", [
+      ui.Surface("default", 100, 100, "clockCard", "", ""),
+      ui.Text("caption", ui.numberToString(state.ticks) + " ticks")
+    ])
+  ]);
+}

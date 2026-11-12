@@ -9,12 +9,12 @@ import { AppRouteParams, returnToLibrary } from '../vera/AppNavigation'
 import { formBindings } from '../vera/FormBindings'
 import { publishLiveWidget, bindLiveForm, WIDGET_ADDED } from '../vera/LiveWidgetPublish'
 import { refreshForms } from '../vera/FormUpdater'
-import { widgetRefinementPrompt, validateWidgetRefinement, widgetRepairNote } from '../vera/VeraWidgetRefine'
+import { widgetRefinementPrompt, widgetRepairNote } from '../vera/VeraWidgetRefine'
 import { veraStateStamp } from '../vera/VeraStateStamp'
 import { WidgetPreview } from '../components/WidgetPreview'
 import { hasWidgetFunction } from '../vera/WidgetStatus'
 import { engine, LlamaEngine, GenerateRequest, GenerateResult, loadRawfileText } from '../vera/LlamaEngine'
-import { compileVeraSource, CompileError, spliceWidget, appUsesWidgetError, carryWidget, withoutWidget } from '../vera/VeraCompiler'
+import { compileVeraSource, CompileError, spliceWidget, appUsesWidgetError, carryWidget, withoutWidget, widgetRefinementError } from '../vera/VeraCompiler'
 import { applyRepair, repairPrompt } from '../vera/VeraRepair'
 import { smokeRun } from '../vera/VeraSmoke'
 import { logMark, logStep, initTrace, trace, traceCompile } from '../vera/VeraTiming'
@@ -43,6 +43,7 @@ import { AgentRequest, AgentResult } from '../vera/agent/VeraAgent'
 import { appAgentHost } from '../vera/agent/AgentAppHost'
 import { drawsSurface, editSurfaceProgram, SurfaceEdit } from '../vera/agent/AgentSurfaceEdit'
 import { writeWidget, WidgetWrite, WIDGET_ASK } from '../vera/agent/AgentWidget'
+import { validateWidgetOffMain } from '../vera/agent/WidgetCheckTask'
 import { WidgetSuggestion, firstSuggestions, changeSuggestions } from '../vera/agent/WidgetSuggest'
 import { sameCard } from '../vera/VeraLiveWidget'
 import { surfaceRouteEnabled } from '../vera/agent/AgentSurface'
@@ -342,6 +343,11 @@ export struct GeneratePage {
   private previewController: VeraPreviewController = new VeraPreviewController()
   /** What the next compiled program starts from (VeraPreview.seedState): the state at the moment a refine was asked for. */
   @State carriedState: string = ''
+  /**
+   * The widget's bytecode and the saved state its card checks last passed with ('' for none). Save checks the widget again over
+   * the state saved by then; when that is the same, the run that plays its taps (seconds for a game) is not made twice.
+   */
+  private widgetPassed: string = ''
   /** The run's own line ("Ready in 8.3 s") over a new app just opened full screen, for a few seconds. */
   @State readyNote: boolean = false
   /**
@@ -447,6 +453,8 @@ export struct GeneratePage {
   private requestLabel: string = ''
   /** Adding the card: the system dialog may take a while, and a second tap must not add two. */
   @State widgetAdding: boolean = false
+  /** checkWidgetSave is running the card's checks in a worker: Save waits for them. */
+  @State widgetChecking: boolean = false
   /** What to do next when the card could not be added here (a launcher with no add dialog, an error). */
   @State widgetNote: string = ''
   /** Set once the card was put on the home screen from this page: the button then says so. */
@@ -1377,7 +1385,7 @@ export struct GeneratePage {
           this.generatedSource = decoded.source
           let local = compileVeraSource(decoded.source)
           let validation = smokeRun(local)
-          if (validation.length === 0) { validation = validateWidgetRefinement(this.widgetBase, decoded.source, local.vbc2) }
+          if (validation.length === 0) { validation = await validateWidgetOffMain(this.widgetBase, decoded.source, local.vbc2) }
           if (validation.length > 0) { throw new Error(validation) }
           decoded.bytecode = local.vbc2
         }
@@ -1599,7 +1607,7 @@ export struct GeneratePage {
       let smokeStart = Date.now()
       errors = smokeRun(result)
       if (errors.length === 0 && this.makeWidget) {
-        errors = validateWidgetRefinement(this.widgetBase, this.generatedSource.trim(), result.vbc2)
+        errors = await validateWidgetOffMain(this.widgetBase, this.generatedSource.trim(), result.vbc2)
       }
       logStep('smoke', smokeStart, 'src=generate attempt=' + this.attempt.toString() + ' ok=' + (errors.length === 0).toString())
       vbc2 = errors.length === 0 ? result.vbc2 : ''
@@ -2171,6 +2179,7 @@ export struct GeneratePage {
     this.generatedSource = made.source
     this.compiledSource = made.source
     this.compiledVbc2 = made.vbc2
+    this.widgetPassed = made.vbc2 + '\u0000' + this.carriedState
     this.compositionJson = ''
     this.modelWrote = true
     this.acceptRequest()
@@ -2242,7 +2251,55 @@ export struct GeneratePage {
       this.naming = true
       return
     }
+    if (this.makeWidget) {
+      if (!this.widgetChecking) { void this.saveWidget() }
+      return
+    }
     if (this.commitSave()) { this.afterSave() } else { this.leaveAfterSave = false; this.widgetAfterSave = false }
+  }
+
+  /** Save for a widget: its checks first, off the UI thread when what they found at Generate no longer holds (checkWidgetSave). */
+  private async saveWidget(): Promise<void> {
+    if (await this.checkWidgetSave() && this.commitSave()) { this.afterSave() } else { this.leaveAfterSave = false; this.widgetAfterSave = false }
+  }
+
+  /**
+   * The state a widget is saved with: the base version's saved state, read at Save, not at Generate, so widget/app taps during
+   * generation are not lost. null when the app changed under the widget (status says so).
+   */
+  private widgetSaveState(): string | null {
+    let base = store.getVersion(this.projectId, this.baseVersionId)
+    let latest = store.getLatestVersion(this.projectId)
+    if (base === null || latest === null || latest.id !== base.id || this.compiledVbc2.length === 0) {
+      this.status = 'The app changed while this widget was being made. Make the widget again.'
+      return null
+    }
+    return store.loadState(this.projectId, base.id, veraStateStamp(base.vbc2))
+  }
+
+  /**
+   * Before a widget is saved: the card's checks for the state it is saved with, in a TaskPool worker (WidgetCheckTask) when the
+   * ones made at Generate were for another state -- a tap on the app or the card meanwhile. They play every tap to rest, which
+   * for a game that never rests froze the UI thread. What passes is remembered (widgetPassed), so commitSave finds it.
+   */
+  private async checkWidgetSave(): Promise<boolean> {
+    if (!this.makeWidget) { return true }
+    if (this.widgetChecking || this.disposed || this.generating || this.compiledSource.length === 0 || !this.hasResult()) { return false }
+    let preserved = this.widgetSaveState()
+    if (preserved === null) { return false }
+    let key = this.compiledVbc2 + '\u0000' + preserved
+    if (this.widgetPassed === key || widgetRefinementError(this.widgetBase, this.compiledSource).length > 0) { return true }
+    this.widgetChecking = true
+    this.status = 'Checking the widget...'
+    try {
+      let validation = await validateWidgetOffMain(this.widgetBase, this.compiledSource, this.compiledVbc2, preserved)
+      if (this.disposed) { return false }
+      if (validation.length > 0) { this.compileErrors = validation; this.status = 'Widget not saved'; return false }
+      this.widgetPassed = key
+      return true
+    } finally {
+      this.widgetChecking = false
+    }
   }
 
   /**
@@ -2350,16 +2407,17 @@ export struct GeneratePage {
     if (note.length > 100) { note = note.substring(0, 100) + '...' }
     let preserved = ''
     if (this.makeWidget) {
-      let base = store.getVersion(this.projectId, this.baseVersionId)
-      let latest = store.getLatestVersion(this.projectId)
-      if (base === null || latest === null || latest.id !== base.id || this.compiledVbc2.length === 0) {
-        this.status = 'The app changed while this widget was being made. Make the widget again.'
+      let state = this.widgetSaveState()
+      if (state === null) { return false }
+      preserved = state
+      // The card's checks ran for this bytecode and this state (checkWidgetSave, or at Generate): only that the app around the
+      // widget was kept is checked again (cheap). They are never run here: on the UI thread they froze the app.
+      let preservation = widgetRefinementError(this.widgetBase, this.compiledSource)
+      if (preservation.length > 0) { this.compileErrors = preservation; this.status = 'Widget not saved'; return false }
+      if (this.widgetPassed !== this.compiledVbc2 + '\u0000' + preserved) {
+        this.status = 'The app changed while the widget was checked. Save again.'
         return false
       }
-      // Read at Save, not at Generate: widget/app taps during generation must not be lost.
-      preserved = store.loadState(this.projectId, base.id, veraStateStamp(base.vbc2))
-      let validation = validateWidgetRefinement(this.widgetBase, this.compiledSource, this.compiledVbc2, preserved)
-      if (validation.length > 0) { this.compileErrors = validation; this.status = 'Widget not saved'; return false }
     }
     let widgetLost = !this.makeWidget && this.keepWidget()
     let saved: Version
@@ -3393,10 +3451,10 @@ export struct GeneratePage {
             .enabled(false)
           Text('Done').fontSize(14).fontColor(app.primaryInk).onClick(() => { this.finishWidget() })
         } else {
-          Button(this.widgetAdding ? 'Adding...' : this.widgetActionLabel())
+          Button(this.widgetChecking ? 'Checking...' : this.widgetAdding ? 'Adding...' : this.widgetActionLabel())
             .attributeModifier(new PrimaryButton())
             .width('100%')
-            .enabled(!this.widgetAdding)
+            .enabled(!this.widgetAdding && !this.widgetChecking)
             .onClick(() => { this.addToHomeScreen(false) })
           if (!this.isSaved() && this.widgetCards === 0 && this.bindFormId.length === 0) {
             Text('Save without adding').fontSize(13).fontColor(app.inkMuted).onClick(() => { this.doSave() })
@@ -3747,8 +3805,8 @@ export struct GeneratePage {
    * Cards already there draw the saved version on their own (commitSave refreshes them).
    */
   private async addToHomeScreen(leave: boolean): Promise<void> {
-    if (this.disposed || this.generating || this.widgetAdding) { return }
-    if (!this.isSaved() && !this.commitSave()) { return }
+    if (this.disposed || this.generating || this.widgetAdding || this.widgetChecking) { return }
+    if (!this.isSaved() && !(await this.checkWidgetSave() && this.commitSave())) { return }
     this.widgetAdding = true
     this.widgetNote = ''
     let placed = false

@@ -6,6 +6,7 @@
  */
 
 import { ResolvedTheme } from './VeraTheme'
+import { MotionPose } from './VeraMotion'
 
 /**
  * Colours a program names instead of writing one. The theme decides what each
@@ -82,15 +83,57 @@ export function gfxColor(t: ResolvedTheme, c: string): string {
   return themeColor(t.ink)
 }
 
+/**
+ * What a shape is filled or stroked with: a colour (gfxColor), or a gradient gfx.linear / gfx.radial wrote as
+ * "lin:x1,y1,x2,y2:c1|c2|..." or "rad:x,y,r:c1|c2|...". The gradient's points are in the units the shape is drawn in, under the
+ * transform in force, so one inside a group moves with it. A gradient that does not read is drawn in its first colour, or in ink.
+ */
+export function gfxPaintStyle(ctx: CanvasRenderingContext2D, t: ResolvedTheme, c: string): string | CanvasGradient {
+  let linear = c.startsWith('lin:')
+  if (!linear && !c.startsWith('rad:')) { return gfxColor(t, c) }
+  let parts = c.split(':')
+  let colours = parts.length > 2 ? parts[2].split('|').filter((s: string): boolean => s.length > 0) : []
+  let numbers = parts.length > 1 ? parts[1].split(',').map((s: string): number => Number(s)) : []
+  let wanted = linear ? 4 : 3
+  let usable = numbers.length === wanted && numbers.every((n: number): boolean => isFinite(n)) && (linear || numbers[2] > 0)
+  if (colours.length === 0) { return gfxColor(t, '') }
+  if (!usable || colours.length === 1) { return gfxColor(t, colours[0]) }
+  let g = linear ? ctx.createLinearGradient(numbers[0], numbers[1], numbers[2], numbers[3]) :
+    ctx.createRadialGradient(numbers[0], numbers[1], 0, numbers[0], numbers[1], numbers[2])
+  for (let i = 0; i < colours.length; i++) { g.addColorStop(i / (colours.length - 1), gfxColor(t, colours[i])) }
+  return g
+}
+
+/** gfx.drift's directions and speeds. */
+export const DRIFT_DIRECTIONS: string[] = ['left', 'right', 'up', 'down']
+export const DRIFT_SPEEDS: string[] = ['slow', 'medium', 'fast']
+
+/**
+ * How a drift moves: a card plays it with the platform's own Swiper (its script stops a couple of seconds after a redraw, the Swiper does
+ * not), which moves one page of the strip per DRIFT_PAGE_MS, so the strip is cut into this many slices and the speed is a picture's
+ * width (or height) per this many pages. The app moves it at the same speed. Measured on the phone: about 1.05 s a page.
+ */
+export const DRIFT_PAGE_MS: number = 1050
+export function driftSlices(speed: string): number { return speed === 'fast' ? 2 : speed === 'medium' ? 4 : 8 }
+
+/** The most copies one gfx.repeat makes (columns x rows): a 12 x 12 sheet of bubble wrap is 144. */
+export const MAX_GFX_REPEAT: number = 400
+
 /** One thing to draw, as the program asked for it. Plain data: built by the host functions, read by paintGfx. */
 export class GfxOp {
-  /** rect | roundRect | circle | arc | line | polyline | polygon | path | strokePath | text | group */
+  /** rect | roundRect | circle | arc | sector | line | polyline | polygon | path | strokePath | text | group | fx | moving | drift | repeat */
   kind: string = ''
+  /**
+   * An fx's effect: glow | shadow | blur | add | screen | multiply ('' draws its shapes plain). Its blur is lineWidth, a shadow's offset w, h.
+   * A moving part's Motion preset (gfx.moving): its pivot is x, y and its trigger sweep.
+   * A drift's direction (gfx.drift: left | right | up | down); its speed is text (slow | medium | fast).
+   */
+  fx: string = ''
   x: number = 0
   y: number = 0
-  /** width, or x2 for a line */
+  /** width, or x2 for a line, or a repeat's columns (its step to the right is x, down y) */
   w: number = 0
-  /** height, or y2 for a line */
+  /** height, or y2 for a line, or a repeat's rows */
   h: number = 0
   /** radius; for a group its scale */
   r: number = 0
@@ -106,8 +149,10 @@ export class GfxOp {
   bold: boolean = false
   points: number[] = []
   children: GfxOp[] = []
-  /** Shapes in this one, itself included; the frame limit counts these. */
+  /** Shapes in this one, itself included, as written: a card's limit counts these. */
   count: number = 1
+  /** Shapes painted, a repeat's children once for every copy: the app's frame limit counts these. Not carried in a card's frame. */
+  drawn: number = 1
   depth: number = 0
 }
 
@@ -128,6 +173,7 @@ function packGfxOp(o: GfxOp): Object {
   if (o.align !== 'left') { r['n'] = o.align }
   if (o.bold) { r['b'] = true }
   if (o.points.length > 0) { r['p'] = o.points }
+  if (o.fx.length > 0) { r['f'] = o.fx }
   if (o.children.length > 0) { r['o'] = o.children.map((c: GfxOp): Object => packGfxOp(c)) }
   return r
 }
@@ -143,6 +189,7 @@ function unpackGfxOp(item: Object): GfxOp {
   o.text = typeof r['t'] === 'string' ? r['t'] as string : ''
   o.align = typeof r['n'] === 'string' ? r['n'] as string : 'left'
   o.bold = r['b'] === true
+  o.fx = typeof r['f'] === 'string' ? r['f'] as string : ''
   if (Array.isArray(r['p'])) {
     o.points = (r['p'] as Object[]).map((v: Object): number => typeof v === 'number' ? v as number : 0)
   }
@@ -181,10 +228,11 @@ export class GfxFit {
   offsetY: number = 0
 }
 
-export function gfxFit(boxW: number, boxH: number, w: number, h: number): GfxFit {
+export function gfxFit(boxW: number, boxH: number, w: number, h: number, cover: boolean = false): GfxFit {
   let fit = new GfxFit()
   if (!(w > 0) || !(h > 0) || !(boxW > 0) || !(boxH > 0)) { return fit }
-  fit.scale = Math.min(boxW / w, boxH / h)
+  // cover (ui.Surface style "cover", a card's background): the whole box is filled and what is past its edges is cut off.
+  fit.scale = cover ? Math.max(boxW / w, boxH / h) : Math.min(boxW / w, boxH / h)
   fit.offsetX = (boxW - w * fit.scale) / 2
   fit.offsetY = (boxH - h * fit.scale) / 2
   return fit
@@ -210,7 +258,9 @@ const RAD: number = Math.PI / 180
 
 /**
  * Draw one frame of a surface into a box of boxW x boxH vp. The box is filled with the theme's background, the
- * surface's w x h units are fitted into it (gfxFit), and the shapes are drawn back to front, clipped to the surface.
+ * surface's w x h units are fitted into it (gfxFit; with `cover` they fill it and run past its edges), and the shapes are
+ * drawn back to front, clipped to the surface. `poses` are where the moving parts among `ops` are now (gfx.moving, in their order
+ * there; the app plays them): a part with no pose is drawn at rest.
  *
  * `pathScale` is the pixels in a vp on the screen drawn to: ArkUI reads a path string (gfx.path, gfx.strokePath) in
  * pixels whatever the canvas's own unit, so a path is drawn under that much more scale -- without it a signature pad's
@@ -220,10 +270,19 @@ const RAD: number = Math.PI / 180
  * otherwise leave the canvas in a state the rest of the frame inherits.
  */
 export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: ResolvedTheme,
-    boxW: number, boxH: number, w: number, h: number, pathScale: number = 1, bare: boolean = false): void {
-  let fit = gfxFit(boxW, boxH, w, h)
+    boxW: number, boxH: number, w: number, h: number, pathScale: number = 1, bare: boolean = false, cover: boolean = false,
+    poses: MotionPose[] = [], clock: number = -1, shiftX: number = 0, shiftY: number = 0, flip: boolean = false): void {
+  let fit = gfxFit(boxW, boxH, w, h, cover)
   ctx.save()
-  ctx.clearRect(0, 0, boxW, boxH)
+  ctx.clearRect(0, 0, ctx.width > 0 ? ctx.width : boxW, ctx.height > 0 ? ctx.height : boxH)
+  // A slice of a card's drift (CardView): the box drawn from (-shiftX, -shiftY), and turned over when the strip runs down.
+  if (flip) {
+    let sw = ctx.width > 0 ? ctx.width : boxW
+    let sh = ctx.height > 0 ? ctx.height : boxH
+    ctx.translate(sw, sh)
+    ctx.rotate(Math.PI)
+  }
+  if (shiftX !== 0 || shiftY !== 0) { ctx.translate(shiftX, shiftY) }
   ctx.globalAlpha = 1
   // A picture laid over another (ui.Surface style "clear") has no background of its own.
   if (!bare) {
@@ -239,11 +298,103 @@ export function paintGfx(ctx: CanvasRenderingContext2D, ops: GfxOp[], t: Resolve
   ctx.clip()
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  for (let o of ops) { paintOp(ctx, o, t, pathScale) }
+  let part = 0
+  for (let o of ops) {
+    if (o.kind === 'moving' && part < poses.length) {
+      paintMoving(ctx, o, t, pathScale, fit.scale, poses[part])
+    } else if (o.kind === 'drift') {
+      paintDrift(ctx, o, t, pathScale, fit.scale, w, h, clock)
+    } else {
+      paintOp(ctx, o, t, pathScale, fit.scale)
+    }
+    if (o.kind === 'moving') { part++ }
+  }
   ctx.restore()
 }
 
-function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number): void {
+/**
+ * A drift: its shapes are a tile the size of the surface, drawn where the clock has moved it (at rest with no clock) and again one
+ * tile behind, so what slides off one side comes in at the other.
+ */
+function paintDrift(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number, unit: number, w: number, h: number,
+    clock: number): void {
+  let across = o.fx === 'left' || o.fx === 'right'
+  let span = across ? w : h
+  let travel = 0
+  if (clock >= 0 && span > 0) {
+    let period = DRIFT_PAGE_MS * driftSlices(o.text)
+    travel = (clock % period) / period * span
+  }
+  let sign = o.fx === 'left' || o.fx === 'up' ? -1 : 1
+  for (let copy = -1; copy <= 1; copy++) {
+    let offset = sign * travel + copy * span
+    ctx.save()
+    ctx.translate(across ? offset : 0, across ? 0 : offset)
+    for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
+    ctx.restore()
+  }
+}
+
+/**
+ * A moving part in a pose of its preset: moved (the pose's dx, dy are points, as on a card, so they are turned into surface units),
+ * turned and scaled about its own pivot, and faded. A turn about another axis than the viewer's (tumble, flip) is drawn as the
+ * squeeze it makes seen from the front.
+ */
+function paintMoving(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number, unit: number, pose: MotionPose): void {
+  let flat = Math.abs(pose.axisX) < 1e-6 && Math.abs(pose.axisY) < 1e-6
+  let squeeze = flat ? 1 : Math.abs(Math.cos(pose.angle * RAD))
+  let sx = pose.scale * pose.scaleX * (flat || Math.abs(pose.axisY) < Math.abs(pose.axisX) ? 1 : squeeze)
+  let sy = pose.scale * pose.scaleY * (flat || Math.abs(pose.axisY) >= Math.abs(pose.axisX) ? 1 : squeeze)
+  if (!isFinite(sx) || !isFinite(sy) || !isFinite(pose.dx) || !isFinite(pose.dy) || !isFinite(o.x) || !isFinite(o.y)) {
+    paintOp(ctx, o, t, pathScale, unit)
+    return
+  }
+  ctx.save()
+  ctx.translate(o.x + pose.dx / unit, o.y + pose.dy / unit)
+  if (flat && pose.angle !== 0) { ctx.rotate(pose.angle * RAD) }
+  ctx.scale(sx, sy)
+  ctx.translate(-o.x, -o.y)
+  ctx.globalAlpha = ctx.globalAlpha * Math.max(0, Math.min(1, pose.opacity))
+  for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
+  ctx.restore()
+}
+
+/** The canvas's composite operation for a gfx.blend mode, '' for none. */
+function blendOperation(mode: string): string {
+  return mode === 'add' ? 'lighter' : mode === 'screen' ? 'screen' : mode === 'multiply' ? 'multiply' : ''
+}
+
+/**
+ * One gfx.glow / shadow / blur / blend around its shapes. A canvas does not scale a shadow or a filter with its transform, so
+ * their sizes are turned from surface units into the canvas's by `unit` (the scale in force): a glow is as wide on a big card as
+ * on a small one, relative to the picture. ArkUI reads a filter's 'px' in the canvas's own unit (measured on the phone: blur(2px)
+ * on a card blurred about 2 vp), unlike a path string, so it takes no `pathScale`.
+ */
+function paintFx(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number, unit: number): void {
+  ctx.save()
+  if (o.fx === 'glow' || o.fx === 'shadow') {
+    ctx.shadowColor = gfxColor(t, o.color)
+    ctx.shadowBlur = Math.max(0, o.lineWidth * unit)
+    ctx.shadowOffsetX = o.fx === 'shadow' ? o.w * unit : 0
+    ctx.shadowOffsetY = o.fx === 'shadow' ? o.h * unit : 0
+  } else if (o.fx === 'blur') {
+    if (o.lineWidth > 0) { ctx.filter = 'blur(' + (Math.round(o.lineWidth * unit * 10) / 10).toString() + 'px)' }
+  } else {
+    let operation = blendOperation(o.fx)
+    if (operation.length > 0) { ctx.globalCompositeOperation = operation }
+  }
+  for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
+  ctx.restore()
+}
+
+function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, pathScale: number, unit: number): void {
+  // A moving part at rest: its shapes as they are (paintMoving draws it in a pose). A drift met inside a group is drawn where it is.
+  // Before the check of its numbers: a part's sweep is its trigger, and a trigger that is not a number (VeraPreview.sameTrigger) only
+  // keeps the part still, it does not take it out of the picture.
+  if (o.kind === 'moving' || o.kind === 'drift') {
+    for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
+    return
+  }
   if (!finite(o)) { return }
   if (o.kind === 'group') {
     ctx.save()
@@ -251,11 +402,30 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, path
     if (o.start !== 0) { ctx.rotate(o.start * RAD) }
     if (o.r !== 1) { ctx.scale(o.r, o.r) }
     ctx.globalAlpha = ctx.globalAlpha * o.size
-    for (let c of o.children) { paintOp(ctx, c, t, pathScale) }
+    for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit * Math.abs(o.r)) }
     ctx.restore()
     return
   }
-  let c = gfxColor(t, o.color)
+  if (o.kind === 'fx') {
+    paintFx(ctx, o, t, pathScale, unit)
+    return
+  }
+  // Many of the same: the shapes once for every copy, each moved by its column and row. A frame read from a card is held to the cap too.
+  if (o.kind === 'repeat') {
+    let columns = Math.max(0, Math.floor(o.w))
+    let rows = Math.max(0, Math.floor(o.h))
+    if (columns * rows > MAX_GFX_REPEAT) { return }
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        ctx.save()
+        ctx.translate(column * o.x, row * o.y)
+        for (let c of o.children) { paintOp(ctx, c, t, pathScale, unit) }
+        ctx.restore()
+      }
+    }
+    return
+  }
+  let c = gfxPaintStyle(ctx, t, o.color)
   if (o.kind === 'rect') {
     ctx.fillStyle = c
     ctx.fillRect(o.x, o.y, o.w, o.h)
@@ -290,6 +460,17 @@ function paintOp(ctx: CanvasRenderingContext2D, o: GfxOp, t: ResolvedTheme, path
     ctx.strokeStyle = c
     ctx.lineWidth = o.lineWidth
     ctx.stroke()
+  } else if (o.kind === 'sector') {
+    // A pie slice: from the centre out along its start, round its rim, and back.
+    if (o.r <= 0 || o.sweep === 0) { return }
+    let sweep = Math.max(-360, Math.min(360, o.sweep))
+    let from = (o.start - 90) * RAD
+    ctx.beginPath()
+    ctx.moveTo(o.x, o.y)
+    ctx.arc(o.x, o.y, o.r, from, from + sweep * RAD, sweep < 0)
+    ctx.closePath()
+    ctx.fillStyle = c
+    ctx.fill()
   } else if (o.kind === 'line') {
     if (o.lineWidth <= 0) { return }
     ctx.beginPath()

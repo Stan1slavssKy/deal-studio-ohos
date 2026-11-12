@@ -1,0 +1,201 @@
+// A generated "Rocket that launches on tap" (2026-11-12, kept verbatim with the widget Make widget wrote for it): the app's frames fly
+// the rocket up and back to its pad, so the card, which shows where they come to rest, drew the pad again; only the count changed.
+import * as ui from "std/ui"
+
+@jsonable
+class AppState {
+  c_phase: number;
+  c_y: number;
+  c_vy: number;
+  c_shake: number;
+  c_launches: number;
+  c_seed: number;
+  c_puffs: number;
+}
+
+function init(): AppState {
+  return {c_phase: 0, c_y: 0, c_vy: 0, c_shake: 0, c_launches: 0, c_seed: 7, c_puffs: 0};
+}
+
+function share(a: number, b: number): number {
+  if (b === 0) { return 0; }
+  return a / b;
+}
+
+
+
+
+
+
+
+
+
+
+
+function c_launch(state: AppState, value: number): AppState {
+  if (state.c_phase !== 0) {
+    return state;
+  }
+  let seed: number = math.randomStep(state.c_seed);
+  return {c_phase: 1, c_shake: 0, c_vy: 0, c_seed: seed, c_launches: state.c_launches + 1, c_y: state.c_y, c_puffs: state.c_puffs};
+}
+
+function c_tap(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase === "up") {
+    return c_launch(state, 0);
+  }
+  return state;
+}
+
+function c_frame(state: AppState, elapsedMs: number): AppState {
+  if (state.c_phase === 0) {
+    return state;
+  }
+  let dt: number = math.min(elapsedMs, 50) / 1000;
+  if (state.c_phase === 1) {
+    let shake: number = state.c_shake + dt;
+    if (shake < 0.7) {
+      return {c_shake: shake, c_puffs: state.c_puffs + 1, c_phase: state.c_phase, c_y: state.c_y, c_vy: state.c_vy, c_launches: state.c_launches, c_seed: state.c_seed};
+    }
+    return {c_phase: 2, c_shake: 0, c_vy: 40, c_y: state.c_y, c_launches: state.c_launches, c_seed: state.c_seed, c_puffs: state.c_puffs};
+  }
+  if (state.c_phase === 2) {
+    let vy: number = state.c_vy + 260 * dt;
+    let y: number = state.c_y + vy * dt;
+    if (y > 420) {
+      return {c_phase: 3, c_y: 420, c_vy: 0, c_shake: state.c_shake, c_launches: state.c_launches, c_seed: state.c_seed, c_puffs: state.c_puffs};
+    }
+    return {c_y: y, c_vy: vy, c_puffs: state.c_puffs + 1, c_phase: state.c_phase, c_shake: state.c_shake, c_launches: state.c_launches, c_seed: state.c_seed};
+  }
+  let back: number = state.c_y - 260 * dt;
+  if (back <= 0) {
+    return {c_phase: 0, c_y: 0, c_vy: 0, c_puffs: 0, c_shake: state.c_shake, c_launches: state.c_launches, c_seed: state.c_seed};
+  }
+  return {c_y: back, c_phase: state.c_phase, c_vy: state.c_vy, c_shake: state.c_shake, c_launches: state.c_launches, c_seed: state.c_seed, c_puffs: state.c_puffs};
+}
+
+function c_draw(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.rect(0, 0, 300, 420, gfx.linear(0, 0, 0, 420, ["#0b1030", "#2a1a4a"])));
+  let i: number = 0;
+  while (i < 14) {
+    let sx: number = (i * 53 + 17) % 300;
+    let sy: number = (i * 97 + 31) % 300;
+    shapes.push(gfx.circle(sx, sy, 1.6, "#ffffffaa"));
+    i = i + 1;
+  }
+  shapes.push(gfx.circle(250, 60, 26, "#f7e7a8"));
+  shapes.push(gfx.circle(240, 52, 22, "#0b1030"));
+  shapes.push(gfx.rect(0, 372, 300, 48, "#3a2f5a"));
+  shapes.push(gfx.rect(0, 372, 300, 6, "#5a4a86"));
+  shapes.push(gfx.rect(110, 356, 80, 18, "#6b5aa0"));
+  shapes.push(gfx.rect(120, 348, 60, 10, "#8a76c4"));
+
+  let lift: number = state.c_y;
+  let jitter: number = 0;
+  if (state.c_phase === 1) {
+    jitter = math.sin(state.c_shake * 60) * 3;
+  }
+  let rx: number = 150 + jitter;
+  let ry: number = 300 - lift;
+
+  if (state.c_phase === 1 || state.c_phase === 2) {
+    let flame: number = 26 + math.sin(state.c_shake * 40 + state.c_y) * 8;
+    shapes.push(gfx.polygon([rx - 12, ry + 34, rx + 12, ry + 34, rx, ry + 34 + flame], "#ff9d2e"));
+    shapes.push(gfx.polygon([rx - 6, ry + 34, rx + 6, ry + 34, rx, ry + 34 + flame * 0.6], "#ffe066"));
+    let p: number = 0;
+    while (p < 5) {
+      let py: number = ry + 40 + p * 14 + (state.c_puffs % 7) * 3;
+      let px: number = rx - 18 + ((p * 37 + state.c_puffs * 11) % 36);
+      shapes.push(gfx.circle(px, py, 9 + p * 2, "#ffffff55"));
+      p = p + 1;
+    }
+  }
+
+  shapes.push(gfx.polygon([rx - 16, ry + 20, rx - 30, ry + 40, rx - 16, ry + 34], "#e0453f"));
+  shapes.push(gfx.polygon([rx + 16, ry + 20, rx + 30, ry + 40, rx + 16, ry + 34], "#e0453f"));
+  shapes.push(gfx.roundRect(rx - 16, ry - 20, 32, 56, 10, "#eef1f8"));
+  shapes.push(gfx.polygon([rx - 16, ry - 18, rx, ry - 52, rx + 16, ry - 18], "#e0453f"));
+  shapes.push(gfx.circle(rx, ry - 2, 8, "#3aa6e0"));
+  shapes.push(gfx.circle(rx, ry - 2, 4, "#bfe6ff"));
+  return shapes;
+}
+
+function view(state: AppState): ui.View {
+  let sections: ui.View[] = [];
+  sections.push(ui.Header("default", "Rocket Launch", "TAP TO LAUNCH", "Tap the rocket and watch it blast off", ""));
+  {
+  }
+  {
+  let flying: boolean = state.c_phase !== 0;
+  sections.push(ui.Section("hero", "Launch pad", "Tap the rocket to fire the engines", [
+    ui.Surface("default", 300, 420, "c_draw", "c_frame", "c_tap"),
+    ui.MetricGroup("default", 2, [
+      ui.NumberStat("accent", "Launches", state.c_launches, "", "", 1, "", "star"),
+      ui.Stat("default", "Status", "On the pad", "", "")
+    ]),
+    ui.ActionBar("center", [
+      ui.Button("primary", "Launch", "c_launch", 0, !flying)
+    ])
+  ]));
+  }
+  return ui.AppTheme("playful", "", sections);
+}
+
+function c_widgetDraw(state: AppState): gfx.Shape[] {
+  let shapes: gfx.Shape[] = [];
+  shapes.push(gfx.rect(0, 0, 100, 100, gfx.linear(0, 0, 0, 100, ["#0b1030", "#2a1a4a"])));
+  let i: number = 0;
+  while (i < 8) {
+    let sx: number = (i * 29 + 11) % 100;
+    let sy: number = (i * 41 + 7) % 70;
+    shapes.push(gfx.circle(sx, sy, 1.2, "#ffffffaa"));
+    i = i + 1;
+  }
+  shapes.push(gfx.circle(80, 20, 9, "#f7e7a8"));
+  shapes.push(gfx.circle(77, 17, 7.5, "#0b1030"));
+  shapes.push(gfx.rect(0, 88, 100, 12, "#3a2f5a"));
+  shapes.push(gfx.rect(0, 88, 100, 2, "#5a4a86"));
+  shapes.push(gfx.rect(36, 84, 28, 5, "#6b5aa0"));
+
+  let lift: number = state.c_y * 0.2;
+  let jitter: number = 0;
+  if (state.c_phase === 1) {
+    jitter = math.sin(state.c_shake * 60) * 1.5;
+  }
+  let rx: number = 50 + jitter;
+  let ry: number = 66 - lift;
+
+  if (state.c_phase === 1 || state.c_phase === 2) {
+    let flame: number = 10 + math.sin(state.c_shake * 40 + state.c_y) * 3;
+    shapes.push(gfx.polygon([rx - 5, ry + 12, rx + 5, ry + 12, rx, ry + 12 + flame], "#ff9d2e"));
+    shapes.push(gfx.polygon([rx - 2.5, ry + 12, rx + 2.5, ry + 12, rx, ry + 12 + flame * 0.6], "#ffe066"));
+  }
+
+  shapes.push(gfx.polygon([rx - 6, ry + 7, rx - 11, ry + 14, rx - 6, ry + 12], "#e0453f"));
+  shapes.push(gfx.polygon([rx + 6, ry + 7, rx + 11, ry + 14, rx + 6, ry + 12], "#e0453f"));
+  shapes.push(gfx.roundRect(rx - 6, ry - 7, 12, 20, 4, "#eef1f8"));
+  shapes.push(gfx.polygon([rx - 6, ry - 6, rx, ry - 18, rx + 6, ry - 6], "#e0453f"));
+  shapes.push(gfx.circle(rx, ry - 1, 3, "#3aa6e0"));
+  shapes.push(gfx.circle(rx, ry - 1, 1.5, "#bfe6ff"));
+  return shapes;
+}
+
+function c_widgetTap(state: AppState, p: gfx.Pointer): AppState {
+  if (p.phase === "up") {
+    return c_launch(state, 0);
+  }
+  return state;
+}
+
+function widget(state: AppState): ui.View {
+  return ui.AppTheme("playful", "", [
+    ui.Column("default", [
+      ui.Surface("cover", 100, 100, "c_widgetDraw", "", "c_widgetTap"),
+      ui.Row("split", [
+        ui.NumberText("metric", state.c_launches, "", " launches", 1),
+        ui.Button("primary", "Launch", "c_launch", 0, state.c_phase === 0)
+      ])
+    ])
+  ]);
+}

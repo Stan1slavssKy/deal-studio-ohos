@@ -20,14 +20,14 @@
 
 import { RuntimeValue, VeraNumberValue, VeraStringValue, VeraBooleanValue, VeraArrayValue, VeraObjectValue,
   RuntimeTrap } from './VeraInterpreter'
-import { GfxOp, GFX_ROLES, isGfxColor, gfxColor, hex2 } from './GfxPaint'
-export { GfxOp, GfxFit, GFX_ROLES, isGfxColor, gfxColor, gfxFit, gfxToSurface, gfxNaturalHeight, encodeGfxOps, decodeGfxOps, paintGfx } from './GfxPaint'
+import { GfxOp, GFX_ROLES, isGfxColor, gfxColor, hex2, DRIFT_DIRECTIONS, DRIFT_SPEEDS, MAX_GFX_REPEAT } from './GfxPaint'
+export { GfxOp, GfxFit, GFX_ROLES, isGfxColor, gfxColor, gfxFit, gfxToSurface, gfxNaturalHeight, encodeGfxOps, decodeGfxOps, paintGfx, DRIFT_DIRECTIONS, DRIFT_SPEEDS, MAX_GFX_REPEAT } from './GfxPaint'
 
 /** Class identities of the module's two types, as the compiler names them. */
 export const GFX_SHAPE: string = 'std/gfx:Shape'
 export const GFX_POINTER: string = 'std/gfx:Pointer'
 
-/** The most shapes one frame may draw, counting the inside of every group. Past it the frame traps rather than stalls. */
+/** The most shapes one frame may draw, counting the inside of every group and every copy a gfx.repeat makes. Past it the frame traps rather than stalls. */
 export const MAX_GFX_SHAPES: number = 4000
 /** Groups inside groups, at most. */
 export const MAX_GFX_DEPTH: number = 12
@@ -36,7 +36,7 @@ export const MAX_GFX_POINTS: number = 2000
 
 export class GfxParam {
   name: string
-  /** 'number' | 'string' | 'boolean' | 'number[]' | 'shapes' | 'color' */
+  /** 'number' | 'string' | 'boolean' | 'number[]' | 'shapes' | 'color' | 'colors' (a string[] of colours) */
   kind: string
   optional: boolean
   constructor(name: string, kind: string, optional: boolean = false) {
@@ -67,6 +67,9 @@ export const GFX_FUNCTIONS: GfxFunction[] = [
     'a filled disc centred on x, y'),
   new GfxFunction('arc', [num('x'), num('y'), num('radius'), num('startDegrees'), num('sweepDegrees'), num('lineWidth'), color()],
     'shape', 'a stroked arc centred on x, y; 0 degrees is twelve o\'clock and angles run clockwise; sweep 360 is a ring'),
+  new GfxFunction('sector', [num('x'), num('y'), num('radius'), num('startDegrees'), num('sweepDegrees'), color()], 'shape',
+    'a filled pie slice from the centre x, y out to radius, angles as gfx.arc (0 is twelve o\'clock, clockwise): one slice of a wheel, ' +
+    'a pie chart or a pizza; a wheel of n slices is n sectors of sweep 360 / n, each starting where the last ended'),
   new GfxFunction('line', [num('x1'), num('y1'), num('x2'), num('y2'), num('lineWidth'), color()], 'shape',
     'a straight line with round ends'),
   new GfxFunction('polyline', [new GfxParam('points', 'number[]'), num('lineWidth'), color()], 'shape',
@@ -82,6 +85,34 @@ export const GFX_FUNCTIONS: GfxFunction[] = [
     'one line of text; align is "left", "center" or "right" about x, and y is the middle of the line'),
   new GfxFunction('group', [num('x'), num('y'), num('rotation'), num('scale'), num('alpha'), new GfxParam('shapes', 'shapes')],
     'shape', 'shapes drawn around their own 0, 0, moved to x, y, turned clockwise by rotation degrees, scaled, and faded by alpha (0..1)'),
+  new GfxFunction('linear', [num('x1'), num('y1'), num('x2'), num('y2'), new GfxParam('colors', 'colors')], 'string',
+    'a colour that runs from the first of colors at x1, y1 to the last at x2, y2, evenly through the rest: give it to any shape ' +
+    'in place of a colour (a sky, a sea, a metal bar); the points are in the units the shape is drawn in'),
+  new GfxFunction('radial', [num('x'), num('y'), num('radius'), new GfxParam('colors', 'colors')], 'string',
+    'a colour that spreads from the first of colors at x, y to the last at radius: give it to a circle for a ball with depth -- ' +
+    'a light colour first, centred a little up and left of the middle, the darkest last'),
+  new GfxFunction('glow', [num('blur'), color(), new GfxParam('shapes', 'shapes')], 'shape',
+    'shapes with a soft light of color around them, blur units wide: a lamp, a neon line, a star, a magic spark'),
+  new GfxFunction('shadow', [num('dx'), num('dy'), num('blur'), color(), new GfxParam('shapes', 'shapes')], 'shape',
+    'shapes with a soft shadow of color moved by dx, dy: a thing standing or floating above the ground (color "#00000055")'),
+  new GfxFunction('blur', [num('radius'), new GfxParam('shapes', 'shapes')], 'shape',
+    'shapes blurred by radius units: mist, a soft cloud, light far away'),
+  new GfxFunction('blend', [new GfxParam('mode', 'string'), new GfxParam('shapes', 'shapes')], 'shape',
+    'shapes mixed with what is under them: "add" makes light (overlaps glow brighter), "screen" lightens, "multiply" darkens like ink'),
+  new GfxFunction('moving', [new GfxParam('motion', 'string'), num('trigger'), num('pivotX'), num('pivotY'), new GfxParam('shapes', 'shapes')], 'shape',
+    'the part of the picture that moves -- a pendulum\'s bob and rod, a wheel, a ball, the frog and not its pond: its shapes play the motion ' +
+    '(a ui.Motion style) about pivotX, pivotY, where the part is fixed or turns (the top of a pendulum, the wheel\'s centre), while the rest ' +
+    'of the picture stays still; a touch on the picture plays every part, and so does a change of trigger (0, or a number the state really ' +
+    'changes with). Only among the shapes the draw function returns, not inside a group or an effect; at most 3 in a picture'),
+  new GfxFunction('drift', [new GfxParam('direction', 'string'), new GfxParam('speed', 'string'), new GfxParam('shapes', 'shapes')], 'shape',
+    'shapes that keep moving and never stop -- clouds drifting, fish swimming, rain or snow falling, stars streaming: they are a tile the size ' +
+    'of the picture that slides on and on towards direction ("left", "right", "up", "down") at speed ("slow", "medium", "fast") and comes back ' +
+    'in from the other side, so spread them over the whole picture; on a home-screen card it is the one thing that moves without a touch. ' +
+    'Only among the shapes the draw function returns, at most 2 in a picture'),
+  new GfxFunction('repeat', [num('columns'), num('rows'), num('dx'), num('dy'), new GfxParam('shapes', 'shapes')], 'shape',
+    'shapes drawn columns x rows times, each copy dx further right and dy further down than the one before (the first where the shapes ' +
+    'are): bubble wrap, a wall of bricks, a grid of stars, seats or dots -- many of the same, written once; at most ' +
+    MAX_GFX_REPEAT.toString() + ' copies. Draw what differs from copy to copy (a popped bubble) over it as shapes of its own'),
   new GfxFunction('rgb', [num('red'), num('green'), num('blue'), new GfxParam('alpha', 'number', true)], 'string',
     'a colour from 0..255 channels and an optional 0..1 alpha, for colours computed at run time'),
   new GfxFunction('distance', [num('x1'), num('y1'), num('x2'), num('y2')], 'number',
@@ -96,6 +127,9 @@ export const GFX_POINTER_FIELDS: string[][] = [
 ]
 
 export const POINTER_PHASES: string[] = ['down', 'move', 'up', 'cancel']
+
+/** gfx.blend's modes. */
+export const GFX_BLEND_MODES: string[] = ['add', 'screen', 'multiply']
 
 export function gfxFunction(name: string): GfxFunction | null {
   for (let f of GFX_FUNCTIONS) { if (f.name === name) { return f } }
@@ -148,6 +182,49 @@ function asNumbers(args: RuntimeValue[], i: number): number[] {
   return out
 }
 
+function asStrings(args: RuntimeValue[], i: number): string[] {
+  if (i >= args.length) { return [] }
+  let v = args[i]
+  if (!(v instanceof VeraArrayValue)) { throw new RuntimeTrap('R0020', 'expected array argument') }
+  let out: string[] = []
+  for (let item of (v as VeraArrayValue).elements) {
+    if (item instanceof VeraStringValue) { out.push((item as VeraStringValue).value) }
+  }
+  return out
+}
+
+/** A gradient's numbers, rounded so the colour string stays short in a card's frame. */
+function gradientNumber(n: number): string {
+  return isFinite(n) ? (Math.round(n * 100) / 100).toString() : 'NaN'
+}
+
+/**
+ * Children of a shape that holds others (group, fx, moving, drift, repeat): counted and nested as the frame limits say. `count` is what is
+ * written (a card holds that many), `drawn` what is painted: a repeat's shapes once each for the first, once for every copy for the second.
+ */
+function holding(o: GfxOp, children: GfxOp[]): RuntimeValue {
+  o.children = children
+  let count = 1
+  let inside = 0
+  let depth = 0
+  for (let c of o.children) {
+    count += c.count
+    inside += c.drawn
+    if (c.depth + 1 > depth) { depth = c.depth + 1 }
+  }
+  let drawn = 1 + inside * (o.kind === 'repeat' ? o.w * o.h : 1)
+  if (depth > MAX_GFX_DEPTH) {
+    throw new RuntimeTrap('R0028', 'groups nest at most ' + MAX_GFX_DEPTH.toString() + ' deep')
+  }
+  if (drawn > MAX_GFX_SHAPES) {
+    throw new RuntimeTrap('R0028', 'one frame draws at most ' + MAX_GFX_SHAPES.toString() + ' shapes')
+  }
+  o.count = count
+  o.drawn = drawn
+  o.depth = depth
+  return shape(o)
+}
+
 /** The shapes in an array, each once; anything that is not a shape is not drawn. */
 function shapesIn(value: RuntimeValue): GfxOp[] {
   let out: GfxOp[] = []
@@ -156,6 +233,11 @@ function shapesIn(value: RuntimeValue): GfxOp[] {
     if (item instanceof GfxShapeValue) { out.push((item as GfxShapeValue).op) }
   }
   return out
+}
+
+/** A gfx.repeat's columns or rows: a whole number, none for one that is not a number or below zero. */
+function copies(n: number): number {
+  return isFinite(n) && n > 0 ? Math.floor(n) : 0
 }
 
 function shape(op: GfxOp): RuntimeValue {
@@ -189,6 +271,12 @@ export function invokeStdGfx(name: string, args: RuntimeValue[]): RuntimeValue {
       let o = op('arc', asStr(args, 6))
       o.x = asNum(args, 0); o.y = asNum(args, 1); o.r = asNum(args, 2)
       o.start = asNum(args, 3); o.sweep = asNum(args, 4); o.lineWidth = asNum(args, 5)
+      return shape(o)
+    }
+    case 'sector': {
+      let o = op('sector', asStr(args, 5))
+      o.x = asNum(args, 0); o.y = asNum(args, 1); o.r = asNum(args, 2)
+      o.start = asNum(args, 3); o.sweep = asNum(args, 4)
       return shape(o)
     }
     case 'line': {
@@ -230,22 +318,58 @@ export function invokeStdGfx(name: string, args: RuntimeValue[]): RuntimeValue {
       let o = op('group', '')
       o.x = asNum(args, 0); o.y = asNum(args, 1); o.start = asNum(args, 2)
       o.r = asNum(args, 3, 1); o.size = Math.max(0, Math.min(1, asNum(args, 4, 1)))
-      o.children = args.length > 5 ? shapesIn(args[5]) : []
-      let count = 1
-      let depth = 0
-      for (let c of o.children) {
-        count += c.count
-        if (c.depth + 1 > depth) { depth = c.depth + 1 }
+      return holding(o, args.length > 5 ? shapesIn(args[5]) : [])
+    }
+    case 'linear':
+    case 'radial': {
+      let n = name === 'linear' ? 4 : 3
+      let numbers: string[] = []
+      for (let i = 0; i < n; i++) { numbers.push(gradientNumber(asNum(args, i))) }
+      let colours = asStrings(args, n).map((c: string): string => c.replace(/[|:]/g, ''))
+      return new VeraStringValue((name === 'linear' ? 'lin:' : 'rad:') + numbers.join(',') + ':' + colours.join('|'))
+    }
+    case 'moving': {
+      let o = op('moving', '')
+      o.fx = asStr(args, 0); o.sweep = asNum(args, 1); o.x = asNum(args, 2); o.y = asNum(args, 3)
+      return holding(o, args.length > 4 ? shapesIn(args[4]) : [])
+    }
+    case 'repeat': {
+      let o = op('repeat', '')
+      o.w = copies(asNum(args, 0)); o.h = copies(asNum(args, 1)); o.x = asNum(args, 2); o.y = asNum(args, 3)
+      if (o.w * o.h > MAX_GFX_REPEAT) {
+        throw new RuntimeTrap('R0028', 'gfx.repeat makes at most ' + MAX_GFX_REPEAT.toString() + ' copies; this one asked for ' +
+          o.w.toString() + ' x ' + o.h.toString())
       }
-      if (depth > MAX_GFX_DEPTH) {
-        throw new RuntimeTrap('R0028', 'groups nest at most ' + MAX_GFX_DEPTH.toString() + ' deep')
-      }
-      if (count > MAX_GFX_SHAPES) {
-        throw new RuntimeTrap('R0028', 'one frame draws at most ' + MAX_GFX_SHAPES.toString() + ' shapes')
-      }
-      o.count = count
-      o.depth = depth
-      return shape(o)
+      return holding(o, args.length > 4 ? shapesIn(args[4]) : [])
+    }
+    case 'drift': {
+      let o = op('drift', '')
+      let direction = asStr(args, 0)
+      let speed = asStr(args, 1)
+      o.fx = DRIFT_DIRECTIONS.indexOf(direction) >= 0 ? direction : 'left'
+      o.text = DRIFT_SPEEDS.indexOf(speed) >= 0 ? speed : 'slow'
+      return holding(o, args.length > 2 ? shapesIn(args[2]) : [])
+    }
+    case 'glow': {
+      let o = op('fx', asStr(args, 1))
+      o.fx = 'glow'; o.lineWidth = Math.max(0, asNum(args, 0))
+      return holding(o, args.length > 2 ? shapesIn(args[2]) : [])
+    }
+    case 'shadow': {
+      let o = op('fx', asStr(args, 3))
+      o.fx = 'shadow'; o.w = asNum(args, 0); o.h = asNum(args, 1); o.lineWidth = Math.max(0, asNum(args, 2))
+      return holding(o, args.length > 4 ? shapesIn(args[4]) : [])
+    }
+    case 'blur': {
+      let o = op('fx', '')
+      o.fx = 'blur'; o.lineWidth = Math.max(0, asNum(args, 0))
+      return holding(o, args.length > 1 ? shapesIn(args[1]) : [])
+    }
+    case 'blend': {
+      let o = op('fx', '')
+      let mode = asStr(args, 0)
+      o.fx = GFX_BLEND_MODES.indexOf(mode) >= 0 ? mode : ''
+      return holding(o, args.length > 1 ? shapesIn(args[1]) : [])
     }
     case 'rgb': {
       let a = Math.max(0, Math.min(1, asNum(args, 3, 1)))
@@ -283,7 +407,7 @@ export function pointerValue(phase: string, id: number, x: number, y: number): R
 export function decodeGfx(value: RuntimeValue): GfxOp[] {
   let ops = shapesIn(value)
   let count = 0
-  for (let o of ops) { count += o.count }
+  for (let o of ops) { count += o.drawn }
   if (count > MAX_GFX_SHAPES) {
     throw new RuntimeTrap('R0028', 'one frame draws at most ' + MAX_GFX_SHAPES.toString() + ' shapes; this one drew ' +
       count.toString())
@@ -309,7 +433,7 @@ export function describeGfxForPrompt(): string {
   for (let pair of GFX_POINTER_FIELDS) { fields.push(pair[0] + ': ' + pair[1]) }
   lines.push('  class gfx.Pointer { ' + fields.join('; ') + ' }  -- phase is ' + POINTER_PHASES.map((p: string): string => '"' + p + '"').join(', ') +
     '; id tells two fingers apart; x, y are in surface units')
-  lines.push('  A colour is a role -- ' + GFX_ROLES.join(' ') + ' -- or "#rrggbb" / "#rrggbbaa", or gfx.rgb(...).')
+  lines.push('  A colour is a role -- ' + GFX_ROLES.join(' ') + ' -- or "#rrggbb" / "#rrggbbaa", or gfx.rgb(...), or gfx.linear(...) / gfx.radial(...).')
   lines.push('  Roles follow the app\'s theme and dark mode; prefer them, and use your own colours for the things in the scene.')
   return lines.join('\n')
 }

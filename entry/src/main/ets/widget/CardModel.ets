@@ -8,6 +8,8 @@
  * Motion slot for each (CardView). The prompts say them from here too.
  */
 export const CARD_MAX_MOTIONS: number = 5
+/** Slices of the drifts on a card (gfx.drift): each slice is a canvas of its own, the strip twice over of up to eight, two drifts. */
+export const CARD_MAX_DRIFT_SLICES: number = 32
 /** Pictures: ui.Surface and ui.Sparkline, each drawn once for the frame, of at most CARD_MAX_SHAPES shapes. */
 export const CARD_MAX_PICTURES: number = 5
 export const CARD_MAX_SHAPES: number = 60
@@ -30,6 +32,17 @@ export class CardSize {
   maxTexts: number = 8
   pictureMax: number = 80
 }
+
+/** The padding a card keeps round what is on it, in vp: a cover picture (splitCover) runs under it to the card's edges. */
+export const CARD_PADDING: number = 12
+
+/**
+ * Over a cover picture the card keeps a strip this tall along its bottom, in place of its bottom padding, that opens the app: the picture
+ * takes every other touch that lands on no button, so without it a widget with a pointer handler on its cover has no way into the app.
+ */
+export const OPEN_STRIP: number = 18
+/** The small bar drawn in the middle of that strip, in a grey that shows on a light veil and a dark sky alike. */
+export const OPEN_STRIP_MARK: string = '#8C808080'
 
 /** The sizes a card can be, in the system's numbering. */
 export const CARD_DIMENSIONS: number[] = [2, 3, 4]
@@ -115,6 +128,13 @@ export class CardNode {
   ink?: string
   /** The Motion slots a touch on this node plays: every Motion of the ui.Layers it is in (a touch moves the whole scene). */
   links?: number[]
+  /** A Motion made for a moving part of a picture (gfx.moving): where it turns and scales, as shares of its box (0..1) from the left and the top. */
+  px?: number
+  py?: number
+  /** A ui.Layers made from one picture split at its moving parts, not written by the program (VeraLiveWidget). */
+  parts?: boolean
+  /** A drift layer of a cover picture: its slices fill the card as the picture does. */
+  cover?: boolean
   children: CardNode[] = []
 }
 
@@ -136,6 +156,8 @@ export class LiveFrame {
   preset: string = 'clean'
   primary: string = ''
   nodes: CardNode[] = []
+  /** Over a cover picture: the share of the card's height, from its bottom, that the rest takes, under which the veil lies (coverScrim); 0 for none. */
+  veil: number = 0
 }
 
 
@@ -177,6 +199,10 @@ export function compactNode(node: CardNode): Object {
   if (node.sub !== undefined) { out['sub'] = node.sub }
   if (node.ink !== undefined) { out['ink'] = node.ink }
   if (node.links !== undefined) { out['links'] = node.links }
+  if (node.px !== undefined) { out['px'] = node.px }
+  if (node.py !== undefined) { out['py'] = node.py }
+  if (node.parts !== undefined) { out['parts'] = node.parts }
+  if (node.cover !== undefined) { out['cover'] = node.cover }
   if (node.children.length > 0) { out['children'] = node.children.map((child: CardNode): Object => compactNode(child)) }
   return out
 }
@@ -196,6 +222,7 @@ export function compactFrame(frame: LiveFrame): Object {
   out['dimension'] = frame.dimension
   out['preset'] = frame.preset
   out['primary'] = frame.primary
+  out['veil'] = frame.veil
   out['nodes'] = frame.nodes.map((node: CardNode): Object => compactNode(node))
   return out
 }
@@ -236,8 +263,108 @@ export function normalizeNodes(nodes: CardNode[]): CardNode[] {
     node.sub = raw.sub
     node.ink = raw.ink
     node.links = raw.links
+    node.px = raw.px
+    node.py = raw.py
+    node.parts = raw.parts
+    node.cover = raw.cover
     if (raw.children !== undefined) { node.children = normalizeNodes(raw.children) }
     out.push(node)
   }
   return out
 }
+
+/** A frame's nodes with its cover picture taken out: the picture is drawn as the card's background, the rest over it. */
+export class CoverSplit {
+  /** The ui.Surface of style "cover" (inside its ui.Motion when one holds only it), or null for a widget without one. */
+  cover: CardNode | null = null
+  rest: CardNode[] = []
+}
+
+/**
+ * A picture's style as words: 'cover' (the card's background), 'clear' (no background of its own, over another), or both for a layer of
+ * a cover picture split at its moving parts.
+ */
+export function pictureCovers(style: string): boolean { return style.split(' ').indexOf('cover') >= 0 }
+export function pictureBare(style: string): boolean { return style.split(' ').indexOf('clear') >= 0 }
+
+function isCover(node: CardNode): boolean {
+  return (node.kind === 'surface' && pictureCovers(node.style)) || (node.kind === 'layers' && node.parts === true && pictureCovers(node.style))
+}
+
+/** A Motion around only the cover picture goes with it, so a touch on the background still plays the movement. */
+function coverHolder(node: CardNode): boolean {
+  return isCover(node) || (node.kind === 'motion' && node.children.length === 1 && isCover(node.children[0]))
+}
+
+/**
+ * The first cover picture of a frame, out of the tree: a column left with nothing in it goes too. Copies the nodes it changes,
+ * so the frame itself is left as it was. The frame builder (VeraLiveWidget) refuses a cover inside a row or a ui.Layers.
+ */
+export function splitCover(nodes: CardNode[]): CoverSplit {
+  let split = new CoverSplit()
+  let take = (list: CardNode[]): CardNode[] => {
+    let out: CardNode[] = []
+    for (let node of list) {
+      if (split.cover === null && coverHolder(node)) { split.cover = node; continue }
+      if (split.cover === null && node.kind === 'column' && node.children.length > 0) {
+        let children = take(node.children)
+        if (children.length === node.children.length) { out.push(node); continue }
+        if (children.length === 0) { continue }
+        let copy = normalizeNodes([node])[0]
+        copy.children = children
+        out.push(copy)
+        continue
+      }
+      out.push(node)
+    }
+    return out
+  }
+  split.rest = take(nodes)
+  return split
+}
+
+/**
+ * The cover picture of a frame, to be drawn to the card's edges under the rest (splitCover), and what goes over it, for the launcher's
+ * card (LiveCard) and the app's preview of it (WidgetPreview) alike. Split once for each frame (a new nodes array), not on every call a
+ * build makes: each split copies the whole tree. The nodes are normalised first (normalizeNodes), as the card gets them compacted.
+ */
+export class CoverLayout {
+  private splitOf: CardNode[] | null = null
+  private splitLive: boolean = false
+  private coverNodes: CardNode[] = []
+  private restNodes: CardNode[] = []
+
+  private update(nodes: CardNode[], live: boolean): void {
+    if (this.splitOf === nodes && this.splitLive === live) { return }
+    let split = splitCover(normalizeNodes(nodes))
+    this.coverNodes = live && split.cover !== null ? [split.cover] : []
+    this.restNodes = split.rest
+    this.splitOf = nodes
+    this.splitLive = live
+  }
+
+  /** The cover picture alone, or nothing (a widget without one, or a frame that is not live). */
+  cover(nodes: CardNode[], live: boolean): CardNode[] { this.update(nodes, live); return this.coverNodes }
+  /** What lies over it: every node but the cover. */
+  rest(nodes: CardNode[], live: boolean): CardNode[] { this.update(nodes, live); return this.restNodes }
+  /** Something lies over a cover picture: then it has a veil under it (coverScrim). */
+  over(nodes: CardNode[], live: boolean): boolean { this.update(nodes, live); return this.coverNodes.length > 0 && this.restNodes.length > 0 }
+}
+
+/**
+ * The veil under what lies over a cover picture: the card's colour under the text, so it reads over a busy picture, and clear above
+ * it. `veil` is the share of the card's height, from the bottom, the text takes (LiveFrame.veil); 0 is no veil. Only that and a soft
+ * edge above it: a veil over the bottom half whitened the ground a scene stands on, and the rocket on its pad with it (found on the
+ * phone). `background` is the card's #rrggbb.
+ */
+export function coverScrim(background: string, veil: number): Array<[ResourceColor, number]> {
+  let rgb = background.length === 7 && background.charAt(0) === '#' ? background.substring(1) : 'FFFFFF'
+  if (!(veil > 0)) { return [['#00' + rgb, 0], ['#00' + rgb, 1]] }
+  let under = Math.max(0.1, 1 - Math.min(1, veil))
+  let edge = Math.max(0, under - VEIL_EDGE)
+  // Fading in over a fifth of the card and still thin where the text begins: a short ramp read as a grey band with a hard top edge.
+  return [['#00' + rgb, 0], ['#00' + rgb, edge], ['#99' + rgb, under], ['#CC' + rgb, (under + 1) / 2], ['#D9' + rgb, 1]]
+}
+
+/** How far above the text the veil fades in, as a share of the card's height. */
+const VEIL_EDGE: number = 0.22

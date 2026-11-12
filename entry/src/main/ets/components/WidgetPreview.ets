@@ -1,7 +1,9 @@
-import { WidgetSession, LiveFrame, CardNode, SourceRequest } from '../vera/VeraLiveWidget'
+import { WidgetSession, LiveFrame, CardNode, PreviewTapRequest } from '../vera/VeraLiveWidget'
 import { app } from './AppStyle'
 import { sourceFetch } from '../vera/VeraSource'
-import { CardView } from '../widget/CardView'
+import { CardView, OpenStrip } from '../widget/CardView'
+import { CARD_PADDING, CoverLayout, coverScrim } from '../widget/CardModel'
+import { previewTapOffMain } from '../vera/agent/WidgetCheckTask'
 
 /** A 2x2 home-screen card on this phone, in vp: the size the widget is written for (measured: 524 px wide at 3.5 px per vp). */
 const CARD_SIDE: number = 150
@@ -59,18 +61,32 @@ export struct WidgetPreview {
   private busy: boolean = false
 
   /**
-   * A tap of any kind, run here only and never saved: a button's handler, a switch's, a picture's pointer. Its live source call, if it
-   * makes one, is fetched and answered here too, as the card does (LiveFormService): one call, as on the card.
+   * A tap of any kind, run here only and never saved: a button's handler, a switch's, a picture's pointer. The handler and what it
+   * starts, played to rest (WidgetSession.settle: up to 600 steps of the app's clock, most of a second for a scene that never rests),
+   * run in a TaskPool worker so the app does not hang. Its live source call, if it makes one, is fetched and answered here too, as the
+   * card does (LiveFormService): one call, as on the card.
    */
-  private async run(handle: (session: WidgetSession) => SourceRequest[]): Promise<void> {
+  private async run(request: PreviewTapRequest): Promise<void> {
     if (this.session === null || this.busy) { return }
     let session = this.session!
     // What the session held before the tap: put back if the tap or its answer fails, so it matches the frame on show.
     let before = session.encodedState()
     this.busy = true
     try {
-      let requests = handle(session)
-      if (requests.length > 0) { session.answer(requests[0].handler, await sourceFetch(requests[0].params)) }
+      request.vbc2 = this.vbc2
+      request.state = before
+      request.title = this.title
+      request.dimension = this.dimension
+      request.token = this.frame.token
+      let result = await previewTapOffMain(request)
+      if (session !== this.session) { return }
+      if (result.error.length > 0) { throw new Error(result.error) }
+      session.restoreTap(result.state, result.rested)
+      if (result.handlers.length > 0) {
+        let params = new Map<string, string>()
+        for (let pair of result.params[0]) { params.set(pair[0], pair[1]) }
+        session.answer(result.handlers[0], await sourceFetch(params))
+      }
       if (session !== this.session) { return }
       this.frame = session.frame('', this.title, '', this.dimension)
       this.seq += 1
@@ -84,15 +100,28 @@ export struct WidgetPreview {
   }
 
   private tap(action: string, value: number): void {
-    this.run((session: WidgetSession): SourceRequest[] => session.tap(this.frame, this.frame.token, action, value))
+    let request = new PreviewTapRequest()
+    request.kind = 'button'
+    request.handler = action
+    request.value = value
+    this.run(request)
   }
 
   private tapSwitch(handler: string, on: boolean): void {
-    this.run((session: WidgetSession): SourceRequest[] => session.tapSwitch(this.frame, this.frame.token, handler, on))
+    let request = new PreviewTapRequest()
+    request.kind = 'switch'
+    request.handler = handler
+    request.on = on
+    this.run(request)
   }
 
   private tapPicture(handler: string, x: number, y: number): void {
-    this.run((session: WidgetSession): SourceRequest[] => session.tapSurface(this.frame, this.frame.token, handler, x, y))
+    let request = new PreviewTapRequest()
+    request.kind = 'picture'
+    request.handler = handler
+    request.x = x
+    request.y = y
+    this.run(request)
   }
 
   build() {
@@ -129,26 +158,54 @@ export struct WidgetPreview {
     }
   }
 
+  /** As LiveCard: the cover picture under everything, to the card's edges, and the rest over it (CardModel.CoverLayout). */
+  private layout: CoverLayout = new CoverLayout()
+  private coverNodes(): CardNode[] { return this.layout.cover(this.frame.nodes, this.frame.live) }
+  private restNodes(): CardNode[] { return this.layout.rest(this.frame.nodes, this.frame.live) }
+  private overCover(): boolean { return this.layout.over(this.frame.nodes, this.frame.live) }
+
   @Builder
   card() {
     // As LiveCard: the widget has the whole card, with no title strip.
-    Column({ space: 6 }) {
-      if (this.frame.live) {
+    Stack() {
+      if (this.coverNodes().length > 0) {
         CardView({
-          nodes: this.frame.nodes,
+          nodes: this.coverNodes(),
+          fill: true,
+          dimension: this.dimension,
           frameKey: this.frame.token + this.dimension.toString() + this.seq.toString(),
           preset: this.frame.preset,
           primary: this.frame.primary,
           onTap: (action: string, value: number): void => { this.tap(action, value) },
-          onSwitch: (handler: string, on: boolean): void => { this.tapSwitch(handler, on) },
           onPoint: (handler: string, x: number, y: number): void => { this.tapPicture(handler, x, y) }
         })
       }
+      Column({ space: 6 }) {
+        if (this.frame.live) {
+          CardView({
+            nodes: this.restNodes(),
+            dimension: this.dimension,
+            frameKey: this.frame.token + this.dimension.toString() + this.seq.toString(),
+            preset: this.frame.preset,
+            primary: this.frame.primary,
+            onTap: (action: string, value: number): void => { this.tap(action, value) },
+            onSwitch: (handler: string, on: boolean): void => { this.tapSwitch(handler, on) },
+            onPoint: (handler: string, x: number, y: number): void => { this.tapPicture(handler, x, y) }
+          })
+        }
+        // As LiveCard: the strip along the bottom that opens the app on the home screen (here the app is already open).
+        if (this.coverNodes().length > 0) {
+          OpenStrip()
+        }
+      }
+      .width('100%').height('100%')
+      .padding(this.coverNodes().length > 0 ? { left: CARD_PADDING, right: CARD_PADDING, top: CARD_PADDING, bottom: 0 } : CARD_PADDING)
+      .justifyContent(this.coverNodes().length > 0 ? FlexAlign.End : FlexAlign.Center)
+      .linearGradient({ angle: 180, colors: coverScrim(this.frame.background, this.overCover() ? this.frame.veil : 0) })
+      .hitTestBehavior(this.coverNodes().length > 0 ? HitTestMode.Transparent : HitTestMode.Default)
     }
     .width(this.dimension === 2 ? CARD_SIDE : CARD_WIDE_WIDTH)
     .height(this.dimension === 2 ? CARD_SIDE : this.dimension === 3 ? CARD_WIDE_HEIGHT : CARD_BIG_HEIGHT)
-    .padding(12)
-    .justifyContent(FlexAlign.Center)
     .backgroundColor(this.frame.background)
     .borderRadius(20)
     .clip(true)

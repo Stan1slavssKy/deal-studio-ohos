@@ -2,7 +2,8 @@ import { Instruction, BytecodeFunction, BytecodeModule } from './VeraInterpreter
 import { CATALOG, ComponentSpec, ChildRule, payloadKindFor, childRuleFor, listWords } from './VeraUiCatalog'
 import { iconPath, iconNames } from './VeraIcons'
 import { isValidSdkTarget } from './VeraSdkIndex'
-import { GFX_FUNCTIONS, GFX_POINTER_FIELDS, GFX_ROLES, isGfxColor, gfxFunction } from './VeraGfx'
+import { GFX_FUNCTIONS, GFX_POINTER_FIELDS, GFX_ROLES, GFX_BLEND_MODES, DRIFT_DIRECTIONS, DRIFT_SPEEDS, isGfxColor, gfxFunction } from './VeraGfx'
+import { MOTION_PRESETS } from './VeraMotion'
 
 // ===== AST Nodes =====
 
@@ -1412,6 +1413,7 @@ function buildStdGfxModule(): ModuleInterface {
       else if (p.kind === 'boolean') params.push(BOOLEAN)
       else if (p.kind === 'number[]') params.push(new VeraArrayType(NUMBER))
       else if (p.kind === 'shapes') params.push(new VeraArrayType(shapeType))
+      else if (p.kind === 'colors') params.push(new VeraArrayType(STRING))
       else params.push(STRING)
       if (!p.optional) required = params.length
     }
@@ -2094,11 +2096,32 @@ class Analyzer {
     if (f === null) return
     for (let i = 0; i < f.params.length && i < expr.argumentsList.length; i++) {
       let arg = expr.argumentsList[i]
+      if (f.params[i].kind === 'colors' && arg instanceof ArrayExpression) {
+        let elements = (arg as ArrayExpression).elements
+        if (elements.length < 2) {
+          this.addError('E2112', 'a gradient needs at least two colours, from the first to the last', arg.span)
+        }
+        for (let element of elements) {
+          if (element instanceof StringExpression && !isGfxColor((element as StringExpression).value)) {
+            this.addError('E2112', 'unknown colour "' + (element as StringExpression).value + '" in a gradient; a colour is one of ' +
+              GFX_ROLES.join(' ') + ', or "#rrggbb" / "#rrggbbaa"', element.span)
+          }
+        }
+        continue
+      }
       if (!(arg instanceof StringExpression)) continue
       let value = (arg as StringExpression).value
       if (f.params[i].kind === 'color' && !isGfxColor(value)) {
         this.addError('E2112', 'unknown colour "' + value + '"; a colour is one of ' + GFX_ROLES.join(' ') +
-          ', or "#rrggbb" / "#rrggbbaa", or gfx.rgb(red, green, blue)', arg.span)
+          ', or "#rrggbb" / "#rrggbbaa", or gfx.rgb(red, green, blue), gfx.linear(...), gfx.radial(...)', arg.span)
+      } else if (f.name === 'drift' && f.params[i].name === 'direction' && DRIFT_DIRECTIONS.indexOf(value) < 0) {
+        this.addError('E2112', 'gfx.drift direction is ' + DRIFT_DIRECTIONS.map((d: string): string => '"' + d + '"').join(', ') + '; got "' + value + '"', arg.span)
+      } else if (f.name === 'drift' && f.params[i].name === 'speed' && DRIFT_SPEEDS.indexOf(value) < 0) {
+        this.addError('E2112', 'gfx.drift speed is ' + DRIFT_SPEEDS.map((d: string): string => '"' + d + '"').join(', ') + '; got "' + value + '"', arg.span)
+      } else if (f.params[i].name === 'motion' && MOTION_PRESETS.indexOf(value) < 0) {
+        this.addError('E2112', 'gfx.moving takes a ui.Motion style: ' + MOTION_PRESETS.join(', ') + '; got "' + value + '"', arg.span)
+      } else if (f.name === 'blend' && f.params[i].name === 'mode' && GFX_BLEND_MODES.indexOf(value) < 0) {
+        this.addError('E2112', 'gfx.blend mode is ' + GFX_BLEND_MODES.map((m: string): string => '"' + m + '"').join(', ') + '; got "' + value + '"', arg.span)
       } else if (f.params[i].name === 'align' && ['left', 'center', 'right'].indexOf(value) < 0) {
         this.addError('E2112', 'align is "left", "center" or "right"; got "' + value + '"', arg.span)
       }

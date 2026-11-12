@@ -27,10 +27,10 @@ export class MotionPose {
 /**
  * Every preset, by what the movement means (not by what it is drawn on): the catalogue lists these and a card plays all of them.
  * emphasis: pop pulse jelly press flash breathe; reaction: shake nod wobble swing recoil; gravity: bounce hop jump fall;
- * turning: spin turn tumble flip; arrival: fade rise zoom slide; ambient: float drift.
+ * turning: spin turn tumble flip; arrival: fade rise zoom slide; ambient: float drift; leaving: launch roll.
  */
 export const MOTION_PRESETS: string[] = ['pop', 'pulse', 'jelly', 'press', 'flash', 'breathe', 'shake', 'nod', 'wobble', 'swing', 'recoil',
-  'bounce', 'hop', 'jump', 'fall', 'spin', 'turn', 'tumble', 'flip', 'fade', 'rise', 'zoom', 'slide', 'float', 'drift']
+  'bounce', 'hop', 'jump', 'fall', 'spin', 'turn', 'tumble', 'flip', 'fade', 'rise', 'zoom', 'slide', 'float', 'drift', 'launch', 'roll']
 
 /**
  * A preset as stages. The first row is the pose the child starts in: [0, dx, dy, scaleX, scaleY, rotation, opacity, 0]; every
@@ -93,6 +93,13 @@ export function motionStages(preset: string): number[][] {
   if (preset === 'slide') { return [row(0, 64, 0, 1, 1, 0, 0, 0), rest(380, 1)] }
   if (preset === 'float') { return [REST, row(450, 0, -9, 1, 1, 0, 1, 3), row(450, 0, 3, 1, 1, 0, 1, 3), rest(300, 3)] }
   if (preset === 'drift') { return [REST, row(450, 10, 0, 1, 1, 0, 1, 3), row(500, -8, 0, 1, 1, 0, 1, 3), rest(400, 3)] }
+  // Leaving and coming back: a rocket goes up out of sight (stretched as it speeds), comes in again from below unseen, and rises to its
+  // place; a ball rolls away to the side, turning, and rolls back. A stage of 30 ms moves it while it is invisible.
+  if (preset === 'launch') {
+    return [REST, row(120, 0, 4, 1.06, 0.92, 0, 1, 3), row(300, 0, -170, 0.9, 1.16, 0, 1, 2), row(30, 0, 120, 1, 1, 0, 0, 0),
+      row(420, 0, 0, 1, 1, 0, 1, 1)]
+  }
+  if (preset === 'roll') { return [REST, row(380, 46, 0, 1, 1, 260, 1, 3), row(420, 0, 0, 1, 1, 0, 1, 3)] }
   return []
 }
 
