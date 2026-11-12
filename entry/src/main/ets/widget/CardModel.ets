@@ -36,6 +36,14 @@ export class CardSize {
 /** The padding a card keeps round what is on it, in vp: a cover picture (splitCover) runs under it to the card's edges. */
 export const CARD_PADDING: number = 12
 
+/**
+ * Over a cover picture the card keeps a strip this tall along its bottom, in place of its bottom padding, that opens the app: the picture
+ * takes every other touch that lands on no button, so without it a widget with a pointer handler on its cover has no way into the app.
+ */
+export const OPEN_STRIP: number = 18
+/** The small bar drawn in the middle of that strip, in a grey that shows on a light veil and a dark sky alike. */
+export const OPEN_STRIP_MARK: string = '#8C808080'
+
 /** The sizes a card can be, in the system's numbering. */
 export const CARD_DIMENSIONS: number[] = [2, 3, 4]
 

@@ -1,6 +1,6 @@
 // The launcher's live card. It draws what the form extension sends (the frame, widget/CardModel.ets) with the layout the app's Widget tab also uses
 // (widget/CardView.ets); it loads the theme and the painter, never the VM.
-import { CardNode, CARD_PADDING, normalizeNodes, splitCover, coverScrim } from '../CardModel'
+import { CardNode, CARD_PADDING, OPEN_STRIP, OPEN_STRIP_MARK, normalizeNodes, splitCover, coverScrim } from '../CardModel'
 import { CardView } from '../CardView'
 
 let liveStorage = new LocalStorage()
@@ -77,17 +77,28 @@ struct LiveCard {
         if (this.status.length > 0) {
           Text(this.status).fontSize(11).fontColor('#64748B').maxLines(2)
         }
+        // Over a cover picture, which takes every other touch, the card's bottom edge opens the app (CardModel.OPEN_STRIP).
+        if (this.coverNodes().length > 0) {
+          Column() {
+            Column().width(24).height(3).borderRadius(1.5).backgroundColor(OPEN_STRIP_MARK)
+          }
+          .width('100%').height(OPEN_STRIP).margin({ top: -6 }).justifyContent(FlexAlign.Center)
+          .onClick(() => { this.openApp() })
+        }
       }
-      .width('100%').height('100%').padding(CARD_PADDING)
+      .width('100%').height('100%')
+      .padding(this.coverNodes().length > 0 ? { left: CARD_PADDING, right: CARD_PADDING, top: CARD_PADDING, bottom: 0 } : CARD_PADDING)
       // Over a cover picture the rest sits at the bottom, on a veil of the card's colour so it reads; the picture takes the touches
       // that land on no part of it (ArkUI: a handler-less layer on top must be Transparent, not None, or it keeps them).
-      .justifyContent(this.overCover() ? FlexAlign.End : FlexAlign.Center)
+      .justifyContent(this.coverNodes().length > 0 ? FlexAlign.End : FlexAlign.Center)
       .linearGradient({ angle: 180, colors: coverScrim(this.cardBackground, this.overCover()) })
       .hitTestBehavior(this.coverNodes().length > 0 ? HitTestMode.Transparent : HitTestMode.Default)
     }
     .width('100%').height('100%').backgroundColor(this.cardBackground)
-    .onClick(() => {
-      postCardAction(this, { action: 'router', abilityName: 'EntryAbility', params: { projectId: this.projectId, veraRun: '1', veraFormId: this.projectId.length === 0 ? this.formId : '' } })
-    })
+    .onClick(() => { this.openApp() })
+  }
+
+  private openApp(): void {
+    postCardAction(this, { action: 'router', abilityName: 'EntryAbility', params: { projectId: this.projectId, veraRun: '1', veraFormId: this.projectId.length === 0 ? this.formId : '' } })
   }
 }

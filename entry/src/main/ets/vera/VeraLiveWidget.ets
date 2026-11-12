@@ -10,7 +10,7 @@ import { SOURCE_TARGET } from './VeraSource'
 import { decodeGfx, encodeGfxOps, pointerValue, GfxOp } from './VeraGfx'
 import { driftSlices } from './GfxPaint'
 import { CardNode, LiveFrame, compactFrame, CardSize, cardSize, CARD_DIMENSIONS, CARD_MAX_MOTIONS, CARD_MAX_PICTURES, CARD_MAX_SHAPES,
-  CARD_MAX_TIMERS, TOUCH_ACTION, pictureCovers } from '../widget/CardModel'
+  CARD_MAX_TIMERS, TOUCH_ACTION, pictureCovers, splitCover, OPEN_STRIP, CARD_PADDING } from '../widget/CardModel'
 import { cardTextSize, cardTextFamily, cardLetterSpacing, cardGap, CARD_PANEL_PAD, cardPanelFill } from './CardStyle'
 export { CardNode, LiveFrame, compactFrame, compactNode, normalizeNodes, CardSize, cardSize, CARD_DIMENSIONS, TOUCH_ACTION } from '../widget/CardModel'
 
@@ -144,7 +144,12 @@ export function widgetHeight(frame: LiveFrame): number {
   let side = 0
   let pictures = allPictures(frame.nodes, [])
   if (pictures.length > 0) { side = pictures[0].size }
-  return stackHeight(frame.nodes, side, LIVE_ROW_GAP, cardSize(frame.dimension).width)
+  return stackHeight(frame.nodes, side, LIVE_ROW_GAP, cardSize(frame.dimension).width) + openStripRoom(frame.nodes)
+}
+
+/** Over a cover picture the strip that opens the app takes the card's bottom padding and a little more (CardModel.OPEN_STRIP). */
+function openStripRoom(nodes: CardNode[]): number {
+  return splitCover(nodes).cover !== null ? OPEN_STRIP - CARD_PADDING : 0
 }
 
 /** A cover picture, or the layers it was split into at its moving parts: the card's background. */
@@ -199,7 +204,7 @@ export function pictureRoom(frame: LiveFrame): number {
   if (allPictures(frame.nodes, []).length === 0) { return 0 }
   let size = cardSize(frame.dimension)
   for (let side = widthLimit(frame.nodes, size); side > 0; side--) {
-    if (stackHeight(frame.nodes, side, LIVE_ROW_GAP, size.width) <= size.height) { return side }
+    if (stackHeight(frame.nodes, side, LIVE_ROW_GAP, size.width) + openStripRoom(frame.nodes) <= size.height) { return side }
   }
   return 1
 }

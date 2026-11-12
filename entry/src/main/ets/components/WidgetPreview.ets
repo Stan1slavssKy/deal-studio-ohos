@@ -2,7 +2,7 @@ import { WidgetSession, LiveFrame, CardNode, SourceRequest } from '../vera/VeraL
 import { app } from './AppStyle'
 import { sourceFetch } from '../vera/VeraSource'
 import { CardView } from '../widget/CardView'
-import { CARD_PADDING, splitCover, coverScrim } from '../widget/CardModel'
+import { CARD_PADDING, OPEN_STRIP, OPEN_STRIP_MARK, splitCover, coverScrim } from '../widget/CardModel'
 
 /** A 2x2 home-screen card on this phone, in vp: the size the widget is written for (measured: 524 px wide at 3.5 px per vp). */
 const CARD_SIDE: number = 150
@@ -167,9 +167,17 @@ export struct WidgetPreview {
             onPoint: (handler: string, x: number, y: number): void => { this.tapPicture(handler, x, y) }
           })
         }
+        // As LiveCard: the strip along the bottom that opens the app on the home screen (here the app is already open).
+        if (this.coverNodes().length > 0) {
+          Column() {
+            Column().width(24).height(3).borderRadius(1.5).backgroundColor(OPEN_STRIP_MARK)
+          }
+          .width('100%').height(OPEN_STRIP).margin({ top: -6 }).justifyContent(FlexAlign.Center)
+        }
       }
-      .width('100%').height('100%').padding(CARD_PADDING)
-      .justifyContent(this.overCover() ? FlexAlign.End : FlexAlign.Center)
+      .width('100%').height('100%')
+      .padding(this.coverNodes().length > 0 ? { left: CARD_PADDING, right: CARD_PADDING, top: CARD_PADDING, bottom: 0 } : CARD_PADDING)
+      .justifyContent(this.coverNodes().length > 0 ? FlexAlign.End : FlexAlign.Center)
       .linearGradient({ angle: 180, colors: coverScrim(this.frame.background, this.overCover()) })
       .hitTestBehavior(this.coverNodes().length > 0 ? HitTestMode.Transparent : HitTestMode.Default)
     }

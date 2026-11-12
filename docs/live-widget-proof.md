@@ -371,6 +371,10 @@ What a program draws with now (one painter, `GfxPaint.paintGfx`, for the app's C
   the rest of the widget lies over its bottom on a veil of the card's colour (`CardModel.splitCover`, `coverScrim`; `LiveCard` and `WidgetPreview`).
   It takes no room from the rest (`nodeHeight`, `pictureRoom`); one per widget, not in a row or a `ui.Layers` (`coverError`). In the app it is
   drawn as `fill`.
+- A cover picture takes every touch that lands on no button, so one with a pointer handler (which `deadPicture` asks for when the app's picture
+  answers a touch) would leave no way into the app. Over a cover the card keeps a strip along its bottom, `CardModel.OPEN_STRIP` (18 vp) in place of
+  its bottom padding, with a small grey bar in the middle, that opens the app (`LiveCard.openApp`); the Widget tab draws it too, without the tap.
+  The 6 vp it takes beyond the padding are counted in `widgetHeight` and `pictureRoom` (`openStripRoom`).
 - The Make widget prompt (MAKE IT LOOK GOOD) and the game prompt (`vera-surface-skill.txt`) say how: a ball is a circle in a radial colour lit from
   the top left, a sky a linear one, a thing standing has a soft shadow, a lamp a glow, a scene with a background is a cover picture.
 
