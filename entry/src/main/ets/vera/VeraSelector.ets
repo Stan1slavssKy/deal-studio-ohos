@@ -7,6 +7,7 @@ import { settings } from './SettingsStore'
 import { askJevViaCloud } from './JevProxy'
 import { localJev } from './LocalJev'
 import { trace } from './VeraTiming'
+import { dealer } from './DealerBridge'
 import { SelectorCall, beginSelectorCall, finishSelectorCall, selectorUsage, selectorLabel } from './SelectorMetrics'
 
 const JEV_ENDPOINT: string = 'https://api.typesafe.ai/v1/systemone'
@@ -51,6 +52,22 @@ async function sendSelector(body: string, apiKey: string, call: SelectorCall,
   }
   if (call.backend === 'llm') { return askJevViaCloud(body, cancellation, call) }
   if (apiKey.length === 0) { return '' }
+  // Through the dealer harness (DealerBridge.ets) when it is on: the same endpoint, key and body.
+  if (settings.useDealer()) {
+    try {
+      call.requests++
+      let answer = await dealer.decide(JEV_ENDPOINT, apiKey, body)
+      throwIfCancelled(cancellation)
+      selectorUsage(call, answer, 200)
+      return answer
+    } catch (e) {
+      throwIfCancelled(cancellation)
+      console.warn('VERA-DEALER jev failed: ' + (e as Error).message)
+      call.error = (e as Error).message
+      call.partial = true
+      return ''
+    }
+  }
   try {
     let headers: Record<string, string> = {}
     headers['Content-Type'] = 'application/json'
