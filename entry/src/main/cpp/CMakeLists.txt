@@ -178,8 +178,10 @@ add_library(dealer SHARED napi_dealer.cpp)
 if(EXISTS ${DEALER_DIR}/lib/libdealer_ffi.a AND EXISTS ${DEALER_DIR}/include/dealer.h)
   target_include_directories(dealer PRIVATE ${DEALER_DIR}/include)
   target_link_libraries(dealer PRIVATE ${DEALER_DIR}/lib/libdealer_ffi.a libace_napi.z.so libhilog_ndk.z.so)
-  # The static library carries all of its crates; keep only what the NAPI functions reach.
-  target_link_options(dealer PRIVATE -Wl,--gc-sections -Wl,--strip-all)
+  # The static library carries all of its crates; keep only what the NAPI functions reach. Its
+  # symbols are hidden (--exclude-libs), or every one is exported and --gc-sections keeps them all:
+  # 12.6 MB then, 5.1 MB now.
+  target_link_options(dealer PRIVATE -Wl,--exclude-libs,ALL -Wl,--gc-sections -Wl,--strip-all)
 else()
   message(WARNING "dealer not found at ${DEALER_DIR} -- building a stub; run tools/build-dealer.sh.")
   target_compile_definitions(dealer PRIVATE DEALER_STUB=1)

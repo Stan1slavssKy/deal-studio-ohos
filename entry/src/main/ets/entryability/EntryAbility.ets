@@ -68,6 +68,9 @@ export default class EntryAbility extends UIAbility {
     settings.init(this.context.filesDir)
     store.init(this.context.filesDir)
     formBindings.init(this.context.filesDir)
+    // Likewise the settings: a program opened without the Generate or Chat page (a saved project, a widget's tap, a
+    // proof) calls Vera.Ask and Vera.Live, which need the keys.
+    settings.init(this.context.filesDir)
     // Before anything can be generated or compiled: the vocabulary a program is
     // allowed to use must not change underneath a program that is being written.
     loadCatalogFile(this.context.filesDir)

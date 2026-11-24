@@ -62,7 +62,7 @@ async function sendSelector(body: string, apiKey: string, call: SelectorCall,
       return answer
     } catch (e) {
       throwIfCancelled(cancellation)
-      console.warn('VERA-DEALER jev failed: ' + (e as Error).message)
+      console.warn('VERA-DEALER jev failed: ' + (e as Error).message + ' questions=' + questionShapes(body))
       call.error = (e as Error).message
       call.partial = true
       return ''
@@ -97,5 +97,21 @@ async function sendSelector(body: string, apiKey: string, call: SelectorCall,
     call.error = (e as Error).message
     call.partial = true
     return ''
+  }
+}
+
+/** "name:type/options, ..." of a Jev request, for a log line. */
+function questionShapes(body: string): string {
+  try {
+    let questions = (JSON.parse(body) as Record<string, Object>)['questions'] as Record<string, Object>
+    return Object.keys(questions).map((name: string): string => {
+      let question = questions[name] as Record<string, Object>
+      let criteria = question['criteria']
+      let count = criteria === undefined || criteria === null ? 0 :
+        Array.isArray(criteria) ? (criteria as Object[]).length : Object.keys(criteria as Record<string, Object>).length
+      return name + ':' + String(question['type']) + '/' + count.toString()
+    }).join(', ')
+  } catch (_e) {
+    return '?'
   }
 }

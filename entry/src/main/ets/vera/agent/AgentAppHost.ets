@@ -2,8 +2,7 @@ import { AgentHost, HoleRecord, checkAgent, agentCancellation } from './AgentHos
 import { BlockRequest, BlockFill, fillSections } from '../SectionFill'
 import { appBlockCalls } from '../SectionFillApp'
 import { askJev } from '../VeraCompose'
-import { deepseek, discoveryToolResult, extractVeraSource } from '../DeepSeekEngine'
-import { dealer } from '../DealerBridge'
+import { deepseek, discoveryToolResult } from '../DeepSeekEngine'
 import { settings } from '../SettingsStore'
 import { trace, traceLookup } from '../VeraTiming'
 import { OperationCancellation } from '../OperationCancellation'
@@ -19,19 +18,6 @@ export function appAgentHost(status: (text: string) => void, preview: (vbc2: str
   host.askPlan = async (system: string, user: string, onText: (soFar: string) => void, think: boolean): Promise<string | null> => {
     checkAgent(host)
     try {
-      if (settings.useDealer()) {
-        // As extractSketch: temperature 0, 12000 tokens when thinking and 3000 when not, null on a failure.
-        try {
-          let reply = await dealer.ask('plan', system, user, think ? 12000 : 3000, think, 0, (text: string): void => {
-            if (!host.cancelled()) { onText(text) }
-          }, operation)
-          return reply.text
-        } catch (e) {
-          checkAgent(host)
-          console.warn('VERA-DEALER plan failed: ' + (e as Error).message)
-          return null
-        }
-      }
       return await deepseek.extractSketch(system, user, (text: string): void => {
         if (!host.cancelled()) { onText(text) }
       }, think, operation)
@@ -62,19 +48,6 @@ export function appAgentHost(status: (text: string) => void, preview: (vbc2: str
   host.askCode = async (system: string, user: string, budget: number, think: boolean): Promise<string | null> => {
     checkAgent(host)
     try {
-      if (settings.useDealer()) {
-        // As extractTemplateAnswer: temperature 0.2, the program out of any fence, null on a failure.
-        try {
-          let reply = await dealer.ask('code', system, user, budget, think, 0.2, (_text: string): void => {}, operation)
-          host.lastCodeFinish = reply.finishReason
-          return extractVeraSource(reply.text)
-        } catch (e) {
-          checkAgent(host)
-          console.warn('VERA-DEALER code failed: ' + (e as Error).message)
-          host.lastCodeFinish = ''
-          return null
-        }
-      }
       let answer = await deepseek.extractTemplateAnswer(system, user, budget,
         think ? 'A section of its own, thinking' : 'A section of its own', think, operation)
       host.lastCodeFinish = answer.finishReason

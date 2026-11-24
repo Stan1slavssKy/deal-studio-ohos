@@ -46,8 +46,9 @@ waits for it first); its host test, with the ThreadSanitizer line at its top, is
 The agent harness is a third: **dealer** (github.com/arkts-dev/dealer, its C ABI `crates/dealer-ffi`, contract
 `include/dealer.h`). `tools/build-dealer.sh` cross-builds it from `../dealer` (or `DEALER_DIR`) with the OHOS SDK's clang
 into `entry/src/main/cpp/dealer` (git-ignored); delete `entry/.cxx` once after. Without it `libdealer.so` is a stub.
-`--ps dealer 1` sends the agent's plan, written sections and Jev through it (`DealerBridge.ets`, `napi_dealer.cpp`; HTTP
-stays in ArkTS), `--ps dealer 0` goes back to `DeepSeekEngine`; off by default. Its turns are kept in
+`--ps dealer 1` sends every model request through it -- DeepSeekEngine's side calls and Generate with its tools, the chat
+(`VeraChat.chatReply`) and Jev (`DealerBridge.ets`, `napi_dealer.cpp`; HTTP and the tools themselves stay in ArkTS); `--ps dealer 0`
+goes back to the direct requests; off by default. Its turns are kept in
 `{filesDir}/vera/dealer.db`; `VERA-DEALER` in hilog.
 
 **If any of them prints an ERROR line, stop and ask the person working with you

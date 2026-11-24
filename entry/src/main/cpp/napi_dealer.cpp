@@ -1,9 +1,10 @@
 // The dealer agent harness (github.com/arkts-dev/dealer, crates/dealer-ffi) behind NAPI, for
-// DealerBridge.ets. Dealer runs each turn on a thread of its own here, because
-// dealer_session_run blocks; HTTP is done by ArkTS: dealer's transport callback hands the
-// request to JS (dealerSend), and JS answers through dealerHead / dealerChunk / dealerFinish,
-// which dealer.h allows from any thread. Without the library (tools/build-dealer.sh) this
-// builds as a stub whose dealerAvailable() is false.
+// DealerBridge.ets. Dealer runs each turn on a thread of its own here, because its steps
+// block; HTTP and tools are done by ArkTS: dealer's transport callback hands the request to JS
+// (dealerSend), and JS answers through dealerHead / dealerChunk / dealerFinish; a tool call goes
+// to the tool's JS callback, answered through dealerToolFinish. dealer.h allows both answers
+// from any thread. Without the library (tools/build-dealer.sh) this builds as a stub whose
+// dealerAvailable() is false.
 
 #include <napi/native_api.h>
 #include <hilog/log.h>
@@ -16,6 +17,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #ifndef DEALER_STUB
 #include "dealer.h"
@@ -126,6 +128,24 @@ std::string Take(dealer_string text)
 
 // --- The one instance this module runs -------------------------------------------------------
 
+/** A run's generations by step, which dealerSteer may replace while it runs. */
+struct Schedule {
+    std::mutex mutex;
+    std::vector<std::string> generations;
+    /** The step generations[0] is for. */
+    size_t first = 0;
+    /** The step running now. */
+    size_t step = 0;
+
+    std::string For(size_t at)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        step = at;
+        size_t index = at > first ? at - first : 0;
+        return generations[index < generations.size() ? index : generations.size() - 1];
+    }
+};
+
 struct Module {
     std::mutex mutex;
     dealer_instance *instance = nullptr;
@@ -134,7 +154,11 @@ struct Module {
     std::map<int64_t, dealer_exchange *> exchanges;
     int64_t nextExchange = 1;
     std::map<int64_t, dealer_cancel *> cancels;
+    std::map<int64_t, dealer_tool_call *> calls;
+    int64_t nextCall = 1;
+    std::map<int64_t, std::shared_ptr<Schedule>> schedules;
 };
+
 
 Module &TheModule()
 {
@@ -284,6 +308,106 @@ napi_value Cancelled(napi_env env, napi_callback_info info)
     return Bool(env, exchange == nullptr || dealer_exchange_is_cancelled(exchange));
 }
 
+// --- Tools: each registered with a JS callback, answered through dealerToolFinish -------------
+
+/** A registered tool's JS callback; lives as long as the instance, which is never freed. */
+struct ToolEntry {
+    napi_ref onExecute = nullptr;
+};
+
+void Execute(void *user, dealer_str arguments, dealer_str context, dealer_tool_call *call)
+{
+    Module &module = TheModule();
+    int64_t id = 0;
+    {
+        std::lock_guard<std::mutex> lock(module.mutex);
+        id = module.nextCall++;
+        module.calls[id] = call;
+    }
+    napi_ref callback = static_cast<ToolEntry *>(user)->onExecute;
+    std::string args(reinterpret_cast<const char *>(arguments.ptr), arguments.len);
+    std::string where(reinterpret_cast<const char *>(context.ptr), context.len);
+    bool posted = PostTo(module.send, [callback, id, args, where](napi_env env) {
+        napi_value fn = nullptr;
+        napi_value undefined = nullptr;
+        napi_get_reference_value(env, callback, &fn);
+        napi_get_undefined(env, &undefined);
+        napi_value argv[3] = {nullptr, String(env, args), String(env, where)};
+        napi_create_int64(env, id, &argv[0]);
+        napi_call_function(env, undefined, fn, 3, argv, nullptr);
+    });
+    if (!posted) {
+        {
+            std::lock_guard<std::mutex> lock(module.mutex);
+            module.calls.erase(id);
+        }
+        dealer_tool_call_finish(call, DEALER_INVALID_STATE, Str("The app could not take the tool call"), nullptr);
+    }
+}
+
+dealer_tool_call *Call(int64_t id, bool remove)
+{
+    Module &module = TheModule();
+    std::lock_guard<std::mutex> lock(module.mutex);
+    auto found = module.calls.find(id);
+    if (found == module.calls.end()) {
+        return nullptr;
+    }
+    dealer_tool_call *call = found->second;
+    if (remove) {
+        module.calls.erase(found);
+    }
+    return call;
+}
+
+// dealerRegisterTool(definitionJson, onExecute(callId, argumentsJson, contextJson)): '' or why not.
+napi_value RegisterTool(napi_env env, napi_callback_info info)
+{
+    napi_value argv[2] = {nullptr, nullptr};
+    if (Args(env, info, argv) < 2) {
+        return String(env, "dealerRegisterTool takes a definition and a callback");
+    }
+    auto *entry = new ToolEntry();  // NOLINT(cppcoreguidelines-owning-memory): kept by the instance for good
+    napi_create_reference(env, argv[1], 1, &entry->onExecute);
+    dealer_tool tool{sizeof(dealer_tool), entry, Execute, nullptr};
+    dealer_error *error = nullptr;
+    std::string definition = StringArg(env, argv[0]);
+    if (dealer_instance_register_tool(TheModule().instance, Str(definition), &tool, &error) != DEALER_OK) {
+        napi_delete_reference(env, entry->onExecute);
+        delete entry;  // NOLINT(cppcoreguidelines-owning-memory)
+        return String(env, Take(error));
+    }
+    return String(env, "");
+}
+
+// dealerToolFinish(callId, ok, outcomeJson): '' or why not; dealer frees the call.
+napi_value ToolFinish(napi_env env, napi_callback_info info)
+{
+    napi_value argv[3] = {nullptr, nullptr, nullptr};
+    Args(env, info, argv);
+    dealer_tool_call *call = Call(IntArg(env, argv[0]), true);
+    if (call == nullptr) {
+        return String(env, "No such tool call");
+    }
+    bool ok = false;
+    napi_get_value_bool(env, argv[1], &ok);
+    dealer_error *error = nullptr;
+    std::string outcome = StringArg(env, argv[2]);
+    if (dealer_tool_call_finish(call, ok ? DEALER_OK : DEALER_INVALID_STATE, Str(outcome), &error) != DEALER_OK) {
+        return String(env, Take(error));
+    }
+    return String(env, "");
+}
+
+// dealerToolCancelled(callId): whether dealer no longer wants the answer.
+napi_value ToolCancelled(napi_env env, napi_callback_info info)
+{
+    napi_value argv[1] = {nullptr};
+    Args(env, info, argv);
+    dealer_tool_call *call = Call(IntArg(env, argv[0]), false);
+    return Bool(env, call == nullptr || dealer_tool_call_is_cancelled(call));
+}
+
 // --- Runs and decisions, each on a thread of its own -----------------------------------------
 
 /** A promise and an optional event callback, settled from a worker thread. */
@@ -342,50 +466,100 @@ void OnEvent(void *user, dealer_str event)
     });
 }
 
-// dealerRun(runId, sessionId, generationJson, contextJson, inputJson, onEvent): Promise<resultJson>.
-// A fresh session per run; its whole history stays in the database.
+std::vector<std::string> StringsArg(napi_env env, napi_value value)
+{
+    std::vector<std::string> strings;
+    uint32_t length = 0;
+    if (napi_get_array_length(env, value, &length) != napi_ok) {
+        return strings;
+    }
+    for (uint32_t i = 0; i < length; i++) {
+        napi_value item = nullptr;
+        napi_get_element(env, value, i, &item);
+        strings.push_back(StringArg(env, item));
+    }
+    return strings;
+}
+
+// A turn stops here even if the model keeps asking for tools; the last generation offers none.
+constexpr size_t kMaxSteps = 16;
+
+// dealerRun(runId, sessionId, generations, contextJson, inputJson, onEvent): Promise<resultJson>.
+// A fresh session per run; its whole history stays in the database. Step i (from 0) runs with
+// generations[i], the last one for every step after: a caller narrows the tools step by step.
+// The result is the last step's {"finish_reason", "usage", "text"}.
 napi_value Run(napi_env env, napi_callback_info info)
 {
     napi_value argv[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     Args(env, info, argv);
     int64_t runId = IntArg(env, argv[0]);
     std::string session = StringArg(env, argv[1]);
-    std::string generation = StringArg(env, argv[2]);
+    std::vector<std::string> generations = StringsArg(env, argv[2]);
     std::string context = StringArg(env, argv[3]);
     std::string input = StringArg(env, argv[4]);
     napi_value promise = nullptr;
     Pending *pending = MakePending(env, argv[5], &promise);
+    if (generations.empty()) {
+        pending->Settle(false, "dealerRun takes at least one generation");
+        return promise;
+    }
     dealer_cancel *cancel = dealer_cancel_new();
+    auto schedule = std::make_shared<Schedule>();
+    schedule->generations = generations;
     {
         std::lock_guard<std::mutex> lock(TheModule().mutex);
         TheModule().cancels[runId] = cancel;
+        TheModule().schedules[runId] = schedule;
     }
-    std::thread([pending, cancel, runId, session, generation, context, input]() {
+    std::thread([pending, cancel, runId, session, schedule, context, input]() {
         dealer_instance *instance = TheModule().instance;
         dealer_session *handle = nullptr;
         dealer_error *error = nullptr;
         dealer_observer observer{pending, OnEvent};
         dealer_string result{nullptr, 0};
-        int32_t status = dealer_session_create(instance, Str(session), Str(generation), &handle, &error);
+        std::string current = schedule->For(0);
+        int32_t status = dealer_session_create(instance, Str(session), Str(current), &handle, &error);
         if (status == DEALER_OK) {
             status = dealer_session_set_context(handle, Str(context), &error);
         }
         if (status == DEALER_OK) {
             status = dealer_session_start_turn(handle, Str(input), observer, &error);
         }
-        if (status == DEALER_OK) {
-            status = dealer_session_run(handle, cancel, observer, &result, &error);
+        bool done = false;
+        for (size_t step = 0; status == DEALER_OK && !done; step++) {
+            if (step >= kMaxSteps) {
+                status = DEALER_INVALID_STATE;
+                break;
+            }
+            std::string next = schedule->For(step);
+            if (next != current) {
+                current = next;
+                status = dealer_session_set_generation(instance, handle, Str(current), &error);
+                if (status != DEALER_OK) {
+                    break;
+                }
+            }
+            if (result.ptr != nullptr) {
+                dealer_string_free(result);
+                result = dealer_string{nullptr, 0};
+            }
+            status = dealer_session_step(handle, cancel, observer, &result, &done, &error);
         }
         dealer_session_free(handle);
         {
             std::lock_guard<std::mutex> lock(TheModule().mutex);
             TheModule().cancels.erase(runId);
+            TheModule().schedules.erase(runId);
         }
         dealer_cancel_free(cancel);
         if (status == DEALER_OK) {
             pending->Settle(true, Take(result));
         } else {
-            std::string message = "dealer status " + std::to_string(status) + ": " + Take(error);
+            if (result.ptr != nullptr) {
+                dealer_string_free(result);
+            }
+            std::string message = "dealer status " + std::to_string(status) + ": " +
+                                  (error != nullptr ? Take(error) : std::string("the model kept calling tools"));
             OH_LOG_WARN(LOG_APP, "run %{public}s failed: %{public}s", session.c_str(), message.c_str());
             pending->Settle(false, message);
         }
@@ -403,6 +577,30 @@ napi_value Cancel(napi_env env, napi_callback_info info)
     auto found = TheModule().cancels.find(runId);
     if (found != TheModule().cancels.end()) {
         dealer_cancel_trigger(found->second);
+    }
+    return nullptr;
+}
+
+// dealerSteer(runId, generations): from the run's next step on, step next+i runs with
+// generations[i], the last one for every step after.
+napi_value Steer(napi_env env, napi_callback_info info)
+{
+    napi_value argv[2] = {nullptr, nullptr};
+    Args(env, info, argv);
+    int64_t runId = IntArg(env, argv[0]);
+    std::vector<std::string> generations = StringsArg(env, argv[1]);
+    std::shared_ptr<Schedule> schedule;
+    {
+        std::lock_guard<std::mutex> lock(TheModule().mutex);
+        auto found = TheModule().schedules.find(runId);
+        if (found != TheModule().schedules.end()) {
+            schedule = found->second;
+        }
+    }
+    if (schedule != nullptr && !generations.empty()) {
+        std::lock_guard<std::mutex> lock(schedule->mutex);
+        schedule->generations = generations;
+        schedule->first = schedule->step + 1;
     }
     return nullptr;
 }
@@ -466,6 +664,10 @@ napi_value Register(napi_env env, napi_value exports)
         {"dealerRun", nullptr, Run, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"dealerCancel", nullptr, Cancel, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"dealerDecide", nullptr, Decide, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"dealerRegisterTool", nullptr, RegisterTool, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"dealerToolFinish", nullptr, ToolFinish, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"dealerToolCancelled", nullptr, ToolCancelled, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"dealerSteer", nullptr, Steer, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
 #else
     napi_property_descriptor desc[] = {

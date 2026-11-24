@@ -13,9 +13,21 @@ export const dealerChunk: (id: number, chunk: ArrayBuffer) => string
 export const dealerFinish: (id: number, ok: boolean, message: string) => void
 /** Whether dealer no longer wants request `id`'s answer. */
 export const dealerCancelled: (id: number) => boolean
-/** One turn in a new session, on a thread of its own; resolves with `{"finish_reason", "usage", "text"}`. */
-export const dealerRun: (runId: number, sessionId: string, generationJson: string, contextJson: string,
+/**
+ * One turn in a new session, on a thread of its own. Step i runs with generations[i], the last one for every step
+ * after; resolves with the last step's `{"finish_reason", "usage", "text"}`.
+ */
+export const dealerRun: (runId: number, sessionId: string, generations: string[], contextJson: string,
   inputJson: string, onEvent: (eventJson: string) => void) => Promise<string>
 export const dealerCancel: (runId: number) => void
 /** A Jev decision through the same transport; resolves with Jev's answer body. */
 export const dealerDecide: (endpoint: string, key: string, requestJson: string) => Promise<string>
+/** `{"name", "description", "input_schema"}`, before any run; `onExecute` is asked each call, answered by dealerToolFinish. */
+export const dealerRegisterTool: (definitionJson: string,
+  onExecute: (callId: number, argumentsJson: string, contextJson: string) => void) => string
+/** `{"content": [{"type": "text", "text"}], "is_error"?}` when ok, else the failure's message; exactly once per call. */
+export const dealerToolFinish: (callId: number, ok: boolean, outcomeJson: string) => string
+/** Whether dealer no longer wants call `callId`'s answer. */
+export const dealerToolCancelled: (callId: number) => boolean
+/** From run `runId`'s next step on, step next+i runs with generations[i], the last one for every step after. */
+export const dealerSteer: (runId: number, generations: string[]) => void
