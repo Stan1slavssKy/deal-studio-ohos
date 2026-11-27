@@ -9,13 +9,15 @@
 #include <napi/native_api.h>
 #include <hilog/log.h>
 
+#include <pthread.h>
+
 #include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -52,6 +54,33 @@ napi_threadsafe_function MakeChannel(napi_env env, const char *name)
     napi_create_threadsafe_function(env, nullptr, nullptr, resource, 0, 1, nullptr, nullptr, nullptr, CallJs,
                                     &channel);
     return channel;
+}
+
+/**
+ * Runs `body` on a detached thread of its own with a 2 MB stack, as Rust gives its own threads:
+ * a dealer turn runs Rust code (JSON, schema checks, SQLite) on it, and musl's default thread
+ * stack is far smaller. False when no thread could be made; `body` has not run then.
+ */
+bool Spawn(std::function<void()> body)
+{
+    constexpr size_t kStack = 2 * 1024 * 1024;
+    auto *task = new std::function<void()>(std::move(body));  // NOLINT(cppcoreguidelines-owning-memory)
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, kStack);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_t thread;
+    int failed = pthread_create(&thread, &attr, [](void *data) -> void * {
+        std::unique_ptr<std::function<void()>> task(static_cast<std::function<void()> *>(data));
+        (*task)();
+        return nullptr;
+    }, task);
+    pthread_attr_destroy(&attr);
+    if (failed != 0) {
+        delete task;  // NOLINT(cppcoreguidelines-owning-memory)
+        return false;
+    }
+    return true;
 }
 
 bool PostTo(napi_threadsafe_function channel, std::function<void(napi_env)> run)
@@ -209,7 +238,11 @@ dealer_exchange *Exchange(int64_t id, bool remove)
     return exchange;
 }
 
-// dealerInit(dbPath, onSend): '' or why not.
+// dealerInit(dbPath, onSend): '' or why not. May be called again after a failure.
+//
+// The database starts empty in each process: Vera never reopens a session (each run's is
+// deleted when it ends), so all a file left behind holds is the sessions of runs a crash cut
+// short and provider definitions of keys and URLs no longer used.
 napi_value Init(napi_env env, napi_callback_info info)
 {
     napi_value argv[2] = {nullptr, nullptr};
@@ -221,11 +254,17 @@ napi_value Init(napi_env env, napi_callback_info info)
     if (module.instance != nullptr) {
         return String(env, "");
     }
-    napi_create_reference(env, argv[1], 1, &module.onSend);
-    module.send = MakeChannel(env, "dealerSend");
+    // Made once: a retry after a failed open reuses them.
+    if (module.send == nullptr) {
+        napi_create_reference(env, argv[1], 1, &module.onSend);
+        module.send = MakeChannel(env, "dealerSend");
+    }
     dealer_transport transport{sizeof(dealer_transport), nullptr, Send, nullptr};
     dealer_error *error = nullptr;
     std::string path = StringArg(env, argv[0]);
+    for (const char *suffix : {"", "-wal", "-shm", ".dealer-lock"}) {
+        std::remove((path + suffix).c_str());
+    }
     if (dealer_instance_create(DEALER_ABI_VERSION, Str(path), &transport, &module.instance, &error) != DEALER_OK) {
         module.instance = nullptr;
         return String(env, Take(error));
@@ -511,7 +550,7 @@ napi_value Run(napi_env env, napi_callback_info info)
         TheModule().cancels[runId] = cancel;
         TheModule().schedules[runId] = schedule;
     }
-    std::thread([pending, cancel, runId, session, schedule, context, input]() {
+    bool spawned = Spawn([pending, cancel, runId, session, schedule, context, input]() {
         dealer_instance *instance = TheModule().instance;
         dealer_session *handle = nullptr;
         dealer_error *error = nullptr;
@@ -546,6 +585,13 @@ napi_value Run(napi_env env, napi_callback_info info)
             status = dealer_session_step(handle, cancel, observer, &result, &done, &error);
         }
         dealer_session_free(handle);
+        if (handle != nullptr) {
+            // Nothing reopens it; kept, every run's whole context would pile up in the database.
+            dealer_error *dropped = nullptr;
+            if (dealer_session_delete(instance, Str(session), &dropped) != DEALER_OK) {
+                OH_LOG_WARN(LOG_APP, "run %{public}s not deleted: %{public}s", session.c_str(), Take(dropped).c_str());
+            }
+        }
         {
             std::lock_guard<std::mutex> lock(TheModule().mutex);
             TheModule().cancels.erase(runId);
@@ -563,11 +609,20 @@ napi_value Run(napi_env env, napi_callback_info info)
             OH_LOG_WARN(LOG_APP, "run %{public}s failed: %{public}s", session.c_str(), message.c_str());
             pending->Settle(false, message);
         }
-    }).detach();
+    });
+    if (!spawned) {
+        {
+            std::lock_guard<std::mutex> lock(TheModule().mutex);
+            TheModule().cancels.erase(runId);
+            TheModule().schedules.erase(runId);
+        }
+        dealer_cancel_free(cancel);
+        pending->Settle(false, "dealerRun could not start a thread");
+    }
     return promise;
 }
 
-// dealerCancel(runId): stops a run; its promise rejects.
+// dealerCancel(runId): stops a run or a decision; its promise rejects.
 napi_value Cancel(napi_env env, napi_callback_info info)
 {
     napi_value argv[1] = {nullptr};
@@ -605,21 +660,35 @@ napi_value Steer(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
-// dealerDecide(endpoint, key, requestJson): Promise<answerJson>.
+// dealerDecide(runId, endpoint, key, requestJson): Promise<answerJson>. dealerCancel(runId) stops it.
 napi_value Decide(napi_env env, napi_callback_info info)
 {
-    napi_value argv[3] = {nullptr, nullptr, nullptr};
+    napi_value argv[4] = {nullptr, nullptr, nullptr, nullptr};
     Args(env, info, argv);
-    std::string endpoint = StringArg(env, argv[0]);
-    std::string key = StringArg(env, argv[1]);
-    std::string request = StringArg(env, argv[2]);
+    int64_t runId = IntArg(env, argv[0]);
+    std::string endpoint = StringArg(env, argv[1]);
+    std::string key = StringArg(env, argv[2]);
+    std::string request = StringArg(env, argv[3]);
     napi_value promise = nullptr;
     Pending *pending = MakePending(env, nullptr, &promise);
-    std::thread([pending, endpoint, key, request]() {
+    dealer_cancel *cancel = dealer_cancel_new();
+    {
+        std::lock_guard<std::mutex> lock(TheModule().mutex);
+        TheModule().cancels[runId] = cancel;
+    }
+    auto forget = [runId, cancel]() {
+        {
+            std::lock_guard<std::mutex> lock(TheModule().mutex);
+            TheModule().cancels.erase(runId);
+        }
+        dealer_cancel_free(cancel);
+    };
+    bool spawned = Spawn([pending, endpoint, key, request, cancel, forget]() {
         dealer_error *error = nullptr;
         dealer_string answer{nullptr, 0};
-        int32_t status = dealer_decide(TheModule().instance, Str(endpoint), Str(key), Str(request), nullptr,
+        int32_t status = dealer_decide(TheModule().instance, Str(endpoint), Str(key), Str(request), cancel,
                                        &answer, &error);
+        forget();
         if (status == DEALER_OK) {
             pending->Settle(true, Take(answer));
         } else {
@@ -627,7 +696,11 @@ napi_value Decide(napi_env env, napi_callback_info info)
             OH_LOG_WARN(LOG_APP, "decide failed: %{public}s", message.c_str());
             pending->Settle(false, message);
         }
-    }).detach();
+    });
+    if (!spawned) {
+        forget();
+        pending->Settle(false, "dealerDecide could not start a thread");
+    }
     return promise;
 }
 

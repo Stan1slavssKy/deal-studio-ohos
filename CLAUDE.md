@@ -48,8 +48,9 @@ The agent harness is a third: **dealer** (github.com/arkts-dev/dealer, its C ABI
 into `entry/src/main/cpp/dealer` (git-ignored); delete `entry/.cxx` once after. Without it `libdealer.so` is a stub.
 `--ps dealer 1` sends every model request through it -- DeepSeekEngine's side calls and Generate with its tools, the chat
 (`VeraChat.chatReply`) and Jev (`DealerBridge.ets`, `napi_dealer.cpp`; HTTP and the tools themselves stay in ArkTS); `--ps dealer 0`
-goes back to the direct requests; off by default. Its turns are kept in
-`{filesDir}/vera/dealer.db`; `VERA-DEALER` in hilog.
+goes back to the direct requests; off by default. Its database, `{filesDir}/vera/dealer.db`, holds only the turns
+going now: each run's session is deleted when it ends, and the file is emptied when the process opens it. `VERA-DEALER`
+in hilog.
 
 **If any of them prints an ERROR line, stop and ask the person working with you
 — do not guess a path and do not install anything.** Ask exactly this:

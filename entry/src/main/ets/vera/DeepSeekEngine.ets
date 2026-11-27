@@ -1248,7 +1248,7 @@ export class DeepSeekEngine {
       onToken(piece)
     }
     watch.onReasoning = (_piece: string): void => { this.sawReasoning() }
-    let reply = await this.dealerTurn((): Promise<DealerReply> => dealer.turn(src, split.system, split.messages, [split.input], [step], watch,
+    let reply = await this.dealerTurn((): Promise<DealerReply> => dealer.turn(src, split.system, split.messages, split.input, [step], watch,
       undefined, this.operationCancellation))
     turn.content = reply.text
     turn.finishReason = reply.finishReason
@@ -1507,26 +1507,35 @@ export class DeepSeekEngine {
   }
 }
 
-/** A request's messages as dealer takes them: the system prompt, the messages before the last user one, that one. */
+/**
+ * A request's messages as dealer takes them, in their order: the leading system messages as its system prompt, the
+ * rest as its messages, and a final user message as the turn's input. A request that ends with another message has
+ * no input (dealer then answers the messages as they stand), so nothing is moved.
+ */
 class SplitMessages {
   system: string = ''
   messages: DealerMessage[] = []
-  input: string = ''
+  input: string[] = []
 }
 
 function splitMessages(messages: Record<string, Object>[]): SplitMessages {
   let split = new SplitMessages()
-  let last = -1
-  for (let i = 0; i < messages.length; i++) { if (messages[i]['role'] === 'user') { last = i } }
+  let leading = true
   for (let i = 0; i < messages.length; i++) {
     let role = messages[i]['role'] as string
-    let content = messages[i]['content'] as string
-    if (role === 'system') {
-      split.system = split.system.length > 0 ? split.system + '\n\n' + content : content
-    } else if (i === last) {
-      split.input = content
+    let content = messages[i]['content']
+    let text = typeof content === 'string' ? content as string : JSON.stringify(content)
+    if (role === 'system' && leading) {
+      split.system = split.system.length > 0 ? split.system + '\n\n' + text : text
+      continue
+    }
+    leading = false
+    if (role === 'user' && i === messages.length - 1) {
+      split.input = [text]
+    } else if (role === 'user' || role === 'assistant' || role === 'system') {
+      split.messages.push(new DealerMessage(role, text))
     } else {
-      split.messages.push(new DealerMessage(role, content))
+      throw new Error('a ' + role + ' message cannot go through dealer as a request without tools')
     }
   }
   return split

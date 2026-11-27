@@ -82,9 +82,17 @@ export class DealerWatch {
 }
 
 class Bridge {
-  /** null before the first use; '' when ready; otherwise why dealer cannot be used. */
-  private state: string | null = null
+  /** Whether dealerInit has opened the instance. */
+  private opened: boolean = false
+  /** The provider id the runs use, and the base URL and key it was registered with. */
   private provider: string = ''
+  private registeredBase: string = ''
+  private registeredKey: string = ''
+  private registrations: number = 0
+  /** The tools registered with dealer, by name. */
+  private registeredTools: Set<string> = new Set<string>()
+  /** Turns going now: dealer takes no registration while one is. */
+  private active: number = 0
   private runs: number = 0
   private schemas: DealerToolSchema[] = []
   /** The tool handler of each running turn, by its session id. */
@@ -102,34 +110,62 @@ class Bridge {
     }
   }
 
-  /** '' when dealer is ready, else why not. Opens the database and registers the provider and the tools once. */
+  /**
+   * '' when dealer is ready, else why not. Opens the database and registers the tools once, and the provider again
+   * whenever the base URL or the key has changed since. Nothing that failed is remembered: the next call tries again.
+   */
   ready(): string {
-    if (this.state !== null) { return this.state }
-    if (!dealerAvailable()) {
-      this.state = 'this build has no dealer library'
-    } else {
+    if (!dealerAvailable()) { return 'this build has no dealer library' }
+    if (!this.opened) {
       let failure = dealerInit(settings.dir() + '/dealer.db', (id: number, request: string): void => this.send(id, request))
-      if (failure.length === 0) { failure = this.register() }
-      for (let i = 0; failure.length === 0 && i < this.schemas.length; i++) { failure = this.registerTool(this.schemas[i]) }
-      this.state = failure
+      if (failure.length > 0) {
+        console.warn(TAG + ' not ready: ' + failure)
+        return failure
+      }
+      this.opened = true
     }
-    console.info(TAG + ' ready: ' + (this.state.length > 0 ? this.state : 'yes, provider ' + this.provider + ', ' +
-      this.schemas.length.toString() + ' tools'))
-    return this.state
+    for (let schema of this.schemas) {
+      let name = (schema['function'] as Record<string, Object>)['name'] as string
+      if (this.registeredTools.has(name)) { continue }
+      let failure = this.registerTool(schema)
+      if (failure.length > 0) {
+        console.warn(TAG + ' tool ' + name + ' not registered: ' + failure)
+        return failure
+      }
+      this.registeredTools.add(name)
+    }
+    let base = settings.getBaseUrl()
+    let key = settings.getApiKey()
+    if (base === this.registeredBase && key === this.registeredKey) { return '' }
+    if (this.active > 0 && this.provider.length > 0) {
+      // Dealer registers nothing while a turn is going; this one keeps the provider the others use.
+      console.warn(TAG + ' provider change waits for ' + this.active.toString() + ' running turn(s)')
+      return ''
+    }
+    let failure = this.register(base, key)
+    console.info(TAG + ' ready: ' + (failure.length > 0 ? failure : 'yes, provider ' + this.provider + ', ' +
+      this.registeredTools.size.toString() + ' tools'))
+    return failure
   }
 
-  private register(): string {
-    let base = settings.getBaseUrl()
-    let deepseek = base.indexOf('deepseek.com') >= 0
-    // A provider id keeps its base URL for good in dealer's database, so another URL takes another id.
-    this.provider = deepseek ? 'deepseek' : 'cloud-' + hash(base)
+  private register(base: string, key: string): string {
+    let deepseek = settings.isDeepSeek()
+    // A provider id keeps its base URL for good in dealer's database, and its dialect holds the key: another URL or
+    // key takes another id.
+    let id = (deepseek ? 'deepseek-' : 'cloud-') + hash(base) + '-' + (++this.registrations).toString()
     let provider: Record<string, Object> = {}
-    provider['id'] = this.provider
+    provider['id'] = id
     provider['base_url'] = base.endsWith('/') ? base : base + '/'
     provider['path'] = API_PATH
     provider['dialect'] = deepseek ? 'deepseek' : 'bearer'
-    provider['key'] = settings.getApiKey()
-    return dealerRegisterProvider(JSON.stringify(provider))
+    provider['key'] = key
+    let failure = dealerRegisterProvider(JSON.stringify(provider))
+    if (failure.length === 0) {
+      this.provider = id
+      this.registeredBase = base
+      this.registeredKey = key
+    }
+    return failure
   }
 
   private registerTool(schema: DealerToolSchema): string {
@@ -163,10 +199,18 @@ class Bridge {
       finish('This tool is not available here.', true)
       return
     }
-    let args = JSON.parse(argsJson) as Record<string, Object>
     let sessionId = context['session_id'] as string
     let steer = this.steers.get(sessionId)
-    handler(name, args, context['step_id'] as number, steer !== undefined ? steer : (_steps: DealerStep[]): void => {}).then((text: string): void => {
+    let running: Promise<string>
+    try {
+      let args = JSON.parse(argsJson) as Record<string, Object>
+      running = handler(name, args, context['step_id'] as number, steer !== undefined ? steer : (_steps: DealerStep[]): void => {})
+    } catch (e) {
+      // Thrown before the handler had a promise to give: unanswered, the call would hold its turn for good.
+      finish(name + ' failed: ' + (e as Error).message, true)
+      return
+    }
+    running.then((text: string): void => {
       if (!dealerToolCancelled(callId)) { finish(text, false) } else { dealerToolFinish(callId, false, 'cancelled') }
     }).catch((e: Error): void => {
       finish(name + ' failed: ' + e.message, true)
@@ -241,6 +285,7 @@ class Bridge {
       dealerCancel(runId)
     }, timeoutMs) : -1
     let stop = cancellation !== undefined ? cancellation.onCancel((): void => dealerCancel(runId)) : (): void => {}
+    this.active++
     try {
       let result = await dealerRun(runId, sessionId, steps.map((s: DealerStep): string => this.generation(s)),
         JSON.stringify(context), JSON.stringify(parts), (event: string): void => {
@@ -305,6 +350,7 @@ class Bridge {
       if (timedOut) { throw new Error('no answer within ' + timeoutMs.toString() + ' ms') }
       throw (e as Error)
     } finally {
+      this.active--
       if (timer !== -1) { clearTimeout(timer) }
       stop()
       this.handlers.delete(sessionId)
@@ -328,14 +374,34 @@ class Bridge {
     return this.turn(purpose, system, [], [user], [step], watch, undefined, cancellation, timeoutMs)
   }
 
-  /** Jev's systemone endpoint through dealer: the request body in, Jev's answer body out. */
-  async decide(endpoint: string, key: string, body: string): Promise<string> {
+  /**
+   * Jev's systemone endpoint through dealer: the request body in, Jev's answer body out. Stopped by `cancellation`,
+   * and after `timeoutMs` (0: no limit), when it throws.
+   */
+  async decide(endpoint: string, key: string, body: string, cancellation?: OperationCancellation,
+      timeoutMs: number = 0): Promise<string> {
     let failure = this.ready()
     if (failure.length > 0) { throw new Error('dealer: ' + failure) }
+    throwIfCancelled(cancellation)
+    let runId = ++this.runs
     let started = Date.now()
-    let answer = await dealerDecide(endpoint, key, body)
-    console.info(TAG + ' decide ms=' + (Date.now() - started).toString() + ' chars=' + answer.length.toString())
-    return answer
+    let timedOut = false
+    let timer = timeoutMs > 0 ? setTimeout((): void => {
+      timedOut = true
+      dealerCancel(runId)
+    }, timeoutMs) : -1
+    let stop = cancellation !== undefined ? cancellation.onCancel((): void => dealerCancel(runId)) : (): void => {}
+    try {
+      let answer = await dealerDecide(runId, endpoint, key, body)
+      console.info(TAG + ' decide ms=' + (Date.now() - started).toString() + ' chars=' + answer.length.toString())
+      return answer
+    } catch (e) {
+      if (timedOut) { throw new Error('no answer within ' + timeoutMs.toString() + ' ms') }
+      throw (e as Error)
+    } finally {
+      if (timer !== -1) { clearTimeout(timer) }
+      stop()
+    }
   }
 
   /**
@@ -351,16 +417,28 @@ class Bridge {
     let client = http.createHttp()
     let contentType = ''
     let streamed = false
+    let ended = false
     let kept: ArrayBuffer[] = []
     let decoder = util.TextDecoder.create('utf-8')
+    // Once dealer no longer wants the answer (a cancel, a timeout), the request stops here at once, without waiting
+    // for its next piece or its own read timeout.
+    let watch = -1
+    let abandon = (): boolean => {
+      if (ended || !dealerCancelled(id)) { return ended }
+      ended = true
+      clearInterval(watch)
+      dealerFinish(id, false, 'cancelled')
+      try { client.destroy() } catch (_e) {}
+      return true
+    }
+    watch = setInterval((): void => { abandon() }, 250)
     client.on('headersReceive', (headers: Object): void => { contentType = contentTypeOf(headers) })
     client.on('dataReceive', (chunk: ArrayBuffer): void => {
-      if (dealerCancelled(id)) {
-        client.destroy()
-        return
-      }
+      if (abandon()) { return }
+      // An event stream may open with a comment line (": keep-alive") before its first "data:".
+      let opening = decoder.decodeToString(new Uint8Array(chunk.slice(0, 5)), { stream: false })
       if (!streamed && kept.length === 0 && (contentType.indexOf(EVENT_STREAM) >= 0 ||
-        decoder.decodeToString(new Uint8Array(chunk.slice(0, 5)), { stream: false }) === 'data:')) {
+        opening === 'data:' || opening.startsWith(':'))) {
         streamed = true
         dealerHead(id, 200, '{"content-type": "' + EVENT_STREAM + '"}')
       }
@@ -378,6 +456,8 @@ class Bridge {
       readTimeout: 300000
     }
     client.requestInStream(request['url'] as string, options).then((code: number): void => {
+      if (ended) { return }
+      ended = true
       if (streamed) {
         dealerFinish(id, code === 200, code === 200 ? '' : 'HTTP ' + code.toString() + ' after the stream began')
         return
@@ -391,11 +471,16 @@ class Bridge {
       kept.forEach((chunk: ArrayBuffer): void => { dealerChunk(id, chunk) })
       dealerFinish(id, true, '')
     }).catch((e: Error): void => {
-      dealerFinish(id, false, 'request failed: ' + e.message)
+      if (!ended) {
+        ended = true
+        dealerFinish(id, false, 'request failed: ' + e.message)
+      }
     }).finally((): void => {
+      ended = true
+      clearInterval(watch)
       try { client.off('dataReceive') } catch (_e) {}
       try { client.off('headersReceive') } catch (_e) {}
-      client.destroy()
+      try { client.destroy() } catch (_e) {}
     })
   }
 }
